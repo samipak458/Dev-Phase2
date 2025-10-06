@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimAgentViewHMClaimsTableListPage_HMActionAndNotes_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(formControlStr(HMClaimAgentViewHMClaimsTableListPage, HMActionAndNotes))]
+final class HMClaimAgentViewHMClaimsTableListPage_HMActionAndNotes_Extension
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>clicked</Name>
+				<Source><![CDATA[
+	public void clicked()
+    {
+        CustCollectionsAgent curCustCollectionsAgent = CustCollectionsAgent::findCurrentAgent();
+
+        if(curCustCollectionsAgent.RecId != 0 && curCustCollectionsAgent.HMIsManager == NoYes::No)
+        {
+            CustCollectionsAgent    checkCustCollectionsAgent;
+            FormControl             formControl = any2Object(this) as FormControl;
+            FormRun                 formRun = formControl.formRun();
+            FormDataSource          claimTable = formRun.dataSource(formDataSourceStr(HMClaimAgentViewHMClaimsTableListPage, HMClaimTable)) as FormDataSource;
+            MultiSelectionHelper    helper;
+            HMClaimTable            hmClaimTable;
+            DirPartyRelationship    dirPartyRelationship;
+            DirPartyTable           dirPartyTable;
+
+            helper = MultiSelectionHelper::construct();
+            helper.parmDatasource(claimTable);
+
+            hmClaimTable = helper.getFirst();
+
+            while (hmClaimTable.RecId != 0)
+            {
+                select RecId, Name from dirPartyTable
+                    join dirPartyRelationship
+                        where dirPartyRelationship.ChildParty == dirPartyTable.RecId
+                            && dirPartyRelationship.RecId == curCustCollectionsAgent.DirPartyRelationship
+                    exists join checkCustCollectionsAgent
+                        where checkCustCollectionsAgent.HMSupervisor == dirPartyTable.RecId;
+
+                if(!dirPartyTable.RecId && hmClaimTable.AgentName == '')
+                {
+                    throw error("Cannot apply actions and notes on claims not picked.");
+                }
+
+                hmClaimTable = helper.getNext();
+
+            }
+        }
+
+        next clicked();
+	
+	}
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>CustCollectionsAgentEventHandlerHM</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class CustCollectionsAgentEventHandlerHM
+{
+    
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>HMCustCollectionsAgentPool_CustomerPoolId_OnLookup</Name>
+				<Source><![CDATA[
+    /// <summary>    ///    /// </summary>
+    /// /// <param name="sender"></param>    
+    /// /// <param name="e"></param>  
+    [FormControlEventHandler(formControlStr(CustCollectionsAgent, HMCustCollectionsAgentPool_CustomerPoolId), FormControlEventType::Lookup)] 
+    public static void HMCustCollectionsAgentPool_CustomerPoolId_OnLookup(FormControl sender, FormControlEventArgs e) 
+    {      
+        SysTableLookup          sysTableLookup;    
+        QueryBuildDataSource    qbds;
+        CustCollectionsAgent    custCollectionsAgent;
+        Object                  custCollectionsAgent_ds;
+        Query                   query = new Query();
+
+        sysTableLookup = SysTableLookup::newParameters(tableNum(CustCollectionsPool),sender);
+        custCollectionsAgent_ds = sender.formRun().dataSource(formDataSourceStr(CustCollectionsAgent,CustCollectionsAgent));
+        custCollectionsAgent = custCollectionsAgent_ds.cursor();
+
+        sysTableLookup.addLookupfield(fieldNum(CustCollectionsPool, Name));       
+        sysTableLookup.addLookupfield(fieldNum(CustCollectionsPool, Description));
+
+        qbds = query.addDataSource(tableNum(CustCollectionsPool));
+        qbds.addRange(fieldNum(CustCollectionsPool, Type)).value(queryValue(CustPoolType::Collection));
+
+        if(custCollectionsAgent.HMIsOnShore == NoYes::No)
+        {
+            qbds.addRange(fieldNum(CustCollectionsPool,HMIsOnshore)).value(queryValue(NoYes::No));
+        }
+
+        sysTableLookup.parmQuery(query);      
+        sysTableLookup.performFormLookup();
+
+        FormControlCancelableSuperEventArgs ce = e as FormControlCancelableSuperEventArgs;     
+        ce.CancelSuperCall();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CustCollectionsAgent_HMIsOnShore_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormControlEventHandler(formControlStr(CustCollectionsAgent, CustCollectionsAgent_HMIsOnShore), FormControlEventType::Clicked)]
+    public static void CustCollectionsAgent_HMIsOnShore_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        CustCollectionsAgentPool    custCollectionsAgentPool;
+        CustCollectionsAgent        custCollectionsAgent;
+        CustCollectionsPool         custCollectionsPool;
+        FormRun                     formRun;
+        Object                      custCollectionsAgent_ds;
+
+        formRun = sender.formRun();
+        custCollectionsAgent_ds = sender.formRun().dataSource(formDataSourceStr(CustCollectionsAgent,CustCollectionsAgent));
+        
+        custCollectionsAgent = custCollectionsAgent_ds.cursor();
+        if(custCollectionsAgent.HMIsOnShore == NoYes::No)
+        {
+            select firstonly custCollectionsAgentPool
+                where custCollectionsAgentPool.CustCollectionsAgent == custCollectionsAgent.RecId
+                exists join custCollectionsPool 
+                    where custCollectionsPool.Name == custCollectionsAgentPool.CustomerPoolId
+                        && custCollectionsPool.HMIsOnShore == NoYes::Yes;
+                
+            if(custCollectionsAgentPool.RecId != 0)
+            {
+                custCollectionsAgent.HMIsOnShore = NoYes::Yes;
+
+                checkFailed("@Optum:HMAgentOnshoreError");
+            }    
+        }
+            
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMIntegrationService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMIntegrationService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createLog</Name>
+				<Source><![CDATA[
+    public boolean createLog(HMMessageControlId _messageControlId, HMHL7MessageType _messageType, str _refId, HMHL7MessageDirection _direction)
+    {
+        HMHL7MessageLog     hmHL7MessageLog;
+        boolean ret;
+    
+        try
+        {
+            ttsBegin;
+    
+            hmHL7MessageLog.initValue();
+    
+            hmHL7MessageLog.MessageControlId = _messageControlId;
+            hmHL7MessageLog.HL7MessageType = _messageType;
+            hmHL7MessageLog.HL7MessageDirection = _direction;
+            hmHL7MessageLog.RefId = _refId;
+    
+            if(hmHL7MessageLog.validateWrite())
+            {
+                hmHL7MessageLog.insert();
+            }
+            else
+            {
+                checkFailed("Cannot create message log");
+            }
+    
+            ret = true;
+    
+            ttsCommit;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateLog</Name>
+				<Source><![CDATA[
+    public boolean updateLog(HMMessageControlId _messageControlId, String255 _ackCode, HMNotes _textMessage)
+    {
+        HMHL7MessageLog     hmHL7MessageLog;
+        HMPatient hmPatient;
+        boolean ret;
+    
+        try
+        {
+            ttsBegin;
+    
+            select forUpdate hmHL7MessageLog where hmHL7MessageLog.MessageControlId == _messageControlId;
+    
+            if(hmHL7MessageLog)
+            {
+                hmHL7MessageLog.AcknowledgeCode = _ackCode;
+                hmHL7MessageLog.TextMessage = _textMessage;
+    
+                hmHL7MessageLog.update();
+    
+                if(hmHL7MessageLog.HL7MessageType == HMHL7MessageType::ADT04 && _ackCode == 'AA')
+                {
+                    select forupdate hmPatient where hmPatient.RecId == str2int64(hmHL7MessageLog.RefId);
+    
+                    if(hmPatient)
+                    {
+                        hmPatient.RISRegistered = NoYes::Yes;
+    
+                        hmPatient.update();
+                    }
+                }
+    
+                ret = true;
+            }
+            else
+            {
+                checkFailed("Cannot find message control Id");
+            }
+    
+            ttsCommit;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

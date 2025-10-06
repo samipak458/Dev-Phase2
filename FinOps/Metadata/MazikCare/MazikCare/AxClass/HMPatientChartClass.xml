@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientChartClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientChartClass
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getImage</Name>
+				<Source><![CDATA[
+    public DocuValueFile getImage(recId _recId)
+    {
+        DocuValue       docuValue;
+    
+        select firstOnly file from docuValue where docuValue.RecId == _recId;
+    
+        return docuValue.File;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getImageFromPath</Name>
+				<Source><![CDATA[
+    public DocuValueFile getImageFromPath(recId _recId)
+    {
+        URL                 url;
+    
+        BinData binData = new BinData();
+        //todo: ax7 patient list page  DocuRef::findRecId(_recId).completeFilename() method completeFilename not exsit
+        /*
+        url = DocuRef::findRecId(_recId).completeFilename();
+    
+        binData.loadFile(url);
+        */
+        return binData.getData();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientPlanningObject</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingPlanningObject getPatientPlanningObject(recId _patientRecId)
+    {
+        HMResourceSchedulingPlanningObject       hmResourceSchedulingPlanningObjectLocal;
+        HMPatient                                hmPatientLocal;
+    
+        hmPatientLocal = HMPatient::find(_patientRecId);
+    
+        if (hmPatientLocal.HMClinicStaff)
+        {
+            hmResourceSchedulingPlanningObjectLocal = HMResourceSchedulingPlanningObject::findByClinicStaff(hmPatientLocal.HMClinicStaff, false);
+        }
+    
+        return hmResourceSchedulingPlanningObjectLocal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPrimaryPhysicianName</Name>
+				<Source><![CDATA[
+    public DirPartyName getPrimaryPhysicianName(recid _patientRecId)
+    {
+        HMClinicStaff           hmClinicStafflocal;
+        HcmWorker               hcmWorkerlocal;
+        DirPerson               dirPersonlocal;
+    
+        select * from dirPersonlocal
+        join RecId,HcmWorker from hmClinicStafflocal
+        join RecId,Person from hcmWorkerlocal
+        where
+        hmClinicStafflocal.RecId == HMPatient::find(_patientRecId).HMClinicStaff
+        && hmClinicStafflocal.HcmWorker == hcmWorkerlocal.RecId
+        && dirPersonlocal.RecId == hcmWorkerlocal.Person;
+    
+        return dirPersonlocal.Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadImage</Name>
+				<Source><![CDATA[
+    public str loadImage(recid _patientRecId)
+    {
+        Image               image=new Image();
+        container           con;
+        DocuRef             documentRef;
+        URL                 url;
+        //todo: ax7 patient list page : doucument :  DocuFileWatchDog not exsit
+        /*
+        HMDocuAction action = new HMDocuAction();
+    
+        documentRef = DocuRef::findRecId(HMPatient::find(_patientRecId).DocuRef);
+        if (documentRef.docuValue().File)
+        {
+            //file in database
+            DocuFileWatchDog::create(); //update old files
+    
+           // url = DocuActionFile::saveTempFile(documentRef);
+            if(DocuType::find(documentRef.TypeId).FilePlace == DocuFilePlace::Database)
+            {
+                if(WinAPI::fileExists(documentRef.completeFilename()))
+                {
+                    url = documentRef.completeFilename();
+                }
+                else
+                {
+                    url = action.getDBFileTempPath(documentRef);
+                }
+            }
+            else
+            {
+                url = documentRef.completeFilename();
+            }
+            //url = documentRef.completeFilename();
+          // htmlView.navigate(url);
+            //image.loadImage(url);
+    
+            //image.resize(200,280, InterpolationMode::InterpolationModeHighQuality);
+           // WindowImage.image(image);
+            //DocuOpenFile::add(documentRef, url);
+            //curUrl = url;
+            //DocuFileWatchDog::createDelayed(); //ensure that watchdog is started
+        }
+        else
+        {
+            url = documentRef.completeFilename();
+            con = WinAPI::findFirstFile(url);
+            //if (!conpeek(con, 2) && conpeek(con, 1) == -1)
+    
+    
+         //  htmlView.navigate(url);
+            //image.loadImage(url);
+            //image.resize(200,280, InterpolationMode::InterpolationModeHighQuality);
+           //WindowImage.image(image);
+              //curUrl = url;
+        }
+        */
+        return url;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markPatientActive</Name>
+				<Source><![CDATA[
+    public boolean markPatientActive(RecId _patientRecId)
+    {
+        HMPatient                               hmPatientLocal;
+        boolean ret = true;
+    
+        if(_patientRecId)
+        {
+            ttsbegin;
+            hmpatientlocal = hmpatient::find(_patientRecId,true);
+            hmpatientlocal.status = patientstatus::Active;
+            hmpatientlocal.update();
+            ttscommit;
+        }
+        else
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markPatientInactive</Name>
+				<Source><![CDATA[
+    public boolean markPatientInactive(RecId _custTableRecId)
+    {
+        DialogButton                            dialogButton;
+        HMPatient                               hmPatientLocal;
+        HMPatient                               hmPatientNew;
+        boolean ret = true;
+    
+        dialogbutton = box::yesNo(strFmt("@MAZ3234","@MAZ10"),dialogbutton::no);
+    
+        if (dialogbutton == dialogbutton::yes)
+        {
+            select * from hmpatientnew where hmpatientnew.custtable == _custTableRecId;
+    
+            if(hmpatientnew)
+            {
+                ttsbegin;
+                hmpatientlocal = hmpatient::find(hmpatientnew.recid,true);
+                hmpatientlocal.status = patientstatus::inactive;
+                hmpatientlocal.update();
+                ttscommit;
+            }
+            else
+            {
+                ret = false;
+            }
+    
+    
+        }
+        else
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>upperCaseFirst</Name>
+				<Source><![CDATA[
+    private str upperCaseFirst(str inputStr)
+    {
+        str finalStr="";
+        int i;
+        str ch;
+    
+    
+        for(i=1;i<strLen(inputStr)+1;i++)
+        {
+            ch = subStr(inputStr,i,1);
+            if(i==1)
+            {
+    
+                ch = strUpr(ch);
+            }
+    
+            finalStr += ch;
+        }
+        return finalStr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>filterPatient</Name>
+				<Source><![CDATA[
+    public static void filterPatient(FormDataSource _custTableDs, String255 _firstName, String255 _lastName, String255 _phoneNumber)
+    {
+        CustTable                       custTableLocal;
+        DirPartyTable                   dirPartyTableLocal;
+        DirPerson                       dirPersonLocal;
+        DirPersonName                   dirPersonNameLocal;
+        HMPatient                       hmPatientLocal;
+        HMPatientInsurance              hmPatientInsuranceLocal;
+        LogisticsLocation               logisticsLocationLocal;
+        LogisticsElectronicAddress      logisticsElectronicAddressLocal;
+        DirPartyLocation                dirPartyLocationLocal;
+    
+        _custTableDs.queryBuildDataSource().clearRanges();
+        if(_custTableDs.query().dataSourceTable(tableNum(DirPersonName)) != null)
+        {
+            _custTableDs.query().dataSourceTable(tableNum(DirPersonName)).clearRanges();
+        }
+        if(_phoneNumber)
+        {
+            _phoneNumber='*' + _phoneNumber + '*';
+    
+            select REcId from custTableLocal
+            join dirPartyTableLocal
+            join dirPersonLocal
+            join dirPersonNameLocal
+            join hmPatientLocal
+            join dirPartyLocationLocal
+            join logisticsLocationLocal
+            join Locator from logisticsElectronicAddressLocal
+            where custTableLocal.Party==dirPartyTableLocal.RecId
+            && dirPersonLocal.RecId==dirPartyTableLocal.RecId
+            && hmPatientLocal.CustTable==custTableLocal.RecId
+            && dirpersonNameLocal.Person==dirPersonLocal.RecId
+            && dirPartyLocationLocal.Party==dirPartyTableLocal.RecId
+            && logisticsLocationLocal.RecId==dirPartyLocationLocal.Location
+            && logisticsElectronicAddressLocal.Location== logisticsLocationLocal.RecId
+            && logisticsElectronicAddressLocal.Locator like _phoneNumber;
+    
+            if (custTableLocal.RecId == 0)
+            {
+                _custTableDs.query().dataSourceTable(tableNum(CustTable)).addRange(fieldNum(CustTable,recId)).value(SysQuery::value(0));
+            }
+            else
+            {
+                while(custTableLocal)
+                {
+                    _custTableDs.query().dataSourceTable(tableNum(CustTable)).addRange(fieldNum(CustTable,recId)).value(SysQuery::value(custTableLocal.RecId));
+                    next custTableLocal;
+                }
+            }
+        }
+        if(_firstName || _lastName)
+        {
+            if(_custTableDs.query().dataSourceTable(tableNum(DirPerson)) == null)
+            {
+                _custTableDs.query().dataSourceTable(tableNum(DirPartyTable)).addDataSource(tableNum(DirPerson)).relations(true);
+            }
+            if(_custTableDs.query().dataSourceTable(tableNum(DirPersonName)) == null)
+            {
+                _custTableDs.query().dataSourceTable(tableNum(DirPerson)).addDataSource(tableNum(DirPersonName)).relations(true);
+            }
+             _custTableDs.query().dataSourceTable(tableNum(DirPerson)).enabled(true);
+            _custTableDs.query().dataSourceTable(tableNum(DirPersonName)).enabled(true);
+            if(_firstName)
+            {
+                _firstName=strLRTrim(_firstName);
+                _custTableDs.query().dataSourceTable(tableNum(DirPersonName)).addRange(fieldNum(DirPersonName,FirstName)).value(SysQuery::valueLike(_firstName));
+            }
+            if(_lastName)
+            {
+                _LastName=strLRTrim(_LastName);
+                _custTableDs.query().dataSourceTable(tableNum(DirPersonName)).addRange(fieldNum(DirPersonName,LastName)).value(SysQuery::valueLike(_LastName));
+            }
+    
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getContactPhone</Name>
+				<Source><![CDATA[
+    public static Phone getContactPhone(LogisticsLocationRoleType _type, RecId _partyRecId)
+    {
+        LogisticsElectronicAddress logisticsElectronicAddress;
+        LogisticsLocationRole locationRole;
+        DirPartyLocation partyLocation;
+        LogisticsElectronicAddressRole addressRole;
+    
+        select logisticsElectronicAddress
+             where
+                logisticsElectronicAddress.Type == LogisticsElectronicAddressMethodType::Phone
+             exists join locationRole
+                where
+                     locationRole.Type == _type
+              exists join addressRole
+                where
+                    addressRole.ElectronicAddress == logisticsElectronicAddress.RecId &&
+                    addressRole.LocationRole == locationRole.RecId
+            exists join partyLocation
+                where
+                    partyLocation.Location == logisticsElectronicAddress.Location &&
+                    partyLocation.Party == _partyRecId;
+    
+        return logisticsElectronicAddress.Locator;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalDocument</Name>
+				<Source><![CDATA[
+    public static int getTotalDocument(RecId _custTableRecId)
+    {
+        DocuRef docuRef;
+        select count(RecId) from docuRef
+        where docuRef.RefTableId == tableNum(HMPatient)
+        //where docuRef.RefTableId == tablenum(CustTable)
+        && docuRef.RefRecId == _custTableRecId;
+    
+        return docuRef.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        #task
+        FormRun                     formRun = _args.caller();
+        HMPatientChartClass         hmPatientChartClass = new HMPatientChartClass();
+        DialogButton                            dialogButton;
+    
+        if(_args.menuItemName()==menuitemActionStr(HMPatientActive))
+        {
+            dialogbutton = box::yesNo(strFmt("@MAZ11611","@SYS4006395"),dialogbutton::no);
+    
+            if (dialogbutton == dialogbutton::yes)
+            {
+                if(hmPatientChartClass.markPatientActive(_args.record().recId))
+                {
+                    info("@MAZ11612");
+                    formRun.task(#taskRefresh);
+                }
+                else
+                {
+                    error("@MAZ11613");
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

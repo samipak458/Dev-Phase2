@@ -1,0 +1,747 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMActionAndNotes</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMActionAndNotes extends FormRun
+{
+    MultiSelectionHelper helper;
+    #define.Saturday(6)
+    #define.Sunday(7)
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateClaimTable</Name>
+				<Source><![CDATA[
+    public void updateClaimTable(RecId _HMClaimTable, HMClaimNotes _claimNotes)
+    {
+        HMClaimTable      hmClaimTable;
+        HMBillParameters  hmBillParameters;
+
+        hmBillParameters = HMBillParameters::find();
+
+        select firstonly forupdate hmClaimTable
+            where hmClaimTable.RecId == _HMClaimTable;
+
+        hmClaimTable.HMResponsibleGroup                        = _claimNotes.HMResponsibleGroup;
+        hmClaimTable.HMFollowUp                                = _claimNotes.HMFollowUp;
+        hmClaimTable.HMClaimProcessStatus                      = _claimNotes.HMClaimProcessStatus;
+        hmClaimTable.HMActionType                              = _claimNotes.HMActionType;
+        hmClaimTable.IsClaimModified                           = NoYes::Yes;
+        hmClaimTable.IsClaimPriorityManual                     = NoYes::No;
+        hmClaimTable.HMClaimLatestNoteDate_Internal            = _claimNotes.ModifiedDateTime;
+        hmClaimTable.HMClaimLatestNoteCreatedBy_Internal       = _claimNotes.ModifiedBy;
+        hmClaimTable.HMICNNumber                               = _claimNotes.HMICNNumber;
+        hmClaimTable.HMReferenceNumber                         = _claimNotes.HMReferenceNumber;
+
+        if (hmClaimTable.HMBalanceAmount == 0)
+        {
+            hmClaimTable.HMClaimPriority = hmBillParameters.DefaultClaimPrirority;
+
+            if (hmClaimTable.IsDeniedEligible == NoYes::Yes)
+            {
+                hmClaimTable.IsDeniedEligible = NoYes::No;
+            }
+        }
+
+        hmClaimTable.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertActionAndNotes</Name>
+				<Source><![CDATA[
+    public void insertActionAndNotes(RecId _HMClaimTable)
+    {
+        HMClaimNotes claimNotes;
+
+        ttsbegin;
+
+        claimNotes.clear();
+        claimNotes.HMClaimProcessStatus = ClaimProcessStatus.text();
+        claimNotes.HMClaimTable         = _HMClaimTable;
+        claimNotes.HMActionType         = ActionType.text();
+        claimNotes.HMResponsibleGroup   = ResponsibleGroup.text();
+        claimNotes.HMICNNumber          = ICNNumber.text();
+        claimNotes.HMFollowUp           = FollowUp.dateValue();
+        claimNotes.Notes                = Notes.text();
+        claimNotes.HMReferenceNumber    = ReferenceNumber.text();
+        claimNotes.HMDecisionBasedOn    = DecisionBasedOn.selection();
+        claimNotes.insert();
+
+        element.updateClaimTable(_HMClaimTable, claimNotes);
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void closeOk()
+    {  
+        FormRun                 formRun = element.args().caller();
+        HMClaimTable            hmClaimTable;
+        formDataSource          fds;
+        str                     errorMsg = '';
+        HMActionTypeTable       hmActionType;
+        HMClaimProcessStatus    hmClaimProcessStatus;
+        
+        helper = MultiSelectionHelper::construct();
+        helper.parmDatasource(element.args().record().dataSource());
+
+        if(ClaimProcessStatus.text() != '')
+        {
+            select firstonly RecId from hmClaimProcessStatus
+                    where hmClaimProcessStatus.Status == ClaimProcessStatus.text();
+
+            if (hmClaimProcessStatus.RecId == 0)
+            {
+                this.clearNotes();
+                throw Error("@Optum:ClaimProcessStatusNotExistErrMsg");
+            }
+            else
+            {
+                select firstonly RecId from hmClaimProcessStatus
+                    where hmClaimProcessStatus.Status == ClaimProcessStatus.text()
+                        && hmClaimProcessStatus.InActive == NoYes::No;
+
+                if (hmClaimProcessStatus.RecId == 0)
+                {
+                    this.clearNotes();
+                    throw Error("@Optum:ClaimProcessStatusInActiveNotExistErrMsg");
+                }
+            }
+        }
+
+        if(ActionType.text() != '')
+        {
+            select firstonly RecId from hmActionType
+                    where hmActionType.HMActionType == ActionType.text();
+
+            if (hmActionType.RecId == 0)
+            {
+                this.clearNotes();
+                throw Error("@Optum:ActionTypeNotExistErrMsg");
+            }
+            else
+            {
+                select firstonly RecId from hmActionType
+                    where hmActionType.HMActionType == ActionType.text()
+                        && hmActionType.InActive == NoYes::No;
+
+                if(hmActionType.RecId == 0)
+                {
+                    this.clearNotes();
+                    throw Error("@Optum:ActionTypeInActiveNotExistErrMsg");
+                }
+            }
+
+        }
+
+        if(!ClaimProcessStatus.text() || !ActionType.text() || !ReferenceNumber.text() || !ICNNumber.text()  || !FollowUp.dateValue() || !Notes.text())
+        {
+            errorMsg = !ClaimProcessStatus.text() ? "@Optum:MAZOPT0049" : 
+                        !ActionType.text() ? "@Optum:HMActionTypeLabel" : 
+                        !ReferenceNumber.text() ? "@Optum:HMServiceReferenceNo" :
+                        !ICNNumber.text() ? "@Optum:HMICNNo" :
+                        !FollowUp.dateValue() ? "@Optum:HMFollowUpDate" : "@SYS110507";
+
+            error(strFmt("@Optum:MAZOPT0090",errorMsg));
+
+            this.clearNotes();
+
+            return;
+        }
+        else
+        {
+            fds = formRun.dataSource(1);
+
+            hmClaimTable = helper.getFirst();
+
+            while (hmClaimTable.RecId != 0)
+            {
+                this.insertActionAndNotes(hmClaimTable.RecId);
+
+                hmClaimTable = helper.getNext();
+            }
+
+            if(formRun.name() == formstr(HMAllClaims))
+            {
+                fds.reread();
+            }
+            else
+            {
+                int position = fds.getPosition();
+
+                fds.refresh();
+                fds.research();
+                fds.setPosition(position);
+            }
+
+        }
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        Set             recordSet = new Set(Types::String);
+        HMClaimTable    hmClaimTable;
+        FormRun         formRun = element.args().caller();
+        
+        helper = MultiSelectionHelper::construct();
+        helper.parmDatasource(element.args().record().dataSource());
+
+        if(!helper.parmDatasource().anyMarked())
+        {
+            throw error("@Optum:HMActionNotesRecordValidationErrMsg");
+        }
+
+        hmClaimTable = helper.getFirst();
+
+        while (hmClaimTable.RecId != 0)
+        {
+            recordSet.add(hmClaimTable.PayorName);
+           
+            if(recordSet.elements() > 1)
+            {
+                throw error("@Optum:ActionAndNotesBelongingToDiffPayorsErrorMsg");
+            }
+            
+            hmClaimTable = helper.getNext();
+
+        }
+        
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>followUpDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the follow up date based on follow up days.
+    /// </summary>
+    /// <param name = "followupDays">Number of follow up days</param>
+    /// <returns>Returns follow up date.</returns>
+    public utcdatetime followUpDate(int followupDays)
+    {
+        utcdatetime currentDate,start,end;
+        Timezone    userTimeZone;
+        int         currentDay;
+        boolean     isWeekend;
+
+        userTimeZone = DateTimeUtil::getUserPreferredTimeZone();
+
+        currentDate = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(),userTimeZone);
+
+        isWeekend = false;
+
+        currentDay = dayOfWk(DateTimeUtil::date(currentDate));
+
+        if(currentDay == #Saturday)
+        {
+            isWeekend =  true;
+            currentDate = DatetimeUtil::addDays(currentDate,2);
+        }
+        else if(currentDay == #Sunday)
+        {
+            isWeekend =  true;
+            currentDate = DatetimeUtil::addDays(currentDate,1);
+        }
+
+        start = currentDate;
+        end   = DatetimeUtil::addDays(currentDate,followupDays);
+
+        while(start <= end)
+        {
+            if (dayOfWk(DateTimeUtil::date(start)) == #Saturday || dayOfWk(DateTimeUtil::date(start)) == #Sunday)
+            {
+                followupDays++;
+                end  = DatetimeUtil::addDays(currentDate,followupDays);
+            }
+            start = DatetimeUtil::addDays(start,1);
+        }
+
+        if(isWeekend)
+        {
+            end = DateTimeUtil::addDays(end,-1);
+        }
+        return end;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearNotes</Name>
+				<Source><![CDATA[
+    public void clearNotes()
+    {
+        Notes.text('');
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>ClaimProcessStatus</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Set the status description field.
+        /// </summary>
+        /// <returns></returns>
+        public boolean modified()
+        {
+            HMClaimProcessStatus    hmClaimProcessStatus;
+            boolean                 ret;
+
+            ret = super(); 
+           
+            select firstonly RecId from hmClaimProcessStatus
+                    where hmClaimProcessStatus.Status == ClaimProcessStatus.text();
+
+            if (hmClaimProcessStatus.RecId == 0)
+            {
+                throw Error("@Optum:ClaimProcessStatusNotExistErrMsg");
+            }
+
+            StatusDescription.text(HMClaimProcessStatus::find(ClaimProcessStatus.text()).Description);
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            Query                   query = new Query();
+            QueryBuildDataSource    qbds;
+
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMClaimProcessStatus), this);
+    
+            sysTableLookup.addLookupField(fieldNum(HMClaimProcessStatus, Status));
+            sysTableLookup.addLookupField(fieldNum(HMClaimProcessStatus, Description));
+    
+            qbds = query.addDataSource(tableNum(HMClaimProcessStatus));
+            qbds.addRange(fieldNum(HMClaimProcessStatus, InActive)).value(queryValue(0));
+    
+            sysTableLookup.parmQuery(query);
+
+            sysTableLookup.performFormLookup();
+
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ActionType</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Set the responsible group field.
+        /// </summary>
+        /// <returns></returns>
+        public boolean modified()
+        {
+            boolean             ret;
+            HMActionTypeTable   hmActionTypeTable;
+            utcdatetime         end;
+            int                 followupDays;
+        
+            ret = super();
+
+            select firstonly HMResponsibleGroups, HMFollowUpDays from hmActionTypeTable
+                where hmActionTypeTable.HMActionType == ActionType.text();
+
+            if (hmActionTypeTable.RecId == 0)
+            {
+                throw Error("@Optum:ActionTypeNotExistErrMsg");
+            }
+        
+            ResponsibleGroup.text(hmActionTypeTable.HMResponsibleGroups);
+
+            followupDays = hmActionTypeTable.HMFollowUpDays;
+
+            end = element.followUpDate(followupDays);
+
+            FollowUp.dateValue(DateTimeUtil::date(end));
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            Query                   query = new Query();
+            QueryBuildDataSource    qbds;
+  
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMActionTypeTable), this);
+    
+            sysTableLookup.addLookupField(fieldNum(HMActionTypeTable, HMActionType));
+            sysTableLookup.addLookupField(fieldNum(HMActionTypeTable, HMActionTypeDescription));
+    
+            qbds = query.addDataSource(tableNum(HMActionTypeTable));
+            qbds.addRange(fieldNum(HMActionTypeTable, InActive)).value(queryValue(0));
+
+            sysTableLookup.parmQuery(query);
+    
+            sysTableLookup.performFormLookup();
+
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>FollowUp</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <returns></returns>
+        public boolean modified()
+        {
+            boolean             ret;
+            HMActionTypeTable   hmActionTypeTable;
+            utcdatetime         end;
+            int                 followupDays;
+
+            ret = super();
+
+            select firstonly HMResponsibleGroups, HMFollowUpDays from hmActionTypeTable
+                where hmActionTypeTable.HMActionType == ActionType.text();
+
+            followupDays = hmActionTypeTable.HMFollowUpDays;
+
+            end = element.followUpDate(followupDays);
+
+            date suggestedDate = DateTimeUtil::date(end);
+
+            if(FollowUp.dateValue() > suggestedDate)
+            {
+                checkFailed("@Optum:MAZOPT0102" + datetime2Str(suggestedDate));
+                FollowUp.dateValue(suggestedDate);
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AutoFillBtn</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Auto-fill the notes.
+        /// </summary>
+        public void clicked()
+        {
+            UserInfo                    userInfo;
+            SysDictEnum                 dictEnum;
+            Timezone                    userTimeZone;
+            utcdatetime                 currentDate;
+            HMActionTypeTable           hmActionTypeTable;
+            HMActionAndNotesTemplate    hmActionAndNotesTemplate;
+            HMClaimTable                hmClaimTable = element.args().record();
+            str                         template = '';
+            HMClaimTable                claimTable;
+            str                         claimIDs = '';
+
+            dictEnum = new SysDictEnum(enumnum(HMDecisionBasedOn));
+
+            super();
+
+            userTimeZone = DateTimeUtil::getUserPreferredTimeZone();
+
+            currentDate = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(),userTimeZone);
+           
+            select firstonly name from userInfo
+                where userInfo.id ==  curUserId();
+
+            select firstonly HMTemplateID, RecId from hmActionTypeTable
+                where hmActionTypeTable.HMActionType == ActionType.text()              
+            join RecId, HMTemplateText from hmActionAndNotesTemplate
+                where hmActionAndNotesTemplate.HMTemplateID == hmActionTypeTable.HMTemplateID;
+
+            if (hmActionAndNotesTemplate.HMTemplateText != '')
+            {
+                template += hmActionAndNotesTemplate.HMTemplateText + '\n';            
+            }
+
+            claimTable = helper.getFirst();
+
+            while (claimTable.RecId != 0)
+            {
+                claimIDs += strFmt('%1: %2\n', '@MAZ9404', claimTable.ClaimID);
+
+                claimTable = helper.getNext();
+            }
+
+            template += '@MAZ:HMPayorNameTitle' + ': %1\n' + '%12' + '@Optum:MAZOPT0049' + ': %2\n' + '@Optum:MAZOPT0050' + ': %3\n' + '@Optum:HMActionTypeLabel' + ': %4\n' + '@Optum:MAZOPT0011' + ': %5\n' + '@Optum:HMICNNo' + ': %6\n' + '@Optum:HMServiceReferenceNo' + ': %11\n' + '@Optum:HMDecisionBasedOn' + ' %10\n' + '@Optum:HMCreatedBy' + ' %7\n' + '@Optum:HMFollowUpDate' + ': %8\n' + '@Optum:HMCreatedDate' + ' %9';
+            
+            Notes.text(strFmt(template
+                        , hmClaimTable.PayorName
+                        , ClaimProcessStatus.text()
+                        , StatusDescription.text()
+                        , ActionType.text()
+                        , ResponsibleGroup.text()
+                        , ICNNumber.text()
+                        , userInfo.name
+                        , FollowUp.dateValue()
+                        , any2Date(currentDate)
+                        , dictEnum.value2Label(DecisionBasedOn.selection())
+                        , ReferenceNumber.text()
+                        , claimIDs));
+            
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@Optum:HMActionAndNotes</Caption>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>ContentSectionGroup</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>Custom</Pattern>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ClaimProcessStatus</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMClaimProcessStatusName</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>StatusDescription</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Enabled>No</Enabled>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:MAZOPT0050</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ActionType</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMActionType</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ResponsibleGroup</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Enabled>No</Enabled>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:HMResponsibleGroup</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>DecisionBasedOn</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>ComboBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<EnumType>HMDecisionBasedOn</EnumType>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ReferenceNumber</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMReferenceNumber</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ICNNumber</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMICNNumber</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>FollowUp</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMFollowUp</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ClaimNotesGroup</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Notes</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DisplayHeight>10</DisplayHeight>
+								<DisplayHeightMode>Fixed</DisplayHeightMode>
+								<ExtendedDataType>Notes</ExtendedDataType>
+								<MultiLine>Yes</MultiLine>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>AutofillBtnGroup</Name>
+								<Type>ButtonGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>AutoFillBtn</Name>
+										<Type>Button</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<SaveRecord>No</SaveRecord>
+										<Text>@Optum:HMAutoFill</Text>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+						</Controls>
+						<FrameType>None</FrameType>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OkButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>CommandButton</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CancelButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612734</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+						<SaveRecord>No</SaveRecord>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

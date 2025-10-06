@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCalculateClaimPoolBusinessLogic_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(classStr(HMCalculateClaimPoolBusinessLogic))]
+final class HMCalculateClaimPoolBusinessLogic_Extension
+{
+    #OCCRetryCount
+
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addRanges</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Add ranges on pool query criteria
+    /// </summary>
+    /// <param name = "_qr"></param>
+    /// <param name = "_claimId"></param>
+    /// <param name = "_custCollectionsPool"></param>
+    /// <returns>query</returns>
+    public Query addRanges(Query _qr, CustCollectionsPool _custCollectionsPool)
+    {
+        Query                   qr = next addRanges(_qr, _custCollectionsPool);
+        QueryBuildDataSource    qbdsHMClaimTable, qbdsHMClaimPaymentPostingLatestDenialCode;
+        QueryBuildRange         qbr;
+        QueryFilter             filter;
+        tableId                 tableIdHMClaimPaymentPosting = tableNum(HMClaimPaymentPosting);
+
+        qbdsHMClaimTable = qr.dataSourceTable(tableNum(HMClaimTable));
+
+        qbdsHMClaimTable.addGroupByField(fieldNum(HMClaimTable, ClaimID));
+        qbdsHMClaimTable.addGroupByField(fieldNum(HMClaimTable, RecId));
+
+        if(this.doesHMClaimPaymentPostingDataSourceExist(qr, tableIdHMClaimPaymentPosting))
+        {
+            qbdsHMClaimPaymentPostingLatestDenialCode = qr.dataSourceTable(tableNum(HMClaimPaymentPosting)).addDataSource(tableNum(HMClaimPaymentPostingLatestDenialCode));
+            qbdsHMClaimPaymentPostingLatestDenialCode.joinMode(JoinMode::ExistsJoin);
+            qbdsHMClaimPaymentPostingLatestDenialCode.relations(true);
+        }
+        
+        return qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>doesHMClaimPaymentPostingDataSourceExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Used to filter records when payment posting exists.
+    /// </summary>
+    /// <param name = "query">
+    /// Parameter <c>_qr</c>.
+    /// </param>
+    /// <param name = "tableIdToCheck"></param>
+    /// <returns>
+    /// Parameter <c>_tableId</c>.
+    /// </returns>
+    public boolean doesHMClaimPaymentPostingDataSourceExist(Query _qr, tableId _tableId)
+    {
+        QueryBuildDataSource ds;
+        QueryFilter          filter;
+        int                  filterCount, k;
+                
+        filterCount = _qr.queryFilterCount(_qr.dataSourceNo(1));
+
+        for (k=1; k <= filterCount; k++)
+        {
+            filter = _qr.queryFilter(k, _qr.dataSourceNo(1));
+
+            ds = filter.dataSource();
+
+            if (ds.table() == _tableId)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaimFromHMClaimQualifiedForPoolAssignment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "_claimID"></param>
+    public void deleteClaimFromHMClaimQualifiedForPoolAssignment(HMClaimNumber _claimID)
+    {
+        next deleteClaimFromHMClaimQualifiedForPoolAssignment(_claimID);
+
+        this.deleteClaimFromHMClaimPaymentPostingLatestDenialCode(_claimID);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteDataFromHMClaimQualifiedForPoolAssignment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void deleteDataFromHMClaimQualifiedForPoolAssignment()
+    {
+        next deleteDataFromHMClaimQualifiedForPoolAssignment();
+
+        this.deleteDataFromHMClaimPaymentPostingLatestDenialCode();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteDataFromHMClaimPaymentPostingLatestDenialCode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// /
+    /// </summary>
+    public void deleteDataFromHMClaimPaymentPostingLatestDenialCode()
+    {
+        HMClaimPaymentPostingLatestDenialCode hmClaimPaymentPostingLatestDenialCode;
+
+        try
+        {
+            delete_from hmClaimPaymentPostingLatestDenialCode
+                where hmClaimPaymentPostingLatestDenialCode.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimPaymentPostingLatestDenialCode.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", "HMClaimPaymentPostingLatestDenialCode"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", "HMClaimPaymentPostingLatestDenialCode"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaimFromHMClaimPaymentPostingLatestDenialCode</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "_claimID"></param>
+    public void deleteClaimFromHMClaimPaymentPostingLatestDenialCode(HMClaimNumber _claimID)
+    {
+        HMClaimPaymentPostingLatestDenialCode hmClaimPaymentPostingLatestDenialCode;
+        
+        try
+        {
+            ttsbegin;
+
+            delete_from hmClaimPaymentPostingLatestDenialCode
+                where hmClaimPaymentPostingLatestDenialCode.ClaimID == _claimID
+                    && hmClaimPaymentPostingLatestDenialCode.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimPaymentPostingLatestDenialCode.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                warning(strFmt('@MAZ:FailedToDeleteDataFromTmpTableAgainstClaim', "HMClaimPaymentPostingLatestDenialCode", _claimID));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                warning(strFmt('@MAZ:FailedToDeleteDataFromTmpTableAgainstClaim', "HMClaimPaymentPostingLatestDenialCode", _claimID));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

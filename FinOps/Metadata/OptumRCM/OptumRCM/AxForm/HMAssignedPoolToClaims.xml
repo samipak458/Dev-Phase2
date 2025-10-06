@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMAssignedPoolToClaims</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMAssignedPoolToClaims extends FormRun
+{   
+    str oldPoolValue,oldAgentName;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>assignPool</Name>
+				<Source><![CDATA[
+    public void assignPool(HMClaimTable _hmClaimTable)
+    {
+        CustCollectionsPool         custCollectionsPool;
+        CustCollectionsAgentPool    custCollectionsAgentPool;
+
+        oldPoolValue = _hmClaimTable.PoolName;
+        oldAgentName = _hmClaimTable.AgentName;
+
+        select firstonly RecId,Name from custCollectionsPool
+            where custCollectionsPool.Name == Pool.text();
+
+        _hmClaimTable.selectForUpdate(true);
+
+        _hmClaimTable.ClaimPool             = custCollectionsPool.RecId;
+        _hmClaimTable.PoolName              = custCollectionsPool.Name;
+        _hmClaimTable.PoolChangeReasonCode  = ReasonCode.text();
+        _hmClaimTable.PoolChangeNotes       = Comments.text();
+
+        if(HMBillParameters::find().IsAgentRententionOnPoolChange == NoYes::Yes)
+        {
+            select firstonly RecId from custCollectionsAgentPool
+                where custCollectionsAgentPool.CustCollectionsAgent == _hmClaimTable.ClaimAgent
+                    && custCollectionsAgentPool.CustomerPoolId == custCollectionsPool.Name;
+        }
+
+        if(custCollectionsAgentPool.RecId == 0)
+        {
+            _hmClaimTable.AgentName  = "";
+            _hmClaimTable.ClaimAgent = 0;
+        }
+
+        HMClaimChangeLogTable::createClaimChangeLog(_hmClaimTable,oldAgentName);
+        
+        _hmClaimTable.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createClaimChangeLog</Name>
+				<Source><![CDATA[
+    public void createClaimChangeLog(HMClaimTable _hmClaimTable)
+    {
+        HMClaimChangeLogTable hmClaimChangeLogTable;
+
+        hmClaimChangeLogTable.ClaimID          = _hmClaimTable.ClaimID;
+        hmClaimChangeLogTable.OldValue         = oldPoolValue;
+        hmClaimChangeLogTable.NewValue         = Pool.text();
+        hmClaimChangeLogTable.ReasonCode       = ReasonCode.text();
+        hmClaimChangeLogTable.HMAssignmentType = HMAssignmentType::Pool;
+        hmClaimChangeLogTable.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void closeOk()
+    {
+        ReasonTable             reasonTable;
+        CustCollectionsPool     custCollPool;
+        FormRun                 formRun = element.args().caller();
+        formDataSource          fds;
+        MultiSelectionHelper    helper;
+        HMClaimTable		    claimTable;
+        str                     errorMsg;
+            
+        if (Pool.text() == "" || ReasonCode.text() == "")
+        {
+            errorMsg = Pool.text() == "" ? "@Optum:PoolMustBeSelectedErrorMsg" : "@Optum:ReasonCodeMustBeSelectedErrorMsg";
+
+            throw Error(strFmt("%1",errorMsg));
+        }
+        else if (Pool.text() != "" )
+        {
+            select firstonly RecId from custCollPool
+                where custCollPool.Name == Pool.text();
+
+            if (custCollPool.RecId == 0)
+            {
+                throw Error("@Optum:PoolDoesnotExistErrorMsg");
+            } 
+        }
+        else if( ReasonCode.text() != "")
+        {
+            select firstonly RecId from reasonTable
+                where reasonTable.Description == ReasonCode.text();
+
+            if (reasonTable.RecId == 0)
+            {
+                throw Error("@Optum:ReasonCodeNotExistErrorMsg");
+            }
+        }
+
+
+        helper = MultiSelectionHelper::construct();
+        helper.parmDatasource(element.args().record().dataSource());
+
+        claimTable = helper.getFirst();
+
+        while (claimTable.RecId != 0)
+        {
+            if (SkipClaims.value() == false || claimTable.ClaimAgent == 0)
+            {
+                ttsbegin;
+                element.assignPool(claimTable);
+                element.createClaimChangeLog(claimTable);
+                ttscommit;
+            }
+            
+            claimTable = helper.getNext();
+        }
+
+        fds = formRun.dataSource(1);
+
+        if(formRun.name() == formStr(HMAllClaims))
+        {
+            fds.reread();
+        }
+        else
+        {
+            int position = fds.getPosition();
+
+            fds.refresh();
+            fds.research();
+            fds.setPosition(position);
+        }
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>Pool</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            SysTableLookup			sysTableLookUp;
+            QueryBuildDataSource    qbds;
+            Query					query = new Query();
+
+            qbds = query.addDataSource(tableNum(CustCollectionsPool));
+           
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(CustCollectionsPool), this);
+            sysTableLookUp.addLookupfield(fieldNum(CustCollectionsPool, Name), true);
+
+            sysTableLookUp.parmQuery(query);
+            sysTableLookUp.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ReasonCode</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            SysTableLookup			sysTableLookUp;
+            QueryBuildDataSource    qbds;
+            Query					query = new Query();
+
+            qbds = query.addDataSource(tableNum(ReasonTable));
+            qbds.addRange(fieldNum(ReasonTable,Claim)).value(SysQuery::value(NoYes::Yes));
+           
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(ReasonTable), this);
+            sysTableLookUp.addLookupfield(fieldNum(ReasonTable,Reason), true);
+            sysTableLookUp.addLookupfield(fieldNum(ReasonTable, Description), true);
+
+            sysTableLookUp.parmQuery(query);
+            sysTableLookUp.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@Optum:HMAssignPool</Caption>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Pool</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS10507</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ReasonCode</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>ReasonCode</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Comments</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>Notes</ExtendedDataType>
+						<Label>@MAZ873</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>SkipClaims</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1561806288</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>CheckBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ:HMButtonLabel</Label>
+						<Value>1</Value>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandOK</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<AutoRefreshData>Yes</AutoRefreshData>
+						<ButtonDisplay>TextOnly</ButtonDisplay>
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@MAZ6110</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

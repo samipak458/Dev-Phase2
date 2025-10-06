@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMVendOpenInvoiceListPageHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMVendOpenInvoiceListPageHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>VendTrans_OnActivated</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormDataSourceEventHandler(formDataSourceStr(VendOpenTrans, VendTrans), FormDataSourceEventType::Activated)]
+    public static void VendTrans_OnActivated(FormDataSource sender, FormDataSourceEventArgs e)
+    {
+        HMClaimTable                hmClaimTable;
+        HMClaimVersion              hmClaimVersion;
+        HMPatientChargeEntryTable   hmPatientChargeEntryTable;
+        HMCaseTrans                 hmCaseTrans;
+        HMCase                      hmCase;
+        PaymTerm                    paymTerm;
+        VendTable                   vendTable;
+        HMClaimPaymentStatus        hmClaimPaymentStatus;
+
+        FormRun formRun = sender.formRun();
+        FormDataSource fds = formRun.dataSource("VendTrans");
+        VendTrans vendTrans = fds.cursor();
+        var headerGroup = formRun.design().controlName(formControlStr(VendOpenTrans, HeaderGroup)) as FormGroupControl;
+        var tabControl = formRun.design().controlName(formControlStr(VendOpenTrans, TabControl)) as FormTabControl;
+        var footer = formRun.design().controlName(formControlStr(VendOpenTrans, Footer)) as FormGroupControl;
+
+        PurchTable purchTable = PurchTable::find(VendInvoiceJour::findFromVendTrans(vendTrans.Invoice, vendTrans.TransDate, vendTrans.AccountNum).PurchId);
+
+        //select * from hmPatientChargeEntryTable
+        //    where hmPatientChargeEntryTable.HMCase == purchTable.HMCase;
+
+        //select * from hmClaimVersion
+        //    join hmClaimTable
+        //        where hmClaimVersion.HMClaimTable == hmClaimTable.RecId
+        //    && hmClaimTable.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId;
+
+        vendTable = VendTable::find(vendTrans.AccountNum);
+
+        while select * from hmCaseTrans
+            where hmCaseTrans.HMCase == purchTable.HMCase
+        {
+            if (hmCaseTrans.BillingStatus != HMBillStatus::Settled)
+            {
+                hmClaimPaymentStatus = HMClaimPaymentStatus::NotPaid;
+                break;
+            }
+            else
+            {
+                hmClaimPaymentStatus = HMClaimPaymentStatus::Paid;
+            }
+        }
+
+        select * from paymTerm
+                where paymTerm.PaymTermId == vendTable.PaymTermId
+                && paymTerm.HMPayOnPay == NoYes::Yes;
+
+      /*  if (paymTerm.RecId && hmClaimPaymentStatus != HMClaimPaymentStatus::Paid)
+        {
+            headerGroup.allowEdit(false);
+            headerGroup.enabled(false);
+            tabControl.allowEdit(false);
+            tabControl.enabled(false);
+            footer.allowEdit(false);
+            footer.enabled(false);
+            warning("Invoice cannot be settled because claim payment hasn't been received.");
+        }*/
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResourceService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMResourceService
+{
+    HMAppointmentContract                 appointmentContract;
+    HMPatient                             patient;
+    HMResourceSchedulingAppointment       appointment;
+    HMResourceSchedulingAppointment       appointmentByClinic;
+    HMResourceSchedulingPlanningObject    hMResourceSchedulingPlanningObjectByClinic;
+    HMOrganizationalUnit                  hmOrganizationalUnitByClinic;
+    HMResourceSchedulingAppointmentInvent appointmentService;
+    HMParameters                          params;
+
+    List listAppointments;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillObjectModel</Name>
+				<Source><![CDATA[
+    List fillObjectModel(RecId _parentRecId,HMOrganizationalUnit hmOrganizationalUnitTmp)
+    {
+        List subClinicList = new List(Types::Class);
+        HMOrganizationalUnit          hmOrganizationalUnitChildTmp;
+        HMClinicDataContract        hMClinicDataContract;
+        HMClinicDataContract        hMSubClinicDataContract;
+        List clinicList = new List(Types::Class);
+    
+        while select HMOrganizationalUnit, OMOperatingUnit, Description from hmOrganizationalUnitTmp
+            where hmOrganizationalUnitTmp.HMOrganizationalUnit == _parentRecId
+        {
+            select count(recId) from hmOrganizationalUnitChildTmp
+                where hmOrganizationalUnitChildTmp.HMOrganizationalUnit == hmOrganizationalUnitTmp.OMOperatingUnit;
+    
+            if(hmOrganizationalUnitChildTmp.RecId>0)
+            {
+                hMClinicDataContract = new HMClinicDataContract();
+                hMClinicDataContract.parmClinicName(hmOrganizationalUnitTmp.Description);
+                hMClinicDataContract.parmClinicRecId(hmOrganizationalUnitTmp.OMOperatingUnit);
+    
+                subClinicList = this.fillObjectModel(hmOrganizationalUnitTmp.OMOperatingUnit, hmOrganizationalUnitTmp);
+    
+                hMClinicDataContract.parmSubClinicList(subClinicList);
+    
+                clinicList.addEnd(hMClinicDataContract);
+            }
+            else
+            {
+                hMSubClinicDataContract = new HMClinicDataContract();
+                hMSubClinicDataContract.parmClinicName(hmOrganizationalUnitTmp.Description);
+                hMSubClinicDataContract.parmClinicRecId(hmOrganizationalUnitTmp.OMOperatingUnit);
+    
+                subClinicList.addEnd(hMSubClinicDataContract);
+            }
+        }
+    
+        return _parentRecId ? subClinicList : clinicList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClinicDetails</Name>
+				<Source><![CDATA[
+    public HMClinicDataContract getClinicDetails(RecId _recId)
+    {
+        HMOrganizationalUnit        hmOrganizationalUnit;
+        HMClinicDataContract        hMClinicDataContract;
+    
+        select * from hmOrganizationalUnit where hmOrganizationalUnit.RecId == _recId;
+    
+        hMClinicDataContract = new HMClinicDataContract();
+    
+        hMClinicDataContract.parmClinicCode(hmOrganizationalUnit.Code);
+        hMClinicDataContract.parmClinicName(hmOrganizationalUnit.Description);
+        hMClinicDataContract.parmClinicRecId(hmOrganizationalUnit.RecId);
+        hMClinicDataContract.parmSpecialtyRecId(hmOrganizationalUnit.HMSpecialtyCode);
+    
+        return hMClinicDataContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClinicsList</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMClinicDataContract))]
+    public List getClinicsList(HMFileLocationType _locationType)
+    {
+        HMOrganizationalUnit        hmOrganizationalUnit;
+        HMClinicDataContract        hMClinicDataContract;
+    
+        List clinicList = new List(Types::Class);
+        Query query = new Query();
+        QueryBuildDataSource qbds;
+        QueryRun qryRun;
+    
+        qbds = query.addDataSource(tableNum(HMOrganizationalUnit));
+    
+        switch(_locationType)
+        {
+            case HMFileLocationType::None:
+                qbds.addRange(fieldNum(HMOrganizationalUnit, FileLocationType)).value(SysQuery::value(HMFileLocationType::Clinic));
+                break;
+            default:
+                qbds.addRange(fieldNum(HMOrganizationalUnit, FileLocationType)).value(SysQuery::value(_locationType));
+                break;
+        }
+    
+        qryRun = new QueryRun(query);
+    
+        while(qryRun.next())
+        {
+            hmOrganizationalUnit = qryRun.get(tableNum(HMOrganizationalUnit));
+    
+            hMClinicDataContract = new HMClinicDataContract();
+    
+            hMClinicDataContract.parmClinicName(hmOrganizationalUnit.Description);
+            hMClinicDataContract.parmClinicRecId(hmOrganizationalUnit.RecId);
+    
+            clinicList.addEnd(hMClinicDataContract);
+        }
+    
+        return clinicList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getResourceClinicsList</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMClinicDataContract))]
+    public List getResourceClinicsList(RecId _hmResourceMasterRecId)
+    {
+        HMResourceOrganizationalUnit        hmResourceOrganizationalUnit;
+        HMOrganizationalUnit        hmOrganizationalUnit, hmOrganizationalUnitParent;
+        HMClinicDataContract        hMClinicDataContract;
+        List clinicList = new List(Types::Class);
+        Set recIdSet = new Set(Types::Int64);
+        RecId       parentRecId;
+    
+    
+        while select RecId from hmResourceOrganizationalUnit
+            where hmResourceOrganizationalUnit.HMResourceMaster == _hmResourceMasterRecId
+            join HMOrganizationalUnit, RecId, Description, Code from hmOrganizationalUnit
+                where hmOrganizationalUnit.RecId == hmResourceOrganizationalUnit.HMOrganizationalUnit
+        {
+            hMClinicDataContract = new HMClinicDataContract();
+            hMClinicDataContract.parmClinicName(hmOrganizationalUnit.Description);
+            hMClinicDataContract.parmClinicRecId(hmOrganizationalUnit.RecId);
+            hMClinicDataContract.parmClinicRecIdParent(hmOrganizationalUnit.HMOrganizationalUnit);
+    
+            clinicList.addEnd(hMClinicDataContract);
+    
+            select HMOrganizationalUnit,RecId,Description, Code from hmOrganizationalUnitParent
+                    where hmOrganizationalUnitParent.RecId == hmOrganizationalUnit.HMOrganizationalUnit;
+    
+            while(hmOrganizationalUnitParent && !recIdSet.in(hmOrganizationalUnitParent.RecId))
+            {
+                hMClinicDataContract = new HMClinicDataContract();
+                hMClinicDataContract.parmClinicName(hmOrganizationalUnitParent.Description);
+                hMClinicDataContract.parmClinicRecId(hmOrganizationalUnitParent.RecId);
+                hMClinicDataContract.parmClinicRecIdParent(hmOrganizationalUnitParent.HMOrganizationalUnit);
+    
+                clinicList.addEnd(hMClinicDataContract);
+    
+                recIdSet.add(hmOrganizationalUnitParent.RecId);
+    
+                parentRecId = hmOrganizationalUnitParent.HMOrganizationalUnit;
+    
+                select HMOrganizationalUnit,RecId,Description, Code from hmOrganizationalUnitParent
+                    where hmOrganizationalUnitParent.RecId == parentRecId;
+            }
+        }
+    
+        return clinicList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getResourceDetails</Name>
+				<Source><![CDATA[
+    public HMResourceDataContract getResourceDetails(RecId _recId)
+    {
+        HMOrganizationalUnit        hmOrganizationalUnit;
+        HMResourceDataContract        hmResourceDataContract;
+        HMResourceMaster                    hmResourceMaster;
+        DirPartyTable                       dirPartyResource;
+        DirPersonName                       dirPersonName;
+    
+        hmResourceDataContract = new HMResourceDataContract();
+    
+        select * from hmResourceMaster where hmResourceMaster.RecId == _recId;
+    
+        dirPartyResource = DirPartyTable::findRec(hmResourceMaster.partyRefRecId());
+    
+        select * from dirPersonName where dirPersonName.Person == dirPartyResource.RecId;
+    
+        hmResourceDataContract.parmResourceCode(hmResourceMaster.Code);
+        hmResourceDataContract.parmResourceName(dirPartyResource.Name);
+        hmResourceDataContract.parmResourceFirstName(dirPersonName.FirstName);
+        hmResourceDataContract.parmResourceMiddleName(dirPersonName.MiddleName);
+        hmResourceDataContract.parmResourceLastname(dirPersonName.LastName);
+        hmResourceDataContract.parmResourceRecId(hmResourceMaster.RecId);
+    
+        return hmResourceDataContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getResourceList</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMResourceDataContract))]
+    public List getResourceList(RecId _specialityRecId)
+    {
+        HMResourceMasterSpeciality          hmResourceMasterSpeciality;
+        HMResourceMaster                    hmResourceMaster;
+        Query query = new Query();
+        QueryBuildDataSource qbds;
+        QueryRun qryRun;
+        HMResourceDataContract contract;
+    
+        List resourceList = new List(Types::Class);
+    
+        qbds = query.addDataSource(tableNum(HMResourceMaster));
+    
+        if(_specialityRecId)
+        {
+            qbds = qbds.addDataSource(tableNum(HMResourceMasterSpeciality));
+            qbds.relations(true);
+    
+            qbds.addRange(fieldNum(HMResourceMasterSpeciality,HMSpecialtyCode)).value(SysQuery::value(_specialityRecId));
+        }
+        qryRun = new Queryrun(query);
+    
+        while(qryRun.next())
+        {
+            hmResourceMaster = qryRun.get(tableNum(HMResourceMaster));
+    
+            contract = new HMResourceDataContract();
+    
+            contract.parmResourceName(hmResourceMaster.refRecIdDescription());
+            contract.parmResourceRecId(hmResourceMaster.RecId);
+    
+            resourceList.addEnd(contract);
+        }
+    
+        return resourceList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getResourceSpecialitiesList</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMSpecialityDataContract))]
+    public List getResourceSpecialitiesList(RecId _hmResourceMasterRecId)
+    {
+        HMResourceMasterSpeciality          hmResourceMasterSpeciality;
+        HMSpecialtyCode                     hmSpecialtyCode;
+        HMSpecialityDataContract            specialityDataContract;
+        List list = new List(Types::Class);
+    
+    
+    
+        while select RecId from hmResourceMasterSpeciality
+            where hmResourceMasterSpeciality.HMResource == _hmResourceMasterRecId
+            join RecId, Description, SpecialtyCodeID from hmSpecialtyCode
+                where hmSpecialtyCode.RecId == hmResourceMasterSpeciality.HMSpecialtyCode
+        {
+            specialityDataContract = new HMSpecialityDataContract();
+            //specialityDataContract.parmSpecialityName(hmSpecialtyCode.Description);
+            //specialityDataContract.parmSpecialityRecId(hmSpecialtyCode.RecId);
+    
+            list.addEnd(specialityDataContract);
+        }
+    
+    
+    
+        return list;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

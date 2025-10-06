@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMRemoveAgentFromClaim</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+internal final class HMRemoveAgentFromClaim
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>removeAgentFromClaim</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Removes agent from claim.
+    /// </summary>
+    public void removeAgentFromClaim(HMClaimTable _hmClaimTable)
+    {
+        str oldValue;
+
+        oldValue = _hmClaimTable.AgentName;
+
+        _hmClaimTable.selectForUpdate(true);
+
+        try
+        {
+            ttsbegin;
+            _hmClaimTable.AgentName = '';
+            _hmClaimTable.ClaimAgent = 0;
+            _hmClaimTable.update();
+            ttscommit;
+
+            HMClaimChangeLogTable::createClaimChangeLog(_hmClaimTable,oldValue);
+        }
+        catch
+        {
+            throw Error("@Optum:HMUpdateFailForRemoveAgent");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>claimsBelongToSamePool</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks whether the claims belong to same pool or not.
+    /// </summary>
+    /// <param name = "multiSelectionHelper">Multi selected claims record.</param>
+    /// <returns>Returns true if the claims belong to same pool and vice versa.</returns>
+    public boolean claimsBelongToSamePool(MultiSelectionHelper multiSelectionHelper)
+    {
+        boolean         belongsToSamePool;
+        HMClaimTable    claimTable;
+        str             poolName;
+
+        claimTable = multiSelectionHelper.getFirst();
+
+        belongsToSamePool = false;
+
+        while(claimTable)
+        {
+            if(claimTable.AgentName != '')
+            {
+                if(poolName == '')
+                {
+                    poolName = claimTable.PoolName;
+
+                    belongsToSamePool = true;
+                }
+                else
+                {
+                    if(poolName != claimTable.PoolName)
+                    {
+                        throw warning("@Optum:HMAgentFromDifferentPools");
+                    }
+                }
+            }
+            claimTable = multiSelectionHelper.getNext();
+        }
+        return belongsToSamePool;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Class entry point. The system will call this method when a designated menu 
+    /// is selected or when execution starts and this class is set as the startup class.
+    /// </summary>
+    /// <param name = "_args">The specified arguments.</param>
+    public static void main(Args _args)
+    {
+        HMClaimTable                claimTable;
+        HMRemoveAgentFromClaim      removeAgentFromClaim;
+        MultiSelectionHelper        multiSelectionHelper;
+        FormDataSource              formDataSource;
+        FormRun                     formRun;
+        boolean                     belongsToSamePool;
+        int                         position;
+        
+        formRun = _args.caller();
+
+        formDataSource = formRun.dataSource(formDataSourceStr(HMAllClaimListPage,HMClaimTable_1));
+
+        removeAgentFromClaim = new HMRemoveAgentFromClaim();
+
+        multiSelectionHelper = MultiSelectionHelper::construct();
+        multiSelectionHelper.parmDatasource(formDataSource);
+
+        belongsToSamePool = removeAgentFromClaim.claimsBelongToSamePool(multiSelectionHelper);
+        
+        if(belongsToSamePool)
+        {
+            claimTable = multiSelectionHelper.getFirst();
+
+            if (Box::yesNo("@Optum:HmAgentRemovedFromClaimsAlert", DialogButton::No) == DialogButton::Yes)
+            {
+                while(claimTable)
+                {
+                    if(claimTable.AgentName != '')
+                    {
+                        removeAgentFromClaim.removeAgentFromClaim(claimTable);
+                    }
+            
+                    claimTable = multiSelectionHelper.getNext();
+                }
+
+                position = formDataSource.getPosition();
+
+                formDataSource.research();
+                formDataSource.refresh();
+                formDataSource.setPosition(position);
+
+                Info("@Optum:HMAgentRemovedFromClaims");
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

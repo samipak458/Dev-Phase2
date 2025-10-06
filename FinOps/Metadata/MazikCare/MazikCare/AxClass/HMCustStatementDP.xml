@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCustStatementDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    SRSReportParameterAttribute(classstr(HMCustStatementContract))
+]
+public class HMCustStatementDP extends SRSReportDataProviderBase
+{
+    HMCustStatementTmp      hmCustStatementTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMCustStatementTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute(tablestr(HMCustStatementTmp))
+    ]
+    public HMCustStatementTmp getHMCustStatementTmp()
+    {
+        select * from hmCustStatementTmp;
+        return  hmCustStatementTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        CustInvoiceJour         custInvoiceJour;
+        CustInvoiceTrans        custInvoiceTrans;
+        Query qry = new Query();
+        QueryBuildDataSource qbdsCustInvoiceJour,qbdsCust;
+        QueryRun qryRun;
+        HMCustStatementContract contract;
+        HMPatient hmpatient;
+        CustTable custTable;
+    
+        qbdsCustInvoiceJour = qry.addDataSource(tableNum(custInvoiceJour));
+    
+        contract = this.parmDataContract() as HMCustStatementContract;
+    
+        if(contract.parmCustAccount())
+        {
+            qbdsCustInvoiceJour.addRange(fieldNum(CustInvoiceJour, invoiceAccount)).value(contract.parmCustAccount());
+    
+            custTable = CustTable::find(contract.parmCustAccount());
+    
+            if(custTable.CustType == CustType::Client)
+            {
+                while select CustTable from hmpatient where hmpatient.Client == custTable.RecId
+                {
+                    qbdsCustInvoiceJour.addRange(fieldNum(CustInvoiceJour, invoiceAccount)).value(hmpatient.patientChartNum());
+                }
+            }
+        }
+    
+        if(contract.parmFromDate() && contract.parmToDate())
+        {
+            qbdsCustInvoiceJour.addRange(fieldNum(CustInvoiceJour, InvoiceDate)).value(SysQuery::range(contract.parmFromDate(), contract.parmToDate()));
+        }
+        else if(contract.parmFromDate() && !contract.parmToDate())
+        {
+            qbdsCustInvoiceJour.addRange(fieldNum(CustInvoiceJour, InvoiceDate)).value(SysQuery::range(contract.parmFromDate(), DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())));
+        }
+        else if(!contract.parmFromDate() && contract.parmToDate())
+        {
+            qbdsCustInvoiceJour.addRange(fieldNum(CustInvoiceJour, InvoiceDate)).value(SysQuery::range(dateNull(), contract.parmToDate()));
+        }
+    
+        qbdsCust = qbdsCustInvoiceJour.addDataSource(tableNum(CustTable));
+        qbdsCust.addLink(fieldNum(CustInvoiceJour, InvoiceAccount), fieldNum(custTable, AccountNum));
+        qbdsCust.addSortField(fieldNum(CustTable,CustType),SortOrder::Descending);
+    
+        qryRun = new QueryRun(qry);
+    
+        while(qryRun.next())
+        {
+            custInvoiceJour = qryRun.get(tableNum(CustInvoiceJour));
+    
+            while select * from custInvoiceTrans
+                where custInvoiceTrans.InvoiceId == custInvoiceJour.InvoiceId
+            {
+                hmCustStatementTmp.clear();
+    
+                hmCustStatementTmp.SalesId = custInvoiceJour.SalesId;
+                hmCustStatementTmp.InvoiceAmount = custInvoiceJour.InvoiceAmount;
+                hmCustStatementTmp.InvoiceAccount = custInvoiceJour.InvoiceAccount;
+                hmCustStatementTmp.InvoiceId = custInvoiceJour.InvoiceId;
+                hmCustStatementTmp.InvoiceDate = custInvoiceJour.InvoiceDate;
+                hmCustStatementTmp.DueDate = custInvoiceJour.DueDate;
+                hmCustStatementTmp.CustName = custInvoiceJour.invoiceName();
+    
+                hmCustStatementTmp.Qty = custInvoiceTrans.Qty;
+                hmCustStatementTmp.LineAmount = custInvoiceTrans.LineAmount;
+                hmCustStatementTmp.ItemId = custInvoiceTrans.ItemId;
+                hmCustStatementTmp.SalesPrice = custInvoiceTrans.SalesPrice;
+                hmCustStatementTmp.Itemname = custInvoiceTrans.itemName();
+    
+                hmCustStatementTmp.insert();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

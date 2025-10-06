@@ -1,0 +1,1853 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMEmailGeneration</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMEmailGeneration
+{
+    #define.TIME('AppointmentTime')
+    #define.ARRIVALTIME('AppointmentArrivalTime')
+    #define.DATE('AppointmentDate')
+    #define.PATIENT('PatientName')
+    #define.PATIENTArabic('PatientArabicName')
+    #define.DOCTOR('DoctorName')
+    #define.CLINICLOCATION('ClinicLocation')
+    #define.CLINICPHONENUMBER('ClinicPhoneNumber')
+    #define.CLINICADDRESS('ClinicAddress')
+    #define.SUBCLINICLOCATION('SubClinicLocation')
+    #define.SUBCLINICPHONENUMBER('SubClinicPhoneNumber')
+    #define.SUBCLINICADDRESS('SubClinicAddress')
+    #define.CLINICCANCELLATIONPOLICY('ClinicCancellationPolicy')
+    #define.INSTRUCTIONS('%Instructions%')
+    #define.PARKINGINSTRUCTIONS('ParkingInstructions')
+    #define.CancellationDelay('CancellationDelay')
+    #define.CancellationFees('CancellationFees')
+    #define.ClientName('ClientName')
+    #define.APPOINTMENTDAY('AppointmentDay')
+    #define.APPOINTMENTMONTH('AppointmentMonth')
+    #define.APPOINTMENTYEAR('AppointmentYear')
+    #define.CLINICMAP('%CLINICMAP%')
+    #define.SUBCLINICMAP('%SUBCLINICMAP%')
+    #define.RELATEDAPPOINTMENTHEADER('%RELATEDAPPOINTMENTHEADER%')
+    #define.RELATEDAPPOINTMENTDETAIL('%RELATEDAPPOINTMENTDETAIL%')
+    #define.RELATEDAPPOINTMENTHEADERDETAIL('%RELATEDAPPOINTMENTHEADERDETAIL%')
+    #define.VendorBusinessAddress('VendorBusinessAddress')
+
+
+
+    #define.ClientNameFR('ClientNameFR')
+    #define.CancellationDelayFR('CancellationDelayFR')
+    #define.CancellationFeesFR('CancellationFeesFR')
+    #define.TIMEFR('AppointmentTimeFR')
+    #define.ARRIVALTIMEFR('AppointmentArrivalTimeFR')
+    #define.DATEFR('AppointmentDateFR')
+    #define.PATIENTFR('PatientNameFR')
+    #define.DOCTORFR('DoctorNameFR')
+    #define.CLINICLOCATIONFR('ClinicLocationFR')
+    #define.CLINICPHONENUMBERFR('ClinicPhoneNumberFR')
+    #define.CLINICADDRESSFR('ClinicAddressFR')
+    #define.SUBCLINICLOCATIONFR('SubClinicLocationFR')
+    #define.SUBCLINICPHONENUMBERFR('SubClinicPhoneNumberFR')
+    #define.SUBCLINICADDRESSFR('SubClinicAddressFR')
+    #define.CLINICCANCELLATIONPOLICYFR('ClinicCancellationPolicyFR')
+    #define.INSTRUCTIONSFR('%InstructionsFR%')
+    #define.PARKINGINSTRUCTIONSFR('ParkingInstructionsFR')
+    #define.APPOINTMENTDAYFR('AppointmentDayFR')
+    #define.APPOINTMENTMONTHFR('AppointmentMonthFR')
+    #define.APPOINTMENTYEARFR('AppointmentYearFR')
+    #define.CLINICMAPFR('%CLINICMAPFR%')
+    #define.SUBCLINICMAPFR('%SUBCLINICMAPFR%')
+    #define.RELATEDAPPOINTMENTHEADERFR('%RELATEDAPPOINTMENTHEADERFR%')
+    #define.RELATEDAPPOINTMENTDETAILFR('%RELATEDAPPOINTMENTDETAILFR%')
+    #define.RELATEDAPPOINTMENTHEADERDETAILFR('%RELATEDAPPOINTMENTHEADERDETAILFR%')
+    #define.VendorBusinessAddressFR('VendorBusinessAddressFR')
+
+    HMEmailTemplatesEventMapping    emailMapping;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createExamCodeNotesHTML</Name>
+				<Source><![CDATA[
+    public str createExamCodeNotesHTML(RecId  _appointmentId, LanguageId _languageId)
+    {
+        HMResourceSchedulingAppointment         hmResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        InventTable                             InventTable,InventTableExam;
+        HMInventTable                           HMInventTable;
+        BOM                                     bomTable;
+        BOMVersion                              bomVersion;
+        Str1260                                 newItemId;
+        HMVendInventTable                       hmVendInventTable;
+        HMResourceSchedulingAppointmentInvent   HMResourceSchedulingAppointmentInvent;
+        VendAccount                             vendorAccount;
+        boolean                                 useInventDesc;
+        str                                     html;
+        Query                                   query;
+        QueryRun                                queryRun;
+    
+        QueryBuildDataSource                    qbds;
+    
+        select RecId,PrimaryAppointment from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.RecId == _appointmentId
+            join RecId from hmResourceSchedulingPlanningObject
+                where hmResourceSchedulingPlanningObject.RecId == hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject
+            join Type, RefRecId, VendorType from hmResourceMaster
+                where hmResourceMaster.RecId == hmResourceSchedulingPlanningObject.HMResourceMaster;
+    
+        if(hmResourceMaster.Type == HMResourceType::Vendor)
+        {
+            vendorAccount = hmResourceMaster.refRecId();
+        }
+        query = new query();
+        if(hmResourceSchedulingAppointment.PrimaryAppointment == YesNo::Yes)
+        {
+            qbds = query.addDataSource(tableNum(HMResourceSchedulingAppointmentInvent));
+            qbds.addRange(fieldNum(HMResourceSchedulingAppointmentInvent,HMResourceSchedulingAppointment)).value(SysQuery::value(_appointmentId));
+            qbds.addRange(fieldNum(HMResourceSchedulingAppointmentInvent,RelatedAppointmentRecId)).value(SysQuery::value(0));
+        }
+        else
+        {
+            qbds = query.addDataSource(tableNum(HMResourceSchedulingAppointmentInvent));
+            qbds.addRange(fieldNum(HMResourceSchedulingAppointmentInvent,RelatedAppointmentRecId)).value(SysQuery::value(_appointmentId));
+        }
+        queryRun = new queryRun(query);
+        while (queryRun.next())
+        {
+            HMResourceSchedulingAppointmentInvent = queryRun.get(tableNum(HMResourceSchedulingAppointmentInvent));
+            newItemId = '';
+            select PmfProductType,ItemId from InventTable
+            where InventTable.itemid == HMResourceSchedulingAppointmentInvent.InventTable;
+            if(inventTable.PmfProductType == PmfProductType::BOM)
+            {
+                select firstonly bomVersion
+                where bomVersion.ItemId == inventTable.ItemId
+                && bomVersion.Active
+                && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+                && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                if (bomVersion.RecId)
+                {
+                    While select bomTable
+                        where bomTable.BOMId == bomVersion.BOMId
+                        join inventTable
+                        where bomTable.ItemId == inventTable.ItemId
+                    {
+                        if(vendorAccount)
+                        {
+                            select * from hmVendInventTable
+                                where hmVendInventTable.VendTable == vendorAccount
+                                && hmVendInventTable.InventTable == bomTable.ItemId
+                                && (hmVendInventTable.HMLanguageId_1 == _languageId || hmVendInventTable.HMLanguageId_2 == _languageId)
+                                join ItemId, Product from InventTableExam where InventTableExam.itemid == hmVendInventTable.InventTable;
+    
+                            if(hmVendInventTable.RecId)
+                            {
+                                useInventDesc = false;
+    
+                                if(hmVendInventTable.HMLanguageId_1 == _languageId && hmVendInventTable.HMInstruction_1 != '')
+                                {
+                                    html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                                    html += hmVendInventTable.HMInstruction_1 + '<br><br>';
+                                }
+                                else if(hmVendInventTable.HMLanguageId_2 == _languageId && hmVendInventTable.HMInstruction_2 != '')
+                                {
+                                    html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                                    html += hmVendInventTable.HMInstruction_2 + '<br><br>';
+                                }
+                            }
+                            else
+                            {
+                                useInventDesc = true;
+                            }
+                        }
+                        else
+                        {
+                            useInventDesc = true;
+                        }
+    
+                        if(useInventDesc)
+                        {
+                            select LanguageId_1,LanguageId_2,Instruction,Instruction_2 from hmInventTable
+                            join ItemId, Product from InventTableExam where InventTableExam.itemid == hmInventTable.InventTable
+                            && HMInventTable.InventTable == bomTable.ItemId;
+                            if(hmInventTable.LanguageId_1 == _languageId && hmInventTable.Instruction != '')
+                            {
+                                html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                                html += hmInventTable.Instruction + '<br><br>';
+                            }
+                            else if(hmInventTable.LanguageId_2 == _languageId && hmInventTable.Instruction_2 != '')
+                            {
+                                html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                                html += hmInventTable.Instruction_2 + '<br><br>';
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if(vendorAccount)
+                {
+                    select * from hmVendInventTable
+                        where hmVendInventTable.VendTable == vendorAccount
+                        && hmVendInventTable.InventTable == InventTable.ItemId
+                        && (hmVendInventTable.HMLanguageId_1 == _languageId || hmVendInventTable.HMLanguageId_2 == _languageId)
+                        join ItemId, Product from InventTableExam where InventTableExam.itemid == hmVendInventTable.InventTable;
+    
+                    if(hmVendInventTable.RecId)
+                    {
+                        useInventDesc = false;
+    
+                        if(hmVendInventTable.HMLanguageId_1 == _languageId && hmVendInventTable.HMInstruction_1 != '')
+                        {
+                            html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                            html += hmVendInventTable.HMInstruction_1 + '<br><br>';
+                        }
+                        else if(hmVendInventTable.HMLanguageId_2 == _languageId && hmVendInventTable.HMInstruction_2 != '')
+                        {
+                            html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                            html += hmVendInventTable.HMInstruction_2 + '<br><br>';
+                        }
+                    }
+                    else
+                    {
+                        useInventDesc = true;
+                    }
+                }
+                else
+                {
+                    useInventDesc = true;
+                }
+    
+                if(useInventDesc)
+                {
+                    select LanguageId_1,LanguageId_2,Instruction,Instruction_2 from hmInventTable
+                        join ItemId, Product from InventTableExam where InventTableExam.itemid == hmInventTable.InventTable
+                        && HMInventTable.InventTable == InventTable.ItemId;
+                    if(hmInventTable.LanguageId_1 == _languageId && hmInventTable.Instruction != '')
+                    {
+                        html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                        html += hmInventTable.Instruction + '<br><br>';
+                    }
+                    else if(hmInventTable.LanguageId_2 == _languageId && hmInventTable.Instruction_2 != '')
+                    {
+                        html += '<b>' + InventTableExam.ItemId + ' - ' + InventTableExam.itemDescriptionOrName(_languageId) + '</b><br>';
+                        html += hmInventTable.Instruction_2 + '<br><br>';
+                    }
+                }
+            }
+        }
+        return html;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createRelatedAppointmentDetails</Name>
+				<Source><![CDATA[
+    private str createRelatedAppointmentDetails(RecId _appointmentRecId, LanguageId _langId, List _relatedApptRecIdList)
+    {
+        HMResourceSchedulingAppointment HMResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+        str                             html;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        date                            apptDate = HMResourceSchedulingAppointment.AppointmentDate;
+        RecId                           visitRecId = HMResourceSchedulingAppointment.HMPatientVisit;
+        ListEnumerator          listEnumr;
+    
+        if(_relatedApptRecIdList != null)
+        {
+            listEnumr = _relatedApptRecIdList.getEnumerator();
+    
+            while(listEnumr.moveNext())
+            {
+                if(_appointmentRecId == listEnumr.current())
+                {
+                    continue;
+                }
+    
+                html += this.createExamCodeNotesHTML(listEnumr.current(),_langId);
+                html += strFmt('<br>');
+            }
+        }
+        else
+        {
+            while select RecId from HMResourceSchedulingAppointment
+                join RecId from hmResourceSchedulingPlanningObject
+                join RecId from hmResourceMaster
+                where HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                && hmResourceSchedulingPlanningObject.HMResourceMaster == hmResourceMaster.RecId
+                && HMResourceSchedulingAppointment.HMPatientVisit == visitRecId
+                && HMResourceSchedulingAppointment.AppointmentDate == apptDate
+                && HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                && HMResourceSchedulingAppointment.PrimaryAppointment == YesNo::No
+                && hmResourceMaster.VendorType == HMVendorType::Internal
+            {
+                html += this.createExamCodeNotesHTML(HMResourceSchedulingAppointment.RecId,_langId);
+                html += strFmt('<br>');
+            }
+        }
+    
+        return html;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createRelatedAppointmentHeader</Name>
+				<Source><![CDATA[
+    private str createRelatedAppointmentHeader(RecId _appointmentRecId, LanguageId _langId, List _relatedApptRecIdList)
+    {
+        HMResourceSchedulingAppointment HMResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+        str                             html;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        date                            apptDate = HMResourceSchedulingAppointment.AppointmentDate;
+        RecId                           visitRecId = HMResourceSchedulingAppointment.HMPatientVisit;
+        ListEnumerator          listEnumr;
+    
+        if(_relatedApptRecIdList != null)
+        {
+            listEnumr = _relatedApptRecIdList.getEnumerator();
+    
+            while(listEnumr.moveNext())
+            {
+                if(_appointmentRecId == listEnumr.current())
+                {
+                    continue;
+                }
+    
+                select * from HMResourceSchedulingAppointment
+                    where HMResourceSchedulingAppointment.RecId == listEnumr.current();
+    
+                if(strContains(_langId,'fr'))
+                {
+                    html += strFmt('<b>%1 %2, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), this.getMthInFrench(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+                else
+                {
+                    html += strFmt('<b>%2 %1, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), mthName(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+    
+                html += strFmt('%1',HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                html += strFmt('<br><br>%1</b><br>',HMResourceSchedulingAppointment.getAppointmentResource());
+            }
+        }
+        else
+        {
+            while select * from HMResourceSchedulingAppointment
+                join RecId from hmResourceSchedulingPlanningObject
+                join RecId from hmResourceMaster
+                where HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                && hmResourceSchedulingPlanningObject.HMResourceMaster == hmResourceMaster.RecId
+                && HMResourceSchedulingAppointment.HMPatientVisit == visitRecId
+                && HMResourceSchedulingAppointment.AppointmentDate == apptDate
+                && HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                && HMResourceSchedulingAppointment.PrimaryAppointment == YesNo::No
+                && hmResourceMaster.VendorType == HMVendorType::Internal
+            {
+                if(strContains(_langId,'fr'))
+                {
+                    html += strFmt('<b>%1 %2, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), this.getMthInFrench(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+                else
+                {
+                    html += strFmt('<b>%2 %1, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), mthName(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+    
+                html += strFmt('%1',HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                html += strFmt('<br><br>%1</b><br>',HMResourceSchedulingAppointment.getAppointmentResource());
+            }
+        }
+    
+        return html;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createRelatedAppointmentHeaderDetails</Name>
+				<Source><![CDATA[
+    private str createRelatedAppointmentHeaderDetails(RecId _appointmentRecId, LanguageId _langId, List _relatedApptRecIdList)
+    {
+        HMResourceSchedulingAppointment HMResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+        str                             html;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        date                            apptDate = HMResourceSchedulingAppointment.AppointmentDate;
+        RecId                           visitRecId = HMResourceSchedulingAppointment.HMPatientVisit;
+        ListEnumerator          listEnumr;
+    
+        if(_relatedApptRecIdList != null)
+        {
+            listEnumr = _relatedApptRecIdList.getEnumerator();
+    
+            while(listEnumr.moveNext())
+            {
+                if(_appointmentRecId == listEnumr.current())
+                {
+                    continue;
+                }
+    
+                select * from HMResourceSchedulingAppointment
+                    where HMResourceSchedulingAppointment.RecId == listEnumr.current();
+    
+                if(strContains(_langId,'fr'))
+                {
+                    html += strFmt('<b>%1 %2, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), this.getMthInFrench(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+                else
+                {
+                    html += strFmt('<b>%2 %1, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), mthName(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+    
+                html += strFmt('%1',HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                html += strFmt('<br><br>%1</b><br>',HMResourceSchedulingAppointment.getAppointmentResource());
+                html += this.createExamCodeNotesHTML(HMResourceSchedulingAppointment.RecId,_langId);
+                html += strFmt('<br>');
+            }
+        }
+        else
+        {
+            while select * from HMResourceSchedulingAppointment
+                join RecId from hmResourceSchedulingPlanningObject
+                join RecId from hmResourceMaster
+                where HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                && hmResourceSchedulingPlanningObject.HMResourceMaster == hmResourceMaster.RecId
+                && HMResourceSchedulingAppointment.HMPatientVisit == visitRecId
+                && HMResourceSchedulingAppointment.AppointmentDate == apptDate
+                && HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                && HMResourceSchedulingAppointment.PrimaryAppointment == YesNo::No
+                && hmResourceMaster.VendorType == HMVendorType::Internal
+            {
+                if(strContains(_langId,'fr'))
+                {
+                    html += strFmt('<b>%1 %2, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), this.getMthInFrench(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+                else
+                {
+                    html += strFmt('<b>%2 %1, %3 -', int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)), mthName(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)), int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                }
+    
+                html += strFmt('%1',HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                html += strFmt('<br><br>%1</b><br>',HMResourceSchedulingAppointment.getAppointmentResource());
+                html += this.createExamCodeNotesHTML(HMResourceSchedulingAppointment.RecId,_langId);
+                html += strFmt('<br>');
+            }
+        }
+    
+        return html;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDecodedSMS</Name>
+				<Source><![CDATA[
+    public str getDecodedSMS(str  _phoneNumber, LanguageId _language, RecId _appointmnetId, List _relatedApptRecIdList = null)
+    {
+        #File
+        str                                     message,procedureHTML, mapHTML, relatedApptHTMLHeader, relatedApptHTMLDeatils, relatedApptHTMLHeaderDetails;
+        HMResourceSchedulingAppointment         HMResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject      HMResourceSchedulingPlanningObject;
+        OMOperatingUnit                         omOperatingUnit;
+        HMOrganizationalUnit                    hmOrganizationalUNit, hmOrganizationalUNitSubClinic;
+        HMResourceMaster                        HMResourceMaster;
+        SysOutgoingEmailTable                   outgoingEmailTable;
+        SysEmailItemId                          nextEmailItemId;
+        boolean                                 ret = true;
+        HMmemo                                  emailBody;
+        SysEmailSubject                         subjectText;
+        HMSmsTable                              emailTable      = HMSmsTable::find(emailMapping.SmsTemplate);
+        HMSmsMessageTable                       messageTable    = HMSmsMessageTable::find(emailTable.HMSmsId,emailTable.DefaultLanguage);
+        HMResourceSchedulingApptEmailDetails    HMResourceSchedulingApptEmailDetails;
+        HMPatient                               hmPatient;
+        int                                     maxAttachmentSize,i,day;
+        Map                                     templateTokens = new Map(Types::String, Types::String);
+        str                                     arrivaltime;
+        BinData                                 binData;
+        container                               data,embeddedBinaryData;
+        SysOutgoingEmailData                    outgoingEmailData;
+        Filename                                filePath,filename,fileExtension,htmlDecodedFileName;
+        List                                    list;
+        ListEnumerator                          enumerator;
+        FileIOPermission                        fileIOPermission;
+        ListEnumerator                          listEnumerator;
+        VendTable                               vendTable;
+        FilePath                                qrFilePath;
+        SysEmailParameters                      emailParams = SysEmailParameters::find();
+        DirPerson dirPerson;
+    
+        Set permissionSet;
+        permissionSet = new Set(Types::Class);
+    
+    
+        try
+        {
+            i=1;
+            maxAttachmentSize = emailParams.MaxEmailAttachmentSize;
+    
+            select * from HMResourceSchedulingAppointment
+                    where HMResourceSchedulingAppointment.RecId == _appointmnetId
+                    join RecId,HMOrganizationalUnit from HMResourceSchedulingPlanningObject
+                    join Description,RecId, VendorType, refrecId from HMResourceMaster
+                    where HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == HMResourceSchedulingPlanningObject.RecId
+                    && HMResourceSchedulingPlanningObject.HMResourceMaster == HMResourceMaster.RecId;
+    
+            hmPatient = HMPatient::find(HMResourceSchedulingAppointment.HMPatient);
+    
+            if (_phoneNumber != "")
+            {
+                messageTable = HMSmsMessageTable::find(emailTable.HMSmsId, _language);
+    
+                if (!messageTable)
+                {
+                    messageTable = HMSmsMessageTable::find(emailTable.HMSmsId,emailTable.DefaultLanguage);
+                }
+                if(messageTable)
+                {
+                    subjectText     = messageTable.Subject;
+                    emailBody       = messageTable.Mail;
+    
+                    arrivaltime = strDel(time2Str(HMResourceSchedulingAppointment.displayRelatedArrivalTime(),TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+    
+                    templateTokens.insert(#PATIENT,hmPatient.patientName());
+    
+                    dirPerson= DirPerson::find(hmPatient.DirPartyTable);
+                    
+                    templateTokens.insert(#PATIENTArabic, dirPerson.getFullArabicName());
+                    templateTokens.insert(#DOCTOR,HMResourceMaster.Description);
+                    templateTokens.insert(#TIME,HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                    templateTokens.insert(#APPOINTMENTDAY,int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTDAYFR,int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTYEAR,int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTYEARFR,int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTMONTH,mthName(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTMONTHFR,this.getMthInFrench(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#DATE,date2str(HMResourceSchedulingAppointment.AppointmentDate, 213, DateDay::Digits2, DateSeparator::Space, DateMonth::Digits2,DateSeparator::Space,DateYear::Digits4,DateFlags::None));
+                    templateTokens.insert(#ARRIVALTIME,arrivaltime);
+                    templateTokens.insert(#ClientName,HMResourceSchedulingAppointment.clientName());
+    
+                    if(HMResourceMaster.Type == HMResourceType::Vendor)
+                    {
+                        vendTable = VendTable::findRecId(HMResourceMaster.RefRecId);
+                        templateTokens.insert(#VendorBusinessAddressFR,this.getPostalAddressByType(vendTable.Party,LogisticsLocationRoleType::RealAddress_RU).Address);
+                        templateTokens.insert(#VendorBusinessAddress,this.getPostalAddressByType(vendTable.Party,LogisticsLocationRoleType::RealAddress_RU).Address);
+                    }
+    
+                    templateTokens.insert(#ClientNameFR,HMResourceSchedulingAppointment.clientName());
+                    templateTokens.insert(#PATIENTFR,hmPatient.patientName());
+                    templateTokens.insert(#DOCTORFR,HMResourceMaster.Description);
+                    templateTokens.insert(#TIMEFR,HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                    templateTokens.insert(#DATEFR,date2str(HMResourceSchedulingAppointment.AppointmentDate, 213, DateDay::Digits2, DateSeparator::Space, DateMonth::Digits2,DateSeparator::Space,DateYear::Digits4,DateFlags::None));
+                    templateTokens.insert(#ARRIVALTIMEFR,arrivaltime);
+    
+                    select Description,ParkingInstructions,ParkingInstructionsFR,OMOperatingUnit, CancellationDeadlineDays, ClinicMapLink,ClinicMapText from hmOrganizationalUNit
+                    where hmOrganizationalUNit.RecId == HMResourceSchedulingPlanningObject.HMOrganizationalUnit;
+                    if(hmOrganizationalUNit.ClinicMapLink)
+                    {
+                        mapHTML = strFmt('<a href=%1>%2</a>',hmOrganizationalUNit.ClinicMapLink,hmOrganizationalUNit.ClinicMapText);
+                        emailBody = strReplace(emailBody,#CLINICMAP, mapHTML);
+                        emailBody = strReplace(emailBody,#CLINICMAPFR, mapHTML);
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#CLINICMAP, "");
+                        emailBody = strReplace(emailBody,#CLINICMAPFR, "");
+                    }
+    
+                    templateTokens.insert(#PARKINGINSTRUCTIONS,hmOrganizationalUNit.ParkingInstructions);
+                    templateTokens.insert(#PARKINGINSTRUCTIONSFR,hmOrganizationalUNit.ParkingInstructionsFR);
+    
+                    select CancellationDeadlineDays,Description,OMOperatingUnit,ClinicMapLink,ClinicMapText from hmOrganizationalUNitSubClinic
+                    where hmOrganizationalUNitSubClinic.RecId == HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation;
+    
+                    if(hmOrganizationalUNitSubClinic.ClinicMapLink)
+                    {
+                        mapHTML = strFmt('<a href=%1>%2</a>',hmOrganizationalUNitSubClinic.ClinicMapLink,hmOrganizationalUNitSubClinic.ClinicMapText);
+                        emailBody = strReplace(emailBody,#SUBCLINICMAP, mapHTML);
+                        emailBody = strReplace(emailBody,#SUBCLINICMAPFR, mapHTML);
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#SUBCLINICMAP, "");
+                        emailBody = strReplace(emailBody,#SUBCLINICMAPFR, "");
+                    }
+                    templateTokens.insert(#CancellationDelay,int2str(hmOrganizationalUNitSubClinic.CancellationDeadlineDays));
+                    templateTokens.insert(#CancellationDelayFR,int2str(hmOrganizationalUNitSubClinic.CancellationDeadlineDays));
+                    //templateTokens.insert(#CancellationFees,num2str(HMResourceSchedulingAppointment.showCancellationFee(),0,17,1,2));
+                   //templateTokens.insert(#CancellationFeesFR,num2str(HMResourceSchedulingAppointment.showCancellationFee(),0,17,1,2));
+    
+                    select * from omOperatingUnit
+                    where omOperatingUnit.recid == hmOrganizationalUNit.OMOperatingUnit;
+    
+                    templateTokens.insert(#CLINICLOCATIONFR,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#CLINICLOCATION,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#ClinicPhoneNumber,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#ClinicPhoneNumberFR,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#CLINICADDRESS,omOperatingUnit.primaryAddress());
+                    templateTokens.insert(#CLINICADDRESSFR,omOperatingUnit.primaryAddress());
+    
+    
+                    select * from omOperatingUnit
+                    where omOperatingUnit.recid == hmOrganizationalUNitSubClinic.OMOperatingUnit;
+    
+                    templateTokens.insert(#SubCLINICLOCATION,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#SubCLINICLOCATIONFR,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#SubClinicPhoneNumber,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#SubClinicPhoneNumberFR,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#SubCLINICADDRESS,omOperatingUnit.primaryAddress());
+                    templateTokens.insert(#SubCLINICADDRESSFR,omOperatingUnit.primaryAddress());
+    
+    
+                    procedureHTML = this.createExamCodeNotesHTML(_appointmnetId,messageTable.LanguageId);
+    
+                    if (procedureHTML == "")
+                    {
+                        emailBody = strReplace(emailBody,#INSTRUCTIONS, "");
+                        emailBody = strReplace(emailBody,#INSTRUCTIONSFR, "");
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#INSTRUCTIONS, procedureHTML);
+                        emailBody = strReplace(emailBody,#INSTRUCTIONSFR, procedureHTML);
+                    }
+    
+                    //Related appointment
+                    if(HMResourceMaster.VendorType != HMVendorType::External)
+                    {
+                        relatedApptHTMLHeader = this.createRelatedAppointmentHeader(_appointmnetId,messageTable.LanguageId, _relatedApptRecIdList);
+                        if (relatedApptHTMLHeader == "")
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, "");
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, "");
+                        }
+                        else
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, relatedApptHTMLHeader);
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERFR, relatedApptHTMLHeader);
+                        }
+    
+                        relatedApptHTMLDeatils = this.createRelatedAppointmentDetails(_appointmnetId,messageTable.LanguageId, _relatedApptRecIdList);
+                        if (relatedApptHTMLDeatils == "")
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAIL, "");
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAILFR, "");
+                        }
+                        else
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAIL, relatedApptHTMLDeatils);
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAILFR, relatedApptHTMLDeatils);
+                        }
+    
+                        relatedApptHTMLHeaderDetails = this.createRelatedAppointmentHeaderDetails(_appointmnetId,messageTable.LanguageId, _relatedApptRecIdList);
+                        if (relatedApptHTMLHeaderDetails == "")
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAIL, "");
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAILFR, "");
+                        }
+                        else
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAIL, relatedApptHTMLHeaderDetails);
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAILFR, relatedApptHTMLHeaderDetails);
+                        }
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAIL, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAIL, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERFR, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAILFR, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAILFR, "");
+                    }
+    
+                    message = emailBody;
+                    //[message, data] = SysEmailTable::embedImages(emailBody);
+                    message = SysEmailMessage::stringExpand(message, SysEmailTable::htmlEncodeParameters(templateTokens));
+                    /*message = System.Text.RegularExpressions.Regex::Replace(message, "<BODY>", "");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, "</BODY>", "");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, "<P>", "");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, "</P>", "");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, "&nbsp;", " ");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, "<html><HEAD></HEAD>", "");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, "</html>", "");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, 'message = "', "");
+                    message = System.Text.RegularExpressions.Regex::Replace(message, "<BR>", "");*/
+    
+                }
+    
+            }
+        }
+        catch
+        {
+             ret= false;
+    
+            info(SysLabel::labelId2String2("Error"));
+    
+    
+        }
+    
+        return message;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMthInFrench</Name>
+				<Source><![CDATA[
+    private str getMthInFrench(int _month)
+    {
+        switch(_month)
+        {
+            case 1:
+                return 'janvier';
+            case 2:
+                return 'février';
+            case 3:
+                return 'mars';
+            case 4:
+                return 'avril';
+            case 5:
+                return 'mai';
+            case 6:
+                return 'juin';
+            case 7:
+                return 'juillet';
+            case 8:
+                return 'août';
+            case 9:
+                return 'septembre';
+            case 10:
+                return 'octobre';
+            case 11:
+                return 'novembre';
+            case 12:
+                return 'décembre';
+        }
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getOUAddressLocationDescription</Name>
+				<Source><![CDATA[
+    private Description getOUAddressLocationDescription(DirPartyRecId _partyRecId)
+    {
+        LogisticsLocation  LogisticsLocation;
+        DirPartyLocation partyLocation;
+    
+        select firstonly Description from LogisticsLocation
+        exists join partyLocation
+            where partyLocation.Location == LogisticsLocation.RecId
+            && partyLocation.IsPrimary == true
+            && partyLocation.Party == _partyRecId;
+    
+        return LogisticsLocation.Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPostalAddressByType</Name>
+				<Source><![CDATA[
+    public  LogisticsPostalAddress getPostalAddressByType(DirPartyRecId _party, LogisticsLocationRoleType _type)
+    
+    {
+    
+        DirPartyLocation        partyLocation;
+    
+        DirPartyLocationRole    partyLocationRole;
+    
+        LogisticsLocation       location;
+    
+        LogisticsLocationRole   locationRole;
+    
+        LogisticsPostalAddress  postalAddress;
+    
+    
+        select firstonly postalAddress
+    
+            exists join location
+    
+                where location.RecId == postalAddress.Location
+    
+            exists join locationRole
+    
+                where locationRole.Type  == _type
+    
+            exists join partyLocation
+    
+                where
+    
+                    partyLocation.Location == location.RecId &&
+    
+                    partyLocation.Party == _party
+    
+            exists join partyLocationRole
+    
+                where partyLocationRole.PartyLocation == partyLocation.RecId &&
+    
+                    partyLocationRole.LocationRole == locationRole.RecId;
+    
+    
+        return postalAddress;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadQRImageFile</Name>
+				<Source><![CDATA[
+    URL loadQRImageFile(RecId _docuRefRecId)
+    {
+        
+        container   con;
+        DocuRef docuRef = DocuRef::findRecId(_docuRefRecId);
+    
+        FilePath filePath;
+
+        //todo: AX 7 depreciated class to be open once document management framework functionality added
+        /*
+        try
+        {
+            if (docuRef.docuValue().File)
+            {
+                //file in database
+                DocuFileWatchDog::create(); //update old files
+    
+                url = DocuActionFile::saveTempFile(docuRef);
+    
+                DocuOpenFile::add(docuRef, url);
+                DocuFileWatchDog::createDelayed(); //ensure that watchdog is started
+            }
+            else
+            {
+                url = docuRef.completeFilename();
+            }
+        }
+        catch
+        {
+    
+        }
+        */
+
+        filePath = DocumentManagement::getAttachmentPublicUrl(docuref);
+
+        return filePath;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDataOfQRImage</Name>
+				<Source><![CDATA[
+    container getDataOfQRImage(RecId _docuRefRecId)
+    {
+        
+        container   con;
+        DocuRef docuRef = DocuRef::findRecId(_docuRefRecId);
+    
+        container imageContainer;
+
+        imageContainer = DocumentManagement::getAttachmentAsContainer(docuref);
+
+        return imageContainer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadQRImageFileBase64</Name>
+				<Source><![CDATA[
+    public Filename loadQRImageFileBase64(RecId _docuRefRecId)
+    {
+        BinData     binData;
+        Filename    filename;
+        DocuRef docuRef = DocuRef::findRecId(_docuRefRecId);
+        //todo: AX 7 depreciated class to be open once document management framework functionality added
+        /*
+        binData = new BinData();
+    
+        filename = docuRef.completeFilename();
+    
+        new FileIOPermission(filename,'r').assert();
+        binData.loadFile(filename);
+        CodeAccessPermission::revertAssert();
+        */
+        return binData.base64Encode();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmEmailMapping</Name>
+				<Source><![CDATA[
+    public HMEmailTemplatesEventMapping parmEmailMapping(HMEmailTemplatesEventMapping _emailMapping = emailMapping)
+    {
+        emailMapping = _emailMapping;
+    
+        return emailMapping;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendBookingCancelOrReminderEmails</Name>
+				<Source><![CDATA[
+    public void sendBookingCancelOrReminderEmails(RecId _appointmentRecId, HMResourceSchedulingAppointmentStatus _status = HMResourceSchedulingAppointmentStatus::Confirmed, TransDate _reminderDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), boolean _updateEmailStatus = false, List _apptRecIdList = null, boolean _sendQRCOde = false)
+    {
+        Query                                   query;
+        date                                    dateForFilter;
+        Queryrun                                queryRun;
+        HMResourceSchedulingAppointment         HMResourceSchedulingAppointment;
+        QueryBuildRange                         queryBuildRangeDateFilter;
+        HMEmailTemplatesEventServiceType        hmEmailTemplatesEventServiceType;
+        HMEmailTemplatesEventAppointmentStatus  hmEmailTemplatesEventAppointmentStatus;
+        HMEmailTemplatesEventScheduleType       hmEmailTemplatesEventScheduleType;
+        str                                     emailId,phoneNumber,message;
+        HMPatient                               hmPatient;
+        ContactPerson                           contactPerson;
+        ListEnumerator                          listEnumerator;
+        int                                     counter = 0;
+        if(emailMapping)
+        {
+            query = new Query(queryStr(HMEmailGeneration));
+    
+            if(_apptRecIdList == null)
+            {
+                if(_appointmentRecId)
+                {
+                    query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,RecId)).value(SysQuery::value(_appointmentRecId));
+                }
+            }
+            else
+            {
+                listEnumerator = _apptRecIdList.getEnumerator();
+                while(listEnumerator.moveNext())
+                {
+                    counter++;
+                    query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,RecId)).value(SysQuery::value(listEnumerator.current()));
+                }
+    
+                if(counter > 1)
+                {
+                    query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addSortField(fieldNum(HMResourceSchedulingAppointment, PrimaryAppointment), SortOrder::Ascending);
+                    query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addSortField(fieldNum(HMResourceSchedulingAppointment, ArrivalTime), SortOrder::Ascending);
+                    query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addSortField(fieldNum(HMResourceSchedulingAppointment, AppointmentTime), SortOrder::Ascending);
+                }
+            }
+    
+            if(emailMapping.HMOrganizationalUnit)
+            {
+                query.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,HMOrganizationalUnit)).value(SysQuery::value(emailMapping.HMOrganizationalUnit));
+            }
+    
+            if(emailMapping.ResourceType)
+            {
+                query.dataSourceTable(tableNum(HMResourceMaster)).addRange(fieldNum(HMResourceMaster,VendorType)).value(SysQuery::value(emailMapping.ResourceType));
+            }
+    
+            while select * from hmEmailTemplatesEventScheduleType
+                where hmEmailTemplatesEventScheduleType.HMEmailTemplatesEventMapping == emailMapping.RecId
+            {
+                query.dataSourceTable(tableNum(HMResourceSchedulingTypeCode)).addRange(fieldNum(HMResourceSchedulingTypeCode,RecId)).value(SysQuery::value(hmEmailTemplatesEventScheduleType.HMResourceSchedulingTypeCode));
+            }
+    
+            while select * from hmEmailTemplatesEventServiceType
+                where hmEmailTemplatesEventServiceType.HMEmailTemplatesEventMapping == emailMapping.RecId
+            {
+                query.dataSourceTable(tableNum(HMOrganizationalUnit)).addRange(fieldNum(HMOrganizationalUnit,ServiceType)).value(SysQuery::value(hmEmailTemplatesEventServiceType.ServiceType));
+            }
+    
+            switch (emailMapping.EmailAppointmentStatus)
+            {
+                case HMEmailAppointmentStatus::Cancelled:
+                    while select * from hmEmailTemplatesEventAppointmentStatus
+                        where hmEmailTemplatesEventAppointmentStatus.HMEmailTemplatesEventMapping == emailMapping.RecId
+                    {
+                        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,HMCancellationStatus)).value(SysQuery::value(hmEmailTemplatesEventAppointmentStatus.CancellationStatus));
+                    }
+                    break;
+                case HMEmailAppointmentStatus::Confirmed:
+                    while select * from hmEmailTemplatesEventAppointmentStatus
+                        where hmEmailTemplatesEventAppointmentStatus.HMEmailTemplatesEventMapping == emailMapping.RecId
+                    {
+                        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,HMConfirmationStatus)).value(SysQuery::value(hmEmailTemplatesEventAppointmentStatus.ConfirmationStatus));
+                    }
+                    break;
+            }
+            query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::value(_status));
+    
+            queryBuildRangeDateFilter = query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate));
+            if(emailMapping.EmailUnits == HMEmailUnits::DaysAfter
+                || emailMapping.EmailUnits == HMEmailUnits::DaysAfterOrLess
+                || emailMapping.EmailUnits == HMEmailUnits::DaysAfterOrMore)
+            {
+                dateForFilter = _reminderDate - emailMapping.Period;
+            }
+            else if(emailMapping.EmailUnits == HMEmailUnits::DaysPriorOrMore
+                || emailMapping.EmailUnits == HMEmailUnits::DaysPriorOrLess
+                || emailMapping.EmailUnits == HMEmailUnits::DaysPrior)
+            {
+                dateForFilter = _reminderDate + emailMapping.Period;
+            }
+    
+            switch(emailMapping.EmailUnits)
+            {
+                case HMEmailUnits::DaysAfter:
+                case HMEmailUnits::DaysPrior:
+                    queryBuildRangeDateFilter.value(SysQuery::value(dateForFilter));
+                    break;
+                case HMEmailUnits::DaysAfterOrLess:
+                    queryBuildRangeDateFilter.value(SysQuery::range(dateForFilter, _reminderDate));
+                    break;
+                case HMEmailUnits::DaysAfterOrMore:
+                    queryBuildRangeDateFilter.value(SysQuery::range(dateMax(),dateForFilter));
+                    break;
+                case HMEmailUnits::DaysPriorOrLess:
+                    queryBuildRangeDateFilter.value(SysQuery::range(_reminderDate, dateForFilter));
+                    break;
+                case HMEmailUnits::DaysPriorOrMore:
+                    queryBuildRangeDateFilter.value(SysQuery::range(dateForFilter,dateMax()));
+                    break;
+            }
+    
+            //if(_apptRecIdList == null)
+            //{
+                //query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,PrimaryAppointment)).value(SysQuery::value(YesNo::Yes));
+            //}
+    
+            queryRun = new QueryRun(query);
+            if(_apptRecIdList != null)
+            {
+                if(!_apptRecIdList.empty())
+                {
+                    if(SysQuery::countLoops(queryRun) != counter)
+                    {
+                        return;
+                    }
+                }
+            }
+    
+            while (queryRun.next())
+            {
+                HMResourceSchedulingAppointment = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+                if(HMResourceSchedulingAppointment)
+                {
+                    if(!HMResourceSchedulingApptEmailDetails::apptEmailExist(HMResourceSchedulingAppointment.RecId, emailMapping.RecId)
+                    || emailMapping.EmailTemplateEvent == HMEmailActions::Booking)
+                    {
+                        switch(HMResourceSchedulingAppointment.SendEmailTo)
+                        {
+                            case HMAppointmentSendEmailTo::Patient:
+                                hmPatient = HMPatient::find(HMResourceSchedulingAppointment.HMPatient);
+    
+    
+                                if (hmPatient.PrefModeOfCommunication == HMPreferredModeOfCommunication::Email)
+                                {
+                                    emailId = hmPatient.patientPrimaryEmail();
+                                    if(emailId != "")
+                                    {
+                                        this.sendEmail(emailId, hmPatient.getPatientLanguage() ,HMResourceSchedulingAppointment.RecId, _updateEmailStatus, emailMapping.AttachedFileName, _apptRecIdList, _sendQRCOde);
+                                    }
+                                    else
+                                    {
+                                        warning("@MAZ11098");
+                                        if(_updateEmailStatus)
+                                        {
+                                            HMResourceSchedulingHelper::setEmailStatus(HMResourceSchedulingAppointment.RecId, YesNo::No);
+                                        }
+                                    }
+                                }
+                                else if (hmPatient.PrefModeOfCommunication == HMPreferredModeOfCommunication::SMS)
+                                {
+                                    phoneNumber = hmPatient.patientPrimaryPhone();
+                                    if (phoneNumber != "")
+                                    {
+                                        message =  this.getDecodedSMS(phoneNumber, hmPatient.getPatientLanguage() ,HMResourceSchedulingAppointment.RecId);
+                                        if (HMSmsGeneration::SendSms(phoneNumber,message))
+                                        {
+                                            HMSmsGeneration::setSmsStatus(HMResourceSchedulingAppointment.RecId,YesNo::Yes,message);
+                                        }
+                                        else
+                                        {
+                                            HMSmsGeneration::setSmsStatus(HMResourceSchedulingAppointment.RecId,YesNo::No,message);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        warning('Message not sent. Patient phonenumber not found');
+                                    }
+    
+                                }
+                                break;
+    
+                            case HMAppointmentSendEmailTo::Client:
+                                contactPerson = contactPerson::find(HMResourceSchedulingAppointment.RequestorContactPerson);
+                                emailId = contactPerson.email();
+    
+                                if(emailId != "")
+                                {
+                                    this.sendEmail(emailId, contactPerson.getNativeLanguage() ,HMResourceSchedulingAppointment.RecId, _updateEmailStatus, emailMapping.AttachedFileName, _apptRecIdList, _sendQRCOde);
+                                }
+                                else
+                                {
+                                    warning("@MAZ12169");
+                                    if(_updateEmailStatus)
+                                    {
+                                        HMResourceSchedulingHelper::setEmailStatus(HMResourceSchedulingAppointment.RecId, YesNo::No);
+                                    }
+                                }
+                                break;
+                            case HMAppointmentSendEmailTo::Both:
+                                hmPatient = HMPatient::find(HMResourceSchedulingAppointment.HMPatient);
+                                emailId = hmPatient.patientPrimaryEmail();
+    
+                                if(emailId != "")
+                                {
+                                    this.sendEmail(emailId, hmPatient.getPatientLanguage() ,HMResourceSchedulingAppointment.RecId, _updateEmailStatus, emailMapping.AttachedFileName, _apptRecIdList, _sendQRCOde);
+                                }
+                                else
+                                {
+                                    warning("@MAZ11098");
+                                    if(_updateEmailStatus)
+                                    {
+                                        HMResourceSchedulingHelper::setEmailStatus(HMResourceSchedulingAppointment.RecId, YesNo::No);
+                                    }
+                                }
+    
+                                contactPerson = contactPerson::find(HMResourceSchedulingAppointment.RequestorContactPerson);
+                                emailId = contactPerson.email();
+    
+                                if(emailId != "")
+                                {
+                                    this.sendEmail(emailId, contactPerson.getNativeLanguage() ,HMResourceSchedulingAppointment.RecId, _updateEmailStatus, emailMapping.AttachedFileName, _apptRecIdList, _sendQRCOde);
+                                }
+                                else
+                                {
+                                    warning("@MAZ12169");
+                                    if(_updateEmailStatus)
+                                    {
+                                        HMResourceSchedulingHelper::setEmailStatus(HMResourceSchedulingAppointment.RecId, YesNo::No);
+                                    }
+                                }
+                                break;
+                        }
+                    }
+                }
+                if(_apptRecIdList != null)
+                {
+                    if(!_apptRecIdList.empty())
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendEmail</Name>
+				<Source><![CDATA[
+    public boolean sendEmail(str  _emailId, LanguageId _language, RecId _appointmnetId, boolean _updateEmailStatus = false,str _attachmentFilename = '', List _relatedApptRecIdList = null, boolean _sendQRCOde = false)
+    {
+        #File
+        str                                     procedureHTML, mapHTML, relatedApptHTMLHeader, relatedApptHTMLDeatils, relatedApptHTMLHeaderDetails;
+        HMResourceSchedulingAppointment         HMResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject      HMResourceSchedulingPlanningObject;
+        OMOperatingUnit                         omOperatingUnit;
+        HMOrganizationalUnit                    hmOrganizationalUNit, hmOrganizationalUNitSubClinic;
+        HMResourceMaster                        HMResourceMaster;
+        SysOutgoingEmailTable                   outgoingEmailTable;
+        SysEmailItemId                          nextEmailItemId;
+        boolean                                 ret = true;
+        HMmemo                                  emailBody;
+        SysEmailSubject                         subjectText;
+        SysEmailTable                           emailTable      = SysEmailTable::find(emailMapping.SysEmailId);
+        SysEmailMessageTable                    messageTable    = SysEmailMessageTable::find(emailTable.EmailId,emailTable.DefaultLanguage);
+        HMResourceSchedulingApptEmailDetails    HMResourceSchedulingApptEmailDetails;
+        HMPatient                               hmPatient;
+        int                                     maxAttachmentSize,i,day;
+        Map                                     templateTokens = new Map(Types::String, Types::String);
+        str                                     arrivaltime;
+        BinData                                 binData;
+        container                               data,embeddedBinaryData;
+        SysOutgoingEmailData                    outgoingEmailData;
+        Filename                                filePath, filename,fileExtension,htmlDecodedFileName;
+        List                                    list;
+        ListEnumerator                          enumerator;
+        FileIOPermission                        fileIOPermission;
+        ListEnumerator                          listEnumerator;
+        VendTable                               vendTable;
+        FilePath                                qrFilePath;
+        SysEmailParameters                      emailParams = SysEmailParameters::find();
+        DirPerson dirPerson;
+    
+        Set permissionSet;
+        permissionSet = new Set(Types::Class);
+    
+    
+        try
+        {
+            i=1;
+            maxAttachmentSize = emailParams.MaxEmailAttachmentSize;
+    
+            select * from HMResourceSchedulingAppointment
+                    where HMResourceSchedulingAppointment.RecId == _appointmnetId
+                    join RecId,HMOrganizationalUnit from HMResourceSchedulingPlanningObject
+                    join Description,RecId, VendorType, refrecId from HMResourceMaster
+                    where HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == HMResourceSchedulingPlanningObject.RecId
+                    && HMResourceSchedulingPlanningObject.HMResourceMaster == HMResourceMaster.RecId;
+    
+            hmPatient = HMPatient::find(HMResourceSchedulingAppointment.HMPatient);
+    
+            if (_emailId != "")
+            {
+                messageTable = SysEmailMessageTable::find(emailTable.EmailId, _language);
+    
+                if (!messageTable)
+                {
+                    messageTable = SysEmailMessageTable::find(emailTable.EmailId,emailTable.DefaultLanguage);
+                }
+                if(messageTable)
+                {
+                    subjectText     = messageTable.Subject;
+                    emailBody       = messageTable.Mail;
+                    emailBody       = emailBody;
+    
+                    arrivaltime = strDel(time2Str(HMResourceSchedulingAppointment.displayRelatedArrivalTime(),TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+    
+                    templateTokens.insert(#PATIENT,hmPatient.patientName());
+    
+                    dirPerson= DirPerson::find(hmPatient.DirPartyTable);
+                    
+                    templateTokens.insert(#PATIENTArabic,dirPerson.getFullArabicName());
+                    templateTokens.insert(#DOCTOR,HMResourceMaster.Description);
+                    templateTokens.insert(#TIME,HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                    templateTokens.insert(#APPOINTMENTDAY,int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTDAYFR,int2str(dayOfMth(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTYEAR,int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTYEARFR,int2str(year(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTMONTH,mthName(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#APPOINTMENTMONTHFR,this.getMthInFrench(mthOfYr(HMResourceSchedulingAppointment.AppointmentDate)));
+                    templateTokens.insert(#DATE,date2str(HMResourceSchedulingAppointment.AppointmentDate, 213, DateDay::Digits2, DateSeparator::Space, DateMonth::Digits2,DateSeparator::Space,DateYear::Digits4,DateFlags::None));
+                    templateTokens.insert(#ARRIVALTIME,arrivaltime);
+                    templateTokens.insert(#ClientName,HMResourceSchedulingAppointment.clientName());
+    
+                    if(HMResourceMaster.Type == HMResourceType::Vendor)
+                    {
+                        vendTable = VendTable::findRecId(HMResourceMaster.RefRecId);
+                        templateTokens.insert(#VendorBusinessAddressFR,this.getPostalAddressByType(vendTable.Party,LogisticsLocationRoleType::RealAddress_RU).Address);
+                        templateTokens.insert(#VendorBusinessAddress,this.getPostalAddressByType(vendTable.Party,LogisticsLocationRoleType::RealAddress_RU).Address);
+                    }
+    
+                    templateTokens.insert(#ClientNameFR,HMResourceSchedulingAppointment.clientName());
+                    templateTokens.insert(#PATIENTFR,hmPatient.patientName());
+                    templateTokens.insert(#DOCTORFR,HMResourceMaster.Description);
+                    templateTokens.insert(#TIMEFR,HMResourceSchedulingAppointment.displayTimeWithoutSec());
+                    templateTokens.insert(#DATEFR,date2str(HMResourceSchedulingAppointment.AppointmentDate, 213, DateDay::Digits2, DateSeparator::Space, DateMonth::Digits2,DateSeparator::Space,DateYear::Digits4,DateFlags::None));
+                    templateTokens.insert(#ARRIVALTIMEFR,arrivaltime);
+    
+                    select Description,ParkingInstructions,ParkingInstructionsFR,OMOperatingUnit, CancellationDeadlineDays, ClinicMapLink,ClinicMapText from hmOrganizationalUNit
+                    where hmOrganizationalUNit.RecId == HMResourceSchedulingPlanningObject.HMOrganizationalUnit;
+                    if(hmOrganizationalUNit.ClinicMapLink)
+                    {
+                        mapHTML = strFmt('<a href=%1>%2</a>',hmOrganizationalUNit.ClinicMapLink,hmOrganizationalUNit.ClinicMapText);
+                        emailBody = strReplace(emailBody,#CLINICMAP, mapHTML);
+                        emailBody = strReplace(emailBody,#CLINICMAPFR, mapHTML);
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#CLINICMAP, "");
+                        emailBody = strReplace(emailBody,#CLINICMAPFR, "");
+                    }
+    
+                    templateTokens.insert(#PARKINGINSTRUCTIONS,hmOrganizationalUNit.ParkingInstructions);
+                    templateTokens.insert(#PARKINGINSTRUCTIONSFR,hmOrganizationalUNit.ParkingInstructionsFR);
+    
+                    select CancellationDeadlineDays,Description,OMOperatingUnit,ClinicMapLink,ClinicMapText from hmOrganizationalUNitSubClinic
+                    where hmOrganizationalUNitSubClinic.RecId == HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation;
+    
+                    if(hmOrganizationalUNitSubClinic.ClinicMapLink)
+                    {
+                        mapHTML = strFmt('<a href=%1>%2</a>',hmOrganizationalUNitSubClinic.ClinicMapLink,hmOrganizationalUNitSubClinic.ClinicMapText);
+                        emailBody = strReplace(emailBody,#SUBCLINICMAP, mapHTML);
+                        emailBody = strReplace(emailBody,#SUBCLINICMAPFR, mapHTML);
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#SUBCLINICMAP, "");
+                        emailBody = strReplace(emailBody,#SUBCLINICMAPFR, "");
+                    }
+                    templateTokens.insert(#CancellationDelay,int2str(hmOrganizationalUNitSubClinic.CancellationDeadlineDays));
+                    templateTokens.insert(#CancellationDelayFR,int2str(hmOrganizationalUNitSubClinic.CancellationDeadlineDays));
+                    //templateTokens.insert(#CancellationFees,num2str(HMResourceSchedulingAppointment.showCancellationFee(),0,17,1,2));
+                   // templateTokens.insert(#CancellationFeesFR,num2str(HMResourceSchedulingAppointment.showCancellationFee(),0,17,1,2));
+    
+                    select * from omOperatingUnit
+                    where omOperatingUnit.recid == hmOrganizationalUNit.OMOperatingUnit;
+    
+                    templateTokens.insert(#CLINICLOCATIONFR,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#CLINICLOCATION,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#ClinicPhoneNumber,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#ClinicPhoneNumberFR,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#CLINICADDRESS,omOperatingUnit.primaryAddress());
+                    templateTokens.insert(#CLINICADDRESSFR,omOperatingUnit.primaryAddress());
+    
+    
+                    select * from omOperatingUnit
+                    where omOperatingUnit.recid == hmOrganizationalUNitSubClinic.OMOperatingUnit;
+    
+                    templateTokens.insert(#SubCLINICLOCATION,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#SubCLINICLOCATIONFR,this.getOUAddressLocationDescription(omOperatingUnit.RecId));
+                    templateTokens.insert(#SubClinicPhoneNumber,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#SubClinicPhoneNumberFR,omOperatingUnit.primaryPhone());
+                    templateTokens.insert(#SubCLINICADDRESS,omOperatingUnit.primaryAddress());
+                    templateTokens.insert(#SubCLINICADDRESSFR,omOperatingUnit.primaryAddress());
+    
+                    procedureHTML = this.createExamCodeNotesHTML(_appointmnetId,messageTable.LanguageId);
+    
+                    if (procedureHTML == "")
+                    {
+                        emailBody = strReplace(emailBody,#INSTRUCTIONS, "");
+                        emailBody = strReplace(emailBody,#INSTRUCTIONSFR, "");
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#INSTRUCTIONS, procedureHTML);
+                        emailBody = strReplace(emailBody,#INSTRUCTIONSFR, procedureHTML);
+                    }
+    
+                    //Related appointment
+                    if(HMResourceMaster.VendorType != HMVendorType::External)
+                    {
+                        relatedApptHTMLHeader = this.createRelatedAppointmentHeader(_appointmnetId,messageTable.LanguageId, _relatedApptRecIdList);
+                        if (relatedApptHTMLHeader == "")
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, "");
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, "");
+                        }
+                        else
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, relatedApptHTMLHeader);
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERFR, relatedApptHTMLHeader);
+                        }
+    
+                        relatedApptHTMLDeatils = this.createRelatedAppointmentDetails(_appointmnetId,messageTable.LanguageId, _relatedApptRecIdList);
+                        if (relatedApptHTMLDeatils == "")
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAIL, "");
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAILFR, "");
+                        }
+                        else
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAIL, relatedApptHTMLDeatils);
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAILFR, relatedApptHTMLDeatils);
+                        }
+    
+                        relatedApptHTMLHeaderDetails = this.createRelatedAppointmentHeaderDetails(_appointmnetId,messageTable.LanguageId, _relatedApptRecIdList);
+                        if (relatedApptHTMLHeaderDetails == "")
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAIL, "");
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAILFR, "");
+                        }
+                        else
+                        {
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAIL, relatedApptHTMLHeaderDetails);
+                            emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAILFR, relatedApptHTMLHeaderDetails);
+                        }
+                    }
+                    else
+                    {
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADER, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAIL, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAIL, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERFR, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTDETAILFR, "");
+                        emailBody = strReplace(emailBody,#RELATEDAPPOINTMENTHEADERDETAILFR, "");
+                    }
+    
+                    nextEmailItemId = EventInbox::nextEventId();
+                    outgoingEmailTable.EmailItemId = nextEmailItemId;
+                    outgoingEmailTable.TemplateId = emailMapping.SysEmailId;
+                    outgoingEmailTable.IsSystemEmail = NoYes::No;
+                    outgoingEmailTable.Sender = emailTable.SenderAddr;
+                    outgoingEmailTable.SenderName = emailTable.SenderName;
+                    outgoingEmailTable.Recipient = _emailId;
+                    outgoingEmailTable.Subject = subjectText;
+                    outgoingEmailTable.Priority = eMailPriority::Normal;
+                    outgoingEmailTable.WithRetries = false;
+                    outgoingEmailTable.RetryNum = 0;
+                    outgoingEmailTable.UserId = curUserId();
+                    outgoingEmailTable.Status = SysEmailStatus::Unsent;
+                    [outgoingEmailTable.Message, data] = SysEmailTable::embedImages(emailBody);
+                    outgoingEmailTable.Message = SysEmailMessage::stringExpand(outgoingEmailTable.Message, SysEmailTable::htmlEncodeParameters(templateTokens));
+                    outgoingEmailTable.LatestStatusChangeDateTime = DateTimeUtil::getSystemDateTime();
+    
+    
+    
+                    list        = List::create(data);
+                    enumerator  = list.getEnumerator();
+                    while (enumerator.moveNext())
+                    {
+                        htmlDecodedFileName = SysEmailTable::htmlDecode(enumerator.current());
+    
+                        fileIOPermission = new FileIOPermission(htmlDecodedFileName,'r');
+                        fileIOPermission.assert();
+                        //BP Deviation Documented
+                        if (WinApiServer::fileExists(htmlDecodedFileName) &&
+                            //BP Deviation Documented
+                            (WinApiServer::fileSize( htmlDecodedFileName) < (maxAttachmentSize * 1000000)))
+                        {
+                            binData = new BinData();
+                            //BP Deviation Documented
+                            binData.loadFile(htmlDecodedFileName);
+                            embeddedBinaryData = binData.getData();
+    
+                            outgoingEmailData.EmailItemId       = outgoingEmailTable.EmailItemId;
+                            outgoingEmailData.DataId            = i;
+                            outgoingEmailData.EmailDataType     = SysEmailDataType::Embedded;
+                            outgoingEmailData.Data              = embeddedBinaryData;
+                            [filePath, filename, fileExtension] = Global::fileNameSplit(htmlDecodedFileName);
+    
+                            outgoingEmailData.FileName          = int642str(outgoingEmailTable.EmailItemId) + '_' + int2str(i);
+                            outgoingEmailData.FileExtension     = fileExtension;
+    
+                            outgoingEmailData.insert();
+    
+                            i++;
+                        }
+    
+                        CodeAccessPermission::revertAssert();
+                    }
+    
+                    outgoingEmailTable.insert();
+    
+                    if(_attachmentFilename)
+                    {
+                        permissionSet.add(new InteropPermission(InteropKind::ClrInterop));
+                        permissionSet.add(new FileIOPermission(_attachmentFilename, 'rw'));
+                        CodeAccessPermission::assertMultiple(permissionSet);
+                    }
+                    if (_attachmentFilename && WinApiServer::fileExists(_attachmentFilename))
+                    {
+                        //BP Deviation Documented
+                        if (WinApiServer::fileSize(_attachmentFilename) < (maxAttachmentSize * 1000000))
+                        {
+                            binData = new BinData();
+    
+                            //BP Deviation Documented
+                            binData.loadFile(_attachmentFilename);
+                            embeddedBinaryData = binData.getData();
+    
+                            outgoingEmailData.EmailItemId = nextEmailItemId;
+                            outgoingEmailData.DataId = i+1;
+                            i = i+1;
+                            outgoingEmailData.EmailDataType = SysEmailDataType::Attachment;
+                            outgoingEmailData.Data = embeddedBinaryData;
+                            [filePath, filename, fileExtension] = Global::fileNameSplit(_attachmentFilename);
+                            outgoingEmailData.FileName = filename;
+                            outgoingEmailData.FileExtension = fileExtension;
+    
+                            outgoingEmailData.insert();
+                        }
+    
+                        CodeAccessPermission::revertAssert();
+    
+                    }
+    
+                    if(_sendQRCOde && HMResourceSchedulingAppointment.DocuRef)
+                    {
+                        container imageContainer;
+                        DocuRef myDocuRef = DocuRef::findRecId(HMResourceSchedulingAppointment.docuref);
+                        
+                        imageContainer = this.getDataOfQRImage(HMResourceSchedulingAppointment.docuref);
+
+                        //Filename = 'test';
+                        filename = myDocuRef.originalFileName();
+                        fileExtension = myDocuRef.fileExtension();
+
+                        //qrFilePath = this.loadQRImageFile(HMResourceSchedulingAppointment.DocuRef);
+
+                        //if(qrFilePath)
+                        //{
+                        //    permissionSet = new Set(Types::Class);
+
+                        //    permissionSet.add(new InteropPermission(InteropKind::ClrInterop));
+                        //    permissionSet.add(new FileIOPermission(qrFilePath, 'rw'));
+                        //    CodeAccessPermission::assertMultiple(permissionSet);
+                        //}
+                        //if (qrFilePath && WinApiServer::fileExists(qrFilePath))
+                        //{
+                            //BP Deviation Documented
+                            //if (WinApiServer::fileSize(qrFilePath) < (maxAttachmentSize * 1000000))
+                            //{
+                                //binData = new BinData();
+    
+                                //BP Deviation Documented
+                                //binData.setData(imageContainer);
+                                embeddedBinaryData = imageContainer;
+    
+                                outgoingEmailData.EmailItemId = nextEmailItemId;
+                                outgoingEmailData.DataId = i+1;
+                                i = i+1;
+                                outgoingEmailData.EmailDataType = SysEmailDataType::Attachment;
+                                outgoingEmailData.Data = embeddedBinaryData;
+                                [filePath, filename, fileExtension] = Global::fileNameSplit(filename);
+                                outgoingEmailData.FileName = filename;
+                                outgoingEmailData.FileExtension = fileExtension;
+    
+                                outgoingEmailData.insert();
+                            //}
+    
+                            CodeAccessPermission::revertAssert();
+                        //}
+                    }
+    
+                    //todo: to be removed
+                    if(_relatedApptRecIdList == null)
+                    {
+                        HMResourceSchedulingApptEmailDetails.HMEmailTemplatesEventMapping = emailMapping.RecId;
+                        HMResourceSchedulingApptEmailDetails.HMResourceSchedulingAppointment = _appointmnetId;
+                        HMResourceSchedulingApptEmailDetails.SysOutgoingEmailTable = outgoingEmailTable.EmailItemId;
+                        HMResourceSchedulingApptEmailDetails.insert();
+                        if(_updateEmailStatus)
+                        {
+                            HMResourceSchedulingHelper::setEmailStatus(_appointmnetId, YesNo::Yes);
+                        }
+                    }
+                    else
+                    {
+                        listEnumerator = _relatedApptRecIdList.getEnumerator();
+                        while(listEnumerator.moveNext())
+                        {
+                            HMResourceSchedulingApptEmailDetails.HMEmailTemplatesEventMapping = emailMapping.RecId;
+                            HMResourceSchedulingApptEmailDetails.HMResourceSchedulingAppointment = listEnumerator.current();
+                            HMResourceSchedulingApptEmailDetails.SysOutgoingEmailTable = outgoingEmailTable.EmailItemId;
+                            HMResourceSchedulingApptEmailDetails.insert();
+                            if(_updateEmailStatus)
+                            {
+                                HMResourceSchedulingHelper::setEmailStatus(listEnumerator.current(), YesNo::Yes);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    warning("@MAZ11576");
+                }
+            }
+            else
+            {
+                ret = false;
+                if(_updateEmailStatus)
+                {
+                    HMResourceSchedulingHelper::setEmailStatus(_appointmnetId, YesNo::No);
+                }
+            }
+    
+        }
+        catch
+        {
+            ret= false;
+    
+            info(SysLabel::labelId2String2("@MAZ11099"));
+            if(_relatedApptRecIdList == null)
+            {
+                HMResourceSchedulingApptEmailDetails.HMEmailTemplatesEventMapping = emailMapping.RecId;
+                HMResourceSchedulingApptEmailDetails.HMResourceSchedulingAppointment = _appointmnetId;
+                HMResourceSchedulingApptEmailDetails.SysOutgoingEmailTable = outgoingEmailTable.EmailItemId;
+                HMResourceSchedulingApptEmailDetails.insert();
+                if(_updateEmailStatus)
+                {
+                    HMResourceSchedulingHelper::setEmailStatus(_appointmnetId, YesNo::No);
+                }
+            }
+            else
+            {
+                listEnumerator = _relatedApptRecIdList.getEnumerator();
+                while(listEnumerator.moveNext())
+                {
+                    if(_updateEmailStatus)
+                    {
+                        HMResourceSchedulingHelper::setEmailStatus(listEnumerator.current(), YesNo::No);
+                    }
+                }
+            }
+    
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendEmailToVendor</Name>
+				<Source><![CDATA[
+    public boolean sendEmailToVendor(VendAccount _vendAccount, str _attachmentFilename = '')
+    {
+        str                                     procedureHTML;
+        SysOutgoingEmailTable                   outgoingEmailTable;
+        SysEmailItemId                          nextEmailItemId;
+        boolean                                 ret = true;
+        HMmemo                                  emailBody;
+        SysEmailSubject                         subjectText;
+        str                                     emailId;
+        String30                                time, newTime, newDate;
+        SysEmailTable                           emailTable      = SysEmailTable::find(emailMapping.SysEmailId);
+        SysEmailMessageTable                    messageTable    = SysEmailMessageTable::find(emailTable.EmailId,emailTable.DefaultLanguage);
+        Map                                     templateTokens = new Map(Types::String, Types::String);
+        VendTable                               vendTable;
+        BinData                                 binData;
+        container                               data,embeddedBinaryData;
+        SysOutgoingEmailData                    outgoingEmailData;
+        Filename                                filePath,filename,fileExtension;
+        int                                     maxAttachmentSize;
+        SysEmailParameters                      emailParams = SysEmailParameters::find();
+        try
+        {
+            maxAttachmentSize = emailParams.MaxEmailAttachmentSize;
+            vendTable = vendTable::find(_vendAccount);
+            if(!vendTable)
+            {
+                warning("@MAZ11581");
+                ret = false;
+                return ret;
+            }
+            emailId         = vendTable.email();
+            if (emailId != "")
+            {
+                messageTable = SysEmailMessageTable::find(emailTable.EmailId,vendTable.languageId());
+    
+                if (!messageTable)
+                {
+                    messageTable = SysEmailMessageTable::find(emailTable.EmailId,emailTable.DefaultLanguage);
+                }
+                if(messageTable)
+                {
+                    subjectText     = messageTable.Subject;
+                    emailBody       = messageTable.Mail;
+                    emailBody       = emailBody;
+    
+                    nextEmailItemId = EventInbox::nextEventId();
+                    outgoingEmailTable.EmailItemId = nextEmailItemId;
+                    outgoingEmailTable.TemplateId = emailMapping.SysEmailId;
+                    outgoingEmailTable.IsSystemEmail = NoYes::No;
+                    outgoingEmailTable.Sender = emailTable.SenderAddr;
+                    outgoingEmailTable.SenderName = emailTable.SenderName;
+                    outgoingEmailTable.Recipient = emailId;
+                    outgoingEmailTable.Subject = subjectText;
+                    outgoingEmailTable.Priority = eMailPriority::Normal;
+                    outgoingEmailTable.WithRetries = false;
+                    outgoingEmailTable.RetryNum = 0;
+                    outgoingEmailTable.UserId = curUserId();
+                    outgoingEmailTable.Status = SysEmailStatus::Unsent;
+                    outgoingEmailTable.Message = SysEmailMessage::stringExpand(emailBody, SysEmailTable::htmlEncodeParameters(templateTokens));
+                    outgoingEmailTable.LatestStatusChangeDateTime = DateTimeUtil::getSystemDateTime();
+                    outgoingEmailTable.insert();
+                    if (_attachmentFilename && WinAPIServer::fileExists(_attachmentFilename))
+                    {
+                        //BP Deviation Documented
+                        if (WinAPIServer::fileSize(_attachmentFilename) < (maxAttachmentSize * 1000000))
+                        {
+                            binData = new BinData();
+                            //BP Deviation Documented
+                            binData.loadFile(_attachmentFilename);
+                            embeddedBinaryData = binData.getData();
+    
+                            outgoingEmailData.EmailItemId = nextEmailItemId;
+                            outgoingEmailData.DataId = 1;
+                            outgoingEmailData.EmailDataType = SysEmailDataType::Attachment;
+                            outgoingEmailData.Data = embeddedBinaryData;
+                            [filePath, filename, fileExtension] = Global::fileNameSplit(_attachmentFilename);
+                            outgoingEmailData.FileName = filename;
+                            outgoingEmailData.FileExtension = fileExtension;
+    
+                            outgoingEmailData.insert();
+                        }
+                    }
+                }
+            }
+            else
+            {
+                ret = false;
+                warning(SysLabel::labelId2String2("@MAZ11580"));
+            }
+        }
+        catch
+        {
+            ret= false;
+            info(SysLabel::labelId2String2('@MAZ11099'));
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emailBookingDetails</Name>
+				<Source><![CDATA[
+    public static void emailBookingDetails(RecId _appointmentRecId, boolean _useAppointmentDate = false)
+    {
+        HMEmailGeneration HMEmailGeneration;
+        HMEmailTemplatesEventMapping    HMEmailTemplatesEventMapping;
+        HMEmailGeneration = new HMEmailGeneration();
+        while select * from HMEmailTemplatesEventMapping
+            where HMEmailTemplatesEventMapping.EmailTemplateEvent == HMEmailActions::Booking
+        {
+            HMEmailGeneration.parmEmailMapping(HMEmailTemplatesEventMapping);
+            if(_useAppointmentDate)
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(_appointmentRecId, HMResourceSchedulingAppointmentStatus::Confirmed, HMResourceSchedulingAppointment::find(_appointmentRecId).AppointmentDate, true, null, true);
+            }
+            else
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(_appointmentRecId, HMResourceSchedulingAppointmentStatus::Confirmed, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), true, null, true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emailBookingDetailsMulitpleAppointment</Name>
+				<Source><![CDATA[
+    public static void emailBookingDetailsMulitpleAppointment(List _appointmentRecIdList, Date _appointmentDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), boolean _useAppointmentDate = false)
+    {
+        HMEmailGeneration HMEmailGeneration;
+        HMEmailTemplatesEventMapping    HMEmailTemplatesEventMapping;
+        HMEmailGeneration = new HMEmailGeneration();
+        while select * from HMEmailTemplatesEventMapping
+            where HMEmailTemplatesEventMapping.EmailTemplateEvent == HMEmailActions::Booking
+        {
+            HMEmailGeneration.parmEmailMapping(HMEmailTemplatesEventMapping);
+            if(_useAppointmentDate)
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(0, HMResourceSchedulingAppointmentStatus::Confirmed, _appointmentDate, true, _appointmentRecIdList, true);
+            }
+            else
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(0, HMResourceSchedulingAppointmentStatus::Confirmed, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), true,_appointmentRecIdList, true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emailCancelDetails</Name>
+				<Source><![CDATA[
+    public static void emailCancelDetails(RecId _appointmentRecId)
+    {
+        HMEmailGeneration HMEmailGeneration;
+        HMEmailTemplatesEventMapping    HMEmailTemplatesEventMapping;
+        HMEmailGeneration = new HMEmailGeneration();
+        while select * from HMEmailTemplatesEventMapping
+            where HMEmailTemplatesEventMapping.EmailTemplateEvent == HMEmailActions::Cancellation
+        {
+            HMEmailGeneration.parmEmailMapping(HMEmailTemplatesEventMapping);
+            HMEmailGeneration.sendBookingCancelOrReminderEmails(_appointmentRecId,HMResourceSchedulingAppointmentStatus::Cancelled);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emailCancelDetailsMulitpleAppointment</Name>
+				<Source><![CDATA[
+    public static void emailCancelDetailsMulitpleAppointment(List _appointmentRecIdList)
+    {
+        HMEmailGeneration HMEmailGeneration;
+        HMEmailTemplatesEventMapping    HMEmailTemplatesEventMapping;
+        HMEmailGeneration = new HMEmailGeneration();
+        while select * from HMEmailTemplatesEventMapping
+            where HMEmailTemplatesEventMapping.EmailTemplateEvent == HMEmailActions::Cancellation
+        {
+            HMEmailGeneration.parmEmailMapping(HMEmailTemplatesEventMapping);
+            HMEmailGeneration.sendBookingCancelOrReminderEmails(0,HMResourceSchedulingAppointmentStatus::Cancelled,DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), false, _appointmentRecIdList);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emailReminderDetails</Name>
+				<Source><![CDATA[
+    public static void emailReminderDetails(TransDate _reminderDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        HMEmailGeneration HMEmailGeneration;
+        HMEmailTemplatesEventMapping    HMEmailTemplatesEventMapping;
+        HMEmailGeneration = new HMEmailGeneration();
+        while select * from HMEmailTemplatesEventMapping
+            where HMEmailTemplatesEventMapping.EmailTemplateEvent == HMEmailActions::Reminder
+        {
+            HMEmailGeneration.parmEmailMapping(HMEmailTemplatesEventMapping);
+            HMEmailGeneration.sendBookingCancelOrReminderEmails(0, HMResourceSchedulingAppointmentStatus::Confirmed, _reminderDate);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emailRescheduleDetails</Name>
+				<Source><![CDATA[
+    public static void emailRescheduleDetails(RecId _appointmentRecId, boolean _useAppointmentDate = false)
+    {
+        HMEmailGeneration HMEmailGeneration;
+        HMEmailTemplatesEventMapping    HMEmailTemplatesEventMapping;
+        HMEmailGeneration = new HMEmailGeneration();
+        while select * from HMEmailTemplatesEventMapping
+            where HMEmailTemplatesEventMapping.EmailTemplateEvent == HMEmailActions::Reschedule
+        {
+            HMEmailGeneration.parmEmailMapping(HMEmailTemplatesEventMapping);
+            if(_useAppointmentDate)
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(_appointmentRecId, HMResourceSchedulingAppointmentStatus::Confirmed, HMResourceSchedulingAppointment::find(_appointmentRecId).AppointmentDate, true, null, true);
+            }
+            else
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(_appointmentRecId, HMResourceSchedulingAppointmentStatus::Confirmed, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), true, null, true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>emailRescheduleDetailsMulitpleAppoint</Name>
+				<Source><![CDATA[
+    public static void emailRescheduleDetailsMulitpleAppoint(List _appointmentRecIdList, Date _appointmentDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), boolean _useAppointmentDate = false)
+    {
+        HMEmailGeneration HMEmailGeneration;
+        HMEmailTemplatesEventMapping    HMEmailTemplatesEventMapping;
+        HMEmailGeneration = new HMEmailGeneration();
+        while select * from HMEmailTemplatesEventMapping
+            where HMEmailTemplatesEventMapping.EmailTemplateEvent == HMEmailActions::Reschedule
+        {
+            HMEmailGeneration.parmEmailMapping(HMEmailTemplatesEventMapping);
+            if(_useAppointmentDate)
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(0, HMResourceSchedulingAppointmentStatus::Confirmed, _appointmentDate, true, _appointmentRecIdList, true);
+            }
+            else
+            {
+                HMEmailGeneration.sendBookingCancelOrReminderEmails(0, HMResourceSchedulingAppointmentStatus::Confirmed, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), true,_appointmentRecIdList, true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

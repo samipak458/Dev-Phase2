@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSalesInvoiceController</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMSalesInvoiceController extends SrsReportRunController
+{
+    CustInvoiceJour         custInvoiceJour;
+    CustTable               custTable;
+    Filename                attachmentFileName;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>prePromptModifyContract</Name>
+				<Source><![CDATA[
+    protected void prePromptModifyContract()
+    {
+        //define object for report contract
+        HMSalesInvoiceDataContract contract;
+    
+        //get the reference of the current contract object
+        contract = this.parmReportContract().parmRdpContract() as HMSalesInvoiceDataContract;
+    
+        custInvoiceJour = this.parmArgs().record();
+        custTable = CustTable::find(custInvoiceJour.InvoiceAccount);
+    
+        contract.parmIsReceipt(custTable.CustType == CustType::Patient);
+    
+        if(contract.parmIsReceipt())
+        {
+            contract.parmClientInvoicePrint(HMClientInvoicePrint::Detail);
+        }
+        else
+        {
+            contract.parmClientInvoicePrint(custTable.HMClientInvoicePrint);
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>preRunModifyContract</Name>
+				<Source><![CDATA[
+    protected void preRunModifyContract()
+    {
+        HMSalesInvoiceDataContract contract;
+    
+        //get the reference of the current contract object
+        contract = this.parmReportContract().parmRdpContract() as HMSalesInvoiceDataContract;
+    
+        //modify the parameter value of the contract
+        contract.parmInvoiceId(custInvoiceJour.InvoiceId);
+    
+        if(contract.parmInvoicePrintTarget() == HMInvoicePrintTarget::Email)
+        {
+            this.sendEmail();
+        }
+        else if(contract.parmInvoicePrintTarget() == HMInvoicePrintTarget::Both)
+        {
+            this.sendEmail();
+            this.runToScreen();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveFile</Name>
+				<Source><![CDATA[
+    private void saveFile()
+    {
+        SRSPrintDestinationSettings printDestinationSetting;
+        FolderName      filePath = @"C:\Emails";//ysEmailParameters::find().AttachmentsPath;
+    
+        attachmentFileName = filePath + @'\InvoicePrint.pdf';
+    
+        printDestinationSetting = new SRSPrintDestinationSettings();
+        printDestinationSetting.printMediumType(SRSPrintMediumType::File);
+        printDestinationSetting.fileName(attachmentFileName);
+        printDestinationSetting.fileFormat(SRSReportFileFormat::PDF);
+        printDestinationSetting.overwriteFile(true);
+        //TODO: cannot create extension of Application Platform objects
+        //printDestinationSetting.parmSuppressInfoLogs(true);
+    
+        this.parmReportContract().parmPrintSettings(printDestinationSetting);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendEmail</Name>
+				<Source><![CDATA[
+    private void sendEmail()
+    {
+        Map mapping = new Map(Types::String, Types::String);
+        HMBillParameters        hmBillParameters = HMBillParameters::find();
+        #define.Name('Name')
+    
+        if(!hmBillParameters.SysEmailTableInvoicePrint)
+        {
+            throw error("@MAZ12082");
+        }
+    
+        if(!custInvoiceJour.HMInvoiceEmail)
+        {
+            //throw error("@MAZ12083");
+        }
+    
+        try
+        {
+            new InteropPermission(InteropKind::ClrInterop).assert();
+    
+            mapping.insert(#Name, custTable.name());
+    
+            this.saveFile();
+    
+            SysEmailTable::sendMail(
+            hmBillParameters.SysEmailTableInvoicePrint,
+            SysEmailTable::find(hmBillParameters.SysEmailTableInvoicePrint).DefaultLanguage,
+            custInvoiceJour.HMInvoiceEmail,
+            mapping,
+            attachmentFileName,
+            "",
+            true,
+            curUserId(),
+            true);
+    
+            System.IO.File::Delete(attachmentFileName);
+        }
+        catch
+        {
+            error("@MAZ12084");
+        }
+    
+        CodeAccessPermission::revertAssert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showPrintSettings</Name>
+				<Source><![CDATA[
+    public boolean showPrintSettings()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static client void main(Args args)
+    {
+        //define the new object for controller class
+        HMSalesInvoiceController hmSalesInvoiceController;
+    
+        hmSalesInvoiceController = new HMSalesInvoiceController();
+    
+        //pass the caller args to the controller
+        hmSalesInvoiceController.parmArgs(args);
+        //hmSalesInvoiceController.parmShowDialog(true);
+    
+        //set the report name and report design to run
+        hmSalesInvoiceController.parmReportName(ssrsReportStr(HMSalesInvoice,DesignENFR));
+    
+        //execute the report
+        hmSalesInvoiceController.startOperation();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

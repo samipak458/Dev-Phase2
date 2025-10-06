@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCMSTemplateImportFields</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.IO;
+using OfficeOpenXml;
+using OfficeOpenXml.ExcelPackage;
+using OfficeOpenXml.ExcelRange;
+
+class HMCMSTemplateImportFields
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insertIntoDB</Name>
+				<Source><![CDATA[
+    public void insertIntoDB(str templateFieldName, str displayName)
+    {
+        HMClaimTemplate             hmClaimTemplate;
+        HMClaimTemplateField        hmClaimTemplateField;
+        HMClaimTemplateFieldMapping hmClaimTemplateFieldMapping;
+
+        select RecId from hmClaimTemplate;
+
+        ttsbegin;
+            select hmClaimTemplateField;
+            hmClaimTemplateField.HMClaimTemplate = hmClaimTemplate.RecId;
+            hmClaimTemplateField.FieldName = templateFieldName;
+            hmClaimTemplateField.insert();
+        ttscommit;
+
+        ttsbegin;
+            select forupdate hmClaimTemplateFieldMapping 
+            where hmClaimTemplateFieldMapping.DisplayName == displayName;
+        
+            if(hmClaimTemplateFieldMapping.RecId != 0)
+            {
+                hmClaimTemplateFieldMapping.HMClaimTemplateField = hmClaimTemplateField.RecId;
+                hmClaimTemplateFieldMapping.update();
+            }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>importFields</Name>
+				<Source><![CDATA[
+    public void importFields(FileUpload _fileUpload)
+    {   
+        boolean                          check;
+        System.IO.Stream                 stream;
+        ExcelSpreadsheetName             sheeet;
+        FileUploadTemporaryStorageResult fileUploadResult = _fileUpload.getFileUploadResult();
+ 
+        try
+        {
+            stream = fileUploadResult.openResult();
+            check = true;
+        }
+        catch(Exception::Error)
+        {
+            error("Can not convert file to stream.");
+            check = false;
+        }
+                
+        using (ExcelPackage Package = new ExcelPackage(stream))
+        {
+            int            rowCount, rowEnumerator, worksheetEnumerator;
+            str            displayName, templateFieldName;
+            ExcelWorksheet worksheet;
+                    
+            Package.Load(stream);
+                    
+            if(check)
+            {
+                for(worksheetEnumerator = 1; worksheetEnumerator <= Package.get_Workbook().get_Worksheets().Count; worksheetEnumerator++)
+                {
+                    worksheet = Package.get_Workbook().get_Worksheets().get_Item(worksheetEnumerator);
+                    OfficeOpenXml.ExcelRange range = worksheet.Cells;
+                    
+                    rowCount = worksheet.Dimension.End.Row - worksheet.Dimension.Start.Row + 1;
+ 
+                    for (rowEnumerator = 2; rowEnumerator <= rowCount; rowEnumerator++)
+                    {
+                        displayName       = range.get_Item(rowEnumerator, 1).value;
+                        templateFieldName = range.get_Item(rowEnumerator, 2).value;
+
+                        this.insertIntoDB(templateFieldName, displayName);
+                    }
+                }
+            }
+            else
+                error("File not uploaded.");
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

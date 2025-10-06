@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientRegistrationDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SRSReportParameterAttribute(classstr(HMPatientRegistrationContract))]
+public class HMPatientRegistrationDP extends SRSReportDataProviderBase
+{
+    HMPatientRegistrationContactInfoTmp hmPatientRegistrationContactInfoTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMPatientRegistrationContactInfoTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute(tablestr(HMPatientRegistrationContactInfoTmp))]
+    public HMPatientRegistrationContactInfoTmp getHMPatientRegistrationContactInfoTmp()
+    {
+        select * from hmPatientRegistrationContactInfoTmp;
+        return  hmPatientRegistrationContactInfoTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMPatientRegistrationContract parmContractClass;
+        RecId patientRecId;
+        HMPatient                   hmPatient;
+        CustTable                   custTable;
+        DirPartyLocation            dirPartyLocation;
+        LogisticsLocation           logisticsLocation;
+        LogisticsElectronicAddress  logisticsElectronicAddress;
+        int i = 0;
+    
+        parmContractClass = this.parmDataContract();
+    
+        patientRecId = parmContractClass.parmPatient();
+    
+        select firstOnly RecId,CustTable from hmPatient
+            where hmPatient.RecId == patientRecId
+            join RecId,Party from custTable where custTable.RecId == hmPatient.CustTable
+            join location, isPrimary, Party from dirPartyLocation where dirPartyLocation.Party == custTable.Party && dirPartyLocation.isPrimary == NoYes::Yes
+            join RecId,Description from logisticsLocation where logisticsLocation.RecId == dirPartyLocation.Location
+            join locator, location, Type from logisticsElectronicAddress where logisticsElectronicAddress.Location == logisticsLocation.RecId
+            && logisticsElectronicAddress.Type==LogisticsElectronicAddressMethodType::Phone;
+    
+        if(logisticsLocation.RecId)
+        {
+            hmPatientRegistrationContactInfoTmp.Description = logisticsLocation.Description;
+            hmPatientRegistrationContactInfoTmp.Locator = logisticsElectronicAddress.Locator;
+            hmPatientRegistrationContactInfoTmp.Patient = patientRecId;
+            hmPatientRegistrationContactInfoTmp.insert();
+        }
+    
+        while select RecId,CustTable from hmPatient
+            where hmPatient.RecId == patientRecId
+            join RecId,Party from custTable where custTable.RecId == hmPatient.CustTable
+            join location, isPrimary, Party from dirPartyLocation where dirPartyLocation.Party == custTable.Party && dirPartyLocation.isPrimary == NoYes::No
+            join RecId,Description from logisticsLocation where logisticsLocation.RecId == dirPartyLocation.Location
+            join locator, location, Type from logisticsElectronicAddress
+            order by logisticsElectronicAddress.IsEmergency desc,logisticsElectronicAddress.RecId
+            where logisticsElectronicAddress.Location == logisticsLocation.RecId
+            && logisticsElectronicAddress.Type==LogisticsElectronicAddressMethodType::Phone
+        {
+            i++;
+            hmPatientRegistrationContactInfoTmp.Description = logisticsLocation.Description;
+            hmPatientRegistrationContactInfoTmp.Locator = logisticsElectronicAddress.Locator;
+            hmPatientRegistrationContactInfoTmp.Patient = patientRecId;
+            hmPatientRegistrationContactInfoTmp.insert();
+            if(i == 3)
+            {
+                break;
+            }
+        }
+    
+        select firstOnly RecId,CustTable from hmPatient
+            where hmPatient.RecId == patientRecId
+            join RecId,Party from custTable where custTable.RecId == hmPatient.CustTable
+            join location, isPrimary, Party from dirPartyLocation where dirPartyLocation.Party == custTable.Party && dirPartyLocation.isPrimary == NoYes::Yes
+            join RecId,Description from logisticsLocation where logisticsLocation.RecId == dirPartyLocation.Location
+            join locator, location, Type from logisticsElectronicAddress where logisticsElectronicAddress.Location == logisticsLocation.RecId
+            && logisticsElectronicAddress.Type==LogisticsElectronicAddressMethodType::Email;
+    
+        if(logisticsLocation.RecId)
+        {
+            hmPatientRegistrationContactInfoTmp.Description = logisticsLocation.Description;
+            hmPatientRegistrationContactInfoTmp.Locator = logisticsElectronicAddress.Locator;
+            hmPatientRegistrationContactInfoTmp.Patient = patientRecId;
+            hmPatientRegistrationContactInfoTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

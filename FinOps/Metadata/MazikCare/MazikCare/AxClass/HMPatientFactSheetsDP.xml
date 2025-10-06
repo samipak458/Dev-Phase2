@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientFactSheetsDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SRSReportParameterAttribute(classStr(HMPatientFactSheetsContract))]
+class HMPatientFactSheetsDP extends SRSReportDataProviderBase
+{
+    HMPatientFactSheetsTmp hMPatientFactSheetsTmp;
+    HMPatientFactSheetsContract contract;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMPatientFactSheetsTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute(tableStr(HMPatientFactSheetsTmp))
+    ]
+    public HMPatientFactSheetsTmp getHMPatientFactSheetsTmp()
+    {
+        select hMPatientFactSheetsTmp;
+        return hMPatientFactSheetsTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmp</Name>
+				<Source><![CDATA[
+    private void insertTmp(HMCase _hmcase)
+    {
+        HMPatient                   hmPatient;
+        CustTable                   custTable;
+        DirPartyTable               dirPartyTable;
+        DirPerson                   dirPerson;
+        LogisticsPostalAddress      logisticsPostalAddress;
+        LogisticsElectronicAddress  logisticsElectronicAddress;
+        HMPatientInsurance          hMPatientInsurance;
+        HMCaseInsurance             hMCaseInsurance;
+        utcDateTime                 admissionDate, dischargeDate;
+        date                        currentDateRef,refBDate;
+    
+        str getEmergencyContactInfo(RefRecId party)
+        {
+            str                        contactInfo;
+            DirPartyLocation           dirPartyLoc;
+            LogisticsElectronicAddress logisticsElectronicAddr;
+    
+            while select Description, Locator, LocatorExtension from logisticsElectronicAddr
+                where logisticsElectronicAddr.IsEmergency
+                exists join dirPartyLoc
+                where logisticsElectronicAddr.Location == dirPartyLoc.Location
+                    && dirPartyLoc.Party == party
+            {
+                if (contactInfo)
+                {
+                    contactInfo += "\r\n";
+                }
+    
+                contactInfo += strFmt("%1 - %2",logisticsElectronicAddr.Description, logisticsElectronicAddr.Locator);
+    
+                if (logisticsElectronicAddr.LocatorExtension)
+                {
+                    contactInfo += strFmt(' ext %1', logisticsElectronicAddr.LocatorExtension);
+                }
+            }
+    
+            return contactInfo;
+        }
+    
+        /*
+        str convertAndFormatDateTime(utcDateTime dateTimeValue)
+        {
+            str formattedDate;
+            utcDateTime systemDateTimeValue = utcDateTime2SystemDateTime(dateTimeValue);
+    
+            formattedDate = strFmt("%1 %2 : %3", DateTimeUtil::date(systemDateTimeValue), DateTimeUtil::hour(systemDateTimeValue), DateTimeUtil::minute(systemDateTimeValue));
+    
+            return formattedDate;
+        }
+        */
+    
+        select firstOnly * from hmPatient where hmPatient.RecId == _hmcase.HMPatient
+            join * from custTable where custTable.RecId == hmPatient.CustTable
+            join * from dirPartyTable where dirPartyTable.RecId == custTable.Party
+            join * from dirPerson where dirPerson.RecId == dirPartyTable.RecId;
+    
+        //select firstOnly * from hmPatient
+    
+        logisticsPostalAddress      = DirParty::primaryPostalAddress(dirPartyTable.RecId);
+        logisticsElectronicAddress  = DirParty::primaryElectronicAddress(dirPartyTable.RecId,LogisticsElectronicAddressMethodType::Phone);
+    
+        hMPatientFactSheetsTmp.clear();
+        hMPatientFactSheetsTmp.CompanyAddress   = CompanyInfo::findDataArea(curext()).postalAddress().Address;
+        hMPatientFactSheetsTmp.AdmissionType    = HMClaimTableSetup::findByRecEnum(_hmcase.HMPatientStatus,HMClaimEnumList::PatientStatus).Code + '  ' +
+                                                  HMClaimTableSetup::findByRecEnum(_hmcase.HMPatientStatus,HMClaimEnumList::PatientStatus).Description;
+    
+        hMPatientFactSheetsTmp.DischargeStatus  = HMClaimTableSetup::findByRecEnum(_hmcase.HMPatientStatus,HMClaimEnumList::DischargeStatus).Code + '  ' +
+                                                  HMClaimTableSetup::findByRecEnum(_hmcase.HMPatientStatus,HMClaimEnumList::DischargeStatus).Description;
+    
+        hMPatientFactSheetsTmp.MRNo             = custTable.AccountNum;
+        hMPatientFactSheetsTmp.CaseNo           = _hmcase.CaseNo;
+        hMPatientFactSheetsTmp.BuildingUnitRoom = _hmcase.getHMBuildingUnit_Room();
+        hMPatientFactSheetsTmp.CaseNotes        = _hmcase.Notes;
+    
+        /*
+        hMPatientFactSheetsTmp.Admitted         = convertAndFormatDateTime(_hmcase.AddmisionDate);
+    
+        if (_hmcase.DischargeDate != utcDateTimeNull())
+        {
+            hMPatientFactSheetsTmp.Discharged   = convertAndFormatDateTime(_hmcase.DischargeDate);
+        }
+        */
+        if (_hmcase.AddmisionDate != utcDateTimeNull())
+        {
+            hMPatientFactSheetsTmp.Admitted         = datetime2str(_hmcase.AddmisionDate);
+        }
+    
+        if (_hmcase.DischargeDate != utcDateTimeNull())
+        {
+            hMPatientFactSheetsTmp.Discharged       = datetime2str(_hmcase.DischargeDate);
+        }
+    
+        hMPatientFactSheetsTmp.AdmittedBy       = DirPersonUser::userId2Name(_hmcase.createdBy);
+        hMPatientFactSheetsTmp.Name             = hmPatient.patientLastFirstMiddleName();
+        hMPatientFactSheetsTmp.Address          = logisticsPostalAddress.Address;
+        hMPatientFactSheetsTmp.County           = logisticsPostalAddress.County;
+        hMPatientFactSheetsTmp.PPhone           = logisticsElectronicAddress.Locator;
+        hMPatientFactSheetsTmp.PSex             = enum2str(hmPatient.Gender);
+        hMPatientFactSheetsTmp.PMarital         = enum2str(dirPerson.MaritalStatus);
+        hMPatientFactSheetsTmp.PDOB             = strFmt("%1",hmPatient.BirthDate);
+    
+        if (hmPatient.BirthDate != dateNull())
+        {
+            currentDateRef = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            hMPatientFactSheetsTmp.PatientAge   = year(currentDateRef) - year(hmPatient.BirthDate);
+    
+            if ((mthOfYr(hmPatient.BirthDate) > mthOfYr(currentDateRef)) ||
+                (mthOfYr(hmPatient.BirthDate) == mthOfYr(currentDateRef) && dayOfMth(hmPatient.BirthDate) > dayOfMth(currentDateRef)))
+            {
+                hMPatientFactSheetsTmp.PatientAge -= 1;
+            }
+        }
+    
+        //hMPatientFactSheetsTmp.PatientAge       = hmPatient.patientAgeInYears();
+    
+        //info(strFmt('%1',hMPatientFactSheetsTmp.PatientAge));
+        hMPatientFactSheetsTmp.PatientStatus    = enum2str(hmPatient.Status);
+        hMPatientFactSheetsTmp.Race             = HMRaceCode::find(hmPatient.HMRaceCode).Description;
+        hMPatientFactSheetsTmp.Language         = dirPartyTable.getlanguageDescription();
+        hMPatientFactSheetsTmp.FinancialClass   = _hmcase.getFinancialClassCodeAndDesc();
+        //TODO: missing field table
+        //hMPatientFactSheetsTmp.FamilyPhysician  = hmPatient.FamilyPhysician;
+        hMPatientFactSheetsTmp.ReferingPhysician = hmPatient.ReferringPhysician;
+        hMPatientFactSheetsTmp.HIPAA = hmPatient.HIPAA;
+        hMPatientFactSheetsTmp.AttendingPhysician = HMResourceMaster::find(_hmcase.HMResourceMaster).Description;
+        hMPatientFactSheetsTmp.AdmittingDX = HMDiagnosisDictionary::find(_hmcase.AdmittingDiagnosisCode).Description;
+        //hMPatientFactSheetsTmp.AttendingPhysician2 = HMResourceMaster::find(_hmcase.OperatingPhysician).Description;
+        hMPatientFactSheetsTmp.AttendingPhysician2 = HMResourceMaster::find(_hmcase.HMResourceMaster).Description;
+        hMPatientFactSheetsTmp.PEmployer        = hmPatient.EmployeeNumber;
+        hMPatientFactSheetsTmp.Occupation       = hmPatient.JobTitle;
+    
+        hMPatientFactSheetsTmp.EmergencyContactInfo = getEmergencyContactInfo(hmPatient.DirPartyTable);
+    
+        hMCaseInsurance.clear();
+        select firstOnly hMCaseInsurance  where hMCaseInsurance.HMCase == _hmcase.RecId && hMCaseInsurance.HMPayerType == HMPayerType::Gurantor;
+    
+        if (hMCaseInsurance)
+        {
+            hMPatientFactSheetsTmp.initGuarantorFromHMCaseInsurance(hMCaseInsurance);
+        }
+        else
+        {
+            select firstOnly hMPatientInsurance where hMPatientInsurance.HMPatient == hmPatient.RecId && hMPatientInsurance.HMPayerType == HMPayerType::Gurantor;
+            hMPatientFactSheetsTmp.initGuarantorFromHMPatientInsurance(hMPatientInsurance);
+        }
+    
+        while select hMCaseInsurance where hMCaseInsurance.HMCase == _hmcase.RecId && hMCaseInsurance.HMPayerType == HMPayerType::InsuranceCarrier
+        {
+            hMPatientFactSheetsTmp.copyInsuranceFromHMCaseInsurance(hMCaseInsurance);
+        }
+    
+        hMPatientFactSheetsTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        Query query;
+        QueryRun qRun;
+        HMCase hmcase;
+        contract = this.parmDataContract() as HMPatientFactSheetsContract;
+    
+        select firstOnly hmcase
+            where hmcase.CaseNo == contract.parmCaseNo();
+    
+        this.insertTmp(hmcase);
+    
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

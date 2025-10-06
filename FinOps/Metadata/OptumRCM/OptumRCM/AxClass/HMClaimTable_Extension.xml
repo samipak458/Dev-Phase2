@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimTable_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// <c>HMClaimTable</c> table's extension.
+/// </summary>
+[ExtensionOf(tableStr(HMClaimTable))]
+final class HMClaimTable_Extension
+{
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>actionNotes</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display Notes actionNotes(HMClaimTable _this)
+    {
+        HMClaimNotes hmClaimNotes;
+
+        select firstonly Notes from hmClaimNotes
+            order by RecId desc
+            where hmClaimNotes.HMClaimTable == _this.RecId;
+
+        return hmClaimNotes.Notes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SiteDescription</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display HMSiteDescription SiteDescription(HMClaimTable _this)
+    {
+        HMSiteTable         hmSite;
+
+        select firstonly hmSite
+            where hmSite.HMSiteName == _this.HMSite;
+
+        return hmSite.HMDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>AssignSimilarClaims</Name>
+				<Source><![CDATA[
+    public static void AssignSimilarClaims(MultiSelectionHelper multiSelectionHelper)
+    {
+        HMClaimTable		    claimTable, claimtable2, claimtable3,claimTableRecordSet;
+        int                     rowCount = 0;
+        DirPartyTable           dirParty;
+        DirPartyRelationship    dirPartyRelationship;
+        HMClaimChangeLogTable   hmClaimChangeLogTable;
+
+        if(multiSelectionHelper != null)
+        {
+            CustCollectionsAgent mzkCustCollectionsAgent = CustCollectionsAgent::findCurrentAgent();
+
+            claimtable2 = multiSelectionHelper.getFirst();
+
+            if(mzkCustCollectionsAgent != null && mzkCustCollectionsAgent.RecId != 0)
+            {
+                select firstonly Name from dirParty
+                    exists join dirPartyRelationship
+                        where dirPartyRelationship.ChildParty == dirParty.RecId
+                            && dirPartyRelationship.RecId == mzkCustCollectionsAgent.DirPartyRelationship;
+
+                while (claimtable2.RecId != 0)
+                {
+                    try
+                    {
+                        ttsbegin;
+                        
+                        select firstonly ClaimPool, HMInsuranceCarrier,  HMPatient from claimtable3
+                            where claimtable3.RecId == claimtable2.RecId;
+                        
+                        while select ClaimID 
+                            from claimTableRecordSet
+                                where claimTableRecordSet.ClaimAgent == 0
+                                    && claimTableRecordSet.ClaimPool == claimtable3.ClaimPool
+                                    && claimTableRecordSet.HMInsuranceCarrier == claimtable3.HMInsuranceCarrier
+                                    && claimTableRecordSet.HMPatient == claimtable3.HMPatient
+                                    && claimTableRecordSet.RecId != claimtable2.RecId
+                        {
+                            hmClaimChangeLogTable.ClaimID          = claimTableRecordSet.ClaimID;
+                            hmClaimChangeLogTable.OldValue         = '';
+                            hmClaimChangeLogTable.NewValue         = dirParty.Name;
+                            hmClaimChangeLogTable.HMAssignmentType = HMAssignmentType::Agent;
+                            hmClaimChangeLogTable.insert();
+                        }
+
+                        update_recordset claimTable
+                        setting
+                            ClaimAgent = mzkCustCollectionsAgent.RecId,
+                            AgentName = dirParty.Name
+                        where claimTable.ClaimAgent == 0 
+                            && claimTable.ClaimPool == claimtable3.ClaimPool
+                            && claimTable.HMInsuranceCarrier == claimtable3.HMInsuranceCarrier
+                            && claimTable.HMPatient == claimtable3.HMPatient
+                            && claimTable.RecId != claimtable2.RecId;
+                           
+                        rowCount += claimTable.rowCount() + 1;
+
+                        ttscommit;
+
+                        claimtable2 = multiSelectionHelper.getNext();
+                    }
+                    catch(Exception::Error)
+                    {
+                        throw Exception::Error;
+                    }
+                }
+
+                info(strFmt("%1 "+ "@Optum:MAZOPT0108", rowCount));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    public boolean validateDelete()
+    {
+        boolean                 ret;
+        HMClaimVersion          version;
+        utcdatetime             minDateTime = DateTimeUtil::utcNow();
+        HMClaimPaymentPosting   claimPaymentPosting;
+        str                     transfer = "TRANSFER";
+        
+        ttsbegin;
+
+        select firstonly forupdate validtimestate(minDateTime) * from version
+            order by ValidTo desc
+            where version.HMClaimTable == this.RecId;
+
+        if(version)
+        {
+            version.validTimeStateUpdateMode(ValidTimeStateUpdate::Correction);
+            version.Status = HMClaimStatus::Generated;
+            version.update();
+        }
+
+        ttscommit;
+
+        ret = next validateDelete();
+
+        ttsbegin;
+
+        select firstonly forupdate validtimestate(minDateTime) * from version
+            order by ValidTo desc
+            where version.HMClaimTable == this.RecId
+                && version.Status == HMClaimStatus::Generated;
+
+        if(version)
+        {
+            version.validTimeStateUpdateMode(ValidTimeStateUpdate::Correction);
+            version.Status = HMClaimStatus::Submitted;
+            version.update();
+        }
+
+        ttscommit;
+
+        select firstonly RecId from claimPaymentPosting
+            where claimPaymentPosting.ClaimID == this.ClaimID
+                && claimPaymentPosting.Type != transfer;
+
+        if(claimPaymentPosting.RecId)
+        {
+            ret = checkFailed("@Optum:ClaimDeletionNotAllowedIfPaymentPostingOtherThanTransferExistWarning");
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        HMClaimTableDetails         claimTableDetails;
+        HMClaimVersion              claimVersion;
+        HMClaimNotes                claimNotes;
+        HMClaimChargeLine           claimChargeLine;
+        HMClaimTablePBMUBO4Details  claimTablePBMUBO4Details;
+        HMClaimPaymentPosting       claimPaymentPosting;
+        RecId                       claimTableRecid;
+        str                         claimID;
+
+        claimTableRecid = this.RecId;
+        claimID = this.ClaimID;
+
+        try
+        {
+            ttsbegin;
+
+            delete_from claimTableDetails
+                where claimTableDetails.HMClaimTable == claimTableRecid;
+
+            delete_from claimVersion
+                where claimVersion.HMClaimTable == claimTableRecid;
+
+            delete_from claimTablePBMUBO4Details
+                where claimTablePBMUBO4Details.HMClaimTable == claimTableRecid;
+
+            delete_from claimNotes
+                where claimNotes.HMClaimTable == claimTableRecid;
+
+            delete_from claimChargeLine
+                where claimChargeLine.ClaimID == claimID;
+
+            delete_from claimPaymentPosting
+                where claimPaymentPosting.ClaimID == claimID;
+
+            ttscommit;
+        }
+        catch
+        {
+            throw error("@Optum:DeleteRecord");
+        }
+        
+        next delete();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update the claim table fields.
+    /// </summary>
+    public void update()
+    {
+        HMClaimTable oldClaim = this.orig();
+        HMPatient    hmPatient;
+        CustTable    custTable;
+        HMSiteTable  siteTable;
+
+        if(this.HMBalanceAmount != oldClaim.HMBalanceAmount
+            || this.HMExpectedAmount != oldClaim.HMExpectedAmount
+            || this.HMSite != oldClaim.HMSite
+            || this.HMActionType != oldClaim.HMActionType
+            || this.HMDenialDate != oldClaim.HMDenialDate
+            || this.HMClaimProcessStatus != oldClaim.HMClaimProcessStatus
+            || this.HMTherapyType != oldClaim.HMTherapyType
+            || this.HMInvoiceType != oldClaim.HMInvoiceType)
+        {
+            this.IsClaimModified = NoYes::Yes;
+        }
+       
+        if (this.HMSite != oldClaim.HMSite)
+        {
+            select firstonly siteTable
+                where siteTable.HMSiteName == this.HMSite;
+
+            if (siteTable.RecId)
+            {
+                this.HMSiteDescription =  siteTable.HMDescription;
+            }
+        }
+
+        next update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Insert the claim table fields.
+    /// </summary>
+    public void insert()
+    {
+        HMPatient   hmPatient;
+        CustTable   custTable;
+        HMSiteTable siteTable;
+
+        select firstonly siteTable
+            where siteTable.HMSiteName == this.HMSite;
+
+        if (siteTable.RecId)
+        {
+            this.HMSiteDescription = siteTable.HMDescription;
+        }
+
+        next insert();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

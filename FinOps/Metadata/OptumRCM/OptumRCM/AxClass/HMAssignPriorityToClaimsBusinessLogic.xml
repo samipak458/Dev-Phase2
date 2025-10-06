@@ -1,0 +1,504 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAssignPriorityToClaimsBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMAssignPriorityToClaimsBusinessLogic
+{
+    int                 taskNumber;
+    RecId               hmClaimBatchJobLogsHeaders, hmClaimBatchJobLogsHeaderDataPrep;
+    RecordInsertList    insertRecListForClaimLogs = new RecordInsertList(tableNum(HMClaimBatchJobsLogs));
+    str                 logMsg = "";
+    HMClaimJobType      jobType;
+
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMAssignPriorityToClaimsBusinessLogic construct()
+    {
+        return new HMAssignPriorityToClaimsBusinessLogic();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setJobType</Name>
+				<Source><![CDATA[
+    public void setJobType()
+    {
+        jobType = HMClaimJobType::Priority;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void processInit(int _taskNumber = 0, RecId _hmClaimBatchJobLogsHeader = 0, RecId _hmClaimBatchJobLogsHeaderDataPrep = 0)
+    {
+        try
+        {
+            taskNumber                          = _taskNumber;
+            hmClaimBatchJobLogsHeaders          = _hmClaimBatchJobLogsHeader;
+            hmClaimBatchJobLogsHeaderDataPrep   = _hmClaimBatchJobLogsHeaderDataPrep;
+
+            this.setDefaultPriority();            
+            this.getPriority();
+            this.setPriorityStrategyForDefaultPriority();
+        }
+        catch
+        {
+            throw;
+        }
+        finally
+        {
+            this.insertDataIntoClaimBatchLogsTable();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDefaultPriority</Name>
+				<Source><![CDATA[
+    public void setDefaultPriority()
+    {
+        HMClaimTable                            claimTable;
+        HMClaimPrioritizationCalculatedFields   hmClaimPrioritizationCalculatedFields;
+        HMBillParameters                        HMBillParameters = HMBillParameters::find();
+
+        try
+        {
+            claimTable.skipDataMethods(true);
+
+            update_recordset claimTable
+            setting
+                 HMClaimPriority = HMBillParameters.DefaultClaimPrirority                
+            join hmClaimPrioritizationCalculatedFields
+                where hmClaimPrioritizationCalculatedFields.ClaimID == claimTable.ClaimID
+                    && hmClaimPrioritizationCalculatedFields.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimPrioritizationCalculatedFields.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;            
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                logMsg = "@Optum:DefaultPriorityAssignmentFailed";
+                throw error(logMsg);
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                logMsg = "@Optum:DefaultPriorityAssignmentFailed";
+                throw error(logMsg);
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setPriorityStrategyForDefaultPriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Set priority strategy for the default priority assigned to claim pools.
+    /// </summary>
+    public void setPriorityStrategyForDefaultPriority()
+    {
+        HMClaimTable                            claimTable;
+        HMClaimPrioritizationCalculatedFields   hmClaimPrioritizationCalculatedFields;
+        CustCollectionsPool                     custCollectionsPool;
+        HMBillParameters                        HMBillParameters = HMBillParameters::find();
+
+        try
+        {
+            claimTable.skipDataMethods(true);
+
+            update_recordset claimTable
+                setting
+                    HMPriorityStrategyID = custCollectionsPool.HMPriorityStrategyID
+                where claimTable.HMClaimPriority == HMBillParameters.DefaultClaimPrirority
+                join custCollectionsPool
+                    where custCollectionsPool.RecId == claimTable.ClaimPool
+                join hmClaimPrioritizationCalculatedFields
+                    where hmClaimPrioritizationCalculatedFields.ClaimID == claimTable.ClaimID
+                        && hmClaimPrioritizationCalculatedFields.TaskNumberForDataPreparation == taskNumber
+                        && hmClaimPrioritizationCalculatedFields.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;            
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                logMsg = "@Optum:PriorityStrategyForDefaultPriorityFailed";
+                throw error(logMsg);
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                logMsg = "@Optum:PriorityStrategyForDefaultPriorityFailed";
+                throw error(logMsg);
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "_claimId"></param>
+    /// <returns></returns>
+    public void getPriority()
+    {
+        HMClaimPriorityTable                    claimPriorityTable;
+        HMClaimTable                            claimTable;
+        QueryBuildDataSource                    qbdsHMClaimPrioritizationCalculatedFields;
+        QueryRun                                qryRun;
+        HMClaimPrioritizationCalculatedFields   hmClaimPrioritizationCalculatedFields;
+
+        while select Priority, QueryPacked, HMPriorityStrategyID from claimPriorityTable
+            order by claimPriorityTable.Priority asc
+            exists join hmClaimPrioritizationCalculatedFields
+                where hmClaimPrioritizationCalculatedFields.ClaimPoolStrategy == claimPriorityTable.HMPriorityStrategyID
+                    && claimPriorityTable.QueryPacked != conNull()
+        {
+            Query qry = new Query(claimPriorityTable.QueryPacked);
+
+            qbdsHMClaimPrioritizationCalculatedFields = qry.dataSourceTable(tableNum(HMClaimPrioritizationCalculatedFields));
+            qbdsHMClaimPrioritizationCalculatedFields.addRange(fieldNum(HMClaimPrioritizationCalculatedFields, TaskNumberForDataPreparation)).value(queryValue(taskNumber));
+            qbdsHMClaimPrioritizationCalculatedFields.addRange(fieldNum(HMClaimPrioritizationCalculatedFields, HMClaimBatchJobLogsHeader)).value(queryValue(hmClaimBatchJobLogsHeaderDataPrep));
+            qbdsHMClaimPrioritizationCalculatedFields.addRange(fieldNum(HMClaimPrioritizationCalculatedFields, ClaimPoolStrategy)).value(queryValue(claimPriorityTable.HMPriorityStrategyID));
+
+            if(qry != null)
+            {
+                qryRun = new QueryRun(qry);
+
+                while(qryRun.next())
+                {
+                    claimTable = qryRun.get(tableNum(HMClaimTable));
+
+                    this.updatePriorityOnClaims(claimPriorityTable.Priority, claimTable.RecId, claimPriorityTable.HMPriorityStrategyID);
+                }
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePriorityOnClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void updatePriorityOnClaims(HMClaimPriority _priority, RecId _hmClaimTable, HMPriorityStrategyID _hmPriorityStrategyID)
+    {
+        HMClaimTable                            updateClaimTable;
+        HMClaimPrioritizationCalculatedFields   hmClaimPrioritizationCalculatedFields;
+        boolean                                 exceptionOccured = false;
+        str                                     oldPriority;
+        HMPriorityStrategyID                    oldPriorityStrategy;
+        HMClaimProcessingStatus                 hmClaimProcessingStatus;
+        HMClaimBatchJobsLogs                    hmClaimBatchJobsLogs;
+
+        this.setJobType();
+
+        select firstonly forupdate updateClaimTable
+            where updateClaimTable.RecId == _hmClaimTable;
+
+        select firstonly OldClaimPriority from hmClaimPrioritizationCalculatedFields
+            where hmClaimPrioritizationCalculatedFields.TaskNumberForDataPreparation == taskNumber
+                && hmClaimPrioritizationCalculatedFields.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep
+                && hmClaimPrioritizationCalculatedFields.ClaimID == updateClaimTable.ClaimID;
+
+        oldPriority         = hmClaimPrioritizationCalculatedFields.OldClaimPriority;
+        oldPriorityStrategy = updateClaimTable.HMPriorityStrategyID;
+
+        if(_priority)
+        {
+            try
+            {
+                ttsbegin;
+
+                updateClaimTable.HMClaimPriority        = _priority;
+                updateClaimTable.HMPriorityStrategyID   = _hmPriorityStrategyID;
+                updateClaimTable.update();
+
+                ttscommit;
+            }
+            catch (Exception::Deadlock)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    exceptionOccured = true;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            catch
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    exceptionOccured = true;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            finally
+            {
+
+                if(exceptionOccured)
+                {
+
+                    hmClaimProcessingStatus = HMClaimProcessingStatus::Failed;
+
+                    warning(strFmt('@MAZ:UnableToUpdatePriorityAgainstClaimId', updateClaimTable.ClaimID));
+                }
+                else
+                {
+                    hmClaimProcessingStatus = HMClaimProcessingStatus::Successful;
+                }
+
+                this.deleteClaimFromHMClaimPrioritizationCalculatedFields(updateClaimTable.ClaimID);
+
+                hmClaimBatchJobsLogs = HMClaimBatchJobsLogs::createData(jobType
+                                                                    , updateClaimTable.ClaimID
+                                                                    , strFmt("@Optum:HMStringConcat", oldPriority, oldPriorityStrategy)
+                                                                    , strFmt("@Optum:HMStringConcat", _priority, _hmPriorityStrategyID)
+                                                                    , taskNumber
+                                                                    , hmClaimProcessingStatus
+                                                                    , ""
+                                                                    , hmClaimBatchJobLogsHeaders);
+
+                insertRecListForClaimLogs.add(hmClaimBatchJobsLogs);
+
+            }
+            
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoClaimBatchLogsTable</Name>
+				<Source><![CDATA[
+    public void insertDataIntoClaimBatchLogsTable()
+    {
+        HMClaimBatchJobsLogs                    hmClaimBatchJobsLogs, hmClaimBatchJobsLogsNotExists;
+        HMClaimPrioritizationCalculatedFields   hmClaimPrioritizationCalculatedFields;
+        HMClaimProcessingStatus                 claimProcessingStatus = HMClaimProcessingStatus::Unprocessed;
+        str                                     newValues = "";
+
+        try
+        {
+            ttsbegin;
+               
+            insertRecListForClaimLogs.insertDatabase();
+
+            select firstonly RecId from hmClaimPrioritizationCalculatedFields
+                where hmClaimPrioritizationCalculatedFields.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimPrioritizationCalculatedFields.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+
+            if(hmClaimPrioritizationCalculatedFields.RecId != 0)
+            {
+                claimProcessingStatus = logMsg == "" ? HMClaimProcessingStatus::Successful : claimProcessingStatus;
+
+                newValues = logMsg == "" ? "99" : newValues;
+
+                insert_recordset hmClaimBatchJobsLogs (ClaimID
+                    , OldValue
+                    , BatchThreadNumbers
+                    , HMClaimBatchJobLogsHeader
+                    , ClaimProcessingStatus
+                    , ErrorLog
+                    , JobType
+                    , NewValue)
+                select ClaimID
+                    , OldClaimPriority
+                    , taskNumber
+                    , hmClaimBatchJobLogsHeaders
+                    , claimProcessingStatus
+                    , logMsg
+                    , jobType
+                    , newValues
+                from hmClaimPrioritizationCalculatedFields
+                    where hmClaimPrioritizationCalculatedFields.TaskNumberForDataPreparation == taskNumber
+                        && hmClaimPrioritizationCalculatedFields.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep
+                    notexists join hmClaimBatchJobsLogsNotExists
+                        where hmClaimBatchJobsLogsNotExists.BatchThreadNumbers == taskNumber
+                            && hmClaimBatchJobsLogsNotExists.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaders
+                            && hmClaimBatchJobsLogsNOtExists.ClaimID == hmClaimPrioritizationCalculatedFields.ClaimID;
+            
+            }
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        finally
+        {
+            this.deleteDataFromHMClaimPrioritizationCalculatedFields();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteDataFromHMClaimPrioritizationCalculatedFields</Name>
+				<Source><![CDATA[
+    public void deleteDataFromHMClaimPrioritizationCalculatedFields()
+    {
+        HMClaimPrioritizationCalculatedFields hmClaimPrioritizationCalculatedFields;
+
+        try
+        {
+            ttsbegin;
+
+            delete_from hmClaimPrioritizationCalculatedFields
+                where hmClaimPrioritizationCalculatedFields.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimPrioritizationCalculatedFields.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable","HMClaimPrioritizationCalculatedFields"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable","HMClaimPrioritizationCalculatedFields"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaimFromHMClaimPrioritizationCalculatedFields</Name>
+				<Source><![CDATA[
+    public void deleteClaimFromHMClaimPrioritizationCalculatedFields(HMClaimNumber _claimID)
+    {
+        HMClaimPrioritizationCalculatedFields hmClaimPrioritizationCalculatedFields;
+        
+        try
+        {
+            ttsbegin;
+
+            delete_from hmClaimPrioritizationCalculatedFields
+                where hmClaimPrioritizationCalculatedFields.ClaimID == _claimID
+                    && hmClaimPrioritizationCalculatedFields.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimPrioritizationCalculatedFields.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                warning(strFmt('@MAZ:FailedToDeleteDataFromTmpTableAgainstClaim', "HMClaimPrioritizationCalculatedFields", _claimID));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                warning(strFmt('@MAZ:FailedToDeleteDataFromTmpTableAgainstClaim', "HMClaimPrioritizationCalculatedFields", _claimID));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

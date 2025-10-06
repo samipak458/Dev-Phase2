@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMZeroClaimAgeCalculateMainMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used as the main batch job class for calculation and updation of aging days batch job for $0 denied claims
+/// </summary>
+class HMZeroClaimAgeCalculateMainMultiThreadBatchJob extends RunBaseBatch implements BatchRetryable
+{
+    QueryRun                 gQueryRun;
+    BatchHeader              batchHeader;
+    HMNumberOfThreads        numberOfThreads;
+    RecId                    hmClaimBatchJobLogsHeader, hmClaimBatchJobLogsHeaderDataPrep;
+    HMClaimJobType           jobType, jobTypeDataPrep;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        numberOfThreads
+    #endmacro
+    #localmacro.HMClaimBatchJobLogsHeaderDataPrep
+        hmClaimBatchJobLogsHeaderDataPrep
+    #endmacro
+    #localmacro.HMClaimBatchJobLogsHeader
+        hmClaimBatchJobLogsHeader
+    #endmacro
+    #localmacro.JobType
+        jobType
+    #endmacro
+    #localmacro.JobTypeDataPrep
+        jobTypeDataPrep
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMZeroClaimAgeCalculateMainMultiThreadBatchJob construct()
+    {
+        return new HMZeroClaimAgeCalculateMainMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of the task
+    /// </summary>
+    /// <returns>Return description of the task</returns>
+    static ClassDescription description()
+    {
+        return "@Optum:ZeroClaimAgeCalculateMultipleThreadBatchJobs";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method initiated the task for calculation and updation of aging days batch job for $0 denied claims
+    /// </summary>
+    public void run()
+    {
+        HMDataPrepForZeroClaimAgeCalcMultiThreadBatchJob hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob;
+        HMZeroClaimAgeCalculateMultiThreadBatchJob       hmZeroClaimAgeCalculateMultiThreadBatchJob;
+        HMUpdateZeroClaimBatchJobLogsHeaderCount         hmUpdateZeroClaimBatchJobLogsHeaderCount;
+        int                                              recordsToProcess, perThreadRecordsRound, additionalRecordsRound;
+        HMOneDecimal                                     additionalRecords;
+        real                                             perThreadRecords, diffPerThread;
+        RecId                                            batchJobId;
+        HMClaimQualifiedForAgeCalculate                  hmClaimQualifiedForAgeCalculate;
+        
+        try
+        {
+            ttsbegin;
+
+            delete_from hmClaimQualifiedForAgeCalculate
+                where hmClaimQualifiedForAgeCalculate.CreatedDateTime <= DateTimeUtil::addDays(DateTimeUtil::utcNow(), -2);
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", 'HMClaimQualifiedForAgeCalculate'));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", 'HMClaimQualifiedForAgeCalculate'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+
+        try
+        {
+            
+            if (this.isInBatch())
+            {
+                numberOfThreads = numberOfThreads == 0 ? 1 : numberOfThreads < 0 ? numberOfThreads * -1 : numberOfThreads;
+
+                recordsToProcess = SysQuery::countTotal(gQueryRun);
+                
+                Info(strFmt("@MAZ:NoOfRecordsPicked", recordsToProcess));
+
+                if (recordsToProcess <= numberOfThreads)
+                {
+                    numberOfThreads = 1;
+
+                    Info("@MAZ:RecordsLesserThanNumberOfThreads");
+                }
+
+                perThreadRecords        = recordsToProcess / numberOfThreads;
+                perThreadRecordsRound   = perThreadRecords;
+                diffPerThread           = perThreadRecords - perThreadRecordsRound;
+                additionalRecords       = diffPerThread * numberOfThreads;
+                additionalRecords       = roundUp(additionalRecords, 1);
+                additionalRecordsRound  = additionalRecords;
+
+                if (perThreadRecordsRound + additionalRecordsRound > 0)
+                {
+                    if (!batchHeader)
+                    {
+                        batchJobId = this.parmCurrentBatch().BatchJobId;
+
+                        batchHeader = BatchHeader::construct(batchJobId);
+
+                        batchHeader.parmRetriesOnFailure(5);
+                    }
+
+                    hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob = HMDataPrepForZeroClaimAgeCalcMultiThreadBatchJob::construct();
+                    hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob.parmQueryRun(gQueryRun);
+                    hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob.parmPerThreadRecordsRound(perThreadRecordsRound);
+                    hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob.parmAdditionalRecords(additionalRecordsRound);
+                    hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob.parmTaskDescription("@Optum:DataPreparationForZeroClaimAging");
+
+                    hmClaimBatchJobLogsHeaderDataPrep = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::AgeZeroBalanceDataPrep
+                                                                                            , batchJobId
+                                                                                            , recordsToProcess
+                                                                                            , numberOfThreads);
+
+                    hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeaderDataPrep);
+
+
+                    hmZeroClaimAgeCalculateMultiThreadBatchJob = HMZeroClaimAgeCalculateMultiThreadBatchJob::construct();
+                    hmZeroClaimAgeCalculateMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    hmZeroClaimAgeCalculateMultiThreadBatchJob.parmTaskDescription("@Optum:AssignmentOfAgeOnZeroClaims");
+                    hmZeroClaimAgeCalculateMultiThreadBatchJob.parmHMClaimBatchJobLogsHeaderDataPrep(hmClaimBatchJobLogsHeaderDataPrep);
+
+                    hmClaimBatchJobLogsHeader = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::AgeZeroBalance
+                                                                                    , batchJobId
+                                                                                    , recordsToProcess
+                                                                                    , numberOfThreads);
+
+                    hmZeroClaimAgeCalculateMultiThreadBatchJob.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeader);
+
+                    jobType         = HMClaimJobType::AgeZeroBalance;
+                    jobTypeDataPrep = HMClaimJobType::AgeZeroBalanceDataPrep;
+
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount = HMUpdateZeroClaimBatchJobLogsHeaderCount::construct();
+
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmJobType(jobType);
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmJobTypeDataPrep(jobTypeDataPrep);
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmHMClaimBatchJobLogsHeaderDataPrep(hmClaimBatchJobLogsHeaderDataPrep);
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeader);
+
+                    batchHeader.addRuntimeTask(hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmZeroClaimAgeCalculateMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmUpdateZeroClaimBatchJobLogsHeaderCount, this.parmCurrentBatch().RecId);
+
+                    batchHeader.addDependency(hmZeroClaimAgeCalculateMultiThreadBatchJob, hmDataPrepForZeroClaimAgeCalcMultiThreadBatchJob);
+                    batchHeader.addDependency(hmUpdateZeroClaimBatchJobLogsHeaderCount, hmZeroClaimAgeCalculateMultiThreadBatchJob);
+                }
+                else
+                {
+                    Info("@MAZ:NoRecordsFoundForProcessing");
+                }
+
+            }
+
+            if (batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();
+            }
+
+        }
+        catch
+        {
+            throw error(strFmt("@MAZ:BatchJobInitiationFailed",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+
+        return [#CurrentVersion] + [pack] + [#CurrentList] + [#HMClaimBatchJobLogsHeader] + [#HMClaimBatchJobLogsHeaderDataPrep] + [#JobType] + [#JobTypeDataPrep];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #CurrentList,#HMClaimBatchJobLogsHeader, #HMClaimBatchJobLogsHeaderDataPrep,  #JobType, #JobTypeDataPrep] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+
+            default:
+                ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQueryRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the gQueryRun object
+    /// </summary>
+    /// <param name="_qr"><c>QueryRun</c> object</param>
+    public void parmQueryRun(QueryRun _qr)
+    {
+        gQueryRun = _qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNumberOfThreads</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the numberOfThreads value
+    /// </summary>
+    /// <param name="_numberOfThreads"><c>HMNumberOfThreads</c> value</param>
+    public void parmNumberOfThreads(HMNumberOfThreads _numberOfThreads)
+    {
+        numberOfThreads = _numberOfThreads;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRetryable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Specifies if the batch task is retryable for transient exceptions or not.
+    /// </summary>
+    /// <returns>
+    /// If true is returned, the batch task is retryable, otherwise it is not.
+    /// </returns>
+    [Wrappable(true), Replaceable(true)]
+    public boolean isRetryable()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

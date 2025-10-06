@@ -1,0 +1,561 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimLineArchivingHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClaimLineArchivingHelper
+{
+    #OCCRetryCount
+
+    HMCLaimIdsTmp               gHMClaimIdsTmp;
+    DMFDefinitionGroupExecution dmfDefinitionGroupExecution;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// constructor to initialize the class object
+    /// </summary>
+    /// <returns></returns>
+    public server static HMClaimLineArchivingHelper construct()
+    {
+        return new HMClaimLineArchivingHelper();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process the functions of the class
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution"></param>
+    public void processInit(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        ttsbegin;
+
+        dmfDefinitionGroupExecution = _dmfDefinitionGroupExecution;
+
+        this.collectArchivingClaimsFromStaging();
+        this.insertIntoStagingArchive();
+        this.insertIntoHMClaimChargeLineArchive();
+        this.insertIntoHMClaimPaymentPostingArchive();
+
+        this.deleteClaimsFromStaging();
+        this.deleteClaims();
+
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectArchivingClaimsFromStaging</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into temporary table for bulk insertion
+    /// </summary>
+    public void collectArchivingClaimsFromStaging()
+    {
+        HMClaimChargeLineStaging    stagingTable;
+        HMClaimTable                claimTable;
+
+        gHMClaimIdsTmp.clear();
+        gHMClaimIdsTmp.delete();
+
+        try
+        {
+            insert_recordset gHMClaimIdsTmp(ClaimId, LineNumber, ExecutionId, HMUniqueID, HMClaimTable)
+            select HMClaimTable_ClaimID, LineNumber, ExecutionId from stagingTable
+                group by HMClaimTable_ClaimID, LineNumber, ExecutionId, claimTable.HMUniqueID, claimTable.RecId
+                where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes
+                join HMUniqueID, RecId from claimTable
+                    where claimTable.ClaimID == stagingTable.HMClaimTable_ClaimID;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimIdsTmp'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimIdsTmp'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoStagingArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert HMClaimChargeLineStaging table into HMClaimChargeLineStagingArchive table
+    /// </summary>
+    public void insertIntoStagingArchive()
+    {
+        HMClaimChargeLineStaging        stagingTable;
+        HMClaimChargeLineStagingArchive stagingTableArchive;
+
+        try
+        {
+            insert_recordset stagingTableArchive (AdjustedAmount
+                ,Balance
+                ,ClaimID
+                ,Cost
+                ,CPT_HCPCS_Code
+                ,dataAreaId
+                ,DefinitionGroup
+                ,DiagnosisPointer
+                ,DrugName
+                ,EMG
+                ,ExecutionId
+                ,GrossAmount
+                ,HMAuthorization
+                ,HMChargeLineAmount
+                ,HMClaimTable_ClaimID
+                ,HMCodeorChequeNumber
+                ,HMDescriptionofCharges
+                ,HMDiagnosisIdentifier
+                ,HMExpectedAmount
+                ,HMHCPC
+                ,HMItemOrServiceCode
+                ,HMNDC
+                ,HMNDCQualifier
+                ,HMNDCUnits
+                ,HMPlaceOfService
+                ,HMProcedureModifier1
+                ,HMProcedureModifier2
+                ,HMProcedureModifier3
+                ,HMProcedureModifier4
+                ,HMRevenueCategory
+                ,HMRxNumber
+                ,HMServiceFromDate
+                ,HMServiceToDate
+                ,HMTotalPaid
+                ,HMUnits
+                ,InventTable
+                ,IsClaimDeleted
+                ,IsSelected
+                ,LineNumber
+                ,NPI
+                ,Quantity
+                ,TransferStatus
+                ,UCCharge
+                ,Units)
+            select AdjustedAmount
+                ,Balance
+                ,ClaimID
+                ,Cost
+                ,CPT_HCPCS_Code
+                ,dataAreaId
+                ,DefinitionGroup
+                ,DiagnosisPointer
+                ,DrugName
+                ,EMG
+                ,ExecutionId
+                ,GrossAmount
+                ,HMAuthorization
+                ,HMChargeLineAmount
+                ,HMClaimTable_ClaimID
+                ,HMCodeorChequeNumber
+                ,HMDescriptionofCharges
+                ,HMDiagnosisIdentifier
+                ,HMExpectedAmount
+                ,HMHCPC
+                ,HMItemOrServiceCode
+                ,HMNDC
+                ,HMNDCQualifier
+                ,HMNDCUnits
+                ,HMPlaceOfService
+                ,HMProcedureModifier1
+                ,HMProcedureModifier2
+                ,HMProcedureModifier3
+                ,HMProcedureModifier4
+                ,HMRevenueCategory
+                ,HMRxNumber
+                ,HMServiceFromDate
+                ,HMServiceToDate
+                ,HMTotalPaid
+                ,HMUnits
+                ,InventTable
+                ,IsClaimDeleted
+                ,IsSelected
+                ,LineNumber
+                ,NPI
+                ,Quantity
+                ,TransferStatus
+                ,UCCharge
+                ,Units
+            from stagingTable
+                where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId     == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus  == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimChargeLineStagingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimChargeLineStagingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimChargeLineArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimChargeLineArchive table
+    /// </summary>
+    public void insertIntoHMClaimChargeLineArchive()
+    {
+        HMClaimChargeLine           claimChargeLines;
+        HMClaimChargeLineArchive    claimChargeLineArchive;
+
+        try
+        {
+            insert_recordset claimChargeLineArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,AdjustedAmount
+                ,Balance
+                ,BalanceChangeDate
+                ,BalanceResponsible
+                ,ChargeLeft
+                ,ChargeRight
+                ,ClaimID
+                ,Cost
+                ,CPT_HCPCS_Code
+                ,DiagnosisPointer
+                ,Disputed
+                ,DrugName
+                ,EMG
+                ,GrossAmount
+                ,HMAdjustedAmount
+                ,HMAuthorization
+                ,HMBalance
+                ,HMCaseTrans
+                ,HMChargeLineAmount
+                ,HMClaimTable
+                ,HMCodeorChequeNumber
+                ,HMDescriptionofCharges
+                ,HMDiagnosisIdentifier
+                ,HMExpectedAmount
+                ,HMHCPC
+                ,HMItemOrServiceCode
+                ,HMNDC
+                ,HMNDCQualifier
+                ,HMNDCUnits
+                ,HMPatientChargeEntryLine
+                ,HMPlaceOfService
+                ,HMProcedureMasterCode
+                ,HMProcedureModifier1
+                ,HMProcedureModifier2
+                ,HMProcedureModifier3
+                ,HMProcedureModifier4
+                ,HMRevenueCategory
+                ,HMRxNumber
+                ,HMServiceFromDate
+                ,HMServiceToDate
+                ,HMTotalPaid
+                ,HMUnits
+                ,InventTable
+                ,IsImportedFromChargeEntryLine
+                ,IsRejected
+                ,LineNumber
+                ,NPI
+                ,Priority
+                ,Quantity
+                ,UCCharge
+                ,Units
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMUniqueID
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,AdjustedAmount
+                ,Balance
+                ,BalanceChangeDate
+                ,BalanceResponsible
+                ,ChargeLeft
+                ,ChargeRight
+                ,ClaimID
+                ,Cost
+                ,CPT_HCPCS_Code
+                ,DiagnosisPointer
+                ,Disputed
+                ,DrugName
+                ,EMG
+                ,GrossAmount
+                ,HMAdjustedAmount
+                ,HMAuthorization
+                ,HMBalance
+                ,HMCaseTrans
+                ,HMChargeLineAmount
+                ,HMClaimTable
+                ,HMCodeorChequeNumber
+                ,HMDescriptionofCharges
+                ,HMDiagnosisIdentifier
+                ,HMExpectedAmount
+                ,HMHCPC
+                ,HMItemOrServiceCode
+                ,HMNDC
+                ,HMNDCQualifier
+                ,HMNDCUnits
+                ,HMPatientChargeEntryLine
+                ,HMPlaceOfService
+                ,HMProcedureMasterCode
+                ,HMProcedureModifier1
+                ,HMProcedureModifier2
+                ,HMProcedureModifier3
+                ,HMProcedureModifier4
+                ,HMRevenueCategory
+                ,HMRxNumber
+                ,HMServiceFromDate
+                ,HMServiceToDate
+                ,HMTotalPaid
+                ,HMUnits
+                ,InventTable
+                ,IsImportedFromChargeEntryLine
+                ,IsRejected
+                ,LineNumber
+                ,NPI
+                ,Priority
+                ,Quantity
+                ,UCCharge
+                ,Units
+                ,createdBy
+                ,modifiedBy
+                from claimChargeLines
+                join HMUniqueID, ExecutionId from gHMClaimIdsTmp
+                    where claimChargeLines.HMClaimTable == gHMClaimIdsTmp.HMClaimTable
+                        && claimChargeLines.LineNumber == gHMClaimIdsTmp.LineNumber;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimChargeLineArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimChargeLineArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimPaymentPostingArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimPaymentPostingArchive table
+    /// </summary>
+    public void insertIntoHMClaimPaymentPostingArchive()
+    {
+        HMClaimPaymentPosting           claimPaymentPosting;
+        HMClaimPaymentPostingArchive    claimPaymentPostingArchive;
+
+        try
+        {
+            insert_recordset claimPaymentPostingArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,DatePosted
+                ,HMClaimPaymentDate
+                ,LineNumber
+                ,Payor
+                ,TransToClaim
+                ,Type
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMUniqueID
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,DatePosted
+                ,HMClaimPaymentDate
+                ,LineNumber
+                ,Payor
+                ,TransToClaim
+                ,Type
+                ,createdBy
+                ,modifiedBy
+                from claimPaymentPosting
+                join HMUniqueID, ExecutionId from gHMClaimIdsTmp
+                    where claimPaymentPosting.ClaimID == gHMClaimIdsTmp.ClaimID
+                        && claimPaymentPosting.ChargeLineNumber == gHMClaimIdsTmp.LineNumber;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaimsFromStaging</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delete claims data from HMClaimChargeLineStaging table
+    /// </summary>
+    public void deleteClaimsFromStaging()
+    {
+        HMClaimChargeLineStaging stagingTable;
+
+        try
+        {
+            delete_from stagingTable
+             where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimChargeLineStaging'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimChargeLineStaging'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delete claims data from HMClaimChargeLine table
+    /// </summary>
+    public void deleteClaims()
+    {
+        HMClaimChargeLine claimLine;
+
+        try
+        {
+            delete_from claimLine
+                exists join gHMClaimIdsTmp
+                    where claimLine.HMClaimTable == gHMClaimIdsTmp.HMClaimTable
+                        && claimLine.LineNumber == gHMClaimIdsTmp.LineNumber;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimChargeLine'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimChargeLine'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

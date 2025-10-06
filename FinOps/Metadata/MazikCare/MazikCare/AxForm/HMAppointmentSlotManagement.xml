@@ -1,0 +1,530 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMAppointmentSlotManagement</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Removed unused footnote group. */
+/* TODO: (Code Upgrade) No caption found on the form - ensure the value in Form.Design.Caption contains the caption you want for this form. */
+/* TODO: (Code Upgrade) Duplicate captions or extra secondary instruction were detected for this form, but the control MainInstruction is potentially referenced in code. The control is deleted and replaced with a string control which has the same name as the original static text control. You need to delete this replacement string control and ensure no code referencing it remains. Logic should instead be performed on formDesign.Caption or the secondary instruction control if you need to programmatically modify it. */
+[Form]
+public class HMAppointmentSlotManagement extends FormRun
+{
+    RecId   resourceRecId, scheduleTypeRecId, planningObjectRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        Object          formRun;
+        container       selectedSlotsCon;
+        date            slotDate;
+        str             tempStringSlot;
+        HMResourceSchedulingPlanningObject planningObject = element.args().record();
+    
+        resourceRecId = planningObject.HMResourceMaster;
+        planningObjectRecId = planningObject.RecId;
+    
+        Resource.text(HMResourceMasterHelper::getResourceName(resourceRecId));
+        AppointmentDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+        formRun = element.args().caller();
+        if(formHasMethod(formRun,identifierStr(getStartEndDateTimeForBlockSlot)))
+        {
+            selectedSlotsCon = element.args().caller().getStartEndDateTimeForBlockSlot();
+            tempStringSlot = conPeek(selectedSlotsCon,1);
+            slotDate = str2Date(tempStringSlot,213);
+            AppointmentDate.dateValue(slotDate);
+            if(str2time(conPeek(selectedSlotsCon,2)) != 0 || str2time(conPeek(selectedSlotsCon,3)) != 0)
+            {
+                tempStringSlot = conPeek(selectedSlotsCon,2);
+                FromTime.value(str2time(tempStringSlot));
+                tempStringSlot = conPeek(selectedSlotsCon,3);
+                ToTime.value(str2time(tempStringSlot));
+            }
+        }
+    
+        switch(element.args().parmEnum())
+        {
+            case HMAppointmentSlotReserveBlock::Added:
+                MainInstruction.text("@MAZ12155");
+                OKButton.text("@SYS60080");
+                break;
+            case HMAppointmentSlotReserveBlock::Removed:
+                MainInstruction.text("@MAZ12156");
+                OKButton.text("@SYS135131");
+                ScheduleType.visible(false);
+                NumberOfSlots.visible(false);
+                ArrivalTime.visible(false);
+                break;
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setTimeSlots</Name>
+				<Source><![CDATA[
+    public void setTimeSlots()
+    {
+        boolean flag=false;
+        HMResourceSchedulingHelper objClass=new HMResourceSchedulingHelper();
+    
+        if(scheduleTypeRecId != 0)
+        {
+            if(ToTime.value() >= FromTime.value())
+            {
+                flag=true;
+            }
+        }
+    
+        if(flag)
+        {
+            NumberOfSlots.value(int642int(objClass.getInitialTimeSlots(FromTime.value(),ToTime.value(),scheduleTypeRecId, resourceRecId)));
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeScheduleType</Name>
+				<Source><![CDATA[
+    public void storeScheduleType(RecId   _scheduleTypeRecId)
+    {
+        scheduleTypeRecId = _scheduleTypeRecId;
+    
+        element.setTimeSlots();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>FromTime</Name>
+				<Type>Time</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            element.setTimeSlots();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ToTime</Name>
+				<Type>Time</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            element.setTimeSlots();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ScheduleType</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+            ContainerClass conClass;
+        
+            args.name(formstr(HMScheduleTypeLookupFilter));
+            args.caller(element);
+        
+            conClass = new ContainerClass([0, resourceRecId]);
+        
+            args.parmObject(conClass);
+            args.parmEnum(HMCaseType::OutPatient);
+        
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMResourceSchedulingTypeCode    hmResourceSchedulingTypeCodeLocal;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if(this.valueStr() != "")
+                {
+                    hmResourceSchedulingTypeCodeLocal = HMlookupClass::checkValidScheduleTypeSearchName(this.valueStr(), HMCaseType::OutPatient, true, resourceRecId);
+        
+                    if(hmResourceSchedulingTypeCodeLocal.RecId)
+                    {
+                        element.storeScheduleType(hmResourceSchedulingTypeCodeLocal.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ7340"));
+                        this.text(HMResourceSchedulingTypeCode::find(scheduleTypeRecId).Description);
+                    }
+                }
+                else
+                {
+                    element.storeScheduleType(0);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ArrivalTime</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            if(this.text() && !HMResourceSchedulingHelper::validateTime(this.text()))
+            {
+                ret = false;
+        
+                checkFailed("@MAZ11906");
+            }
+            else
+            {
+                ret = super();
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            boolean ret = true;
+            FormRun                 formRun = element.args().caller();
+            Object                      formRunObject;
+        
+            if(FromTime.value() > ToTime.value())
+            {
+                warning("@MAZ11573");
+                ret =false;
+            }
+        
+            switch(element.args().parmEnum())
+            {
+                case HMAppointmentSlotReserveBlock::Added:
+                    if(!scheduleTypeRecId)
+                    {
+                        warning(strFmt("@SYS84753","@MAZ7340"));
+                        ret =false;
+                    }
+        
+                    if(ArrivalTime.text() && str2time(ArrivalTime.text()) > FromTime.value())
+                    {
+                        warning("@MAZ12327");
+                        ret = false;
+                    }
+        
+                    break;
+            }
+        
+            if(ret)
+            {
+                switch(element.args().parmEnum())
+                {
+                    case HMAppointmentSlotReserveBlock::Added:
+                        if(HMResourceSchedulingHelper::addNewAppointmentSlot(AppointmentDate.dateValue(), AppointmentDate.dateValue(), FromTime.value(), ToTime.value(), planningObjectRecId, scheduleTypeRecId, resourceRecId, ArrivalTime.text()))
+                        {
+                            info("@MAZ12163");
+                        }
+                        else
+                        {
+                            error("@MAZ12164");
+                        }
+                        break;
+                    case HMAppointmentSlotReserveBlock::Removed:
+                        if(HMResourceSchedulingHelper::removeAppointmentSlot(AppointmentDate.dateValue(), AppointmentDate.dateValue(), FromTime.value(), ToTime.value(), planningObjectRecId, resourceRecId))
+                        {
+                            info("@MAZ12165");
+                        }
+                        else
+                        {
+                            error("@MAZ12166");
+                        }
+                        break;
+                }
+        
+                super();
+        
+                if(formHasMethod(formRun,identifierstr(refreshGrid)))
+                {
+                    formRunObject = formRun;
+                    formRunObject.refreshGrid();
+                }
+                if(formHasMethod(formRun,identifierstr(refreshScheduleView)))
+                {
+                    formRunObject = formRun;
+                    formRunObject.refreshScheduleView();
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">Appointment slot management</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>MainInstruction</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<HelpText>Replacement for extra main instruction static text control</HelpText>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@GBR1214</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Resource</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>805306365</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS89158</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>AppointmentDate</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741820</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Date</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS100104</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>TimeGroup</Name>
+						<ElementPosition>1342177275</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormTimeControl">
+								<Name>FromTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Time</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS38489</Label>
+								<TimeSeconds>No</TimeSeconds>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTimeControl">
+								<Name>ToTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Time</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS38490</Label>
+								<TimeSeconds>No</TimeSeconds>
+								<Value>86399</Value>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ScheduleType</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612730</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ7340</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ArrivalTime</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1744830457</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ11148</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ11147</Label>
+						<LimitText>8</LimitText>
+						<LimitTextMode>Fixed</LimitTextMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>NumberOfSlots</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1879048185</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Integer</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ12157</Label>
+						<ShowZero>No</ShowZero>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

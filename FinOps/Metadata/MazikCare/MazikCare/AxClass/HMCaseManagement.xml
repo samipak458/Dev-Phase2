@@ -1,0 +1,1276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCaseManagement</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCaseManagement
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>financialDischarge</Name>
+				<Source><![CDATA[
+    private void financialDischarge(HMCase _hmCase)
+    {
+        HMCaseTrans         hmcaseTrans;
+        real                paidServicesCount,doneServiceCount, totalServiceCount;
+        HMCaseService       caseService = new HMCaseService();
+    
+        try
+        {
+            select count(RecId) from hmcaseTrans
+            where hmcaseTrans.HMCase == _hmCase.RecId;
+    
+            totalServiceCount = hmCaseTrans.RecId;
+
+            select count(RecId) from hmcaseTrans
+            where hmcaseTrans.HMCase == _hmCase.RecId
+            && hmcaseTrans.HMServiceStatus == HMServiceStatus::Paid;
+    
+            paidServicesCount = HMCasetrans.RecId;
+    
+            select count(RecId) from hmcaseTrans
+            where hmcaseTrans.HMCase == _hmCase.RecId
+            && hmcaseTrans.HMServiceStatus == HMServiceStatus::Complete;
+    
+            doneServiceCount = hmcaseTrans.RecId;
+    
+            if(totalServiceCount != 0 && (paidServicesCount == 0 && doneServiceCount == 0))
+            {
+                warning("@MAZ13560");
+                return;
+            }
+    
+            if(doneServiceCount != totalServiceCount)
+            {
+                if(Box::yesNo("@MAZ13574",DialogButton::No,"@MAZ7757") == DialogButton::No)
+                {
+                    return;
+                }
+            }
+            if(totalServiceCount == 0 || (paidServicesCount >= doneServiceCount))
+            {
+                ttsBegin;
+                _hmCase.selectForUpdate(true);
+                _hmCase.CaseStatus = HMCaseStatus::FinancialDischarge;
+                _hmCase.update();
+                if(_hmCase.CRMCaseRefID != emptyGuid())
+                {
+                    caseService.markCaseFinanciallyDischarged(_hmCase.CRMCaseRefID);
+                }
+                    
+                if(HMChargeEntryClass::createChargeEntryTable(_hmCase.HMPatient,
+                                    0,0,
+                                    _hmCase.HMCaseType,_hmCase.recid))
+                {
+                    while select * from hmcaseTrans
+                        where hmCaseTrans.hmcase == _hmCase.RecId
+                        && hmcaseTrans.HMServiceStatus == HMServiceStatus::Complete
+                    {
+                        if(InventTable::find(hmCaseTrans.ItemId).ItemType == ItemType::Item)
+                        {
+                            caseService.createMovementJournal(hmCaseTrans);
+                        }
+                        if(hmCaseTrans.ParentCaseTransId == 0)
+                        {
+                            if(hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Client)
+                            {
+                                caseService.createAccrueRevenueJournal(hmCaseTrans);
+                            }
+                            caseService.createChargeEntryLine(hmcaseTrans.RecId);
+                        }
+                    }
+                    ttsCommit;
+                    info("@MAZ13506");
+                }
+                else
+                {
+                    ttsAbort;
+                    warning("@MAZ13493");
+                }
+    
+    
+            }
+            else
+            {
+                warning("@MAZ13494");
+            }
+        }
+        catch
+        {
+            warning("@MAZ13493");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCase</Name>
+				<Source><![CDATA[
+    public static RecId createCase(RecId _patientRecId, recid _organizationalUnitRecId, HMCaseType _caseType, RecId _insuranceRecId = 0,
+                                    Date _preAuthValidDate = dateNull(), HMPreAuthorizationStatus _preAuthStatus = HMPreAuthorizationStatus::None, String30 _preAuthNumber = '', HMCaseNo _caseNo = "", RecId _hmResourceMaster = 0,
+                                    utcDateTime _addmissionDate = utcDateTimeNull(), Notes _notes = '', RecId _typeOfAddmission=0,RecId _admittingDiagnosticCode=0, boolean _createChargeEntry = false, RecId _roomRecId = 0,
+                                    RecId _patientStatusRecId = 0, guid _crmCaseGUID = emptyGuid())
+    {
+        HMCase  hmCase;
+        HMCaseManagement caseManagement = new HMCaseManagement();
+        HMNumberSequenceHandler numberSeq = new HMNumberSequenceHandler();
+        HMParameters hmParameters = HMParameters::find();
+        ItemId itemId;
+        HMCaseOccurrenceSpanCode1450 HMCaseOccurrenceSpanCode1450;
+        container caseCon;
+        HMCaseService hmCaseService = new HMCaseService();
+        HMPatientInsurance  HMPatientInsurance;
+
+        try
+        {
+            hmCase.HMPatientInsurance = _insuranceRecId;
+            hmCase.HMCaseType = _caseType;
+            hmCase.HMPatient = _patientRecId;
+            hmCase.Clinic = _organizationalUnitRecId;
+            hmCase.PreAuthorizationNumber = _preAuthNumber;
+            hmCase.PreAuthorizationStatus = _preAuthStatus;
+            hmCase.PreAuthValidDate = _preAuthValidDate;
+            hmCase.HMResourceMaster = _hmResourceMaster;
+            hmCase.AddmisionDate = _addmissionDate;
+            hmCase.HMBuildingUnit_Room = _roomRecId;
+            hmCase.Notes = _notes;
+            hmCase.TypeOfAdmission=_typeOfAddmission;
+            hmCase.AdmittingDiagnosisCode=_admittingDiagnosticCode;
+            hmCase.HMPatientStatus = _patientStatusRecId;
+
+            if(hmParameters.ServiceIntegrateEnable)
+            {
+                caseCon = HMCaseManagement::updateCaseInCRM(_patientRecId, _organizationalUnitRecId, _caseType);
+    
+                if(conLen(caseCon) == 0)
+                {
+                    throw Exception::Error;
+                }
+                else
+                {
+                    hmCase.CRMCaseRefID = str2guid(conPeek(caseCon, 1));
+                    hmCase.CaseNo = conPeek(caseCon, 2);
+                    if(hmCase.validateWrite())
+                    {
+                        hmCase.insert();
+                    }
+                    else
+                    {
+                        throw Exception::Error;
+                    }
+                }
+            }
+            else
+            {
+                if (!_caseNo)
+                {
+                    hmCase.CaseNo = numberSeq.generateNumberSequence(HMOrganizationalUnit::getOperatingUnitRecid(_organizationalUnitRecId), extendedtypenum(HMCaseNo));
+                }
+                else
+                {
+                    hmCase.CaseNo = _caseNo;
+                }
+    
+                if(!hmCase.CaseNo)
+                {
+                    throw error(strFmt("@MAZ8513","@MAZ1375",HMOrganizationalUnit::find(_organizationalUnitRecId).Description));
+                }
+    
+                //caseManagement.deleteBlankCase();
+                //caseManagement.deleteCase(_caseNo);
+                if(HMCase.CRMCaseRefID == emptyGuid())
+                {
+                    HMCase.CRMCaseRefID = _crmCaseGUID;
+                }
+                if(hmCase.validateWrite())
+                {
+                    hmCase.insert();
+    
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+                if(!_insuranceRecId)
+                {
+                    select RecId from HMPatientInsurance
+                    where HMPatientInsurance.Priority == 1
+                    && HMPatientInsurance.hmpatient == hmCase.HMPatient;
+                    _insuranceRecId = HMPatientInsurance.RecId;
+                }
+                if (_insuranceRecId && HMParameters::find().DefaultInsurance)
+                {
+                    HMCaseManagement::insertCaseInsurance(hmCase.RecId, _insuranceRecId);
+                }
+    
+                HMCaseManagement::CreateOccurrenceSpanCode1450(hmCase.RecId);
+                HMCaseManagement::CreateOccurrenceCode1450(hmCase.RecId);
+                HMCaseManagement::CreateValueCode1450(hmCase.RecId);
+                HMCaseManagement::CreateOtherDiagnosisCode1450(hmCase.RecId);
+                HMCaseManagement::CreateOtherProcedureCode1450(hmCase.RecId);
+                HMCaseManagement::CreateCCQualifier1450(hmCase.RecId);
+                HMCaseManagement::CreateConditionCode1450(hmCase.RecId);
+                numberSeq.commitNewNumSeq();
+            }
+
+            if(_createChargeEntry)
+            {
+                if(!HMChargeEntryClass::createChargeEntryTable(hmCase.HMPatient,
+                                                                    0,
+                                                                    0,
+                                                                    hmCase.HMCaseType,
+                                                                    hmCase.RecId))
+                {
+                    throw Exception::Error;
+                }
+            }
+
+            if(hmCase && (hmCase.HMCaseType == HMCaseType::Emergency))
+            {
+                itemid = hmParameters.InventTable_EmergencyConsultation;
+                if(itemid)
+                {
+                    HMCaseTrans::createCaseTrans(itemid,
+                        '',
+                        HMServiceStatus::Ordered,hmCase.HMPatientInsurance == 0 ? HMPatientPaymentResponsibility::Patient : HMPatientPaymentResponsibility::Client,
+                        '',
+                        HMPreAuthorizationStatus::None,
+                        DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                        hmCase.RecId,
+                        0,
+                        0,
+                        1,
+                        emptyGuid(),
+                        '',
+                        0,
+                        HMUrgency::None,
+                        HMAlternatDrugStatus::None,
+                        0);
+    
+                }
+    
+            }
+        }
+        catch
+        {
+            numberSeq.deleteNewNumSeq();
+            caseManagement.deleteCase(_caseNo);
+        }
+    
+        return hmCase.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        #Task
+    
+        HMCaseManagement objClass = new HMCaseManagement();
+        if(_args.menuItemName() == menuitemActionStr(HMCaseFinancialDischarge))
+        {
+            objClass.financialDischarge(_args.record());
+    
+            _args.caller().task(#taskRefresh);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseInCRM</Name>
+				<Source><![CDATA[
+    public static container updateCaseInCRM(RecId _patientRecId, Recid _organizationalUnitRecId, HMCaseType _caseType)
+    {
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        boolean ret;
+        container caseCon;
+        container conValues;
+    
+        ret = appHelper.callPostWebAPI('api/PatientCase/addPatientCase', "{'patientId':'','patientRecId':'" + int642str(_patientRecId) +"','caseType':'"+int2str(_caseType)+"','clinicId':'"+int642str(_organizationalUnitRecId)+"'}");
+    
+        if(ret)
+        {
+            conValues = appHelper.parmRecordsCon();
+    
+            if(conLen(conValues) > 0)
+            {
+                ret = true;
+                caseCon = [conPeek(conPeek(conValues, 6),1), conPeek(conPeek(conValues, 10),1)];
+            }
+            else
+            {
+                ret = checkFailed("@MAZ13194");
+            }
+        }
+        else
+        {
+            if(appHelper.parmErrorMessage())
+            {
+                checkFailed(appHelper.parmErrorMessage());
+            }
+    
+            ret = checkFailed("@MAZ13194");
+        }
+    
+        return caseCon;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseInsurance</Name>
+				<Source><![CDATA[
+    public static void updateCaseInsurance(RecId _caseRecId, RecId _insuranceRecId, date _preAuthDate, HMPreAuthorizationStatus _preAuthStatus, String30 _preAuthNumber)
+    {
+        HMCase hmcase;
+        hmcase = HMCase::find(_caseRecId);
+        ttsBegin;
+        hmcase.selectForUpdate(true);
+        hmcase.HMPatientInsurance = _insuranceRecId;
+        hmcase.PreAuthValidDate = _preAuthDate;
+        hmcase.PreAuthorizationStatus = _preAuthStatus;
+        hmcase.PreAuthorizationNumber = _preAuthNumber;
+        hmcase.update();
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createInsurance</Name>
+				<Source><![CDATA[
+    public static RecId createInsurance(HMCode code, RecId custTable, HMCode hmFinancialClass, RecId hmClaimTemplate, Description name)
+    {
+        RecId insuranceRecId;
+        HMInsuranceCarrier  insuranceCarrier;
+
+        insuranceCarrier.Code = code;
+        insuranceCarrier.CustTable = custTable;
+        insuranceCarrier.HMFinancialClass = hmFinancialClass;
+        insuranceCarrier.HMClaimTemplate = hmClaimTemplate;
+        insuranceCarrier.Name = name;
+        insuranceCarrier.doInsert();
+        
+
+        return insuranceRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteBlankCase</Name>
+				<Source><![CDATA[
+    public void deleteBlankCase()
+    {
+        HMCase  hmCaseLocal;
+    
+        select forUpdate hmCaseLocal where hmCaseLocal.CaseNo == "";
+    
+        if (hmCaseLocal)
+        {
+            ttsBegin;
+            hmCaseLocal.doDelete();
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteCase</Name>
+				<Source><![CDATA[
+    public void deleteCase(HMCaseNo _case)
+    {
+        HMCase  hmCaseLocal;
+    
+        select forUpdate hmCaseLocal where hmCaseLocal.CaseNo == _case;
+    
+        if (hmCaseLocal)
+        {
+            ttsBegin;
+            hmCaseLocal.doDelete();
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ChangeCaseType</Name>
+				<Source><![CDATA[
+    public static NoYes ChangeCaseType(HMCaseNo _caseNo, HMCaseType _caseType, Notes _notes)
+    {
+        HMcase  hmCase;
+        NoYes   isChanged = NoYes::No;
+    
+    
+        select forUpdate hmCase
+                where hmCase.CaseNo == _caseNo;
+    
+        if (hmCase)
+        {
+            ttsBegin;
+            //Updating case type
+            hmCase.HMCaseType = _caseType;//HMCaseType.selection();
+            hmCase.doUpdate();
+    
+            //Entering notes against case.
+            HMCaseNotes::createCaseIdentificationNotes(hmCase.RecId, HMCaseNotesIdentification::None, _notes);//Notes.valueStr());
+    
+            ttsCommit;
+            //info("Case type changed successfully.");
+            isChanged = true;
+        }
+    
+        return isChanged;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateCCQualifier1450</Name>
+				<Source><![CDATA[
+    public static void CreateCCQualifier1450(RecId _hmCase)
+    {
+    
+        #localmacro.HMCaseCCQualifiera
+        '81CC(a)'
+        #endmacro
+    
+        #localmacro.HMCaseCCQualifierb
+        '81CC(b)'
+        #endmacro
+    
+        #localmacro.HMCaseCCQualifierc
+        '81CC(c)'
+        #endmacro
+    
+        #localmacro.HMCaseCCQualifierd
+        '81CC(d)'
+        #endmacro
+    
+        HMCaseCCQualifier1450  HMCaseCCQualifier1450;
+    
+        HMCaseCCQualifier1450.Case=_hmCase;
+        HMCaseCCQualifier1450.Fieldlocator=#HMCaseCCQualifiera;
+        HMCaseCCQualifier1450.insert();
+        HMCaseCCQualifier1450.Case=_hmCase;
+        HMCaseCCQualifier1450.Fieldlocator=#HMCaseCCQualifierb;
+        HMCaseCCQualifier1450.insert();
+        HMCaseCCQualifier1450.Case=_hmCase;
+        HMCaseCCQualifier1450.Fieldlocator=#HMCaseCCQualifierc;
+        HMCaseCCQualifier1450.insert();
+        HMCaseCCQualifier1450.Case=_hmCase;
+        HMCaseCCQualifier1450.Fieldlocator=#HMCaseCCQualifierd;
+        HMCaseCCQualifier1450.insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateConditionCode1450</Name>
+				<Source><![CDATA[
+    public static void CreateConditionCode1450(RecId _hmCase)
+    {
+        #define.HMcondition18('18')
+        #define.HMcondition19('19')
+        #define.HMcondition20('20')
+        #define.HMcondition21('21')
+        #define.HMcondition22('22')
+        #define.HMcondition23('23')
+        #define.HMcondition24('24')
+        #define.HMcondition25('25')
+        #define.HMcondition26('26')
+        #define.HMcondition27('27')
+        #define.HMcondition28('28')
+    
+        HMClaimConditionCode1450    hmClaimConditionCode1450;
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition18;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition19;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition20;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition21;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition22;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition23;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition24;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition25;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition26;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition27;
+        hmClaimConditionCode1450.insert();
+    
+        hmClaimConditionCode1450.HMCase=_hmCase;
+        hmClaimConditionCode1450.Fieldlocator=#HMcondition28;
+        hmClaimConditionCode1450.Insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateOccurrenceCode1450</Name>
+				<Source><![CDATA[
+    public static void CreateOccurrenceCode1450(RecId _hmCase)
+    {
+    
+        #localmacro.HMCaseOccurrenceCode31a
+        "31(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode31b
+        "31(b)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode32a
+        "32(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode32b
+        "32(b)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode33a
+        "33(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode33b
+        "33(b)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode34a
+        "34(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode34b
+        "34(b)"
+        #endmacro
+    
+        HMCaseOccurrenceCode1450 occurrenceCode1450;
+    
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode31a;
+        occurrenceCode1450.insert();
+    
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode31b;
+        occurrenceCode1450.insert();
+    
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode32a;
+        occurrenceCode1450.insert();
+    
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode32b;
+        occurrenceCode1450.insert();
+    
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode33a;
+        occurrenceCode1450.insert();
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode33b;
+        occurrenceCode1450.insert();
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode34a;
+        occurrenceCode1450.insert();
+        occurrenceCode1450.Case=_hmCase;
+        occurrenceCode1450.Fieldlocator=#HMCaseOccurrenceCode34b;
+        occurrenceCode1450.insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateOccurrenceSpanCode1450</Name>
+				<Source><![CDATA[
+    public static void CreateOccurrenceSpanCode1450(RecId _hmCase)
+    {
+    
+        #localmacro.HMCaseOccurrenceSpanCode35a
+        "35(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceSpanCode35b
+        "35(b)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceSpanCode36a
+        "36(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceSpanCode36b
+        "36(b)"
+        #endmacro
+    
+        HMCaseOccurrenceSpanCode1450 hmCaseOccurrenceSpanCode1450;
+    
+        HMCaseOccurrenceSpanCode1450.Case=_hmCase;
+        HMCaseOccurrenceSpanCode1450.Fieldlocator=#HMCaseOccurrenceSpanCode35a;
+        HMCaseOccurrenceSpanCode1450.insert();
+    
+        HMCaseOccurrenceSpanCode1450.Case=_hmCase;
+        HMCaseOccurrenceSpanCode1450.Fieldlocator=#HMCaseOccurrenceSpanCode35b;
+        HMCaseOccurrenceSpanCode1450.insert();
+    
+        HMCaseOccurrenceSpanCode1450.Case=_hmCase;
+        HMCaseOccurrenceSpanCode1450.Fieldlocator=#HMCaseOccurrenceSpanCode36a;
+        HMCaseOccurrenceSpanCode1450.insert();
+    
+        HMCaseOccurrenceSpanCode1450.Case=_hmCase;
+        HMCaseOccurrenceSpanCode1450.Fieldlocator=#HMCaseOccurrenceSpanCode36b;
+        HMCaseOccurrenceSpanCode1450.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateOtherDiagnosisCode1450</Name>
+				<Source><![CDATA[
+    public static void CreateOtherDiagnosisCode1450(RecId _hmCase)
+    {
+        #define.HMCaseOtherDiagnosisCode67("67")
+        #define.HMCaseOtherDiagnosisCodea("A")
+        #define.HMCaseOtherDiagnosisCodeb("B")
+        #define.HMCaseOtherDiagnosisCodec("C")
+        #define.HMCaseOtherDiagnosisCoded("D")
+        #define.HMCaseOtherDiagnosisCodee("E")
+        #define.HMCaseOtherDiagnosisCodef("F")
+        #define.HMCaseOtherDiagnosisCodeg("G")
+        #define.HMCaseOtherDiagnosisCodeh("H")
+        #define.HMCaseOtherDiagnosisCodei("I")
+        #define.HMCaseOtherDiagnosisCodej("J")
+        #define.HMCaseOtherDiagnosisCodek("K")
+        #define.HMCaseOtherDiagnosisCodel("L")
+        #define.HMCaseOtherDiagnosisCodem("M")
+        #define.HMCaseOtherDiagnosisCoden("N")
+        #define.HMCaseOtherDiagnosisCodeo("O")
+        #define.HMCaseOtherDiagnosisCodep("P")
+        #define.HMCaseOtherDiagnosisCodeq("Q")
+    
+    
+        HMCaseOtherDiagnosisCode1450 HMCaseOtherDiagnosisCode1450;
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCode67;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodea;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodeb;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodec;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCoded;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodee;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodef;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodeg;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodeh;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodei;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodej;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodek;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodel;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodem;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCoden;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodeo;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodep;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+        HMCaseOtherDiagnosisCode1450.Case=_hmCase;
+        HMCaseOtherDiagnosisCode1450.Fieldlocator=#HMCaseOtherDiagnosisCodeq;
+        HMCaseOtherDiagnosisCode1450.insert();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateOtherProcedureCode1450</Name>
+				<Source><![CDATA[
+    public static void CreateOtherProcedureCode1450(RecId _hmCase)
+    {
+    
+        #localmacro.HMCaseOtherProcedureCodea
+        "74(a)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCodeb
+        "74(b)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCodec
+        "74(c)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCoded
+        "74(d)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCodee
+        "74(e)"
+        #endmacro
+    
+        HMCaseOtherProcedureCode1450  HMCaseOtherProcedureCode1450;
+    
+        HMCaseOtherProcedureCode1450.Case=_hmCase;
+        HMCaseOtherProcedureCode1450.Fieldlocator=#HMCaseOtherProcedureCodea;
+        HMCaseOtherProcedureCode1450.insert();
+        HMCaseOtherProcedureCode1450.Case=_hmCase;
+        HMCaseOtherProcedureCode1450.Fieldlocator=#HMCaseOtherProcedureCodeb;
+        HMCaseOtherProcedureCode1450.insert();
+        HMCaseOtherProcedureCode1450.Case=_hmCase;
+        HMCaseOtherProcedureCode1450.Fieldlocator=#HMCaseOtherProcedureCodec;
+        HMCaseOtherProcedureCode1450.insert();
+        HMCaseOtherProcedureCode1450.Case=_hmCase;
+        HMCaseOtherProcedureCode1450.Fieldlocator=#HMCaseOtherProcedureCoded;
+        HMCaseOtherProcedureCode1450.insert();
+        HMCaseOtherProcedureCode1450.Case=_hmCase;
+        HMCaseOtherProcedureCode1450.Fieldlocator=#HMCaseOtherProcedureCodee;
+        HMCaseOtherProcedureCode1450.insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateValueCode1450</Name>
+				<Source><![CDATA[
+    public static void CreateValueCode1450(RecId _hmCase)
+    {
+    
+        #localmacro.HMCaseValueCode39a
+        "39(a)"
+        #endmacro
+        #localmacro.HMCaseValueCode39b
+        "39(b)"
+        #endmacro
+        #localmacro.HMCaseValueCode39c
+        "39(c)"
+        #endmacro
+        #localmacro.HMCaseValueCode39d
+        "39(d)"
+        #endmacro
+        #localmacro.HMCaseValueCode40a
+        "40(a)"
+        #endmacro
+        #localmacro.HMCaseValueCode40b
+        "40(b)"
+        #endmacro
+        #localmacro.HMCaseValueCode40c
+        "40(c)"
+        #endmacro
+        #localmacro.HMCaseValueCode40d
+        "40(d)"
+        #endmacro
+        #localmacro.HMCaseValueCode41a
+        "41(a)"
+        #endmacro
+        #localmacro.HMCaseValueCode41b
+        "41(b)"
+        #endmacro
+        #localmacro.HMCaseValueCode41c
+        "41(c)"
+        #endmacro
+        #localmacro.HMCaseValueCode41d
+        "41(d)"
+        #endmacro
+    
+        HMCaseValueCode1450 HMCaseValueCode1450;
+    
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode39a;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode39b;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode39c;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode39d;
+        HMCaseValueCode1450.insert();
+    
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode40a;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode40b;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode40c;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode40d;
+        HMCaseValueCode1450.insert();
+    
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode41a;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode41b;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode41c;
+        HMCaseValueCode1450.insert();
+        HMCaseValueCode1450.Case=_hmCase;
+        HMCaseValueCode1450.Fieldlocator=#HMCaseValueCode41d;
+        HMCaseValueCode1450.insert();
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCaseInsurance</Name>
+				<Source><![CDATA[
+    public static void insertCaseInsurance(RecId _caseRecId, RecId _patientInsurance)
+    {
+        HMCaseInsurance     hmCaseInsurance;
+        HMPatientInsurance  patientInsurance;
+    
+        patientInsurance = HMPatientInsurance::find(_patientInsurance);
+        hmCaseInsurance.HMCase = _caseRecId;
+        hmCaseInsurance.HMPatientInsurance = _patientInsurance;
+        hmCaseInsurance.InsuranceCarrier = patientInsurance.InsuranceCarrier;
+        hmCaseInsurance.IsActive = NoYes::Yes;
+        //hmCaseInsurance.Priority = 1;
+    
+        hmCaseInsurance.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ValidateChangeCaseType</Name>
+				<Source><![CDATA[
+    public static NoYes ValidateChangeCaseType(HMCaseNo _caseNo)
+    {
+        NoYes               isValidated;
+        HMCase              hmCase;
+        HMCaseTrans         hmCaseTrans;
+        HMCaseTransDetail   hmCaseTransDetail;
+        HMPatient           hmPatient;
+        CustTrans           custTrans;
+        InventTrans         inventTrans;
+    
+    
+        //Check CustTrans for selected case
+        select * from custTrans
+            join hmCase
+                where custTrans.HMCase == hmCase.RecId
+                   && hmCase.CaseNo == _caseNo;
+    
+    
+        select * from hmCaseTransDetail
+                join hmCaseTrans
+                    where hmCaseTransDetail.HMCaseTrans == hmCaseTrans.RecId
+                    join hmCase
+                        where hmCaseTrans.HMCase == hmCase.RecId
+                           && hmCase.CaseNo == _caseNo
+                           && hmCaseTransDetail.TransactionType == HMCaseTransDetailTransactionType::MovemetJournal;
+    
+        if (!custTrans && !hmCaseTransDetail)
+            isValidated = true;
+        else
+            isValidated = false;
+    
+    
+    
+        return isValidated;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validatePatientExistingCase</Name>
+				<Source><![CDATA[
+    public static boolean validatePatientExistingCase(RecId _patientRecId)
+    {
+        HMParameters hmParameters = HMParameters::find();
+        HMCase hmCase;
+        SysInfoAction_FormRun    infoAction ;
+        utcDateTime dateTime = DateTimeUtil::utcNow();
+        utcdatetime dateTime2;
+        boolean caseNotExist = true;
+        if(_patientRecID)
+        {
+           /* dateTime = DateTimeUtil::addHours(dateTime,-hmParameters.BlockNewCaseCreationDays);
+    
+            while select * from hmCase
+                order by hmCase.AddmisionDate desc
+                where hmCase.HMPatient == _patientRecID
+                && hmCase.AddmisionDate >= dateTime 
+                && hmCase.AddmisionDate != DateTimeUtil::minValue()
+            {
+                infoAction = SysInfoAction_FormRun::newFormName(formStr(HMCaseDetail));
+                infoAction.parmCallerBuffer(hmCase);
+                infoAction.parmDescription("Open case");
+                warning(strFmt("Case %1 already exist",hmCase.CaseNo), "", infoAction);
+                caseNotExist  = false;
+    
+            }*/
+        }
+        return caseNotExist ;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPrice</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create by Zain
+    /// </summary>
+    /// <param name = "_hmCase"></param>
+    /// <returns></returns>
+    public static AmountMST getPrice(RecId _hmCase)
+    {
+        AmountMST  price;
+        boolean                 isValid = true;
+        HMParameters            parameters;
+        HMItemCptPcsCodes       pcsCodes;
+        HMProcedureCodeMaster   procedureCode;
+        
+        Price           myPrice;
+        container       priceContainer;
+        InventDim       inventDimLocal;
+        HMCase          hmCaseBuffer          = HMCase::find(_hmCase);
+        HMCaseTrans     hmCaseTrans;
+        HMPatientChargeEntryLine    hmPatientChargeEntryLine;
+        CustTable       custTable = CustTable::findRecId(HMPatient::find(hmCaseBuffer.HMPatient).CustTable);
+        // below lines will go in while loop
+        InventDim       inventDimBuffer;//       = InventDim::find(HMCaseTrans.InventDim);
+        InventTable     inventTableBuffer;//     = InventTable::find(HMCaseTrans.ItemId);
+        HMCaseInsurance hmCaseInsuranceBuffer = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance hmPatientInsuranceLocal = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode(hmPatientInsuranceLocal.InsuranceCarrier).RecId).RecId);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::find(hmPatientInsuranceLocal.HMInsuranceContractClassOrPlans, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        //
+        container   priceAgreementContainer;
+        HMPriceDisc priceDisc;
+        
+        parameters = HMParameters::find();
+
+
+        while select forupdate hmCaseTrans
+            join hmPatientChargeEntryLine
+                where hmCaseTrans.RecId == hmPatientChargeEntryLine.HMCaseTrans
+                &&   hmCaseTrans.HMCase == hmCaseBuffer.RecId
+                && hmCaseTrans.HMServiceStatus != HMServiceStatus::Complete
+                && hmCaseTrans.BillingStatus != HMBillStatus::Paid
+        {
+            inventDimBuffer = InventDim::find(hmCaseTrans.InventDim);
+            inventTableBuffer = InventTable::find(hmCaseTrans.ItemId);
+
+            if (parameters.isAllowChargeCodeEditing)
+            {
+                select RecId from pcsCodes
+                where pcsCodes.ItemId == HMCaseTrans.ItemId
+                join procedureCode
+                    where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                    && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+
+                if (pcsCodes.RecId)
+                {
+                    isValid = true;
+                }
+                else
+                {
+                    isValid = false;
+                }
+            }
+            else
+            {
+                isValid = true;
+            }
+
+            if (isValid)
+            {
+                if(!hmCaseInsuranceBuffer) //self-pay
+                {
+                    inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                    inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                    //inventDimLocal.wMSLocationId = inventDimBuffer.wMSLocationId;
+                    inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;//(inventDimBuffer.inventBatchId == "") ? selectedInventBatchId : inventDimBuffer.inventBatchId;
+                    inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                    priceDisc = new HMPriceDisc(ModuleInventPurchSales::Sales, inventTableBuffer.ItemId,
+                    inventDimLocal,
+                    HMCaseTrans.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    custTable.AccountNum,
+                    CustTable::find(custTable.AccountNum).Currency);
+
+                    if (priceDisc.findPrice(custTable.PriceGroup, 0, 0, 0, hmCaseBuffer.HMCaseType))
+                    price = priceDisc.price();
+                    else if (priceDisc.findItemPrice())
+                    price = priceDisc.price();
+                }
+                else //insurance
+                {
+                    inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                    inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                    //inventDimLocal.wMSLocationId = inventDimBuffer.wMSLocationId;
+                    inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;//(inventDimBuffer.inventBatchId == "") ? selectedInventBatchId : inventDimBuffer.inventBatchId;
+                    inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                    priceAgreementContainer = HMPriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Sales,
+                                                                              inventTableBuffer.ItemId,
+                                                                              inventDimLocal,//inventDimBuffer,
+                                                                              HMCaseTrans.salesUnitId(),
+                                                                              DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                              (HMCaseTrans.Qty == 0) ? 1 : HMCaseTrans.Qty,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(hmCaseBuffer.RecId).InsuranceCarrier).AccountNum,//CustTable::findRecId(HMInsuranceCarrier::findByCode(HMPatientInsurance::getPrimaryInsurance(hmPatientInsurance.HMPatient)).CustTable).AccountNum,
+                                                                              CustTable::find(custTable.AccountNum).Currency,
+                                                                              '', //PriceGroup
+                                                                              hmInsuranceContract.RecId,
+                                                                              contractClassOrPlans.RecId,
+                                                                              insuranceNetworkBuffer.RecId,
+                                                                              hmCaseBuffer.HMCaseType,
+                                                                              hmPatientChargeEntryLine.RevenueCode,
+                                                                              hmPatientChargeEntryLine.CPTCodes,
+                                                                              hmPatientChargeEntryLine.Modifier1,
+                                                                              hmPatientChargeEntryLine.Modifier2,
+                                                                              hmPatientChargeEntryLine.Modifier3,
+                                                                              hmPatientChargeEntryLine.Modifier4);
+
+                    price = conPeek(priceAgreementContainer, 1);
+
+                    if(price == 0)
+                    {
+                        InventTable::find(hmcaseTrans.itemId).salesPcsPrice();
+                    }
+
+                    hmCaseTrans.SalesPrice = price;
+                }
+
+                if (price > 0)
+                {
+                    hmcaseTrans.InsuranceAmount = price * hmCaseTrans.Qty;
+                    hmcaseTrans.TotalAmount =  price * hmCaseTrans.Qty;
+                    hmcaseTrans.RemainingBillAmount = hmCaseTrans.TotalAmount;
+                    //fix: Charge entry line price not updated on item change by Ammar
+                    hmcaseTrans.SalesPrice = price;
+                    //fix: Charge entry line price not updated on item change by Ammar
+                }
+                else
+                {
+                    price = hmcaseTrans.getItemSalesPrice();
+                    hmcaseTrans.SalesPrice = price;
+                    hmcaseTrans.InsuranceAmount = price * hmCaseTrans.Qty;
+                    hmcaseTrans.TotalAmount =  price * hmCaseTrans.Qty;
+                    hmcaseTrans.RemainingBillAmount = hmCaseTrans.TotalAmount;
+                }
+
+                ttsbegin;
+                hmcaseTrans.updateCaseTransDeductibe(0, hmCaseBuffer.RecId);
+                hmCaseTrans.update();
+                ttscommit;
+            }
+        }
+
+        return price;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>changePrices</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Created by Zain
+    /// </summary>
+    /// <param name = "_hmCase"></param>
+    /// <returns></returns>
+    public static AmountMST changePrices(RecId _hmCase)
+    {
+        AmountMST  price;
+        boolean                 isValid = true;
+        HMCase          hmCaseBuffer          = HMCase::find(_hmCase);
+        HMCaseTrans     hmCaseTrans;
+        InventDim       inventDimLocal;
+        HMParameters            parameters;
+        HMItemCptPcsCodes       pcsCodes;
+        HMProcedureCodeMaster   procedureCode;
+        HMPatientChargeEntryLine    hmPatientChargeEntryLine;
+        CustTable       custTable = CustTable::findRecId(HMPatient::find(hmCaseBuffer.HMPatient).CustTable);
+        InventDim       inventDimBuffer;
+        InventTable     inventTableBuffer;
+        HMCaseInsurance hmCaseInsuranceBuffer = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance hmPatientInsuranceLocal = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode(hmPatientInsuranceLocal.InsuranceCarrier).RecId).RecId);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::find(hmPatientInsuranceLocal.HMInsuranceContractClassOrPlans, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        HMPriceDisc priceDisc;
+
+        while select forupdate hmCaseTrans
+            join hmPatientChargeEntryLine
+                where hmCaseTrans.RecId == hmPatientChargeEntryLine.HMCaseTrans
+                &&   hmCaseTrans.HMCase == hmCaseBuffer.RecId
+                && hmCaseTrans.HMServiceStatus != HMServiceStatus::Complete
+                && hmCaseTrans.BillingStatus != HMBillStatus::Paid
+        {
+            inventDimBuffer = InventDim::find(hmCaseTrans.InventDim);
+            inventTableBuffer = InventTable::find(hmCaseTrans.ItemId);
+
+            if (parameters.isAllowChargeCodeEditing)
+            {
+                select RecId from pcsCodes
+                where pcsCodes.ItemId == HMCaseTrans.ItemId
+                join procedureCode
+                    where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                    && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+
+                if (pcsCodes.RecId)
+                {
+                    isValid = true;
+                }
+                else
+                {
+                    isValid = false;
+                }
+            }
+            else
+            {
+                isValid = true;
+            }
+
+            if (isValid)
+            {
+                if(hmCaseInsuranceBuffer) //self-pay
+                {
+                    inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                    inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                    //inventDimLocal.wMSLocationId = inventDimBuffer.wMSLocationId;
+                    inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;//(inventDimBuffer.inventBatchId == "") ? selectedInventBatchId : inventDimBuffer.inventBatchId;
+                    inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                    priceDisc = new HMPriceDisc(ModuleInventPurchSales::Sales, inventTableBuffer.ItemId,
+                    inventDimLocal,
+                    HMCaseTrans.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    custTable.AccountNum,
+                    CustTable::find(custTable.AccountNum).Currency);
+
+                    if (priceDisc.findPrice(custTable.PriceGroup, 0, 0, 0, hmCaseBuffer.HMCaseType))
+                    price = priceDisc.price();
+                    else if (priceDisc.findItemPrice())
+                    price = priceDisc.price();
+                }
+
+                if (price > 0)
+                {
+                    hmCaseTrans.CashAmount = price - HMCaseTrans.DiscountAmount;
+                    hmCaseTrans.SalesPrice = price;
+                    hmCaseTrans.TotalAmount = price * hmCaseTrans.Qty;
+                    hmCaseTrans.RemainingBillAmount = hmCaseTrans.TotalAmount;
+                }
+                else
+                {
+                    hmCaseTrans.CashAmount = hmCaseTrans.getItemSalesPrice();
+                    hmCaseTrans.SalesPrice = price;
+                    hmCaseTrans.TotalAmount =  price * hmCaseTrans.Qty;
+                    hmCaseTrans.RemainingBillAmount = hmCaseTrans.TotalAmount;
+                }
+
+                hmCaseTrans.DiscountAmount = 0;
+                hmCaseTrans.DiscPercent1 = 0;
+                hmCaseTrans.DiscPercent2 = 0;
+                hmCaseTrans.InsuranceAmount = 0;
+                hmCaseTrans.DeductibleActual = 0;
+                hmCaseTrans.Deductible = 0;
+                hmCaseTrans.DeductiblePercentage = 0;
+                hmCaseTrans.InsuranceAmount = 0;
+                hmCaseTrans.DeductiblePerUnit =0;
+                hmCaseTrans.PatientResponsibility = HMPatientPaymentResponsibility::Patient;
+                hmCaseTrans.PreAuthorizationNumber = '';
+                hmCaseTrans.PreAuthValidDate = dateNull();
+                hmCaseTrans.PreAuthorizationStatus = 0;
+
+                ttsbegin;
+                hmCaseTrans.update();
+                ttscommit;
+
+            }
+        }
+
+        return price;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResourceSchedulingCancelAppointment</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMResourceSchedulingCancelAppointment
+{
+     DialogButton                    dialogButton;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>resourceSchedulingCancelAppointment</Name>
+				<Source><![CDATA[
+    public void resourceSchedulingCancelAppointment(HMResourceSchedulingAppointment _hmResourceSchedulingAppointment)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_hmResourceSchedulingAppointment.RecId, true);
+        if(hmResourceSchedulingAppointment.AppointmentStatus==HMResourceSchedulingAppointmentStatus::Open)
+        {
+    
+        dialogButton=Box::yesNo("@MAZ1744",DialogButton::No);
+    
+        if(dialogButton==DialogButton::Yes)
+        {
+        ttsBegin;
+        hmResourceSchedulingAppointment.AppointmentStatus=HMResourceSchedulingAppointmentStatus::Cancelled;
+        hmResourceSchedulingAppointment.update();
+        ttsCommit;
+        }
+        }
+        else
+        {
+            info("@MAZ2679");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resourceSchedulingCheckedInAppointment</Name>
+				<Source><![CDATA[
+    public void resourceSchedulingCheckedInAppointment(HMResourceSchedulingAppointment _hmResourceSchedulingAppointment)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_hmResourceSchedulingAppointment.RecId, true);
+        if(hmResourceSchedulingAppointment.AppointmentStatus==HMResourceSchedulingAppointmentStatus::Open)
+        {
+    
+        dialogButton=Box::yesNo("@MAZ2670",DialogButton::No);
+    
+        if(dialogButton==DialogButton::Yes)
+        {
+        ttsBegin;
+        hmResourceSchedulingAppointment.AppointmentStatus=HMResourceSchedulingAppointmentStatus::CheckedIn;
+        hmResourceSchedulingAppointment.update();
+        ttsCommit;
+        }
+        }
+        else
+        {
+            info("@MAZ2678");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resourceSchedulingCheckedOutAppointment</Name>
+				<Source><![CDATA[
+    public void resourceSchedulingCheckedOutAppointment(HMResourceSchedulingAppointment _hmResourceSchedulingAppointment)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_hmResourceSchedulingAppointment.RecId, true);
+        if(hmResourceSchedulingAppointment.AppointmentStatus==HMResourceSchedulingAppointmentStatus::Examined)
+        {
+    
+            dialogButton=Box::yesNo("@MAZ2671",DialogButton::No);
+    
+            if(dialogButton==DialogButton::Yes)
+            {
+            ttsBegin;
+            hmResourceSchedulingAppointment.AppointmentStatus=HMResourceSchedulingAppointmentStatus::CheckedOut;
+            hmResourceSchedulingAppointment.update();
+            ttsCommit;
+            }
+        }
+        else
+        {
+            info("@MAZ2684");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>undoCheckInAppointment</Name>
+				<Source><![CDATA[
+    public void undoCheckInAppointment(recId _recid)
+    {
+        HMResourceSchedulingAppointment     hmResourceSchedlingAppointment;
+        HMAppoinmentLog                     hmAppoinmentLog;
+        HMResourceSchedulingAppointmentInvent       hmResourceSchedulingAppointmentInvent;
+    
+        select count(RecId) from hmResourceSchedulingAppointmentInvent
+            where hmResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == _recid
+            && hmResourceSchedulingAppointmentInvent.HMServiceStatus != HMServiceStatus::NotStarted;
+    
+        if(!hmResourceSchedulingAppointmentInvent.RecId)
+        {
+            ttsBegin;
+    
+            select forupdate RecId, AppointmentStatus, AppointmentNumber from hmResourceSchedlingAppointment
+                        where hmResourceSchedlingAppointment.RecId == _recid;
+    
+            if(hmResourceSchedlingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn)
+            {
+                dialogButton=Box::yesNo("@MAZ12254",DialogButton::No);
+    
+                if(dialogButton==DialogButton::Yes)
+                {
+    
+                    hmResourceSchedlingAppointment.selectForUpdate(true);
+    
+                    hmResourceSchedlingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Confirmed;
+                    hmResourceSchedlingAppointment.update();
+    
+                    hmAppoinmentLog.HMResScheduleAppointment = hmResourceSchedlingAppointment.RecId;
+                    hmAppoinmentLog.HMAppointLogStatus       = HMResourceSchedulingAppointmentStatus::UndoCheckIn;
+                    hmAppoinmentLog.HMAppointLogDate         = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    hmAppoinmentLog.HMAppointLogTime         = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+                    hmAppoinmentLog.HMAppointLogNote         = '';
+                    hmAppoinmentLog.insert();
+    
+    
+                }
+            }
+            else
+            {
+                info("@MAZ12255");
+            }
+    
+            ttsCommit;
+        }
+        else
+        {
+            warning("@MAZ12258");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>undoCheckoutAppointment</Name>
+				<Source><![CDATA[
+    public void undoCheckoutAppointment(recId _recid)
+    {
+        HMResourceSchedulingAppointment     hmResourceSchedlingAppointment;
+        HMAppoinmentLog                     hmAppoinmentLog;
+    
+        ttsBegin;
+    
+        select forupdate RecId, AppointmentStatus, AppointmentNumber from hmResourceSchedlingAppointment
+                    where hmResourceSchedlingAppointment.RecId == _recid;
+    
+        if(hmResourceSchedlingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+        {
+            dialogButton=Box::yesNo("@MAZ12256",DialogButton::No);
+    
+            if(dialogButton==DialogButton::Yes)
+            {
+                hmResourceSchedlingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::CheckedIn;
+                hmResourceSchedlingAppointment.update();
+    
+                hmAppoinmentLog.HMResScheduleAppointment = hmResourceSchedlingAppointment.RecId;
+                hmAppoinmentLog.HMAppointLogStatus       = HMResourceSchedulingAppointmentStatus::UndoCheckout;
+                hmAppoinmentLog.HMAppointLogDate         = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                hmAppoinmentLog.HMAppointLogTime         = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+                hmAppoinmentLog.HMAppointLogNote         = '';
+                hmAppoinmentLog.insert();
+    
+    
+            }
+        }
+        else
+        {
+            info("@MAZ12257");
+        }
+    
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeAppointment</Name>
+				<Source><![CDATA[
+    public static void closeAppointment(recId _recid)
+    {
+        HMResourceSchedulingAppointment     hmResourceSchedlingAppointment;
+        HMAppoinmentLog                     hmAppoinmentLog;
+    
+        ttsBegin;
+        select forUpdate hmResourceSchedlingAppointment
+            where hmResourceSchedlingAppointment.RecId == _recid;
+    
+        hmResourceSchedlingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Closed;
+        hmResourceSchedlingAppointment.update();
+    
+        hmAppoinmentLog.HMResScheduleAppointment = hmResourceSchedlingAppointment.RecId;
+        hmAppoinmentLog.HMAppointLogStatus       = hmResourceSchedlingAppointment.AppointmentStatus;
+        hmAppoinmentLog.HMAppointLogDate         = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        hmAppoinmentLog.HMAppointLogTime         = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        hmAppoinmentLog.HMAppointLogNote         = hmResourceSchedlingAppointment.Notes;
+        hmAppoinmentLog.insert();
+    
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args args)
+    {
+        HMResourceSchedulingCancelAppointment hmResourceSchedulingCancelAppointment=new HMResourceSchedulingCancelAppointment();
+    
+        switch(args.menuItemName())
+        {
+            case menuitemActionStr(HMResourceSchedulingCancelAppointment):
+                hmResourceSchedulingCancelAppointment.resourceSchedulingCancelAppointment(args.record());
+                break;
+            case menuitemActionStr(HMResourceSchedulingCheckedInAppointment):
+                hmResourceSchedulingCancelAppointment.resourceSchedulingCheckedInAppointment(args.record());
+                break;
+            case menuitemActionStr(HMResourceSchedulingCheckedOuAppointment):
+                hmResourceSchedulingCancelAppointment.resourceSchedulingCheckedOutAppointment(args.record());
+                break;
+            case menuitemActionStr(HMResourceSchedulingAppointUndoCheckout):
+                hmResourceSchedulingCancelAppointment.undoCheckoutAppointment(args.record().RecId);
+                break;
+            case menuitemActionStr(HMResourceSchedulingAppointUndoCheckin):
+                hmResourceSchedulingCancelAppointment.undoCheckInAppointment(args.record().RecId);
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resourceSchedulingExamineAppointment</Name>
+				<Source><![CDATA[
+    public static boolean resourceSchedulingExamineAppointment(HMResourceSchedulingAppointment _hmResourceSchedulingAppointment)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_hmResourceSchedulingAppointment.RecId, true);
+    
+        try
+        {
+            if(hmResourceSchedulingAppointment.AppointmentStatus==HMResourceSchedulingAppointmentStatus::CheckedIn)
+            {
+                ttsBegin;
+                hmResourceSchedulingAppointment.AppointmentStatus=HMResourceSchedulingAppointmentStatus::Examined;
+                hmResourceSchedulingAppointment.update();
+                ttsCommit;
+            }
+    
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>waitingAppointment</Name>
+				<Source><![CDATA[
+    public static void waitingAppointment(recId _recid)
+    {
+        HMResourceSchedulingAppointment     hmResourceSchedlingAppointment;
+        HMAppoinmentLog                     hmAppoinmentLog;
+    
+        ttsBegin;
+        select forUpdate hmResourceSchedlingAppointment
+            where hmResourceSchedlingAppointment.RecId == _recid;
+    
+        hmResourceSchedlingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Waiting;
+        hmResourceSchedlingAppointment.update();
+    
+        hmAppoinmentLog.HMResScheduleAppointment = hmResourceSchedlingAppointment.RecId;
+        hmAppoinmentLog.HMAppointLogStatus       = hmResourceSchedlingAppointment.AppointmentStatus;
+        hmAppoinmentLog.HMAppointLogDate         = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        hmAppoinmentLog.HMAppointLogTime         = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        hmAppoinmentLog.HMAppointLogNote         = hmResourceSchedlingAppointment.Notes;
+        hmAppoinmentLog.insert();
+    
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

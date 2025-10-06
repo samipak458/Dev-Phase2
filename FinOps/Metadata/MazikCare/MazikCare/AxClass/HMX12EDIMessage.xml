@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMX12EDIMessage</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMX12EDIMessage
+{
+    HMClaimERALineTmp hmClaimERALineTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getFileContents</Name>
+				<Source><![CDATA[
+    public HMMemo getFileContents(FilePath _file)
+    {
+        System.IO.StreamReader reader;
+        HMMemo d;
+    
+        try
+        {
+            reader = new System.IO.StreamReader(_file);
+            d =reader.ReadToEnd();
+            reader.Close();
+            return d;
+        }
+        catch
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMClaimERALineTmp</Name>
+				<Source><![CDATA[
+    public HMClaimERALineTmp getHMClaimERALineTmp()
+    {
+        return hmClaimERALineTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parseERA</Name>
+				<Source><![CDATA[
+    public container parseERA(str _file)
+    {
+        //HMSalesInvoiceCreateFormHandler objhandler = new HMSalesInvoiceCreateFormHandler();
+        //SalesTable salesTableLocal;
+        CustInvoiceJour custInvoiceJourLocal;
+    
+        HMClaimERATmp hmClaimERATmp;
+    
+        HMClaimTable hmClaimTable;
+        HMPatient   hmPatient;
+        HMPatientChargeEntryTable hmPatientChargeEntryTable;
+    
+        ListEnumerator segments,fields,composite;
+        int i = 1, j = 1;
+        container	claimsCon;
+    
+        //HMMemo contents = this.getFileCOntents(_file);
+        HMMemo contents = _file;
+        if(contents != '')
+        {
+            segments = strSplit(contents, '~').getEnumerator();
+    
+            while(segments.moveNext())
+            {
+                if(subStr(segments.current(),1,3) == 'CLP')
+                {
+                    fields = strSplit(segments.current(), '*').getEnumerator();
+                    i = 1;
+                    while(fields.moveNext())
+                    {
+                        if(i > 1 )
+                        {
+						if (fields.current() == "1")
+                        {
+                            break;
+                        }
+                        claimsCon += fields.current();
+
+                            select * from hmClaimTable
+                                join * from hmPatient
+                                join * from hmPatientChargeEntryTable
+                                where hmClaimTable.ClaimID == fields.current()
+                                && hmClaimTable.HMPatient == hmPatient.RecId
+                                && hmPatientChargeEntryTable.RecId == hmClaimTable.HMPatientChargeEntryTable;
+    
+                            //salesTableLocal = SalesTable::findRecId(hmclaim.saleHMSalesOrderReference::find(objhandler.getSalesOrderReferenceRecId(hmclaim.HMResourceSchedulingAppointment)).SalesTable);
+    
+                            select firstOnly * from custInvoiceJourLocal where custInvoiceJourLocal.SalesId == hmPatientChargeEntryTable.SalesTable;
+    
+                            hmClaimERATmp.MRN = hmPatient.getMRN();
+                            hmClaimERATmp.Name = hmPatient.patientName();
+                            hmClaimERATmp.ClaimNumber = hmClaimTable.ClaimID;
+                            hmClaimERATmp.SalesId = hmPatientChargeEntryTable.SalesTable;
+                            hmClaimERATmp.InvoiceId = custInvoiceJourLocal.InvoiceId;
+                            hmClaimERATmp.ClaimAmount = custInvoiceJourLocal.InvoiceAmount;
+    
+                            //if(hmClaimTable.getClaimStatus() == HMClaimStatus::Paid)
+                            //{
+                                //hmClaimERATmp.Status = HMClaimERAStatus::Paid;
+                            //}
+                            //else
+                            //{
+                                //hmClaimERATmp.Status = HMClaimERAStatus::Unpaid;
+                            //}
+    
+						//TODO: OneCall demo
+                        }
+                        //else if( i == 5)
+                        //{
+                        //    hmClaimERATmp.Amount = fields.current();
+                        //    break;
+                        //}
+
+                        i++;
+                    }
+    
+                    hmClaimERATmp.insert();
+                }
+                else if(subStr(segments.current(),1,3) == 'SVC')
+                {
+                    fields = strSplit(segments.current(), '*').getEnumerator();
+                    i = 1;
+                    while(fields.moveNext())
+                    {
+                        if(i == 2 )
+                        {
+                            composite = strSplit(fields.current(), ':').getEnumerator();
+                            j = 1;
+    
+                            while(composite.moveNext())
+                            {
+                                switch(j)
+                                {
+                                    case 2:
+                                        hmClaimERALineTmp.Code = composite.current();
+                                        hmClaimERALineTmp.Description = HMInventTableClass::showDescription(hmClaimERALineTmp.Code);
+                                        break;
+                                }
+                                j++;
+                            }
+                        }
+                        else if( i == 3)
+                        {
+                            hmClaimERALineTmp.ClaimAmount = fields.current();
+                        }
+                        else if( i == 4)
+                        {
+                            hmClaimERALineTmp.ERAAmount = fields.current();
+                        }
+                        else if( i == 6)
+                        {
+                            hmClaimERALineTmp.Quantity = fields.current();
+                        }
+    
+                        i++;
+                    }
+                    hmClaimERALineTmp.HMClaimERATmp = HMClaimERATmp.RecId;
+                    hmClaimERALineTmp.insert();
+                }
+            }
+        }
+        else
+        {
+            info("@MAZ7545");
+        }
+    
+        //return hmClaimERATmp; //OneCall demo
+        return claimsCon;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parseERAOld</Name>
+				<Source><![CDATA[
+    public HMClaimERATmp parseERAOld(str _file)
+    {
+        //HMSalesInvoiceCreateFormHandler objhandler = new HMSalesInvoiceCreateFormHandler();
+        //SalesTable salesTableLocal;
+        CustInvoiceJour custInvoiceJourLocal;
+    
+        HMClaimERATmp hmClaimERATmp;
+    
+        HMClaimTable hmClaimTable;
+        HMPatient   hmPatient;
+        HMPatientChargeEntryTable hmPatientChargeEntryTable;
+    
+        ListEnumerator segments,fields,composite;
+        int i = 1, j = 1;
+        container	claimsCon;
+    
+        HMMemo contents = this.getFileCOntents(_file);
+        //HMMemo contents = _file;
+        if(contents != '')
+        {
+            segments = strSplit(contents, '~').getEnumerator();
+    
+            while(segments.moveNext())
+            {
+                if(subStr(segments.current(),1,3) == 'CLP')
+                {
+                    fields = strSplit(segments.current(), '*').getEnumerator();
+                    i = 1;
+                    while(fields.moveNext())
+                    {
+                        if(i == 2 )
+                        {
+                            select * from hmClaimTable
+                                join * from hmPatient
+                                join * from hmPatientChargeEntryTable
+                                where hmClaimTable.ClaimID == fields.current()
+                                && hmClaimTable.HMPatient == hmPatient.RecId
+                                && hmPatientChargeEntryTable.RecId == hmClaimTable.HMPatientChargeEntryTable;
+    
+                            //salesTableLocal = SalesTable::findRecId(hmclaim.saleHMSalesOrderReference::find(objhandler.getSalesOrderReferenceRecId(hmclaim.HMResourceSchedulingAppointment)).SalesTable);
+    
+                            select firstOnly * from custInvoiceJourLocal where custInvoiceJourLocal.SalesId == hmPatientChargeEntryTable.SalesTable;
+    
+                            hmClaimERATmp.MRN = hmPatient.getMRN();
+                            hmClaimERATmp.Name = hmPatient.patientName();
+                            hmClaimERATmp.ClaimNumber = hmClaimTable.ClaimID;
+                            hmClaimERATmp.SalesId = hmPatientChargeEntryTable.SalesTable;
+                            hmClaimERATmp.InvoiceId = custInvoiceJourLocal.InvoiceId;
+                            hmClaimERATmp.ClaimAmount = custInvoiceJourLocal.InvoiceAmount;
+    
+                            //if(hmClaimTable.getClaimStatus() == HMClaimStatus::Paid)
+                            //{
+                            //    hmClaimERATmp.Status = HMClaimERAStatus::Paid;
+                            //}
+                            //else
+                            //{
+                            //    hmClaimERATmp.Status = HMClaimERAStatus::Unpaid;
+                            //}
+                        }
+                        else if( i == 5)
+                        {
+                            hmClaimERATmp.Amount = fields.current();
+                            break;
+                        }
+
+                        i++;
+                    }
+    
+                    hmClaimERATmp.insert();
+                }
+                else if(subStr(segments.current(),1,3) == 'SVC')
+                {
+                    fields = strSplit(segments.current(), '*').getEnumerator();
+                    i = 1;
+                    while(fields.moveNext())
+                    {
+                        if(i == 2 )
+                        {
+                            composite = strSplit(fields.current(), ':').getEnumerator();
+                            j = 1;
+    
+                            while(composite.moveNext())
+                            {
+                                switch(j)
+                                {
+                                    case 2:
+                                        hmClaimERALineTmp.Code = composite.current();
+                                        hmClaimERALineTmp.Description = HMInventTableClass::showDescription(hmClaimERALineTmp.Code);
+                                        break;
+                                }
+                                j++;
+                            }
+                        }
+                        else if( i == 3)
+                        {
+                            hmClaimERALineTmp.ClaimAmount = fields.current();
+                        }
+                        else if( i == 4)
+                        {
+                            hmClaimERALineTmp.ERAAmount = fields.current();
+                        }
+                        else if( i == 6)
+                        {
+                            hmClaimERALineTmp.Quantity = fields.current();
+                        }
+    
+                        i++;
+                    }
+                    hmClaimERALineTmp.HMClaimERATmp = HMClaimERATmp.RecId;
+                    hmClaimERALineTmp.insert();
+                }
+            }
+        }
+        else
+        {
+            info("@MAZ7545");
+        }
+    
+        return hmClaimERATmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generateERA</Name>
+				<Source><![CDATA[
+    public static void generateERA(RefRecId _hmClaimRecId)
+    {
+        HMMemo d;
+        HMClaimTable claimTable = HMClaimTable::find(_hmClaimRecId);
+        System.IO.StreamWriter reader;
+        Filename file = @"C:\ERAFiles\" +claimTable.ClaimID + ".txt";
+        HMMemo c1,c2,c3,c4,c5,c6;
+        HMPatientChargeEntryTable hmPatientChargeEntryTable = HMPatientChargeEntryTable::find(claimTable.HMPatientChargeEntryTable);
+        HMPatientChargeEntryLine hmPatientChargeEntryLine;
+        RandomGenerate objRG = new RandomGenerate();
+        Random objRandom = new Random();
+    
+    
+        HMClaimERA hmClaimERA;
+
+        if (!WinAPI::pathExists("C:\\ERAFiles"))
+        {
+            WinAPI::createDirectory("C:\\ERAFiles");
+        }
+    
+        c1 = @"ISA*00*          *00*          *ZZ*[SenderID]*ZZ*[RecievrID]*[Date]*[Time]*U*00401*000000020*0*T*:~GS*HP*SenderDept*MazikCareBilling*[Date]*[Time]*000001*X*004010X091~ST*835*00001~BPR*C*[Total amount]*C*ACH*CTX*01*999999992*DA*123456*512345678**01*999988880*DA*98765*19960913~TRN*1*123456*512345678~DTM*405*19960913~N1*PR*[Insurance NAme]~N3*[Insurance Adress]~N4*[City]*[State]*[ZipCode]~N1*PE*[Hospiatl NAme]*XX*6543210903~LX*961221~TS3*6543210903*11*19961231*[Total Claims]*[total claimed chrges]*[Total paid Charges]*[Total noncovered Charges]*[Total denied Charges]*[Total provider Charges]*[Total interest Charges]*[total Contractual adjust]~CLP*";
+        c2 = @"*1*[total charges]*";
+        c3 = @"**MA*1999999444444*11*1~CAS*CO*A2*73348.57~NM1*QC*1*Shepard*Sam*O***HN*666666666A~MIA*0***138018.40~DTM*232*96229081~DTM*233*19960824~QTY*CA*8~";
+        c6 = @"LX*961213~TS3*6543210903*13*19961231*15000*15000*11980.33***138018.40**3019.67~SE*28*00001~GE*1*000001~IEA*1*000000020~";
+        c5 = @"DTM*472*20101231~REF*6R*0003~";
+    
+        try
+        {
+            reader = new System.IO.StreamWriter(file);
+            reader.Write(c1);
+            reader.Write(claimTable.ClaimID);
+            reader.Write(c2);
+            reader.Write(hmPatientChargeEntryTable.getTotalCharges());
+            reader.Write(c3);
+    
+            while select * from hmPatientChargeEntryLine
+                where hmPatientChargeEntryLine.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId
+            {
+                c4 = strFmt("SVC*HC:%1*%2*%3**%4~",hmPatientChargeEntryLine.displayCPTcode(),hmPatientChargeEntryLine.Charge,num2expstr(hmPatientChargeEntryLine.Charge-(hmPatientChargeEntryLine.Charge*(objRG.randomInt(2,5)/10)),DecimalSeparator::Auto,ThousandSeparator::None),hmPatientChargeEntryLine.Units);
+                reader.Write(c4);
+                reader.Write(c5);
+            }
+    
+            reader.Write(c6);
+    
+            reader.Close();
+    
+            ttsBegin;
+    
+            hmClaimERA.initValue();
+            hmClaimERA.HMClaimTable = _hmClaimRecId;
+            hmClaimERA.Filename = file;
+            hmClaimERA.Status = HMClaimTableERAStatus::New;
+            hmClaimERA.insert();
+    
+            ttsCommit;
+        }
+        catch
+        {
+            if(reader != null)
+            {
+                reader.Close();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

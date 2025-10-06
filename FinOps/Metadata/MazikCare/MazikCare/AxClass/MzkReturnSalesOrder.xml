@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>MzkReturnSalesOrder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class MzkReturnSalesOrder
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createReturnOrderHeader</Name>
+				<Source><![CDATA[
+    SalesTable createReturnOrderHeader( CustAccount         _custAcct,
+                                        ProdId              _prodId,
+                                        ReturnReasonCodeId  _returnReasonCodeId,
+                                        str                 _emplId     = '' ,
+                                        SalesId             _salesId    = '')
+        
+    {
+        Prodtable               prodtable;
+        SalesTable              prevSalesTable, newSalesTable,ROSalesTable;
+        SalesParameters         salesParameters;
+        ReturnPeriodOfValidity  periodofValid;
+
+        prodtable = prodtable::find(_prodId);
+
+        // create the sales order header for the return order
+        salesParameters = SalesParameters::find();
+        periodofValid   = salesParameters.ReturnPeriodOfValidity;        
+        
+        // Initialize from Invoiced SO
+        if(_salesId)
+        {
+            newSalesTable.CustAccount   = prevSalesTable.CustAccount;
+            newSalesTable.initFromCustTable();
+
+            prevSalesTable  = SalesTable::find(_salesId);
+            newSalesTable.initReturnFromSalesTable(prevSalesTable);            
+        }
+
+        // Create new Return Order
+        else
+        {
+            newSalesTable.CustAccount             = _custAcct;
+            newSalesTable.SalesId                 = NumberSeq::newGetNum(SalesParameters::numRefSalesId()).num();
+            newSalesTable.ReturnItemNum           = NumberSeq::newGetNum(SalesParameters::numRefReturnItemNum()).num();
+            newSalesTable.SalesType               = SalesType::ReturnItem;
+            newSalesTable.ReturnStatus            = ReturnStatusHeader::Created;
+            newSalesTable.DeliveryDateControlType = SalesDeliveryDateControlType::None;
+            newSalesTable.ShippingDateRequested   = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) + periodofValid;
+        }
+        newSalesTable.SalesId   =  _prodId;
+        
+        // periodofValid derive from Sales Parameter
+        if (periodofValid)
+        {
+            newSalesTable.ReturnDeadline      = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) + periodofValid;
+        }
+        else
+        {
+            newSalesTable.ReturnDeadline      = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        }
+
+        //Reason Code
+        newSalesTable.ReturnReasonCodeId      = _returnReasonCodeId;
+        newSalesTable.SalesType               = SalesType::ReturnItem;
+        
+        if (newSalesTable.validateWrite())
+        {
+            newSalesTable.insert();
+        }
+
+        // return the new Return Order
+        return newSalesTable;
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateReturnOrderLine</Name>
+				<Source><![CDATA[
+    //Order line creation
+
+    public void CreateReturnOrderLine(  ItemId                          _itemId,
+                                        Qty                             _qty,
+                                        ProdId                          _productionOrderId,
+                                        SalesId                         _ROSalesId,
+                                        SalesId                         _salesId        = '',
+                                        InventBatchID                   _inventBatchId  = '',
+                                        InventSerialId                  _inventSerialId = '',
+                                        EcoResItemSizeName              _inventSizeId   = '',
+                                        EcoResItemColorName             _inventColorId  = '',
+                                        EcoResItemConfigurationName     _configId       = '',
+                                        EcoResItemStyleName             _inventStyleId  = '')
+
+    {
+        CustInvoiceTrans    custInvoiceTrans;
+        SalesLine           oldsalesLine;
+        SalesLine           salesLine;
+        SalesTable          newRetOrder;
+        CustInvoiceJour     custInvoiceJour;
+        prodtable           prodtable;
+        InventDim           inventDim,pvInventDim;
+        
+        ttsbegin;
+        prodtable = prodtable::find(_productionOrderId);
+
+        if (_salesId)
+        {
+            // Need to populate all the necessary fields for the new salesline
+            // using the existing invoice and the new sales order
+            select custInvoiceJour where custInvoiceJour.RefNum      == RefNum::SalesOrder
+                && custInvoiceJour.SalesId  == _salesId;
+
+            if(custInvoiceJour)
+            {
+                select * from custInvoiceTrans
+                    where custInvoiceTrans.SalesId == custInvoiceJour.SalesId
+                        && custInvoiceTrans.InvoiceId == custInvoiceJour.InvoiceId
+                        && custInvoiceTrans.ItemId == _itemid
+                        && custInvoiceTrans.InvoiceDate == custInvoiceJour.InvoiceDate
+                        && custInvoiceTrans.numberSequenceGroup == custInvoiceJour.numberSequenceGroup
+                        join inventDim
+                        where inventDim.inventDimId == custInvoiceTrans.InventDimId
+                            && ((_inventBatchId     ==  '') || (inventDim.inventBatchId     == _inventBatchId))
+                            && ((_inventSerialId    ==  '') || (inventDim.inventSerialId    == _inventSerialId))
+                            && ((_configId          ==  '') || (inventDim.configId          == _configId))
+                            && ((_inventColorId     ==  '') || (inventDim.InventColorId     == _inventColorId))
+                            && ((_inventSizeid      ==  '') || (inventDim.InventSizeId      == _inventSizeid))
+                            && ((_inventStyleId     ==  '') || (inventDim.InventStyleId     == _inventStyleId));
+                
+                salesLine.initFromCustInvoiceTrans(custInvoiceTrans);
+                salesLine.InventTransIdReturn = custInvoiceTrans.InventTransId;
+                //salesLine.InventDimId = custInvoiceTrans.InventDimId;
+                salesLine.InventDimId = prodtable.InventDimId;
+            }      
+        }
+        
+        newRetOrder         = SalesTable::find(_ROSalesId);
+        salesLine.initFromSalesTable(newRetOrder);
+        salesLine.ItemId    = _itemId;
+
+        // udpate the expected Return quantity
+        salesLine.SalesUnit = InventTableModule::find(_itemId, ModuleInventPurchSales::Invent).UnitId;
+        // set the quantity and amount fields
+        salesLine.LineAmount     = salesLine.returnLineAmount();
+       
+        salesLine.SalesQty       = 0;
+        // find correct inventdim
+        inventDim.data(InventDim::find(salesLine.InventDimId));
+        inventDim.InventSizeId      = _inventSizeId;
+        inventDim.InventColorId     = _inventColorId;
+        inventDim.configId          = _configId;
+        inventDim.InventStyleId     = _inventStyleId;
+        inventDim.inventBatchId     = _inventBatchId;
+        inventDim.inventSerialId    = _inventSerialId;
+
+        pvInventDim     = inventDim::findOrCreate(inventDim);
+        salesLine.InventDimId = pvInventDim.inventDimId;
+        salesLine.createLine(true, false, true, false, false,false,false,false);
+        salesLine.ExpectedRetQty = -_qty;
+        salesLine.update();
+        ttscommit;
+        // clear the buffer
+        salesLine.clear();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

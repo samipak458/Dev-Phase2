@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDataPrepForZeroQualifiedMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used as the main batch job class for data preparation of updation of aging days batch job for $0 denied claims
+/// </summary>
+class HMDataPrepForZeroQualifiedMultiThreadBatchJob extends RunBaseBatch
+{
+    QueryRun                 gQueryRun;
+    BatchHeader              batchHeader;
+    HMNumberOfThreads        numberOfThreads;
+    HMLastPostingCodes       lastPostedCodes;
+    HMDaysSinceDenialPosting daysSinceDenialPosting;
+    static str               taskDescription;
+    int                      perThreadRecordsRound, additionalRecords;
+    RecId                    hmClaimBatchJobLogsHeader;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.NumberOfThreads
+        numberOfThreads
+    #endmacro
+    #LOCALMACRO.TaskDescription
+        taskDescription
+    #ENDMACRO
+    #LOCALMACRO.PerThreadRecordsRound
+        perThreadRecordsRound
+    #ENDMACRO
+    #LOCALMACRO.AdditionalRecords
+        additionalRecords
+    #ENDMACRO
+    #LOCALMACRO.HMClaimBatchJobLogsHeader
+        hmClaimBatchJobLogsHeader
+    #ENDMACRO
+    #localmacro.LastPostedCodes
+        lastPostedCodes
+    #endmacro
+    #localmacro.DaysSinceDenialPosting
+        daysSinceDenialPosting
+    #endmacro
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMDataPrepForZeroQualifiedMultiThreadBatchJob construct()
+    {
+        return new HMDataPrepForZeroQualifiedMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of the task
+    /// </summary>
+    /// <returns>Return description of the task</returns>
+    static ClassDescription description()
+    {
+        return taskDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method initiated the task to generate the data in data preparation table
+    /// </summary>
+    public void run()
+    {
+        HMDataPrepForZeroQualifiedMultiThreadTask    hmDataPrepForZeroQualifiedMultiThreadTask;
+        int                                          queryStartPosition, queryEndPosition;
+
+        try
+        {
+            if(this.isInBatch())
+            {
+                for(int i = 1; i <= numberOfThreads; i++)
+                {
+                    if(!batchHeader)
+                    {
+                        batchHeader = BatchHeader::construct(this.parmCurrentBatch().BatchJobId);
+                    }
+
+                    if(i == 1)
+                    {
+                        queryStartPosition  = 1;
+                        queryEndPosition    = perThreadRecordsRound + additionalRecords;
+                    }
+                    else
+                    {
+                        queryStartPosition  = queryEndPosition + 1;
+                        queryEndPosition    = queryEndPosition + perThreadRecordsRound;
+                    }
+
+                    hmDataPrepForZeroQualifiedMultiThreadTask = HMDataPrepForZeroQualifiedMultiThreadTask::construct();
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmQueryRun(gQueryRun);
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmQueryStartPosition(queryStartPosition);
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmPerThreadRecords(i == 1 ? perThreadRecordsRound + additionalRecords : perThreadRecordsRound);
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmTaskDescription(strFmt("@Optum:DataPreparationForZeroClaimQulaificationMultipleThreadTask", i, queryStartPosition, queryEndPosition));
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmTaskNumber(i);
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeader);
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmLastPostedCodes(lastPostedCodes);
+                    hmDataPrepForZeroQualifiedMultiThreadTask.parmDaysSinceDenialPosting(daysSinceDenialPosting);
+
+                    // add tasks to the batch header
+                    batchHeader.addRuntimeTask(hmDataPrepForZeroQualifiedMultiThreadTask, this.parmCurrentBatch().RecId);
+
+                }
+
+            }
+
+            if(batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();
+            }
+
+        }
+        catch
+        {
+            throw error(strFmt("@MAZ:DataPreparationBatchJobFailedError",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+
+        return [#CurrentVersion] + [pack] + [#NumberOfThreads] + [#PerThreadRecordsRound] + [#AdditionalRecords] + [#TaskDescription] + [#HMClaimBatchJobLogsHeader] + [#LastPostedCodes] + [#DaysSinceDenialPosting];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #NumberOfThreads, #PerThreadRecordsRound, #AdditionalRecords, #TaskDescription, #HMClaimBatchJobLogsHeader, #LastPostedCodes, #DaysSinceDenialPosting] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+            default:
+                ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQueryRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the gQueryRun object
+    /// </summary>
+    /// <param name="_qr"><c>QueryRun</c> object</param>
+    public void parmQueryRun(QueryRun _qr)
+    {
+        gQueryRun = _qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNumberOfThreads</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the numberOfThreads value
+    /// </summary>
+    /// <param name="_numberOfThreads"><c>HMNumberOfThreads</c> value</param>
+    public void parmNumberOfThreads(HMNumberOfThreads _numberOfThreads)
+    {
+        numberOfThreads = _numberOfThreads;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTaskDescription</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the taskDescription value
+    /// </summary>
+    /// <param name="_taskDescription">Task description value</param>
+    public void parmTaskDescription(str _taskDescription)
+    {
+        taskDescription = _taskDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPerThreadRecordsRound</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the perThreadRecordsRound value
+    /// </summary>
+    /// <param name="_perThreadRecordsRound">PerThreadRecordsRound value</param>
+    public void parmPerThreadRecordsRound(int _perThreadRecordsRound)
+    {
+        perThreadRecordsRound = _perThreadRecordsRound;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAdditionalRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the additionalRecords value
+    /// </summary>
+    /// <param name="_additionalRecords">AdditionalRecords value</param>
+    public void parmAdditionalRecords(int _additionalRecords)
+    {
+        additionalRecords = _additionalRecords;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMClaimBatchJobLogsHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the hmClaimBatchJobLogsHeader value
+    /// </summary>
+    /// <param name="_hmClaimBatchJobLogsHeader"><c>HMClaimBatchJobLogsHeader</c> record id</param>
+    public void parmHMClaimBatchJobLogsHeader(RecId _hmClaimBatchJobLogsHeader)
+    {
+        hmClaimBatchJobLogsHeader = _hmClaimBatchJobLogsHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLastPostedCodes</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the lastPostedCodes value
+    /// </summary>
+    /// <param name="_lastPostedCodes"><c>HMLastPostingCodes</c> value</param>
+    public void parmLastPostedCodes(HMLastPostingCodes _lastPostedCodes)
+    {
+        lastPostedCodes = _lastPostedCodes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDaysSinceDenialPosting</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the daysSinceDenialPosting value
+    /// </summary>
+    /// <param name="_daysSinceDenialPosting"><c>HMDaysSinceDenialPosting</c> value</param>
+    public void parmDaysSinceDenialPosting(HMDaysSinceDenialPosting _daysSinceDenialPosting)
+    {
+        daysSinceDenialPosting = _daysSinceDenialPosting;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

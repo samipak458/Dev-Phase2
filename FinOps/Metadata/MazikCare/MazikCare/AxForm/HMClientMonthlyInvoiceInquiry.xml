@@ -1,0 +1,1322 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMClientMonthlyInvoiceInquiry</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMClientMonthlyInvoiceInquiry extends FormRun
+{
+    QueryBuildRange     qbrClient,qbrDate;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        FromDate.dateValue(mkDate(1,mthOfYr(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())),year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))));
+        ToDate.dateValue(endmth(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>CustInvoiceJour</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            qbrDate = CustInvoiceJour_ds.queryBuildDataSource().addRange(fieldNum(CustInvoiceJour,InvoiceDate));
+            qbrClient = CustInvoiceJour_ds.queryBuildDataSource().addRange(fieldNum(CustInvoiceJour,InvoiceAccount));
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>clientPO</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display str clientPO(CustInvoiceJour _custInvoiceJour)
+        {
+            return CustTable::find(_custInvoiceJour.InvoiceAccount).HMPONum;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>CustInvoiceTrans</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            CustInvoiceTrans_ds.queryBuildDataSource().addRange(fieldNum(CustTrans,RecId)).value(SysQuery::value(0));
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>totalAMount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display Amount totalAMount(CustInvoiceTrans _custInvoiceTrans)
+        {
+            return _custInvoiceTrans.LineAmount + _custInvoiceTrans.TaxAmount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>itemDescription</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display EcoResDescription itemDescription(CustInvoiceTrans _custInvoiceTrans)
+        {
+            return HMInventTableClass::showDescription(_custInvoiceTrans.ItemId);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>protocolAlias</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display EcoResDescription protocolAlias(CustInvoiceTrans _custInvoiceTrans)
+        {
+            HMClientProtocol hmClientProtocol;
+        
+            select * from hmClientProtocol
+            where hmClientProtocol.ClientAccount == _custInvoiceTrans.custInvoiceJour().InvoiceAccount
+            && hmClientProtocol.ItemId == _custInvoiceTrans.ProtocolId;
+        
+            if(hmClientProtocol)
+            {
+                return  hmClientProtocol.itemAlias();
+            }
+            return HMInventTableClass::showDescription(_custInvoiceTrans.ProtocolId);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMResourceSchedulingAppointment</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getEmployeeGOPPONum</Name>
+						<Source><![CDATA[
+        public display str  getEmployeeGOPPONum(HMResourceSchedulingAppointment _appt)
+        {
+            return strfmt('%1, %2, $3',_appt.EmployeeNum,_appt.GOPNum,_appt.PONum);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>patientName</Name>
+						<Source><![CDATA[
+        public display str patientName(HMResourceSchedulingAppointment _appt)
+        {
+            if(_appt.Client)
+            {
+                if(CustTable::find(_appt.Client).HMOverridePatientNameInvoice == NoYes::Yes)
+                {
+                    return '';
+                }
+            }
+            return _appt.getPatientName();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMPatient</Name>
+				<Methods>
+					<Method>
+						<Name>patientId</Name>
+						<Source><![CDATA[
+        public display str patientId(HMPatient _hmPatient)
+        {
+            if(_hmPatient.PhysicalChartNumber)
+            {
+                return  _hmPatient.PhysicalChartNumber;
+            }
+            return HMPatient.patientChartNum();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>Search</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            str range;
+            super();
+            if (FromDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS24050"));
+                return;
+            }
+        
+            if (ToDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS36680"));
+                return;
+            }
+        
+            if (FromDate.dateValue() > ToDate.dateValue())
+            {
+                warning("@MAZ2029");
+                return;
+            }
+            if(HMClientMonthlyAccount.text() == '')
+            {
+                warning(strFmt("@SYS26332","@MAZ12347"));
+                return;
+            }
+            CustInvoiceTrans_ds.queryBuildDataSource().clearRanges();
+            qbrDate.value(SysQuery::range(FromDate.dateValue(),ToDate.dateValue()));
+            qbrClient.value(HMClientMonthlyAccount.text());
+            CustInvoiceJour_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>CustInvoiceJour</Name>
+			<Table>CustInvoiceJour</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Backorder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankLCExportLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfLadingId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscBaseDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscPercent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CovStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomerRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryPostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirectDebitMandate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvTerm</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoiceAccountCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoiceLineSpecific</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDiscMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EnterpriseNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EUSalesList</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRateSecondary</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FixedDueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InclTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyCompanyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyPosted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyPurchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatDispatch</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatFulfillmentDate_HU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoicePostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceRoundOff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceRoundOffMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoicingName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsCorrection</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LanguageId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LedgerVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Listcode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Log</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRDueAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCREmail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPaymAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>numberSequenceGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OLAPCostValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OnAccountAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OneTimeCustomer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParmId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymDayId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Payment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymentSched</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Prepayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrintedOriginals</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrintMgmtSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Proforma</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchaseOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Qty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RCSalesList_UK</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonTableRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReceiptDateConfirmed_ES</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReturnItemNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReturnReasonCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReturnStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReverseCharge_UK</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReversedRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesBalance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesBalanceMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesOriginId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SourceDocumentHeader</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SourceDocumentLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumLineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumLineDiscMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumMarkup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumMarkupMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumTaxMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxInvoiceSalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxItemGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxPrintOnInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxSpecifyByLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransportationDocument</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Triangulation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Updated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Volume</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Weight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WorkerSalesTaker</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>CustInvoiceTrans</Name>
+			<Table>CustInvoiceTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AssetBookId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillingCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissAmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissCalc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CountryRegionOfShipment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustInvoiceLineIdRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomerLineNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryPostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoiceAccountCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExternalItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyInventTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatDispatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatFulfillmentDate_HU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventRefId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventRefTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventRefType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LedgerDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineAmountTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineAmountTaxMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineHeader</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LinePercent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRDeliveryName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRDlvMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MultiLnDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MultiLnPercent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NGPCodesTable_FR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>numberSequenceGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OLAPCostValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigCountryRegionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigSalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigState</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartDelivery</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQtyPhysical</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWRemain</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Port</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriceUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Qty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>QtyPhysical</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefCommReportTrans_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Remain</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RemainBefore</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReturnArrivalDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReturnClosedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReturnDispositionCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReverseChargeApplies_UK</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReversedRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesMarkup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SourceDocumentLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatLineAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatProcId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StockedProduct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumLineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumLineDiscMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxAutogenerated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxItemGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdGroup_TH</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdItemGroupHeading_TH</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWriteCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransactionCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Transport</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Weight</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustInvoiceJour</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingAppointment</Name>
+			<Table>HMResourceSchedulingAppointment</Table>
+			<Fields />
+			<ReferencedDataSources />
+			<JoinSource>CustInvoiceTrans</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatient</Name>
+			<Table>HMPatient</Table>
+			<Fields />
+			<ReferencedDataSources />
+			<JoinSource>HMResourceSchedulingAppointment</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ12346</Caption>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormStaticTextControl">
+				<Name>MainInstruction</Name>
+				<ElementPosition>572662305</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>StaticText</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Style>MainInstruction</Style>
+				<Text>@MAZ12346</Text>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>SearchGroup</Name>
+				<ElementPosition>1145324610</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMClientMonthlyAccount</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>954437176</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMClientMonthlyAccount</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>DateGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>FromDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>TransDate</ExtendedDataType>
+								<Label>@MAZ1037</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>ToDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>TransDate</ExtendedDataType>
+								<Label>@SYS101250</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>Search</Name>
+								<ElementPosition>1879048189</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Text>Search</Text>
+							</AxFormControl>
+						</Controls>
+						<Columns>3</Columns>
+					</AxFormControl>
+				</Controls>
+				<Caption>@MAZ1718</Caption>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>GridContainer</Name>
+				<ElementPosition>1717986916</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>Grid</Name>
+						<AllowEdit>No</AllowEdit>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMResourceSchedulingAppointment_AppointmentNumber</Name>
+								<ElementPosition>143165576</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>AppointmentNumber[1]</DataField>
+								<DataSource>HMResourceSchedulingAppointment</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CustInvoiceJour_InvoiceAccount</Name>
+								<ElementPosition>214748364</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>InvoiceAccount</DataField>
+								<DataSource>CustInvoiceJour</DataSource>
+								<Label>@MAZ12348</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CustInvoiceJour_ClientName</Name>
+								<ElementPosition>322122546</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>invoiceName</DataMethod>
+								<DataSource>CustInvoiceJour</DataSource>
+								<Label>@MAZ12349</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>invoicingAddress</Name>
+								<ElementPosition>429496728</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>invoicingAddress</DataMethod>
+								<DataSource>CustInvoiceJour</DataSource>
+								<DisplayHeight>1</DisplayHeight>
+								<DisplayHeightMode>Fixed</DisplayHeightMode>
+								<Label>@MAZ12356</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CustInvoiceJour_SalesId</Name>
+								<ElementPosition>536870910</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>SalesId</DataField>
+								<DataSource>CustInvoiceJour</DataSource>
+								<Label>@MAZ12350</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PatientId</Name>
+								<ElementPosition>644245092</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>patientId</DataMethod>
+								<DataSource>HMPatient</DataSource>
+								<DisplayHeight>1</DisplayHeight>
+								<DisplayHeightMode>Fixed</DisplayHeightMode>
+								<Label>@MAZ12351</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PatientName</Name>
+								<ElementPosition>751619274</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>patientName</DataMethod>
+								<DataSource>HMResourceSchedulingAppointment</DataSource>
+								<DisplayHeight>1</DisplayHeight>
+								<DisplayHeightMode>Fixed</DisplayHeightMode>
+								<Label>@MAZ10673</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMResourceSchedulingAppointment_PONum</Name>
+								<ElementPosition>1181116002</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>PONum</DataField>
+								<DataSource>HMResourceSchedulingAppointment</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ClientPONum</Name>
+								<ElementPosition>1288490184</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>clientPO</DataMethod>
+								<DataSource>CustInvoiceJour</DataSource>
+								<DisplayHeight>1</DisplayHeight>
+								<DisplayHeightMode>Fixed</DisplayHeightMode>
+								<Label>@MAZ12354</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>HMResourceSchedulingAppointment_AppointmentDate</Name>
+								<ElementPosition>1395864366</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>AppointmentDate[1]</DataField>
+								<DataSource>HMResourceSchedulingAppointment</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>showClinic</Name>
+								<ElementPosition>1503238548</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>showClinic</DataMethod>
+								<DataSource>HMResourceSchedulingAppointment</DataSource>
+								<Label>@MAZ11251</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>protocolAlias</Name>
+								<ElementPosition>1610612730</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>protocolAlias</DataMethod>
+								<DataSource>CustInvoiceTrans</DataSource>
+								<Label>@MAZ12352</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>itemDescription</Name>
+								<ElementPosition>1717986912</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>itemDescription</DataMethod>
+								<DataSource>CustInvoiceTrans</DataSource>
+								<Label>@MAZ10833</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>CustInvoiceTrans_LineAmount</Name>
+								<ElementPosition>1825361094</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Real</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>LineAmount</DataField>
+								<DataSource>CustInvoiceTrans</DataSource>
+								<Label>@MAZ12353</Label>
+								<NoOfDecimals>-1</NoOfDecimals>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>CustInvoiceTrans_TaxAmount</Name>
+								<ElementPosition>1932735276</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Real</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>TaxAmount</DataField>
+								<DataSource>CustInvoiceTrans</DataSource>
+								<Label>@SYS4081464</Label>
+								<NoOfDecimals>-1</NoOfDecimals>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>lineAmountInclTax</Name>
+								<ElementPosition>2040109458</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Real</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>totalAMount</DataMethod>
+								<DataSource>CustInvoiceTrans</DataSource>
+								<Label>@SYP4960217</Label>
+								<NoOfDecimals>-1</NoOfDecimals>
+							</AxFormControl>
+						</Controls>
+						<AlternateRowShading>No</AlternateRowShading>
+						<DataSource>CustInvoiceJour</DataSource>
+						<MultiSelect>No</MultiSelect>
+						<ShowRowLabels>No</ShowRowLabels>
+					</AxFormControl>
+				</Controls>
+				<Style>BorderlessGridContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

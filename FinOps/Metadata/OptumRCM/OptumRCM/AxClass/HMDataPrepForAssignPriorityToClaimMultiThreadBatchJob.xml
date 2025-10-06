@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDataPrepForAssignPriorityToClaimMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMDataPrepForAssignPriorityToClaimMultiThreadBatchJob extends RunBaseBatch
+{
+    QueryRun            gQueryRun;
+    BatchHeader         batchHeader;
+    HMNumberOfThreads   numberOfThreads;
+    static str          taskDescription;
+    int                 perThreadRecordsRound, additionalRecords;
+    RecId               hmClaimBatchJobLogsHeader;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.NumberOfThreads
+        numberOfThreads
+    #endmacro
+    #LOCALMACRO.TaskDescription
+        taskDescription
+    #ENDMACRO
+    #LOCALMACRO.PerThreadRecordsRound
+        perThreadRecordsRound
+    #ENDMACRO
+    #LOCALMACRO.AdditionalRecords
+        additionalRecords
+    #ENDMACRO
+    #LOCALMACRO.HMClaimBatchJobLogsHeader
+        hmClaimBatchJobLogsHeader
+    #ENDMACRO
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMDataPrepForAssignPriorityToClaimMultiThreadBatchJob construct()
+    {
+        return new HMDataPrepForAssignPriorityToClaimMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    static ClassDescription description()
+    {
+        return taskDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void run()
+    {
+        HMDataPrepForAssignPriorityToClaimMultiThreadTask   hmDataPrepForAssignPriorityToClaimMultiThreadTask;
+        int                                                 queryStartPosition, queryEndPosition;
+
+        try
+        {
+            if(this.isInBatch())
+            {
+                for(int i = 1; i <= numberOfThreads; i++)
+                {
+                    if(!batchHeader)
+                    {
+                        batchHeader = BatchHeader::construct(this.parmCurrentBatch().BatchJobId);
+                    }
+
+                    if(i == 1)
+                    {
+                        queryStartPosition  = 1;
+                        queryEndPosition    = perThreadRecordsRound + additionalRecords;
+                    }
+                    else
+                    {
+                        queryStartPosition  = queryEndPosition + 1;
+                        queryEndPosition    = queryEndPosition + perThreadRecordsRound;
+                    }
+
+                    hmDataPrepForAssignPriorityToClaimMultiThreadTask = HMDataPrepForAssignPriorityToClaimMultiThreadTask::construct();
+                    hmDataPrepForAssignPriorityToClaimMultiThreadTask.parmQueryRun(gQueryRun);
+                    hmDataPrepForAssignPriorityToClaimMultiThreadTask.parmQueryStartPosition(queryStartPosition);
+                    hmDataPrepForAssignPriorityToClaimMultiThreadTask.parmPerThreadRecords(i == 1 ? perThreadRecordsRound + additionalRecords : perThreadRecordsRound);
+                    hmDataPrepForAssignPriorityToClaimMultiThreadTask.parmTaskDescription(strFmt("@MAZ:DataPreparationForClaimPriorityMultipleThreadTask", i, queryStartPosition, queryEndPosition));
+                    hmDataPrepForAssignPriorityToClaimMultiThreadTask.parmTaskNumber(i);
+                    hmDataPrepForAssignPriorityToClaimMultiThreadTask.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeader);
+
+                    // add tasks to the batch header
+                    batchHeader.addRuntimeTask(hmDataPrepForAssignPriorityToClaimMultiThreadTask, this.parmCurrentBatch().RecId);
+
+                }
+
+            }
+
+            if(batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();//BatchStatus::Hold);
+            }
+
+        }
+        catch
+        {
+            throw error(strFmt('@MAZ:DataPreparationBatchJobFailedError',xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+
+        return [#CurrentVersion] + [pack] + [#NumberOfThreads] + [#PerThreadRecordsRound] + [#AdditionalRecords] + [#TaskDescription] + [#hmClaimBatchJobLogsHeader];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #NumberOfThreads, #PerThreadRecordsRound, #AdditionalRecords, #TaskDescription, #hmClaimBatchJobLogsHeader] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+            default:
+                ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQueryRun</Name>
+				<Source><![CDATA[
+    public void parmQueryRun(QueryRun _qr)
+    {
+        gQueryRun = _qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNumberOfThreads</Name>
+				<Source><![CDATA[
+    public void parmNumberOfThreads(HMNumberOfThreads _numberOfThreads)
+    {
+        numberOfThreads = _numberOfThreads;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTaskDescription</Name>
+				<Source><![CDATA[
+    public void parmTaskDescription(str _taskDescription)
+    {
+        taskDescription = _taskDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPerThreadRecordsRound</Name>
+				<Source><![CDATA[
+    public void parmPerThreadRecordsRound(int _perThreadRecordsRound)
+    {
+        perThreadRecordsRound = _perThreadRecordsRound;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAdditionalRecords</Name>
+				<Source><![CDATA[
+    public void parmAdditionalRecords(int _additionalRecords)
+    {
+        additionalRecords = _additionalRecords;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMClaimBatchJobLogsHeader</Name>
+				<Source><![CDATA[
+    public void parmHMClaimBatchJobLogsHeader(RecId _hmClaimBatchJobLogsHeader)
+    {
+        hmClaimBatchJobLogsHeader = _hmClaimBatchJobLogsHeader;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

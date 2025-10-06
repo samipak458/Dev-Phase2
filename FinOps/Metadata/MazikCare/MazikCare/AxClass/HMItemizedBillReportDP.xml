@@ -1,0 +1,412 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMItemizedBillReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    SRSReportParameterAttribute(classstr(HMItemizedBillReportContract))
+]
+public class HMItemizedBillReportDP extends SRSReportDataProviderBase
+{
+    HMItemizedBillDetailTmp   itemizedBillDetailTmp;
+    HMItemizedBillNotesTmp    itemizedBillNotesTmp;
+    HMItemizedBillInsuranceTmp  itemizedBillInsuranceTmp;
+    HMItemizedBillGuarantorTmp  itemizedBillGuarantorTmp;
+    HMItemizedBillPayerTmp      itemizedBIllPayerTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getItemizedBillDetailTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute('HMItemizedBillDetailTmp')
+    ]
+    public HMItemizedBillDetailTmp getItemizedBillDetailTmp()
+    {
+        select itemizedBillDetailTmp;
+    
+        return itemizedBillDetailTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemizedBillGuarantorTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute('HMItemizedBillGuarantorTmp')
+    ]
+    public HMItemizedBillGuarantorTmp getItemizedBillGuarantorTmp()
+    {
+        select itemizedBillGuarantorTmp;
+    
+        return itemizedBillGuarantorTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemizedBillInsuranceTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute('HMItemizedBillInsuranceTmp')
+    ]
+    public HMItemizedBillInsuranceTmp getItemizedBillInsuranceTmp()
+    {
+        select itemizedBillInsuranceTmp;
+    
+        return itemizedBillInsuranceTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemizedBillNotesTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute('HMItemizedBillNotesTmp')
+    ]
+    public HMItemizedBillNotesTmp getItemizedBillNotesTmp()
+    {
+        select itemizedBillNotesTmp;
+    
+        return itemizedBillNotesTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemizedBillPayerTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute('HMItemizedBillPayerTmp')
+    ]
+    public HMItemizedBillPayerTmp getItemizedBillPayerTmp()
+    {
+        select itemizedBillPayerTmp;
+    
+        return itemizedBillPayerTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateCaseNotes</Name>
+				<Source><![CDATA[
+    private void populateCaseNotes(HMCaseNo caseNo)
+    {
+        HMCaseNotes                     caseNotes;
+        HMCaseNotesIdentificationSetup  notesIdentificationSetup;
+    
+    
+        while select * from caseNotes
+                where caseNotes.HMCase == HMCase::findByCase(caseNo).RecId
+    
+    
+        {
+    
+            itemizedBillNotesTmp.Notes = caseNotes.Notes;
+            itemizedBillNotesTmp.ModifyBy = caseNotes.modifiedBy;
+            itemizedBillNotesTmp.ModifiedDate = DateTimeUtil::date(caseNotes.modifiedDateTime);
+    
+            select * from notesIdentificationSetup
+                where notesIdentificationSetup.RecId == caseNotes.HMCaseNotesIdentificationSetup;
+    
+            if (notesIdentificationSetup)
+            {
+                if (notesIdentificationSetup.Identification == HMCaseNotesIdentification::None)
+                    itemizedBillNotesTmp.Identification = "";
+                else
+                    itemizedBillNotesTmp.Identification = enum2str(notesIdentificationSetup.Identification);
+            }
+            else
+                itemizedBillNotesTmp.Identification = "";
+    
+    
+    
+            itemizedBillNotesTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateGuarantorDetails</Name>
+				<Source><![CDATA[
+    private void populateGuarantorDetails(HMCaseNo caseNo)
+    {
+        HMCaseInsurance     caseInsurance;
+        HMPatientInsurance  patientInsurance;
+    
+         select * from caseInsurance
+            join patientInsurance
+                where caseInsurance.HMPatientInsurance == patientInsurance.RecId
+                   && patientInsurance.HMPayerType == HMPayerType::Gurantor
+                   && caseInsurance.HMCase == HMCase::findByCase(caseNo).RecId;
+    
+        if (patientInsurance)
+        {
+            itemizedBillGuarantorTmp.InsuranceCarrier = caseInsurance.InsuranceCarrier;
+            itemizedBillGuarantorTmp.Address = CustTable::find(caseInsurance.InsuranceCarrier).address();
+            itemizedBillGuarantorTmp.Phone = CustTable::find(caseInsurance.InsuranceCarrier).phone();
+            itemizedBillGuarantorTmp.StatementDate = DateTimeUtil::date(HMCase::findByCase(caseNo).PreAdmittingDate);
+            itemizedBillGuarantorTmp.insert();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateInsuranceDetails</Name>
+				<Source><![CDATA[
+    private void populateInsuranceDetails(HMCaseNo caseNo)
+    {
+        HMCaseNotes                     caseNotes;
+        HMCaseInsurance                 caseInsurance;
+        HMPatientInsurance              patientInsurance;
+        CustAccount                     insuranceCarrier, insuranceCarrier2, insuranceCarrier3;
+        Name                            name, name2, name3;
+        Addressing                      address, address2, address3;
+        Phone                           phone, phone2, phone3;
+        HMPolicyNumber                  policyNumber, policyNumber2, policyNumber3;
+        HMPriorAuthorizationNumber      auth, auth2, auth3;
+    
+    
+        caseInsurance.clear();
+        while select * from caseInsurance
+            join patientInsurance
+                where caseInsurance.HMPatientInsurance == patientInsurance.RecId
+                   && patientInsurance.HMPayerType != HMPayerType::Gurantor
+                   && caseInsurance.HMCase == HMCase::findByCase(caseNo).RecId
+        {
+            //Inserting primary insurance details
+            if (caseInsurance.Priority == 1)
+            {
+                insuranceCarrier = caseInsurance.InsuranceCarrier;
+                name = caseInsurance.Name();
+                address = CustTable::find(caseInsurance.InsuranceCarrier).address();
+                phone = CustTable::find(caseInsurance.InsuranceCarrier).phone();
+                policyNumber = patientInsurance.PolicyNumber;
+                auth = patientInsurance.PriorAuthorizationNumber;
+    
+            }
+    
+            //Inserting secondary insurance details
+            if (caseInsurance.Priority == 2)
+            {
+                insuranceCarrier2 = caseInsurance.InsuranceCarrier;
+                name2 = caseInsurance.Name();
+                address2 = CustTable::find(caseInsurance.InsuranceCarrier).address();
+                phone2 = CustTable::find(caseInsurance.InsuranceCarrier).phone();
+                policyNumber2 = patientInsurance.PolicyNumber;
+                auth2 = patientInsurance.PriorAuthorizationNumber;
+            }
+    
+             //Inserting tertiary insurance details
+            if (caseInsurance.Priority == 3)
+            {
+                insuranceCarrier3 = caseInsurance.InsuranceCarrier;
+                name3 = caseInsurance.Name();
+                address3 = CustTable::find(caseInsurance.InsuranceCarrier).address();
+                phone3 = CustTable::find(caseInsurance.InsuranceCarrier).phone();
+                policyNumber3 = patientInsurance.PolicyNumber;
+                auth3 = patientInsurance.PriorAuthorizationNumber;
+    
+            }
+    
+        }
+    
+        if (insuranceCarrier != "" && name != "" || address != "" || phone != "")
+        {
+            itemizedBillInsuranceTmp.InsuranceCarrier = insuranceCarrier;
+            itemizedBillInsuranceTmp.Name = name;
+            itemizedBillInsuranceTmp.Address = address;
+            itemizedBillInsuranceTmp.Phone = phone;
+            itemizedBillInsuranceTmp.PolicyNumber = policyNumber;
+            itemizedBillInsuranceTmp.Auth = auth;
+        }
+        if (insuranceCarrier2 != "" && name2 != "" || address2 != "" || phone2 != "")
+        {
+            itemizedBillInsuranceTmp.InsuranceCarrier2 = insuranceCarrier2;
+            itemizedBillInsuranceTmp.Name2 = name2;
+            itemizedBillInsuranceTmp.Address2 = address2;
+            itemizedBillInsuranceTmp.Phone2 = phone2;
+            itemizedBillInsuranceTmp.PolicyNumber2 = policyNumber2;
+            itemizedBillInsuranceTmp.Auth2 = auth2;
+        }
+        if (insuranceCarrier3 != "" && name3 != "" || address3 != "" || phone3 != "")
+        {
+            itemizedBillInsuranceTmp.InsuranceCarrier3 = insuranceCarrier3;
+            itemizedBillInsuranceTmp.Name3 = name3;
+            itemizedBillInsuranceTmp.Address3 = address3;
+            itemizedBillInsuranceTmp.Phone3 = phone3;
+            itemizedBillInsuranceTmp.PolicyNumber3 = policyNumber3;
+            itemizedBillInsuranceTmp.Auth3 = auth3;
+        }
+    
+        itemizedBillInsuranceTmp.insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populatePayerDetails</Name>
+				<Source><![CDATA[
+    private void populatePayerDetails(HMCaseNo caseNo)
+    {
+        HMCase                      hmCase;
+        HMPatient                   hmPatient;
+        HMPatientChargeEntryLine    patientChargeEntryLine;
+        HMCaseTrans                 caseTrans;
+        Amount                      billedAmount;
+        HMCaseInsurance             caseInsurance;
+        HMPatientInsurance          patientInsurance;
+        Name                        payerName;
+        FromDate                    serviceDate;
+    
+    
+    
+        while select * from patientChargeEntryLine
+            order by FromDate desc
+            join caseTrans
+                where patientChargeEntryLine.HMCaseTrans == caseTrans.RecId
+                join hmCase
+                    where caseTrans.HMCase == hmCase.RecId
+                    join hmPatient
+                        where hmCase.HMPatient == hmpatient.RecId
+                           && hmCase.CaseNo == caseNo
+        {
+            select * from caseInsurance
+                where caseInsurance.HMCase == hmCase.RecId
+                   && caseInsurance.IsActive == NoYes::Yes;
+    
+            if (caseInsurance)
+            {
+                payerName = CustTable::find(caseInsurance.InsuranceCarrier).name();
+                billedAmount += caseTrans.TotalAmount;
+                serviceDate = patientChargeEntryLine.FromDate;
+            }
+        }
+    
+        itemizedBIllPayerTmp.ID = 1;//patientInsurance.Priority;
+        itemizedBIllPayerTmp.Payer = payerName;
+        itemizedBIllPayerTmp.BilledAmount = billedAmount;
+        itemizedBIllPayerTmp.ServiceDate = serviceDate;
+        itemizedBIllPayerTmp.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMItemizedBillReportContract    dataContract;
+        HMCase                          hmCase;
+        HMPatientChargeEntryTable       patientChargeEntryTable;
+        HMPatientChargeEntryLine        patientChargeEntryLine;
+        HMOrganizationalUnit            organizationUnit;
+        HMCaseTrans                     caseTrans;
+        CustTrans                       custTrans;
+        HMPatient                       hmPatient;
+        CompanyInfo                     companyInfo;
+        CompanyImage                    companyImage;
+        HMClaimTableSetup               claimTableSetup;
+        HMCaseOtherDiagnosisCode1450    otherDiagnosisCode1450;
+        HMProcedureCodeMaster           procedureCodeMaster;
+        int                             i;
+        Qty                             noOfPrints;
+        RefRecId                        caseRecId;
+        HMCaseNo                        caseNo;
+        Amount                          billedAccountBalance;
+    
+        dataContract        = this.parmDataContract() as HMItemizedBillReportContract;
+        caseNo = dataContract.parmCaseNo();
+    
+    
+        while select * from patientChargeEntryLine
+            join caseTrans
+                where patientChargeEntryLine.HMCaseTrans == caseTrans.RecId
+                join hmCase
+                    where caseTrans.HMCase == hmCase.RecId
+                    join hmPatient
+                        where hmCase.HMPatient == hmpatient.RecId
+                           && hmCase.CaseNo == caseNo
+        {
+            itemizedBillDetailTmp.AdmissionDate = DateTimeUtil::date(hmCase.AddmisionDate);
+            itemizedBillDetailTmp.DischargeDate = DateTimeUtil::date(hmCase.DischargeDate);
+            itemizedBillDetailTmp.PatientName = hmPatient.patientName();
+            itemizedBillDetailTmp.AttendingPhy = HMResourceMaster::find(hmCase.HMResourceMaster).Description;
+            itemizedBillDetailTmp.CaseNo = hmCase.CaseNo;
+            itemizedBillDetailTmp.DOB = hmPatient.BirthDate;
+            itemizedBillDetailTmp.Qty = caseTrans.Qty;
+            itemizedBillDetailTmp.Amount = caseTrans.TotalAmount;
+            itemizedBillDetailTmp.FromDate = patientChargeEntryLine.FromDate;
+            itemizedBillDetailTmp.DescriptionComment = caseTrans.ItemName;
+            itemizedBillDetailTmp.ItemId = caseTrans.ItemId;
+    
+            select * from organizationUnit
+                where organizationUnit.RecId == caseTrans.HMOrganizationalUnit;
+    
+            itemizedBillDetailTmp.Location = organizationUnit.Description;
+            itemizedBillDetailTmp.RevenueCode = HMProcedureCodeMaster::find(patientChargeEntryLine.RevenueCode).Code;
+    
+    
+    
+            select * from companyImage
+                where companyImage.dataAreaId == curext();
+    
+            itemizedBillDetailTmp.CompanyLogo = companyImage.Image;
+            itemizedBillDetailTmp.PatientAddress = CustTable::findRecId(hmPatient.CustTable).address();
+            itemizedBillDetailTmp.PatientEmail = CustTable::findRecId(hmPatient.CustTable).email();
+            itemizedBillDetailTmp.PatientPhone = CustTable::findRecId(hmPatient.CustTable).phone();
+            itemizedBillDetailTmp.RegistrationDate = hmPatient.RegistrationDate;
+            itemizedBillDetailTmp.FinancialClass = HMFinancialClass::find(hmCase.HMFinancialClass).HMCode;
+            itemizedBillDetailTmp.SSN = hmPatient.SocialSecurityNumber;
+            itemizedBillDetailTmp.RequestedBy = curUserId();
+            itemizedBillDetailTmp.IsVIP = hmPatient.IsVIP;
+            itemizedBillDetailTmp.PreAdmittingDate = DateTimeUtil::date(hmCase.PreAdmittingDate);
+            itemizedBillDetailTmp.PatientStatus = HMClaimTableSetup::findByRecEnum(hmCase.HMPatientStatus, HMClaimEnumList::PatientStatus).HMClaimEnumList;
+    
+            select * from otherDiagnosisCode1450
+                where otherDiagnosisCode1450.Case == hmCase.RecId
+                   && otherDiagnosisCode1450.Fieldlocator == "67";
+    
+             itemizedBillDetailTmp.DX = HMDiagnosisDictionary::find(HMCaseOtherDiagnosisCode1450::find(otherDiagnosisCode1450.RecId).Code).Code;
+            itemizedBillDetailTmp.CPTCode = HMProcedureCodeMaster::find(patientChargeEntryLine.CPTCodes).Code;
+    
+            //billedAccountBalance += caseTrans.TotalAmount;
+    
+            select sum(AmountCur)
+            from custTrans
+                where custTrans.HMCase == hmCase.RecId;
+    
+            itemizedBillDetailTmp.BilledAccountBalance = caseTrans.TotalAmount;
+            itemizedBillDetailTmp.BeginningBalance = custTrans.AmountCur;
+            itemizedBillDetailTmp.MedRecNo = hmPatient.patientChartNum();
+            itemizedBillDetailTmp.insert();
+    
+        }
+    
+        this.populateCaseNotes(caseNo);
+        this.populateInsuranceDetails(caseNo);
+        this.populateGuarantorDetails(caseNo);
+        this.populatePayerDetails(caseNo);
+    
+    
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

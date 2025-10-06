@@ -1,0 +1,519 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAppointmentEODStatementClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMAppointmentEODStatementClass
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>calculateStatement</Name>
+				<Source><![CDATA[
+    private void calculateStatement(HMAppointmentEODStatement _hmAppointmentEODStatement)
+    {
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment, hmResourceSchedulingAppointmentChilds;
+        HMResourceSchedulingPlanningObject  HMResourceSchedulingPlanningObject;
+        HMAppointmentEODStatementLines      HMAppointmentEODStatementLines;
+    
+        HMAppoinmentLog                     hmAppointmentLog;
+        date                                startDate,endDate;
+        TimeOfDay                           startTime,endTime;
+        HMOrganizationalUnit                hmOrganizationalUnit;
+        ItemId                              itemidNoShowChargeCode = HMBillParameters::find().InventTable_NoShowChargeCode;
+        ItemId                              itemidCancelChargeCode = HMBillParameters::find().InventTable_CancellationChargeCode;
+        InventDim                           inventDim;
+        AccountNum                          invoiceAccount;
+        HMPatient                           hmPatient;
+        HMAppoinmentLog                     HMAppoinmentLog;
+        Set                                 setAppointmentRecId;
+        Query                               query;
+        QueryRun                            queryRun;
+        str                                 range;
+    
+        try
+        {
+            if(itemidNoShowChargeCode == '' || itemidCancelChargeCode == '')
+            {
+                warning("@MAZ11729");
+                return;
+            }
+            if(Box::yesNo("@MAZ11745",DialogButton::No,"@MAZ7757") == dialogButton::Yes)
+            {
+                startDate = DateTimeUtil::date(_hmAppointmentEODStatement.IntervalStartDateTime);
+                startTime = DateTimeUtil::time(_hmAppointmentEODStatement.IntervalStartDateTime);
+                endDate = DateTimeUtil::date(_hmAppointmentEODStatement.IntervalEndDateTime);
+                endTime = DateTimeUtil::time(_hmAppointmentEODStatement.IntervalEndDateTime);
+    
+                ttsBegin;
+    
+                query = new Query();
+    
+                query.addDataSource(tableNum(HMResourceSchedulingAppointment)).addDataSource(tablenum(HMResourceSchedulingPlanningObject)).relations(true);
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,PrimaryAppointment)).value(SysQuery::value(YesNo::Yes));
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::value(HMResourceSchedulingAppointmentStatus::Confirmed));
+                query.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,HMOrganizationalUnit)).value(SysQuery::value(_hmAppointmentEODStatement.HMOrganizationalUnit));
+                if(_hmAppointmentEODStatement.HMOrganizationalUnit_ServiceLocation != 0)
+                {
+                    query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,HMOrganizationalUnitServiceLocation)).value(SysQuery::value(_hmAppointmentEODStatement.HMOrganizationalUnit_ServiceLocation));
+                }
+    
+                range = strFmt('(((%2 >= %3) && (%4 >= %5))',query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).name(),fieldStr(HMResourceSchedulingAppointment,AppointmentDate),date2StrXpp(startDate),fieldStr(HMResourceSchedulingAppointment,AppointmentTime),startTime);
+                range += strFmt(' && ((%2 <= %3) && (%4 <= %5)))',query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).name(),fieldStr(HMResourceSchedulingAppointment,AppointmentDate),date2StrXpp(endDate),fieldStr(HMResourceSchedulingAppointment,AppointmentTime),endTime);
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,RecId)).value(range);
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,EodProcessed)).value(SysQuery::value(NoYes::No));
+                queryRun = new queryRun(query);
+    
+                while (queryRun.next())
+                {
+                    hmResourceSchedulingAppointment = queryRun.get(tableNum(hmResourceSchedulingAppointment));
+                    HMResourceSchedulingPlanningObject = queryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+                    hmResourceSchedulingAppointment.selectForUpdate(true);
+                    this.insertLine(_hmAppointmentEODStatement,hmResourceSchedulingAppointment,null,HMResourceSchedulingPlanningObject);
+    
+                    /*hmResourceSchedulingAppointment = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+                    hmResourceSchedulingAppointment.selectForUpdate(true);
+                    hmResourceSchedulingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::NoShow;
+                    hmResourceSchedulingAppointment.update();
+                    HMAppoinmentLog.clear();
+                    HMAppoinmentLog.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::NoShow;
+                    HMAppoinmentLog.HMResScheduleAppointment = hmResourceSchedulingAppointment.RecId;
+                    HMAppoinmentLog.HMAppointLogDate = today();
+                    HMAppoinmentLog.HMAppointLogTime = timeNow();
+                    HMAppoinmentLog.insert();*/
+                }
+    
+    
+                query = new Query();
+                query.addDataSource(tableNum(HMAppoinmentLog)).addDataSource(tableNum(HMResourceSchedulingAppointment)).relations(true);
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addDataSource(tablenum(HMResourceSchedulingPlanningObject)).relations(true);
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,PrimaryAppointment)).value(SysQuery::value(YesNo::Yes));
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,EodProcessed)).value(SysQuery::value(NoYes::No));
+                range = strFmt('((%1 == %2) && ((%3 == %4) || (%3 == %5) || (%3 == %6) || (%3 == %7) || (%3 == %8) || (%3 == %9) || (%3 == %10)))',
+                        fieldStr(HMResourceSchedulingAppointment,AppointmentStatus),
+                        enum2int(HMResourceSchedulingAppointmentStatus::Cancelled),
+                        fieldStr(HMResourceSchedulingAppointment,HMCancellationStatus),
+                        enum2int(HMAppointmentCancellationStatus::WithFeesForceBookConfirmed),
+                        enum2int(HMAppointmentCancellationStatus::WithFeesBusySchedule),
+                        enum2int(HMAppointmentCancellationStatus::WithFeesIllnessWeather),
+                        enum2int(HMAppointmentCancellationStatus::WithFeesNotCoveredPriceTooHigh),
+                        enum2int(HMAppointmentCancellationStatus::WithFeesNotSatisfied),
+                        enum2int(HMAppointmentCancellationStatus::WithFeesOther),
+                        enum2int(HMAppointmentCancellationStatus::WithFeesVacation));
+                query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(range);
+                query.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,HMOrganizationalUnit)).value(SysQuery::value(_hmAppointmentEODStatement.HMOrganizationalUnit));
+    
+                if(_hmAppointmentEODStatement.HMOrganizationalUnit_ServiceLocation != 0)
+                {
+                    query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,HMOrganizationalUnitServiceLocation)).value(SysQuery::value(_hmAppointmentEODStatement.HMOrganizationalUnit_ServiceLocation));
+                }
+    
+                range = strFmt('((%2 >= %3) && (%4>= %5))',query.dataSourceTable(tableNum(HMAppoinmentLog)).name(),fieldStr(HMAppoinmentLog,HMAppointLogDate),date2StrXpp(startDate),fieldStr(HMAppoinmentLog,HMAppointLogTime),startTime);
+                range += strFmt('((%2 <= %3) && (%4 <= %5))',query.dataSourceTable(tableNum(HMAppoinmentLog)).name(),fieldStr(HMAppoinmentLog,HMAppointLogDate),date2StrXpp(endDate),fieldStr(HMAppoinmentLog,HMAppointLogTime),endTime);
+                query.dataSourceTable(tableNum(HMAppoinmentLog)).addRange(fieldNum(HMAppoinmentLog,RecId)).value(range);
+    
+                query.dataSourceTable(tableNum(HMAppoinmentLog)).addRange(fieldNum(HMAppoinmentLog,HMAppointLogStatus)).value(SysQuery::value(HMResourceSchedulingAppointmentStatus::Cancelled));
+    
+    
+                queryRun = new queryRun(query);
+    
+                while (queryRun.next())
+                {
+                    hmResourceSchedulingAppointment = queryRun.get(tableNum(hmResourceSchedulingAppointment));
+                    HMResourceSchedulingPlanningObject = queryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+                    hmAppointmentLog = queryRun.get(tableNum(HMAppoinmentLog));
+                    hmResourceSchedulingAppointment.selectForUpdate(true);
+                    this.insertLine(_hmAppointmentEODStatement,hmResourceSchedulingAppointment,hmAppointmentLog,HMResourceSchedulingPlanningObject);
+                }
+    
+                query = new Query();
+                query.addDataSource(tableNum(HMAppointmentReserveSLot));
+                range = strFmt('((%2 >= %3) && (%4>= %5))',query.dataSourceTable(tableNum(HMAppointmentReserveSLot)).name(),fieldStr(HMAppointmentReserveSLot,Date),date2StrXpp(startDate),fieldStr(HMAppointmentReserveSLot,StartTime),startTime);
+                range += strFmt('((%2 <= %3) && (%4 <= %5))',query.dataSourceTable(tableNum(HMAppointmentReserveSLot)).name(),fieldStr(HMAppointmentReserveSLot,Date),date2StrXpp(endDate),fieldStr(HMAppointmentReserveSLot,StartTime),endTime);
+                query.dataSourceTable(tableNum(HMAppointmentReserveSLot)).addRange(fieldNum(HMAppointmentReserveSLot,RecId)).value(range);
+                query.dataSourceTable(tableNum(HMAppointmentReserveSLot)).addRange(fieldNum(HMAppointmentReserveSLot,SlotReserveBlock)).value(SysQuery::value(HMAppointmentSlotReserveBlock::Reserve));
+    
+    
+                _hmAppointmentEODStatement.selectForUpdate(true);
+                _hmAppointmentEODStatement.Status = HMAppointmentEODStatementStatus::Calculated;
+                _hmAppointmentEODStatement.CalculatedDateTime = DateTimeUtil::utcNow();
+                _hmAppointmentEODStatement.update();
+                ttsCommit;
+                info(strFmt("@MAZ11742", _hmAppointmentEODStatement.StatementNumber));
+            }
+        }
+        catch
+        {
+            error("@MAZ11730");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearStatement</Name>
+				<Source><![CDATA[
+    private void clearStatement(HMAppointmentEODStatement _hmAppointmentEODStatement)
+    {
+        HMAppointmentEODStatementLines      HMAppointmentEODStatementLines;
+        HMResourceSchedulingAppointment     HMResourceSchedulingAppointment;
+        HMAppoinmentLog                     hmAppointmentLog;
+        DialogButton                        dialogButton;
+        try
+        {
+            if(Box::yesNo("@MAZ11744",DialogButton::No,"@MAZ7757") == dialogButton::Yes)
+            {
+                ttsBegin;
+                while select forupdate HMAppointmentEODStatementLines
+                where HMAppointmentEODStatementLines.StatementNumber == _hmAppointmentEODStatement.StatementNumber
+                {
+                    select forupdate EODProcessed,AppointmentStatus from HMResourceSchedulingAppointment
+                    where HMResourceSchedulingAppointment.recid == HMAppointmentEODStatementLines.HMResourceSchedulingAppointment;
+                    if(HMResourceSchedulingAppointment)
+                    {
+                        HMResourceSchedulingAppointment.EODProcessed = NoYes::No;
+                        if(HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::NoShow)
+                        {
+                            HMResourceSchedulingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Confirmed;
+                            delete_from hmAppointmentLog
+                            where hmAppointmentLog.HMResScheduleAppointment == HMResourceSchedulingAppointment.RecId
+                            && hmAppointmentLog.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::NoShow;
+                        }
+                        HMResourceSchedulingAppointment.update();
+                        HMAppointmentEODStatementLines.delete();
+                    }
+                    else
+                    {
+                        warning("@MAZ11732");
+                        ttsAbort;
+                        return;
+                    }
+                }
+                _hmAppointmentEODStatement.selectForUpdate(true);
+                _hmAppointmentEODStatement.Status = HMAppointmentEODStatementStatus::Open;
+                _hmAppointmentEODStatement.CalculatedDateTime = utcDateTimeNull();
+                _hmAppointmentEODStatement.update();
+                ttsCommit;
+                info("@MAZ11731");
+    
+            }
+        }
+        catch
+        {
+            warning("@MAZ11732");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertLine</Name>
+				<Source><![CDATA[
+    private void insertLine(HMAppointmentEODStatement           _hmAppointmentEODStatement,
+                            HMResourceSchedulingAppointment     hmResourceSchedulingAppointment,
+                            HMAppoinmentLog                     hmAppointmentLog,
+                            HMResourceSchedulingPlanningObject  HMResourceSchedulingPlanningObject)
+    {
+        HMAppointmentEODStatementLines  HMAppointmentEODStatementLines;
+        HMOrganizationalUnit            hmOrganizationalUnit;
+        InventDim                       inventDim;
+        HMPatient                       hmPatient;
+        ReasonTable                     reasonTable;
+        HMAppointmentEODStatementLines.clear();
+        HMAppointmentEODStatementLines.StatementNumber = _hmAppointmentEODStatement.StatementNumber;
+        HMAppointmentEODStatementLines.HMResourceSchedulingAppointment = hmResourceSchedulingAppointment.RecId;
+    
+        if(hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Cancelled)
+        {
+            HMAppointmentEODStatementLines.NoShowCancellation = HMNoShowCancellation::Cancellation;
+        }
+        else if(hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed)
+        {
+            HMAppointmentEODStatementLines.NoShowCancellation = HMNoShowCancellation::NoShow;
+        }
+    
+        HMAppointmentEODStatementLines.NoShowReasonCode = hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Cancelled
+                                                            ? enum2str(hmResourceSchedulingAppointment.HMCancellationStatus)
+                                                            : hmAppointmentLog != null ? ReasonTable.findByRecid(hmAppointmentLog.AppointmentReason).Description : '';
+    
+        select InventLocation, Description,RecId, TaxGroup from hmOrganizationalUnit
+        where hmOrganizationalUnit.RecId == hmResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation;
+    
+        if(hmOrganizationalUnit.recid == 0)
+        {
+            select InventLocation, Description, RecId, TaxGroup from hmOrganizationalUnit
+            where hmOrganizationalUnit.RecId == HMResourceSchedulingPlanningObject.HMOrganizationalUnit;
+        }
+    
+        inventDim.clear();
+        inventDim.InventLocationId = hmOrganizationalUnit.InventLocation;
+        inventDim.InventSiteId = InventLocation::find(hmOrganizationalUnit.InventLocation).InventSiteId;
+        inventDim = inventDim::findOrCreate(inventDim);
+        HMAppointmentEODStatementLines.InventDimId = inventdim.inventDimId;
+    
+        HMAppointmentEODStatementLines.TaxGroup = hmOrganizationalUnit.TaxGroup;
+        if(HMAppointmentEODStatementLines.InventDimId == '')
+        {
+            warning(strFmt("@MAZ11740", hmOrganizationalUnit.Description));
+            ttsAbort;
+            return;
+        }
+        select CustTable,CreditCardToken from hmPatient
+        where hmPatient.RecId == hmResourceSchedulingAppointment.HMPatient;
+    
+        HMAppointmentEODStatementLines.PaidByClient = this.payerIsClient(hmResourceSchedulingAppointment);
+        HMAppointmentEODStatementLines.InvoiceAcccount = HMAppointmentEODStatementLines.PaidByClient == NoYes::Yes ? hmResourceSchedulingAppointment.Client : hmPatient.getMRN();
+    
+        if(HMAppointmentEODStatementLines.PaidByClient == NoYes::No)
+        {
+            HMAppointmentEODStatementLines.CollectPayment = hmPatient.CreditCardToken == '' ? NoYes::No : NoYes::Yes;
+        }
+    
+        HMAppointmentEODStatementLines.CustomerAccount = hmPatient.getMRN();
+        HMAppointmentEODStatementLines.InvoiceAcccount = HMAppointmentEODStatementLines.InvoiceAcccount == '' ? HMAppointmentEODStatementLines.CustomerAccount : HMAppointmentEODStatementLines.InvoiceAcccount;
+        HMAppointmentEODStatementLines.LineAmount = HMAppointmentEODStatementLines.ChargeCodeFee - HMAppointmentEODStatementLines.LineDisc;
+        HMAppointmentEODStatementLines.TaxAmount = Tax::calcTaxAmount(HMAppointmentEODStatementLines.TaxGroup, HMAppointmentEODStatementLines.TaxItemGroup, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), CompanyInfoHelper::standardCurrency(), HMAppointmentEODStatementLines.LineAmount, TaxModuleType::Sales);
+        HMAppointmentEODStatementLines.TotalAmount = HMAppointmentEODStatementLines.LineAmount + HMAppointmentEODStatementLines.TaxAmount;
+        HMAppointmentEODStatementLines.insert();
+        hmResourceSchedulingAppointment.EODProcessed = NoYes::Yes;
+        hmResourceSchedulingAppointment.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>payerIsClient</Name>
+				<Source><![CDATA[
+    public boolean payerIsClient(HMResourceSchedulingAppointment _appt)
+    {
+        HMPatientPaymentResponsibility responsibility;
+        hmResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+    
+        select HMOrganizationalUnit from hmResourceSchedulingPlanningObject where hmResourceSchedulingPlanningObject.recid == _appt.HMResourceSchedulingPlanningObject;
+        if(_appt.Client == HMOrganizationalUnitHelper::getBogusClient(hmResourceSchedulingPlanningObject.HMOrganizationalUnit))
+        {
+            responsibility = HMPatientPaymentResponsibility::Patient;
+        }
+        else
+        {
+            responsibility = HMPatientPaymentResponsibility::Client;
+        }
+    
+        if(responsibility == HMPatientPaymentResponsibility::Client)
+        {
+            return true;
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postStatement</Name>
+				<Source><![CDATA[
+    private void postStatement(HMAppointmentEODStatement _hmAppointmentEODStatement)
+    {
+        HMAppointmentEODStatementLines      HMAppointmentEODStatementLines;
+        HMSalesTableBuilder                 hmSalesTableBuilder;
+        HMSalesLineBuilder                  hmSalesLineBuilder;
+        HMSalesOrderInvoiceGenerator        invoiceGenerator;
+        HMAppoinmentLog                     hmAppointmentLog;
+        CustInvoiceJour                     custInvoiceJour;
+        HMResourceSchedulingAppointment     HMResourceSchedulingAppointment;
+        HMOrganizationalUnit                HMOrganizationalUnit;
+        boolean                             postInvoice = true;
+        CustTable                           custTableLocal;
+        try
+        {
+            if(Box::yesNo("@MAZ11746",DialogButton::No,"@MAZ7757") == dialogButton::Yes)
+            {
+                ttsBegin;
+                while select forUpdate HMAppointmentEODStatementLines
+                    where HMAppointmentEODStatementLines.StatementNumber == _hmAppointmentEODStatement.StatementNumber
+                    //&& HMAppointmentEODStatementLines.CreateInvoice == YesNo::Yes
+                {
+                    if(HMAppointmentEODStatementLines.CreateInvoice == YesNo::Yes)
+                    {
+                        postInvoice = true;
+                        select forUpdate AppointmentNumber,HMOrganizationalUnitServiceLocation,HMOrganizationalUnitServiceLocation,AppointmentStatus from HMResourceSchedulingAppointment
+                        where HMResourceSchedulingAppointment.recid == HMAppointmentEODStatementLines.HMResourceSchedulingAppointment;
+    
+                        select ServiceType from HMOrganizationalUnit
+                        where HMOrganizationalUnit.recid == HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation;
+    
+                        select clientBillingType from custTableLocal
+                        where custTableLocal.AccountNum == HMAppointmentEODStatementLines.InvoiceAcccount;
+    
+                        if(custTableLocal.ClientBillingType == HMClientBillingType::MonthlyInvoice)
+                        {
+                            postInvoice = false;
+                        }
+    
+                        hmSalesTableBuilder = new HMSalesTableBuilder();
+                        hmSalesTableBuilder.setCustAccount(HMAppointmentEODStatementLines.CustomerAccount);
+                        hmSalesTableBuilder.setInvoiceAccount(HMAppointmentEODStatementLines.InvoiceAcccount);
+                        hmSalesTableBuilder.setInventDim(HMAppointmentEODStatementLines.InventDimId);
+                        hmSalesTableBuilder.setAppointmentNumber(HMResourceSchedulingAppointment.AppointmentNumber);
+    
+                        hmSalesTableBuilder.insert();
+                        if(hmSalesTableBuilder.salesTable())
+                        {
+                            hmSalesLineBuilder = new HMSalesLineBuilder(hmSalesTableBuilder.salesTable());
+                            hmSalesLineBuilder.setItemId(HMAppointmentEODStatementLines.InventTable_ChargeCode);
+                            hmSalesLineBuilder.setSalesQty(1);
+                            hmSalesLineBuilder.setAppointmentNumber(HMResourceSchedulingAppointment.AppointmentNumber);
+                            hmSalesLineBuilder.setDimensionAccount(HMResourceSchedulingAppointment.setDimensionAccount(HMServiceTypeDimension::getDimensionByServiceType(HMOrganizationalUnit.ServiceType)));
+                            hmSalesLineBuilder.setInventDim(HMAppointmentEODStatementLines.InventDimId);
+                            hmSalesLineBuilder.setSalesPrice(HMAppointmentEODStatementLines.ChargeCodeFee);
+                            hmSalesLineBuilder.setTaxGroup(HMAppointmentEODStatementLines.TaxGroup);
+                            hmSalesLineBuilder.setTaxItemGroup(HMAppointmentEODStatementLines.TaxItemGroup);
+                            hmSalesLineBuilder.setLineDiscount(HMAppointmentEODStatementLines.LineDisc);
+                            hmSalesLineBuilder.insert();
+                            HMAppointmentEODStatementLines.SalesId = hmSalesTableBuilder.salesTable().SalesId;
+                            HMAppointmentEODStatementLines.InvoiceCreated = NoYes::Yes;
+                            if(postInvoice)
+                            {
+                                invoiceGenerator = new HMSalesOrderInvoiceGenerator();
+                                invoiceGenerator.parmSalesTable(SalesTable::find(hmSalesTableBuilder.salesTable().SalesId,true));
+                                custInvoiceJour = invoiceGenerator.postInvoice();
+    
+                                if(SalesTable::find(hmSalesTableBuilder.salesTable().SalesId).SalesStatus == SalesStatus::Invoiced)
+                                {
+                                    if(HMAppointmentEODStatementLines.CollectPayment == NoYes::Yes)
+                                    {
+                                        if(!HMSalesInvoiceCreateFormHandler::createAndSettleEODPayment(HMAppointmentEODStatementLines,custInvoiceJour))
+                                        {
+                                            ttsAbort;
+                                            return;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    warning(strFmt("@MAZ11741",HMAppointmentEODStatementLines.CustomerAccount));
+                                    ttsAbort;
+                                    return;
+                                }
+                            }
+                            if(HMAppointmentEODStatementLines.DoctorInvoiceCreation == YesNo::Yes)
+                            {
+                                //todo: ax7 to be removed
+                                /*if(!HMPurchaseOrderInvoiceClass::createPOFromChargeEntry(HMAppointmentEODStatementLines.HMResourceSchedulingAppointment,HMVendorPaymentType::None,'',true))
+                                {
+                                    warning("@MAZ11774");
+                                    ttsAbort;
+                                    return;
+                                }*/
+                            }
+                            HMAppointmentEODStatementLines.update();
+                            HMResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(HMAppointmentEODStatementLines.HMResourceSchedulingAppointment,true);
+                            if(HMResourceSchedulingAppointment)
+                            {
+                                if(HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed)
+                                {
+                                    HMResourceSchedulingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::NoShow;
+                                    HMResourceSchedulingAppointment.update();
+                                }
+                            }
+                        }
+                    }
+                }
+                _hmAppointmentEODStatement.selectForUpdate(true);
+                _hmAppointmentEODStatement.Status = HMAppointmentEODStatementStatus::Posted;
+                _hmAppointmentEODStatement.PostingDateTime = DateTimeUtil::utcNow();
+                _hmAppointmentEODStatement.update();
+                ttsCommit;
+                info(strFmt("@MAZ11743", _hmAppointmentEODStatement.StatementNumber));
+    
+            }
+        }
+        catch
+        {
+            warning(strFmt("@MAZ11741",HMAppointmentEODStatementLines.CustomerAccount));
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>chargeCodeExist</Name>
+				<Source><![CDATA[
+    public static boolean chargeCodeExist(ItemId _itemId, HMNoShowCancellation _noShowCancellation)
+    {
+        HMInventTable hmInventTable;
+        select count(RecId) from hmInventTable
+        where hmInventTable.InventTable == _itemId
+        && hmInventTable.NoShowCancellation == _noShowCancellation;
+    
+        return hmInventTable.RecId == 0 ? false : true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertHeaderFromDialog</Name>
+				<Source><![CDATA[
+    public static boolean insertHeaderFromDialog(HMAppointmentEODStatementNumber _statementNumber,
+                                        RecId _locationId,
+                                        RecId _subLocationId,
+                                        utcDateTime _intervalStartDateTime,
+                                        utcDateTime _intervalEndDateTime)
+    {
+    
+        HMAppointmentEODStatement   HMAppointmentEODStatement;
+        try
+        {
+            HMAppointmentEODStatement.initvalue();
+            HMAppointmentEODStatement.StatementNumber = _statementNumber;
+            HMAppointmentEODStatement.HMOrganizationalUnit = _locationId;
+            HMAppointmentEODStatement.HMOrganizationalUnit_ServiceLocation = _subLocationId;
+            HMAppointmentEODStatement.IntervalStartDateTime = _intervalStartDateTime;
+            HMAppointmentEODStatement.IntervalEndDateTime = _intervalEndDateTime;
+            HMAppointmentEODStatement.Status = HMAppointmentEODStatementStatus::Open;
+            if(HMAppointmentEODStatement.validateWrite())
+            {
+                HMAppointmentEODStatement.insert();
+                return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMAppointmentEODStatementClass HMAppointmentEODStatementClass = new HMAppointmentEODStatementClass();
+    
+        if(_args.menuItemName() == menuitemActionStr(HMAppointmentEODStatementClass_ClearStmt))
+        {
+            HMAppointmentEODStatementClass.clearStatement(_args.record());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMAppointmentEODStatementClass_PostStmt))
+        {
+            HMAppointmentEODStatementClass.postStatement(_args.record());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMAppointmentEODStatementClass_CalcStmt))
+        {
+            HMAppointmentEODStatementClass.calculateStatement(_args.record());
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

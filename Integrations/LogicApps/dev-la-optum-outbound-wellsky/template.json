@@ -1,0 +1,1359 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_dev_la_optum_outbound_wellsky_name": {
+            "defaultValue": "dev-la-optum-outbound-wellsky",
+            "type": "String"
+        },
+        "connections_dynamicsax_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/dynamicsax",
+            "type": "String"
+        },
+        "connections_keyvault_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/keyvault",
+            "type": "String"
+        },
+        "connections_servicebus_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/servicebus",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_dev_la_optum_outbound_wellsky_name')]",
+            "location": "centralus",
+            "tags": {
+                "displayName": "LogicApp"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "D365FOURL": {
+                            "defaultValue": "optum-perf.sandbox.operations.dynamics.com/",
+                            "type": "String"
+                        },
+                        "EmailTo": {
+                            "defaultValue": "ryan_campbell@optum.com",
+                            "type": "String"
+                        },
+                        "GatewayAPI": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "GetWellSkyToken": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "LogicAppState": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "RecurrenceFrequency": {
+                            "defaultValue": "Minute",
+                            "type": "String"
+                        },
+                        "RecurrenceInterval": {
+                            "defaultValue": "2",
+                            "type": "String"
+                        },
+                        "RecurrenceTimeZone": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "azuremonitorlogs": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "diagnosticSettingResouceGroupName": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "diagnosticSettingSubscription": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "logAnalyticWorkspaceName": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "logicAppNameValue": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "queue_maxmessagecount": {
+                            "defaultValue": 175,
+                            "type": "Int"
+                        },
+                        "queue_name": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "queuetype": {
+                            "defaultValue": "",
+                            "type": "String"
+                        }
+                    },
+                    "triggers": {
+                        "When_a_message_is_received_in_a_queue_(peek-lock)": {
+                            "recurrence": {
+                                "frequency": "@parameters('RecurrenceFrequency')",
+                                "interval": "@parameters('RecurrenceInterval')"
+                            },
+                            "evaluatedRecurrence": {
+                                "frequency": "Minute",
+                                "interval": "2"
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/head/peek",
+                                "queries": {
+                                    "queueType": "@parameters('queuetype')",
+                                    "sessionId": "Next Available"
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Abandon_initial_message_from_the_queue": {
+                            "runAfter": {
+                                "Failure_response_in_FO": [
+                                    "Succeeded",
+                                    "TimedOut",
+                                    "Failed"
+                                ]
+                            },
+                            "trackedProperties": {
+                                "RunStatus": "@{action()?['outputs']?['body']?['message']}"
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/abandon",
+                                "queries": {
+                                    "lockToken": "@triggerBody()?['LockToken']",
+                                    "queueType": "@parameters('queuetype')",
+                                    "sessionId": "@triggerBody()?['SessionId']"
+                                }
+                            },
+                            "description": "If something goes wrong processing the message, we must abandon it to release it for pickup by another run"
+                        },
+                        "Abandon_other_messages_of_session_in_queue": {
+                            "actions": {
+                                "Condition_3": {
+                                    "actions": {
+                                        "Renew_session_lock": {
+                                            "actions": {
+                                                "Condition_2": {
+                                                    "actions": {
+                                                        "Renew_lock_on_the_session_in_a_queue_2": {
+                                                            "runAfter": {},
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "post",
+                                                                "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/sessions/@{encodeURIComponent(triggerBody()['SessionId'])}/renewlock"
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Delay_2": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "equals": [
+                                                                    "@variables('isDone')",
+                                                                    "@true"
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": "If"
+                                                },
+                                                "Delay_2": {
+                                                    "runAfter": {},
+                                                    "type": "Wait",
+                                                    "inputs": {
+                                                        "interval": {
+                                                            "count": 25,
+                                                            "unit": "Second"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Set_isDone_to_False": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "expression": "@equals(variables('isDone'), true)",
+                                            "limit": {
+                                                "count": 60,
+                                                "timeout": "PT1H"
+                                            },
+                                            "type": "Until"
+                                        },
+                                        "Set_isDone_to_False": {
+                                            "runAfter": {},
+                                            "type": "SetVariable",
+                                            "inputs": {
+                                                "name": "isDone",
+                                                "value": "@false"
+                                            }
+                                        },
+                                        "Set_variable": {
+                                            "runAfter": {
+                                                "While_there_are_messages_of_this_session_to_abandon": [
+                                                    "Succeeded",
+                                                    "Failed",
+                                                    "Skipped",
+                                                    "TimedOut"
+                                                ]
+                                            },
+                                            "type": "SetVariable",
+                                            "inputs": {
+                                                "name": "isDone",
+                                                "value": "@true"
+                                            }
+                                        },
+                                        "While_there_are_messages_of_this_session_to_abandon": {
+                                            "actions": {
+                                                "Check_Get_all_messages_from_session_to_abandon_is_=_0_then_set_isDone_=_true": {
+                                                    "actions": {
+                                                        "Set_IsDone_to_=_true_in_condition_of_failure": {
+                                                            "runAfter": {},
+                                                            "type": "SetVariable",
+                                                            "inputs": {
+                                                                "name": "isDone",
+                                                                "value": "@true"
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Get_all_messages_from_session_to_abandon": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "else": {
+                                                        "actions": {
+                                                            "For_each_additional_message_to_abandon": {
+                                                                "foreach": "@body('Get_all_messages_from_session_to_abandon')",
+                                                                "actions": {
+                                                                    "Abandon_the_message_in_a_queue_2": {
+                                                                        "runAfter": {
+                                                                            "Parse_JSON": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "trackedProperties": {
+                                                                            "RunStatus": "@{action()?['outputs']?['body']?['message']}"
+                                                                        },
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/abandon",
+                                                                            "queries": {
+                                                                                "lockToken": "@items('For_each_additional_message_to_abandon')?['LockToken']",
+                                                                                "queueType": "@parameters('queuetype')",
+                                                                                "sessionId": "@items('For_each_additional_message_to_abandon')?['SessionId']"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "Parse_JSON": {
+                                                                        "runAfter": {},
+                                                                        "type": "ParseJson",
+                                                                        "inputs": {
+                                                                            "content": "@json(base64ToString(items('For_each_additional_message_to_abandon')?['ContentData']))",
+                                                                            "schema": {
+                                                                                "properties": {
+                                                                                    "ActionType": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "ClaimStatus": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "CreatedDatetime": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "Note": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "RequestRecId": {
+                                                                                        "type": "integer"
+                                                                                    },
+                                                                                    "UniqueId": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "author": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "followupDateTime": {
+                                                                                        "type": "string"
+                                                                                    }
+                                                                                },
+                                                                                "type": "object"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "Set_Is_logi_app_failed_:_true_for_after_abondon": {
+                                                                        "runAfter": {
+                                                                            "Write_failure_response_for_additional_failure_message": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "SetVariable",
+                                                                        "inputs": {
+                                                                            "name": "IsLogicAppFail",
+                                                                            "value": "@true"
+                                                                        }
+                                                                    },
+                                                                    "Write_failure_response_for_additional_failure_message": {
+                                                                        "runAfter": {
+                                                                            "Abandon_the_message_in_a_queue_2": [
+                                                                                "Succeeded",
+                                                                                "Failed",
+                                                                                "TimedOut"
+                                                                            ]
+                                                                        },
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "body": {
+                                                                                "_hmWellSkyAPIRequest": "@body('Parse_JSON')?['RequestRecId']",
+                                                                                "_httpStatusCode": "@{outputs('GatewayAPI')['statusCode']}",
+                                                                                "_message": "@{body('GatewayAPI')?['CorrelationId']}"
+                                                                            },
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('WellSkyAPIResponse/Microsoft.Dynamics.DataEntities.insertWellSkyAPIResponse'))}"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "runAfter": {},
+                                                                "type": "Foreach"
+                                                            }
+                                                        }
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "equals": [
+                                                                    "@length(body('Get_all_messages_from_session_to_abandon'))",
+                                                                    0
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": "If"
+                                                },
+                                                "Get_all_messages_from_session_to_abandon": {
+                                                    "runAfter": {},
+                                                    "trackedProperties": {
+                                                        "RunStatus": "@{concat('Get all messages from session to abandon : ', action()?['outputs']?['statusCode'])}"
+                                                    },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "get",
+                                                        "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/batch/peek",
+                                                        "queries": {
+                                                            "maxMessageCount": "@parameters('queue_maxmessagecount')",
+                                                            "queueType": "@parameters('queuetype')",
+                                                            "sessionId": "@{triggerBody()?['SessionId']}"
+                                                        }
+                                                    }
+                                                },
+                                                "Set_IsDone_to_=_true_in_condition_for_get_all_messages": {
+                                                    "runAfter": {
+                                                        "Get_all_messages_from_session_to_abandon": [
+                                                            "Failed",
+                                                            "Skipped",
+                                                            "TimedOut"
+                                                        ]
+                                                    },
+                                                    "type": "SetVariable",
+                                                    "inputs": {
+                                                        "name": "isDone",
+                                                        "value": "@true"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Set_isDone_to_False": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "expression": "@equals(variables('isDone'), true)",
+                                            "limit": {
+                                                "count": 60,
+                                                "timeout": "PT1H"
+                                            },
+                                            "type": "Until"
+                                        }
+                                    },
+                                    "runAfter": {},
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "equals": [
+                                                    "@variables('IsLogicAppFail')",
+                                                    "@true"
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                }
+                            },
+                            "runAfter": {
+                                "set_failure_result": [
+                                    "Succeeded",
+                                    "Failed"
+                                ]
+                            },
+                            "type": "Scope"
+                        },
+                        "Close_a_session_in_a_queue_and_succeed": {
+                            "runAfter": {
+                                "Abandon_other_messages_of_session_in_queue": [
+                                    "Succeeded",
+                                    "Skipped",
+                                    "TimedOut",
+                                    "Failed"
+                                ],
+                                "Process_other_messages_on_success": [
+                                    "Succeeded",
+                                    "TimedOut",
+                                    "Skipped",
+                                    "Failed"
+                                ]
+                            },
+                            "trackedProperties": {
+                                "RunStatus": "@{action()?['outputs']?['body']?['message']}"
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                    }
+                                },
+                                "method": "delete",
+                                "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/sessions/@{encodeURIComponent(triggerBody()?['SessionId'])}/close"
+                            },
+                            "description": "If this is hit and executed, the next close session & terminate actions won't be hit because of their Configure Run After settings"
+                        },
+                        "Failure_response_in_FO": {
+                            "runAfter": {
+                                "Is_Access_token_expired": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "trackedProperties": {
+                                "RunStatus": "@{action()?['outputs']?['body']?['error']?['message']}"
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "_hmWellSkyAPIRequest": "@body('ParseInitialMessage')?['RequestRecId']",
+                                    "_httpStatusCode": "@{outputs('GatewayAPI')['statusCode']}",
+                                    "_message": "@{body('GatewayAPI')?['CorrelationId']}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('WellSkyAPIResponse/Microsoft.Dynamics.DataEntities.insertWellSkyAPIResponse'))}"
+                            }
+                        },
+                        "GatewayAPI": {
+                            "runAfter": {
+                                "Get_Token": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "trackedProperties": {
+                                "RunStatus": "@{if(empty(action()?['outputs']?['body']?['CorrelationId']),if(empty(action()?['outputs']?['body']?['error_description']),'',action()?['outputs']?['body']?['error_description']),action()?['outputs']?['body']?['CorrelationId'])}"
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "body": {
+                                    "actionType": "@{body('ParseInitialMessage')?['ActionType']}",
+                                    "author": "@{body('ParseInitialMessage')?['author']}",
+                                    "claimStatus": "@{body('ParseInitialMessage')?['ClaimStatus']}",
+                                    "createdDatetime": "@{body('ParseInitialMessage')?['CreatedDatetime']}",
+                                    "followupDatetime": "@{body('ParseInitialMessage')?['followupDateTime']}",
+                                    "note": "@{body('ParseInitialMessage')?['Note']}"
+                                },
+                                "headers": {
+                                    "Authorization": "Bearer @{body('Get_Token')}"
+                                },
+                                "method": "PUT",
+                                "uri": "@{parameters('GatewayAPI')}@{body('ParseInitialMessage')?['UniqueId']}"
+                            }
+                        },
+                        "Get_Token": {
+                            "runAfter": {
+                                "WellskyTokenClientSecret": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Workflow",
+                            "inputs": {
+                                "body": {
+                                    "ForceGenerate": false
+                                },
+                                "host": {
+                                    "triggerName": "manual",
+                                    "workflow": {
+                                        "id": "[concat(resourceId('Microsoft.Logic/workflows', parameters('workflows_dev_la_optum_outbound_wellsky_name')), '-token')]"
+                                    }
+                                }
+                            }
+                        },
+                        "Init_isDone": {
+                            "runAfter": {
+                                "Is_Failed": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "isDone",
+                                        "type": "Boolean",
+                                        "value": "@false"
+                                    }
+                                ]
+                            }
+                        },
+                        "Is_Access_token_expired": {
+                            "actions": {
+                                "Redeem_token_forcefully": {
+                                    "runAfter": {},
+                                    "type": "Workflow",
+                                    "inputs": {
+                                        "body": {
+                                            "ForceGenerate": true
+                                        },
+                                        "host": {
+                                            "triggerName": "manual",
+                                            "workflow": {
+                                                "id": "[concat(resourceId('Microsoft.Logic/workflows', parameters('workflows_dev_la_optum_outbound_wellsky_name')), '-token')]"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "GatewayAPI": [
+                                    "Failed"
+                                ]
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@outputs('GatewayAPI')['statusCode']",
+                                            401
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Is_Failed": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "IsLogicAppFail",
+                                        "type": "boolean",
+                                        "value": "@false"
+                                    }
+                                ]
+                            }
+                        },
+                        "Is_Logic_App_Failed": {
+                            "actions": {
+                                "Terminate": {
+                                    "runAfter": {},
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runError": {
+                                            "code": "400",
+                                            "message": "Logic app error"
+                                        },
+                                        "runStatus": "Failed"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Close_a_session_in_a_queue_and_succeed": [
+                                    "Succeeded",
+                                    "Failed"
+                                ]
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@variables('IsLogicAppFail')",
+                                            "@true"
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "ParseInitialMessage": {
+                            "runAfter": {
+                                "Init_isDone": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@json(base64ToString(triggerBody()?['ContentData']))",
+                                "schema": {
+                                    "properties": {
+                                        "ActionType": {
+                                            "type": "string"
+                                        },
+                                        "ClaimStatus": {
+                                            "type": "string"
+                                        },
+                                        "CreatedDatetime": {
+                                            "type": "string"
+                                        },
+                                        "Note": {
+                                            "type": "string"
+                                        },
+                                        "RequestRecId": {
+                                            "type": "integer"
+                                        },
+                                        "UniqueId": {
+                                            "type": "string"
+                                        },
+                                        "author": {
+                                            "type": "string"
+                                        },
+                                        "followupDateTime": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "Process_other_messages_on_success": {
+                            "actions": {
+                                "Complete_initial_message_in_queue": {
+                                    "runAfter": {},
+                                    "trackedProperties": {
+                                        "RunStatus": "@{action()?['outputs']?['body']?['message']}"
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                            }
+                                        },
+                                        "method": "delete",
+                                        "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/complete",
+                                        "queries": {
+                                            "lockToken": "@{triggerBody()?['LockToken']}",
+                                            "queueType": "@parameters('queuetype')",
+                                            "sessionId": "@{triggerBody()?['SessionId']}"
+                                        }
+                                    },
+                                    "description": "Do not remove this step - message must be completed in order to be removed from the queue if you're using the above step as your work for the retrieved SB message"
+                                },
+                                "Renew_session_lock_until_cancelled": {
+                                    "actions": {
+                                        "Condition": {
+                                            "actions": {
+                                                "Renew_lock_on_the_session_in_a_queue": {
+                                                    "runAfter": {},
+                                                    "trackedProperties": {
+                                                        "RunStatus": "@{action()?['outputs']?['body']?['message']}"
+                                                    },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "post",
+                                                        "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/sessions/@{encodeURIComponent(triggerBody()?['SessionId'])}/renewlock"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Delay_25_seconds": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "not": {
+                                                            "equals": [
+                                                                "@variables('isDone')",
+                                                                "@true"
+                                                            ]
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If"
+                                        },
+                                        "Delay_25_seconds": {
+                                            "runAfter": {},
+                                            "type": "Wait",
+                                            "inputs": {
+                                                "interval": {
+                                                    "count": 25,
+                                                    "unit": "Second"
+                                                }
+                                            },
+                                            "description": "This delay should be shorter than the lock timeout duration of the queue being processed. Since 30s is the smallest lock duration, this value will suffice for any queue, but you can optimize the # of times this loop is run but adjusting accordingly"
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Set_IsLogicAppFail_on_fail_to_write_response": [
+                                            "Skipped"
+                                        ]
+                                    },
+                                    "expression": "@equals(variables('isDone'), true)",
+                                    "limit": {
+                                        "timeout": "PT1H"
+                                    },
+                                    "type": "Until",
+                                    "description": "This block ensures the session lock remains held by this Logic App for 1 hour or as long as it finds messages in the queue for the session, whichever comes first. To hold longer, change the 'Timeout' property of this Until block"
+                                },
+                                "Set_IsLogicAppFail_=_true": {
+                                    "runAfter": {
+                                        "Complete_initial_message_in_queue": [
+                                            "Failed"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "IsLogicAppFail",
+                                        "value": "@true"
+                                    }
+                                },
+                                "Set_IsLogicAppFail_on_fail_to_write_response": {
+                                    "runAfter": {
+                                        "Write_success_response_in_FO": [
+                                            "Failed",
+                                            "TimedOut"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "IsLogicAppFail",
+                                        "value": "@true"
+                                    }
+                                },
+                                "Set_isDone_=_true": {
+                                    "runAfter": {
+                                        "While_there_are_more_messages_for_the_session_in_the_queue": [
+                                            "Succeeded",
+                                            "TimedOut",
+                                            "Skipped",
+                                            "Failed"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "isDone",
+                                        "value": "@true"
+                                    },
+                                    "description": "When the additional messages loop terminates - for any reason - we flag the isDone semaphore so the Logic App stops renewing the lock on the session."
+                                },
+                                "While_there_are_more_messages_for_the_session_in_the_queue": {
+                                    "actions": {
+                                        "Get_additional_messages_from_session": {
+                                            "runAfter": {},
+                                            "trackedProperties": {
+                                                "RunStatus": "@{concat('Get additional messages from session : ', action()?['outputs']?['statusCode'])}"
+                                            },
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/batch/peek",
+                                                "queries": {
+                                                    "maxMessageCount": "@parameters('queue_maxmessagecount')",
+                                                    "queueType": "@parameters('queuetype')",
+                                                    "sessionId": "@triggerBody()?['SessionId']"
+                                                }
+                                            },
+                                            "description": "The max # of messages is 175, impacted by the size of the messages and the max message size property of the Service Bus (256k for Standard, 1mb for Premium)"
+                                        },
+                                        "Process_messages_if_we_got_any": {
+                                            "actions": {
+                                                "Set_isDone_=_true_because_no_messages_left": {
+                                                    "runAfter": {},
+                                                    "type": "SetVariable",
+                                                    "inputs": {
+                                                        "name": "isDone",
+                                                        "value": "@true"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Set_logicapp_failed_=true_on_Get_additional_messages_from_session_failure": [
+                                                    "Skipped"
+                                                ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "For_each_additional_message_received": {
+                                                        "foreach": "@body('Get_additional_messages_from_session')",
+                                                        "actions": {
+                                                            "Abandon_the_message_in_a_queue": {
+                                                                "runAfter": {
+                                                                    "Write_success_response_in_FO_forfailure_case": [
+                                                                        "Succeeded",
+                                                                        "TimedOut",
+                                                                        "Failed"
+                                                                    ]
+                                                                },
+                                                                "trackedProperties": {
+                                                                    "RunStatus": "@{action()?['outputs']?['body']?['message']}"
+                                                                },
+                                                                "type": "ApiConnection",
+                                                                "inputs": {
+                                                                    "host": {
+                                                                        "connection": {
+                                                                            "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                                                        }
+                                                                    },
+                                                                    "method": "post",
+                                                                    "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/abandon",
+                                                                    "queries": {
+                                                                        "lockToken": "@items('For_each_additional_message_received')?['LockToken']",
+                                                                        "queueType": "@parameters('queuetype')",
+                                                                        "sessionId": "@items('For_each_additional_message_received')?['SessionId']"
+                                                                    }
+                                                                },
+                                                                "description": "If something goes wrong processing the message, we must abandon it to release it for pickup by another run"
+                                                            },
+                                                            "CallGatewayAPI": {
+                                                                "runAfter": {
+                                                                    "Get_Token_again": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "trackedProperties": {
+                                                                    "RunStatus": "@{if(empty(action()?['outputs']?['body']?['CorrelationId']),if(empty(action()?['outputs']?['body']?['error_description']),'',action()?['outputs']?['body']?['error_description']),action()?['outputs']?['body']?['CorrelationId'])}"
+                                                                },
+                                                                "type": "Http",
+                                                                "inputs": {
+                                                                    "body": {
+                                                                        "actionType": "@{body('ParseOtherServiceBusMsgs')?['ActionType']}",
+                                                                        "author": "@{body('ParseOtherServiceBusMsgs')?['author']}",
+                                                                        "claimStatus": "@{body('ParseOtherServiceBusMsgs')?['ClaimStatus']}",
+                                                                        "createdDatetime": "@{body('ParseOtherServiceBusMsgs')?['CreatedDatetime']}",
+                                                                        "followupDatetime": "@{body('ParseOtherServiceBusMsgs')?['followupDateTime']}",
+                                                                        "note": "@{body('ParseOtherServiceBusMsgs')?['Note']}"
+                                                                    },
+                                                                    "headers": {
+                                                                        "Authorization": "Bearer @{body('Get_Token_again')}"
+                                                                    },
+                                                                    "method": "PUT",
+                                                                    "uri": "@{parameters('GatewayAPI')}@{body('ParseOtherServiceBusMsgs')?['UniqueId']}"
+                                                                }
+                                                            },
+                                                            "Complete_the_message_in_a_queue": {
+                                                                "runAfter": {
+                                                                    "Write_success_response_in_FO_for_subsequent_messages": [
+                                                                        "Succeeded",
+                                                                        "Failed",
+                                                                        "TimedOut"
+                                                                    ]
+                                                                },
+                                                                "trackedProperties": {
+                                                                    "RunStatus": "@{action()?['outputs']?['body']?['message']}"
+                                                                },
+                                                                "type": "ApiConnection",
+                                                                "inputs": {
+                                                                    "host": {
+                                                                        "connection": {
+                                                                            "name": "@parameters('$connections')['servicebus']['connectionId']"
+                                                                        }
+                                                                    },
+                                                                    "method": "delete",
+                                                                    "path": "/@{encodeURIComponent(encodeURIComponent(parameters('queue_name')))}/messages/complete",
+                                                                    "queries": {
+                                                                        "lockToken": "@items('For_each_additional_message_received')?['LockToken']",
+                                                                        "queueType": "@parameters('queuetype')",
+                                                                        "sessionId": "@items('For_each_additional_message_received')?['SessionId']"
+                                                                    }
+                                                                },
+                                                                "description": "Do not remove this step - message must be completed in order to be removed from the queue"
+                                                            },
+                                                            "Get_Token_again": {
+                                                                "runAfter": {
+                                                                    "ParseOtherServiceBusMsgs": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "type": "Workflow",
+                                                                "inputs": {
+                                                                    "body": {
+                                                                        "ForceGenerate": false
+                                                                    },
+                                                                    "host": {
+                                                                        "triggerName": "manual",
+                                                                        "workflow": {
+                                                                            "id": "[concat(resourceId('Microsoft.Logic/workflows', parameters('workflows_dev_la_optum_outbound_wellsky_name')), '-token')]"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "Is_token_expired_again": {
+                                                                "actions": {
+                                                                    "Redeem_token_forcefully_again": {
+                                                                        "runAfter": {},
+                                                                        "type": "Workflow",
+                                                                        "inputs": {
+                                                                            "body": {
+                                                                                "ForceGenerate": true
+                                                                            },
+                                                                            "host": {
+                                                                                "triggerName": "manual",
+                                                                                "workflow": {
+                                                                                    "id": "[concat(resourceId('Microsoft.Logic/workflows', parameters('workflows_dev_la_optum_outbound_wellsky_name')), '-token')]"
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "runAfter": {
+                                                                    "CallGatewayAPI": [
+                                                                        "Failed"
+                                                                    ]
+                                                                },
+                                                                "expression": {
+                                                                    "and": [
+                                                                        {
+                                                                            "equals": [
+                                                                                "@outputs('CallGatewayAPI')['statusCode']",
+                                                                                401
+                                                                            ]
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                "type": "If"
+                                                            },
+                                                            "ParseOtherServiceBusMsgs": {
+                                                                "runAfter": {},
+                                                                "type": "ParseJson",
+                                                                "inputs": {
+                                                                    "content": "@json(base64ToString(items('For_each_additional_message_received')?['ContentData']))",
+                                                                    "schema": {
+                                                                        "properties": {
+                                                                            "ActionType": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "ClaimStatus": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "CreatedDatetime": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "Note": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "RequestRecId": {
+                                                                                "type": "integer"
+                                                                            },
+                                                                            "UniqueId": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "author": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "followupDateTime": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "type": "object"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "Set_is_logic_app_failed_to_true_for_failure_case": {
+                                                                "runAfter": {
+                                                                    "Abandon_the_message_in_a_queue": [
+                                                                        "Succeeded",
+                                                                        "TimedOut",
+                                                                        "Failed"
+                                                                    ]
+                                                                },
+                                                                "type": "SetVariable",
+                                                                "inputs": {
+                                                                    "name": "IsLogicAppFail",
+                                                                    "value": "@true"
+                                                                }
+                                                            },
+                                                            "Set_is_logic_app_failed_to_true_for_success_case": {
+                                                                "runAfter": {
+                                                                    "Complete_the_message_in_a_queue": [
+                                                                        "TimedOut",
+                                                                        "Skipped",
+                                                                        "Failed"
+                                                                    ]
+                                                                },
+                                                                "type": "SetVariable",
+                                                                "inputs": {
+                                                                    "name": "IsLogicAppFail",
+                                                                    "value": "@true"
+                                                                }
+                                                            },
+                                                            "Write_success_response_in_FO_for_subsequent_messages": {
+                                                                "runAfter": {
+                                                                    "CallGatewayAPI": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "trackedProperties": {
+                                                                    "RunStatus": "@{action()?['outputs']?['body']?['error']?['message']}"
+                                                                },
+                                                                "type": "ApiConnection",
+                                                                "inputs": {
+                                                                    "body": {
+                                                                        "_hmWellSkyAPIRequest": "@body('ParseOtherServiceBusMsgs')?['RequestRecId']",
+                                                                        "_httpStatusCode": "@{outputs('CallGatewayAPI')['statusCode']}",
+                                                                        "_message": "No Content"
+                                                                    },
+                                                                    "host": {
+                                                                        "connection": {
+                                                                            "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                                                        }
+                                                                    },
+                                                                    "method": "post",
+                                                                    "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('WellSkyAPIResponse/Microsoft.Dynamics.DataEntities.insertWellSkyAPIResponse'))}"
+                                                                }
+                                                            },
+                                                            "Write_success_response_in_FO_forfailure_case": {
+                                                                "runAfter": {
+                                                                    "Is_token_expired_again": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "trackedProperties": {
+                                                                    "RunStatus": "@{action()?['outputs']?['body']?['error']?['message']}"
+                                                                },
+                                                                "type": "ApiConnection",
+                                                                "inputs": {
+                                                                    "body": {
+                                                                        "_hmWellSkyAPIRequest": "@body('ParseOtherServiceBusMsgs')?['RequestRecId']",
+                                                                        "_httpStatusCode": "@{outputs('CallGatewayAPI')['statusCode']}",
+                                                                        "_message": "@{body('CallGatewayAPI')?['CorrelationId']}"
+                                                                    },
+                                                                    "host": {
+                                                                        "connection": {
+                                                                            "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                                                        }
+                                                                    },
+                                                                    "method": "post",
+                                                                    "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('WellSkyAPIResponse/Microsoft.Dynamics.DataEntities.insertWellSkyAPIResponse'))}"
+                                                                }
+                                                            }
+                                                        },
+                                                        "runAfter": {},
+                                                        "type": "Foreach",
+                                                        "description": "So messages are process in FIFO order, Concurrency Control (Setting menu of this action) is turned on and set to 1. This ensures only one message for the session is processed at a time. ",
+                                                        "runtimeConfiguration": {
+                                                            "concurrency": {
+                                                                "repetitions": 1
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "equals": [
+                                                            "@length(body('Get_additional_messages_from_session'))",
+                                                            0
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If",
+                                            "description": "Check the number of messages we got back and, if it was 0, flip the cancel flag otherwise process them"
+                                        },
+                                        "Set_isDone_=_true_on_failure_to_read_messages": {
+                                            "runAfter": {
+                                                "Set_logicapp_failed_=true_on_Get_additional_messages_from_session_failure": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "SetVariable",
+                                            "inputs": {
+                                                "name": "isDone",
+                                                "value": "@true"
+                                            },
+                                            "description": "If we fail to get additional messages from the queue for any reason, set isDone = true so the loop terminates"
+                                        },
+                                        "Set_logicapp_failed_=true_on_Get_additional_messages_from_session_failure": {
+                                            "runAfter": {
+                                                "Get_additional_messages_from_session": [
+                                                    "TimedOut",
+                                                    "Failed"
+                                                ]
+                                            },
+                                            "type": "SetVariable",
+                                            "inputs": {
+                                                "name": "IsLogicAppFail",
+                                                "value": "@true"
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Set_IsLogicAppFail_on_fail_to_write_response": [
+                                            "Skipped"
+                                        ]
+                                    },
+                                    "expression": "@equals(variables('isDone'), true)",
+                                    "limit": {
+                                        "timeout": "PT1H"
+                                    },
+                                    "type": "Until",
+                                    "description": "This block keeps asking for more messages in the session for 1 hour or as long as it finds messages in the queue for the session, whichever comes first. To hold longer, change the 'Timeout' property of this Until block"
+                                },
+                                "Write_success_response_in_FO": {
+                                    "runAfter": {
+                                        "Set_IsLogicAppFail_=_true": [
+                                            "Skipped"
+                                        ]
+                                    },
+                                    "trackedProperties": {
+                                        "RunStatus": "@{action()?['outputs']?['body']?['error']?['message']}"
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": {
+                                            "_hmWellSkyAPIRequest": "@body('ParseInitialMessage')?['RequestRecId']",
+                                            "_httpStatusCode": "@{outputs('GatewayAPI')['statusCode']}",
+                                            "_message": "No Content"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('WellSkyAPIResponse/Microsoft.Dynamics.DataEntities.insertWellSkyAPIResponse'))}"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "GatewayAPI": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@outputs('GatewayAPI')['statusCode']",
+                                            204
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "WellskyTokenClientId": {
+                            "runAfter": {
+                                "ParseInitialMessage": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['keyvault_1']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/secrets/@{encodeURIComponent('WellskyTokenClientId')}/value"
+                            },
+                            "runtimeConfiguration": {
+                                "secureData": {
+                                    "properties": [
+                                        "inputs",
+                                        "outputs"
+                                    ]
+                                }
+                            }
+                        },
+                        "WellskyTokenClientSecret": {
+                            "runAfter": {
+                                "WellskyTokenClientId": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['keyvault_1']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/secrets/@{encodeURIComponent('WellskyTokenClientSecret')}/value"
+                            },
+                            "runtimeConfiguration": {
+                                "secureData": {
+                                    "properties": [
+                                        "inputs",
+                                        "outputs"
+                                    ]
+                                }
+                            }
+                        },
+                        "set_failure_result": {
+                            "runAfter": {
+                                "Abandon_initial_message_from_the_queue": [
+                                    "Failed",
+                                    "Succeeded",
+                                    "TimedOut"
+                                ]
+                            },
+                            "type": "SetVariable",
+                            "inputs": {
+                                "name": "IsLogicAppFail",
+                                "value": "@true"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "dynamicsax": {
+                                "connectionId": "[parameters('connections_dynamicsax_externalid')]",
+                                "connectionName": "dynamicsax",
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/dynamicsax"
+                            },
+                            "keyvault_1": {
+                                "connectionId": "[parameters('connections_keyvault_externalid')]",
+                                "connectionName": "keyvault",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/keyvault"
+                            },
+                            "servicebus": {
+                                "connectionId": "[parameters('connections_servicebus_externalid')]",
+                                "connectionName": "servicebus",
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/servicebus"
+                            }
+                        }
+                    },
+                    "GatewayAPI": {
+                        "value": "https://gateway-stage.optum.com/api/stg/clin/cprplus/v1/claim/"
+                    },
+                    "GetWellSkyToken": {
+                        "value": "https://gateway-stage.optum.com/auth/oauth2/cached/token"
+                    },
+                    "LogicAppState": {
+                        "value": "Disabled"
+                    },
+                    "RecurrenceTimeZone": {
+                        "value": "GMT Standard Time"
+                    },
+                    "azuremonitorlogs": {
+                        "value": "Optum-integration-loganalytics-workspace"
+                    },
+                    "diagnosticSettingResouceGroupName": {
+                        "value": "rg-dev-ORxMSDynamicsRCM"
+                    },
+                    "diagnosticSettingSubscription": {
+                        "value": "b4f24c37-de92-4f78-809d-d521ce05ea7f"
+                    },
+                    "logAnalyticWorkspaceName": {
+                        "value": "Optum-integration-loganalytics-workspace"
+                    },
+                    "logicAppNameValue": {
+                        "value": "[parameters('workflows_dev_la_optum_outbound_wellsky_name')]"
+                    },
+                    "queue_maxmessagecount": {
+                        "value": 175
+                    },
+                    "queue_name": {
+                        "value": "dev-sq-optum-wellsky"
+                    },
+                    "queuetype": {
+                        "value": "Main"
+                    }
+                }
+            }
+        }
+    ]
+}

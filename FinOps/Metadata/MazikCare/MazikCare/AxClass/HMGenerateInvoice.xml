@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMGenerateInvoice</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMGenerateInvoice
+{
+    Map         createdInvoices;
+    HMCaseTrans	hmCaseTrans;
+    HMPatientChargeEntryTable tables;
+    
+ 
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Runs the class with the specified arguments.
+    /// </summary>
+    /// <param name = "_args">The specified arguments.</param>
+    public static void main(Args _args)
+    {
+        FormRun formRun = _args.caller();
+        Common common = _args.record();
+        HMGenerateInvoice hmGenerateInvoice = new HMGenerateInvoice();
+		
+        if (common.tableId == tableNum(HMPatientChargeEntryTable))
+        {
+            if (formRun.name() == formStr(HMPatientChargeEntry))
+            {
+                FormDataSource formDataSource = formRun.dataSource(formDataSourceStr(HMPatientChargeEntry, HMPatientChargeEntryTable));
+                //hmGenerateInvoice.createInvoice(formDataSource);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createInvoice</Name>
+				<Source><![CDATA[
+    public void createInvoice(HMPatientChargeEntryTable chargeEntryTable, RecId _hmClaimTableRecID = 0)
+    {
+        HMPaymentCentreClass      hmPaymentCenterClass = new HMPaymentCentreClass();
+        HMPatientChargeEntryLine  chargeEntryLine;       
+        CustTable                 custTable;
+        CustAccount		          payer;
+        Args                      args = new Args();
+
+        //HMPatientChargeEntryTable chargeEntryTable = _formDataSource.getFirst(1);
+ 
+        ttsbegin;
+
+        //while (chargeEntryTable)
+        //{
+            while select hmCaseTrans
+                order by HMPayer
+                    join chargeEntryLine
+                        where chargeEntryLine.hmCaseTrans == hmCaseTrans.RecId
+                            && chargeEntryTable.RecId == chargeEntryLine.HMPatientChargeEntryTable
+            {
+                this.generateInvoices(hmCaseTrans, false, null, false, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), 0, null, _hmClaimTableRecID);
+
+           
+				hmCaseTrans.selectForUpdate(true);
+				hmCaseTrans.BillingStatus = HMBillStatus::Posted;
+				hmCaseTrans.update();
+            
+            }
+
+          //  chargeEntryTable = _formDataSource.getNext();
+        //}
+
+        this.postInvoice(createdInvoices);
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generateInvoices</Name>
+				<Source><![CDATA[
+    public void generateInvoices(HMCaseTrans _caseTrans, boolean _isCreditNote = false, ReasonCode _reason = null, boolean isBatchJob = false, Date _date = dateNull(), RefRecId _batchJobId = 0, NumberSeq _numseq = null, RecId _hmClaimTableRecID = 0)
+    {
+        boolean                  generateInvoice,isInsert = true;
+        DocuRef                  docuRef;
+        HMPatientChargeEntryLine patientChargeEntryLine;
+        HMCase                   hmCase;
+        HMPatientChargeEntryTable chargeEntryTable;
+   
+            chargeEntryTable = HMPatientChargeEntryTable::find(HMPatientChargeEntryLine::findByCaseTrans(_caseTrans.RecId).HMPatientChargeEntryTable);
+            hmCase = hmCase::find(_caseTrans.HMCase);
+        
+            if (isInsert)
+            {
+                HMServiceStatus     serviceStatus;
+                CustInvoiceTable    custInvoiceTable;
+                CustInvoiceTable    custInvoiceTableLocal;
+                CustInvoiceLine     invoiceLineLocal;
+                HMPatient           hmPatient;
+                CustTable           ct;
+                HMClaimTable        hmClaimTable;
+                CustTable           patientCustTable;
+                str searchStr;
+              
+                //searchStr = _caseTrans.HMPayer;
+
+                // get claim
+                hmClaimTable = HMClaimTable::find(_hmClaimTableRecID);
+
+                // if valid claim found then set claim inssurance carrier as the customer.
+                if (hmClaimTable)
+                {
+                    ct = HMInsuranceCarrier::find(hmClaimTable.HMInsuranceCarrier).custTable();
+                }
+                else
+                {
+                    ct = CustTable::find(_caseTrans.HMPayer);
+                }
+
+                searchStr        = ct.AccountNum;
+                patientCustTable = this.getPatientCustTableObject(hmCase.HMPatient);
+
+                if(!createdInvoices.exists(searchStr))
+                {
+                    try
+                    {
+                        custInvoiceTable.initFromCustTable(ct);
+
+                        custInvoiceTable.HMCase = hmCase.RecId;
+                        custInvoiceTable.HMPatientChargeEntryTable = chargeEntryTable.RecId;
+                        custInvoiceTable.HMClaimTable = _hmClaimTableRecID;
+                        custInvoiceTable.OrderAccount = patientCustTable.AccountNum;
+                        custInvoiceTable.OrderAccountRefRecId = patientCustTable.RecId;
+                        custInvoiceTable.insert();
+                        this.createCustInvoiceLines(custInvoiceTable);
+                        createdInvoices.insert(searchStr,custInvoiceTable);
+                    }
+                    catch (Exception::Error)
+                    {
+                        throw error("No invoice generated.");
+                    }
+                }
+                else
+                {
+                    custInvoiceTable =  createdInvoices.lookup(searchStr);
+                    this.createCustInvoiceLines(custInvoiceTable);
+                }
+            }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientCustTableObject</Name>
+				<Source><![CDATA[
+    private CustTable getPatientCustTableObject(HMPatientRecId _patientRecId)
+    {
+        HMPatient hmPatient = HMPatient::find(_patientRecId);
+        CustTable custTable = CustTable::findRecId(hmPatient.CustTable);
+
+        return custTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCustInvoiceLines</Name>
+				<Source><![CDATA[
+    public void createCustInvoiceLines(CustInvoiceTable custInvoiceTable)
+    {        
+        HMPatientChargeEntryLine patientChargeEntryLine;
+        CustInvoiceTrans        custInvoiceTrans;
+        CustInvoiceLine         custInvoiceLine;
+        CustTable               custTable;
+        HMPatient               patient;
+        HMCustInvoiceClass      hmCustInvoice = new HMCustInvoiceClass();
+
+        custInvoiceLine.clear();
+        custInvoiceLine.initValue();
+        custInvoiceLine.initFromCustInvoiceTable(custInvoiceTable);
+        custInvoiceLine.Description = strFmt('%1 - %2',hmCaseTrans.ItemId, HMInventTableClass::showItemName(hmCaseTrans.ItemId));
+        custInvoiceLine.ParentRecId = custInvoiceTable.RecId;
+        custInvoiceLine.HMCaseTrans = hmCaseTrans.RecId;
+        custInvoiceLine.DefaultDimension = hmCaseTrans.DefaultDimension;
+        custInvoiceLine.AmountCur = hmCaseTrans.TotalAmount;
+        custInvoiceLine.Quantity = hmCaseTrans.Qty;
+        custInvoiceLine.UnitPrice = hmCaseTrans.SalesPrice;
+        custInvoiceLine.LedgerDimension = this.getPostingAccountByItemAndAcctType(hmCaseTrans.ItemId, InventAccountType::SalesRevenue);
+                          
+        custInvoiceLine.LineNum = 1;
+        custInvoiceLine.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postInvoice</Name>
+				<Source><![CDATA[
+    public void postInvoice(Map _invoiceRecords = createdInvoices)
+    {
+        CustInvoiceLine invoiceLine;
+        HMCaseTrans caseTrans;
+        boolean invoicePosted = false;
+        str invoicePostMessage = "@SYS14204"+" ";
+        str invoicePostedList = "";
+        HMBillParameters billParameters;
+        MapEnumerator enumr =  _invoiceRecords.getEnumerator();
+        SysInfoLogLevel prevLevel = infolog.infologLevel();
+        Microsoft.Dynamics.Ax.Xpp.ErrorException xppEx;
+        System.Exception      ex;
+        boolean         posted;
+        CustInvoiceTable custInvoiceTable;
+
+        if(!_invoiceRecords.empty())
+        {
+            int i;
+            infolog.setInfoLogLevel(SysInfoLogLevel::None);
+            while (enumr.moveNext())
+            {
+                invoicePosted = true;
+                custInvoiceTable custInvoiceT  = enumr.currentValue();
+                custInvoiceTable custInvoicePosted;
+                try
+                {
+                    CustPostInvoice custPostInvoice = new CustPostInvoice(custInvoiceT);
+                    custPostInvoice.run();
+                }
+                catch(ex)
+                {
+                    throw error("Invoice Not Posted");
+                }
+                               
+                custInvoicePosted = CustInvoiceTable::findRecId(custInvoiceT.RecId);
+
+                if (custInvoicePosted.Posted)
+                {
+                    if(invoicePostedList == "")
+                    {
+                        invoicePostedList = invoicePostedList + custInvoicePosted.InvoiceId;
+                    }
+                    else
+                    {
+                        invoicePostedList = invoicePostedList + ", " + custInvoicePosted.InvoiceId;
+                    }  
+                }
+            }
+        }
+
+        infolog.setInfoLogLevel(prevLevel);
+        if(invoicePosted == true)
+        {
+            invoicePostMessage = invoicePostMessage + invoicePostedList + " " + "Invoice posted successfully";
+            Info(invoicePostMessage);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    public void new()
+    {
+        createdInvoices = new Map(Types::String,Types::record);
+        
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPostingAccountByItemAndAcctType</Name>
+				<Source><![CDATA[
+    private DimensionDynamicAccount getPostingAccountByItemAndAcctType(ItemId _itemId, InventAccountType _accountType)
+    {
+        InventPosting   inventPOsting;
+        InventTable     inventTable;
+        ItemGroupId     itemGroupId;
+        //get by item
+        select LedgerDimension from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::Table
+            && inventPOsting.ItemRelation == _itemId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        itemGroupId = InventItemGroupItem::findByItemIdLegalEntity(_itemId, curext()).ItemGroupId;
+    
+        //get by item group
+        select LedgerDimension from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::GroupId
+            && inventPOsting.ItemRelation == itemGroupId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+    
+        //get by all
+        select LedgerDimension from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::All;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        return checkFailed(strFmt("@MAZ13651",_itemId));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

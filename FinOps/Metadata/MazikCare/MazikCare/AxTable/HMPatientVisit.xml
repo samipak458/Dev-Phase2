@@ -1,0 +1,783 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientVisit</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMPatientVisit extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        HMPatientClass objPatient = new HMPatientClass();
+    
+        // Condition to release the bed if case is InPatient and is main case
+        if (this.HMCaseType == HMCaseType::InPatient && this.ParentEncounter == 0)
+        {
+            objPatient.parmPatientRecId(this.Patient);
+            objPatient.markEncounterInActive();
+        }
+    
+        super();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>encounterDateTime</Name>
+				<Source><![CDATA[
+    private utcDateTime encounterDateTime()
+    {
+        return  DateTimeUtil::newDateTime(this.EncounterDate, this.Time);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>encounterDateTimeString</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets encounterDateTimeString of <c>HMPatientEncounter</c>  table.
+    /// </summary>
+    /// <returns>
+    /// The encounterDateTimeString  of <c>HMPatientEncounter</c> setup table.
+    /// </returns>
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMComments encounterDateTimeString()
+    {
+        HMComments                 ret = "";
+        //ret = date2str(this.EncounterDate,213,DateDay::Digits1or2,DateSeparator::Slash,DateMonth::Digits1or2,DateSeparator::Slash,DateYear::Digits4,DateFlags::None) + " " + strDel(time2str(this.Time,TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+        ret = date2StrUsr(this.EncounterDate,DateFlags::None)+ " " + strDel(time2str(this.Time,TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getEncounterSignDateTime</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Description getEncounterSignDateTime()
+    {
+        HMPatientVisit HMPatientEncounter;
+        Description dateTime;
+        str signDate,signTimes,getZone;
+        int length;
+    
+    
+        select VisitNo,patient,Recid,SignedTime,SignedDate from HMPatientEncounter where HMPatientEncounter.VisitNo == this.VisitNo;
+    
+        getZone   = time2Str(HMPatientEncounter.SignedTime,TimeSeparator::Colon,TimeFormat::AMPM);
+        length    = strLen(getZone);
+        getZone   = subStr(getZone, length-2 ,length);
+    
+        signTimes  = time2StrHM(HMPatientEncounter.SignedTime);          // remove seconds
+        signDate   =  date2StrUsr(HMPatientEncounter.SignedDate,0);
+        dateTime   =  signDate + ' ' + signTimes + ' '+ getZone;
+    
+        if (signDate == '')
+        {
+           dateTime = '';
+        }
+    
+    return dateTime;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientAge</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String30 getPatientAge()
+    {
+        HMPatientVisit HMPatientEncounter;
+    
+        select VisitNo,patient,Recid from HMPatientEncounter where HMPatientEncounter.VisitNo == this.VisitNo;
+    
+        return HMPatient::find(HMPatientEncounter.Patient).patientAgeNew();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientGender</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String30 getPatientGender()
+    {
+        HMPatientVisit HMPatientEncounter;
+    
+        select VisitNo,patient,Recid from HMPatientEncounter where HMPatientEncounter.VisitNo == this.VisitNo;
+    
+        return HMPatient::find(HMPatientEncounter.Patient).patientGender();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientMRN</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display CustAccount getPatientMRN()
+    {
+        HMPatientVisit HMPatientEncounter;
+    
+        select VisitNo,patient,Recid from HMPatientEncounter where HMPatientEncounter.VisitNo == this.VisitNo;
+    
+        return HMPatient::find(HMPatientEncounter.Patient).getMRN();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getpatientName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Description255 getpatientName()
+    {
+        HMPatientVisit HMPatientEncounter;
+    
+        select VisitNo,patient,Recid from HMPatientEncounter where HMPatientEncounter.VisitNo == this.VisitNo;
+    
+        return HMPatient::find(HMPatientEncounter.Patient).patientName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        super();
+        this.EncounterDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        this.Time = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>patientName</Name>
+				<Source><![CDATA[
+    //BP Deviation documented
+    edit DirPartyName patientName(boolean _set, DirPartyName _patientName)
+    {
+        HMPatient       hmPatient;
+        CustTable       custTable;
+        DirPartyTable   dirPartyTable;
+    
+        if(!hasFieldAccess(tablenum(HMPatient),fieldnum(HMPatient,CustTable)))
+        {
+            throw error("@SYS57330");
+        }
+    
+        if( _set)
+        {
+            select * from hmPatient join custTable join dirPartyTable
+            where hmPatient.CustTable == custTable.RecId
+                &&  custTable.Party == dirPartyTable.RecId
+                &&  dirPartyTable.Name == _patientName;
+    
+            this.Patient = hmPatient.RecId;
+    
+        }
+    
+        return HMPatient::find(this.Patient).PatientName();
+    
+    
+    
+    
+    //    if (_set)
+    //    {
+    //
+    //        select patient
+    //        where patient. == _patientName;
+    //
+    //        if(this.SelfPolicy == NoYes::No)
+    //        {
+    //            select patientGuarantor
+    //            where patientGuarantor.Name == _guarantorName
+    //                && patientGuarantor.HMPatient == this.HMPatient;
+    //
+    //            this.Guarantor = patientGuarantor.RecId;
+    //        }
+    //    }
+    //
+    //    return HMPatientGuarantor::find(this.Guarantor).Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showCaseNoForPhysioOrder</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display HMCaseNo showCaseNoForPhysioOrder()
+    {
+        if(this.HMCaseType == HMCaseType::InPatient || this.HMCaseType == HMCaseType::Emergency)
+        {
+            return HMPatientVisit::find(this.ParentEncounter).VisitNo;
+        }
+        else
+        {
+            return this.VisitNo;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record is located in the <c>HMPatientEncounter</c> table.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMPatientEncounter</c> table record to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    /// <remarks>
+    ///    If the specified record is not located in the <c>HMPatientEncounter</c> table, an error message is
+    ///    displayed.
+    /// </remarks>
+    public static boolean checkExist(RecId _recId)
+    {
+        boolean ret = true;
+    
+        if (!HMPatientVisit::exist(_recId))
+        {
+            ret = checkFailed(strfmt(HMPatientVisit::txtNotExist(), _recId));
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record in the <c>HMPatientEncounter</c> table exists.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMPatientEncounter</c> table to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    public static boolean exist(RecId _recId)
+    {
+        boolean found;
+    
+        found = (select firstonly
+                     RecId
+                 from
+                     HMPatientVisit
+                 where
+                     HMPatientVisit.RecId == _recId).RecId != 0;
+    
+        return found;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMPatientEncounter</c> table.
+    /// </summary>
+    /// <param name="_recid">
+    ///     The record ID of the <c>HMPatientEncounter</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMPatientEncounter</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientVisit find(
+    RecId               _recid,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMPatientVisit  hmPatientEncounter;
+        hmPatientEncounter.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmPatientEncounter.concurrencyModel(_concurrencyModel);
+        }
+    
+        select firstonly * from hmPatientEncounter where hmPatientEncounter.RecId == _recid;
+    
+        return hmPatientEncounter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByEncounterId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMPatientEncounter</c> table.
+    /// </summary>
+    /// <param name="_hmCaseNo">
+    ///     The HMCaseNo of the <c>HMPatientEncounter</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMPatientEncounter</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientVisit findByEncounterId(
+    HMCaseNo            _hmCaseNo,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMPatientVisit  hmPatientEncounter;
+        hmPatientEncounter.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmPatientEncounter.concurrencyModel(_concurrencyModel);
+        }
+    
+        select firstonly * from hmPatientEncounter where hmPatientEncounter.VisitNo == _hmCaseNo;
+    
+        return hmPatientEncounter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByPatient</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMPatientEncounter</c> table. Result is sorted in ascending order with respect to Encounter date.
+    /// </summary>
+    /// <param name="_patientRecId">
+    ///     The Patient field of the <c>HMPatientEncounter</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <param name="_desc">
+    ///     A Boolean value that indicates whether to sort results; optional
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMPatientEncounter</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientVisit findByPatient(
+    RefRecId            _patientRecId,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto,
+    boolean             _desc = false)
+    {
+        HMPatientVisit  hmPatientEncounter;
+        hmPatientEncounter.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmPatientEncounter.concurrencyModel(_concurrencyModel);
+        }
+    
+        if(_desc)
+        {
+            select * from hmPatientEncounter order by EncounterDate desc where hmPatientEncounter.Patient == _patientRecId;
+        }
+        else
+        {
+            select * from hmPatientEncounter order by EncounterDate where hmPatientEncounter.Patient == _patientRecId;
+        }
+    
+        return hmPatientEncounter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findPatientFirstEncounter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines First Encounter Id for specified Patient in <c>HMPatientEncounter</c> table.
+    /// </summary>
+    /// <param name="_patientRecId">
+    ///    The record ID of the <c>HMPatient</c> table to check if record in <c>HMPatientEncounter</c> exists.
+    /// </param>
+    /// <returns>
+    ///    A record of the <c>HMPatientEncounter</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientVisit findPatientFirstEncounter(RecId _patientRecId)
+    {
+        HMPatientVisit  hmPatientEncounter;
+    
+        select firstOnly * from hmPatientEncounter order by EncounterDate, Time
+        where hmPatientEncounter.Patient == _patientRecId
+        && hmPatientEncounter.HMCaseType == HMCaseType::OutPatient
+        && hmPatientEncounter.HMCaseSubType != HMCaseSubType::Immunization;
+    
+        return hmPatientEncounter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findPatientLastEncounter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines last Encounter Id for specified Patient in <c>HMPatientEncounter</c> table.
+    /// </summary>
+    /// <param name="_patientRecId">
+    ///    The record ID of the <c>HMPatient</c> table to check if record in <c>HMPatientEncounter</c> exists.
+    /// </param>
+    /// <returns>
+    ///    A record of the <c>HMPatientEncounter</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientVisit findPatientLastEncounter(RecId _patientRecId)
+    {
+        HMPatientVisit  hmPatientEncounter;
+    
+        select firstOnly * from hmPatientEncounter order by EncounterDate desc, Time desc
+        where hmPatientEncounter.Patient == _patientRecId
+        && hmPatientEncounter.HMCaseType == HMCaseType::OutPatient
+        && hmPatientEncounter.HMCaseSubType != HMCaseSubType::Immunization
+        && hmPatientEncounter.HMCaseSubType != HMCaseSubType::OrderEncounter;
+    
+        return hmPatientEncounter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>txtNotExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets the message to use when a specific record in the <c>HMPatientEncounter</c> does not exist.
+    /// </summary>
+    /// <returns>
+    ///    The message that states a record does not exist.
+    /// </returns>
+    public static TxtNotExist txtNotExist()
+    {
+        return "@SYS127989";
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>HIS</ConfigurationKey>
+	<DeveloperDocumentation>@MAZ192</DeveloperDocumentation>
+	<Label>Patient visit</Label>
+	<TableGroup>Main</TableGroup>
+	<TitleField1>VisitNo</TitleField1>
+	<TitleField2>EncounterDate</TitleField2>
+	<CacheLookup>FoundAndEmpty</CacheLookup>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMCaseType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EncounterDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Patient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Notes</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Status</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VisitNo</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReviewedBy</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReviewedOn</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Time</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SignedDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SignedTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CancelledDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CancelledTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CancelReason</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>MLC</Name>
+			<Label>@MAZ8054</Label>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS50012</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMCaseType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EncounterDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Patient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Notes</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Status</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>VisitNo</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReviewedBy</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ReviewedOn</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Time</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SignedDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SignedTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CancelReason</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CancelledTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CancelledDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ParentEncounter</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMCaseSubType</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>PatientName</Name>
+			<Label>@MAZ367</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>patientName</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Relatives</Name>
+			<Label>@MAZ8041</Label>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>CancelledDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ3069</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldTime">
+			<Name>CancelledTime</Name>
+			<ExtendedDataType>TimeOfDay</ExtendedDataType>
+			<HelpText>@MAZ3070</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>CancelReason</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>EncounterDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ808</HelpText>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMCaseSubType</Name>
+			<EnumType>HMCaseSubType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMCaseType</Name>
+			<EnumType>HMCaseType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Notes</Name>
+			<ExtendedDataType>HMNotes</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>ParentEncounter</Name>
+			<ExtendedDataType>HMRecId</ExtendedDataType>
+			<HelpText>@MAZ3911</HelpText>
+			<Label>@MAZ3910</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Patient</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ812</HelpText>
+			<Label>@MAZ9</Label>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ReviewedBy</Name>
+			<ExtendedDataType>Name</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>ReviewedOn</Name>
+			<ExtendedDataType>TransDateTime</ExtendedDataType>
+			<HelpText>@MAZ1247</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>SignedDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ1672</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldTime">
+			<Name>SignedTime</Name>
+			<ExtendedDataType>TimeOfDay</ExtendedDataType>
+			<HelpText>@MAZ1673</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Status</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ82</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldTime">
+			<Name>Time</Name>
+			<ExtendedDataType>TimeOfDay</ExtendedDataType>
+			<HelpText>@MAZ1059</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>VisitNo</Name>
+			<AllowEdit>No</AllowEdit>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>HMVisitNo</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatient_FK</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMPatient</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Patient</Name>
+					<Field>Patient</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>ReasonTable</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<RelatedTable>ReasonTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CancelReason</Name>
+					<Field>CancelReason</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

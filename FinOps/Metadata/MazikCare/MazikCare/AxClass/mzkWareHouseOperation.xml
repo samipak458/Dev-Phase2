@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>mzkWareHouseOperation</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class mzkWarehouseOperation
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createBOMHeader</Name>
+				<Source><![CDATA[
+    public static InventJournalTable createBOMHeader(str KitSerial, ItemId BOMHeaderItem)
+    {
+        InventJournalTable  journalTable;
+        InventJournalTrans  journalTrans;
+        JournalId           journalId;
+        InventTransId       inventTransId;
+        InventTable         inventTable = inventTable::find(BOMHeaderItem);
+        InventDim           inventDim;
+        str                 kitNo;
+        //InventItemOrderSetupType    setupType = InventItemOrderSetupType::Invent;
+        //CustomReportFinishedConvertItem    convertItem;
+        
+        select journalTable
+            where journalTable.Description == KitSerial;
+
+        if (journalTable.RecId == 0)
+        {
+            ttsbegin;
+            /*START BOM Header Item inventory dimension*/
+            inventDim.clear();
+            inventDim.InventSiteId = '1';//'Site1'
+            inventDim.InventLocationId = 'Sterilize';//'DefaultWH'
+            inventDim.configId= '000001';
+            inventDim.wMSLocationId = 'ACC';
+            inventDim = InventDim::findOrCreate(inventDim);
+            /*END BOM Header Item inventory dimension*/
+        
+            // Init JournalTable
+            journalTable.clear();
+            journalTable.initValue();
+            journalTable.initFromInventJournalName(InventJournalName::find(InventParameters::find().BomJournalNameId));
+            journalId = NumberSeq::newGetNum(InventParameters::numRefInventJournalId()).num();
+            journalTable.JournalId = journalId;
+            Journaltable.Description = KitSerial;
+            journalTable.insert();
+            
+            //BOM Header Item Creation
+            journalTrans.clear();
+            journalTrans.initFromInventJournalTable(journalTable);
+            journalTrans.initFromInventTable(inventTable);
+            journalTrans.InventDimId = inventDim.InventDimId;
+            journalTrans.Qty = 1;//convertItem.Qty;
+            journalTrans.PriceUnit        = 1;//InventTableModule::find(journalTrans.ItemId, ModuleInventPurchSales::Invent).pcsPrice();
+            journalTrans.CostAmount       = journalTrans.Qty * journalTrans.PriceUnit;
+            journalTrans.InventTransId = NumberSeq::newGetNum(InventParameters::numRefInventTransId()).num();
+            journalTrans.TransDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            journalTrans.Voucher = NumberSeq::newGetNumFromId(journalTable.VoucherNumberSequenceTable).num();
+            journalTrans.BOMLine = NoYes::No;
+            journalTrans.insert();
+            ttscommit;
+        }
+
+        return journalTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addBOMLine</Name>
+				<Source><![CDATA[
+    public static boolean addBOMLine(InventJournalTable invJournalTable, ItemId BOMLineItem)
+    {
+        InventJournalTrans  journalTrans;
+        JournalId           journalId;
+        InventJournalTrans  invJournalTrans;
+        InventDim           inventDim;
+        InventTable         inventTable = inventTable::find(BOMLineItem);
+        
+        if (invJournalTable.JournalId != '')
+        {
+            select firstonly1 InventTransId
+                from invJournalTrans
+                    where invJournalTrans.BOMLine == NoYes::No
+                        && invJournalTrans.JournalId == invJournalTable.JournalId;
+
+            if (invJournalTrans.InventTransId != '')
+            {
+                ttsbegin;
+                /*START BOM Line Item inventory dimension*/
+                inventDim.clear();
+                inventDim.InventSiteId = '1';//'Site1'
+                inventDim.InventLocationId = 'Sterilize';//'DefaultWH'
+                inventDim.configId = '000001';
+                inventDim.wMSLocationId = 'ACC';
+                inventDim = InventDim::findOrCreate(inventDim);
+                /*END BOM Line Item inventory dimension*/
+        
+                journalTrans.clear();
+                journalTrans.initFromInventJournalTable(invJournalTable);
+                journalTrans.initFromInventTable(inventTable);
+                journalTrans.InventDimId = inventDim.inventDimId;
+                journalTrans.Qty = -1;//-1 * convertItem.QtyConversion;
+                journalTrans.PriceUnit = 1;//InventTableModule::find(journalTrans.ItemId, ModuleInventPurchSales::Invent).pcsPrice();
+                journalTrans.CostAmount = journalTrans.Qty * journalTrans.PriceUnit;
+                journalTrans.InventTransId = NumberSeq::newGetNum(InventParameters::numRefInventTransId()).num();
+                journalTrans.TransDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                journalTrans.Voucher = NumberSeq::newGetNumFromId(invJournalTable.VoucherNumberSequenceTable).num();
+                journalTrans.BOMLine = NoYes::Yes;
+                journalTrans.InventTransIdFather = invJournalTrans.InventTransId;
+                journalTrans.insert();
+                ttscommit;
+
+                return true;
+            }
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PostBOMJournal</Name>
+				<Source><![CDATA[
+    public static void PostBOMJournal(InventJournalTable invJourTable)
+    {
+        // Call the static method to post the journal
+        if(invJourTable.RecId != 0 && InventJournalCheckPost::newPostJournal(invJourTable).validate())
+        {
+            InventJournalCheckPost::newPostJournal(invJourTable).run();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PostSalesPackingSlip</Name>
+				<Source><![CDATA[
+    public static PackingSlipId PostSalesPackingSlip(SalesId _salesId)
+    {
+        SalesFormLetter     salesFormLetter;
+        SalesTable          salesTable;
+        CustPackingSlipJour custPackSlipJour;
+        
+        if (_salesId != '')
+        {
+            salesTable = SalesTable::find(_salesId);
+            salesFormLetter = salesFormLetter::construct(DocumentStatus::PackingSlip);
+            salesFormLetter.update(salesTable, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), SalesUpdate::All,
+                                                AccountOrder::Account, false, false);
+
+            select firstonly1 PackingSlipId
+            from custPackSlipJour
+                where custPackSlipJour.SalesId == _salesId;
+
+            return custPackSlipJour.PackingSlipId;
+        }
+        return '';
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

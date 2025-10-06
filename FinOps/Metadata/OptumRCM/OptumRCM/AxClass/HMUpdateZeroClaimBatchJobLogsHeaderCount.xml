@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMUpdateZeroClaimBatchJobLogsHeaderCount</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used to update header log table qualified claims count
+/// </summary>
+class HMUpdateZeroClaimBatchJobLogsHeaderCount extends RunBaseBatch
+{
+    QueryRun                 gQueryRun;
+    HMNumberOfThreads        numberOfThreads;
+    static str               taskDescription;
+    RecId                    hmClaimBatchJobLogsHeaderDataPrep, hmClaimBatchJobLogsHeader;
+    HMClaimJobType           jobType, jobTypeDataPrep;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        numberOfThreads
+    #endmacro
+    #localmacro.HMClaimBatchJobLogsHeaderDataPrep
+        hmClaimBatchJobLogsHeaderDataPrep
+    #endmacro
+    #localmacro.HMClaimBatchJobLogsHeader
+        hmClaimBatchJobLogsHeader
+    #endmacro
+    #localmacro.JobType
+        jobType
+    #endmacro
+    #localmacro.JobTypeDataPrep
+        jobTypeDataPrep
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Constructs the class
+    /// </summary>
+    /// <returns>Return class object</returns>
+    public server static HMUpdateZeroClaimBatchJobLogsHeaderCount construct()
+    {
+        return new HMUpdateZeroClaimBatchJobLogsHeaderCount();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of the task
+    /// </summary>
+    /// <returns>Return description of the task</returns>
+    static ClassDescription description()
+    {
+        return "@Optum:UpdateZeroClaimBatchJobLogsHeaderCount";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method is used to update header log table qualified claims count
+    /// </summary>
+    public void run()
+    {
+        HMClaimBatchJobLogsHeader updateHMClaimBatchJobLogsHeader;
+        HMClaimBatchJobsLogs      hmClaimBatchJobsLogs;
+
+        try
+        {
+            if (hmClaimBatchJobLogsHeaderDataPrep != 0)
+            {
+                //Update Data prep header count
+                select count(RecId) from hmClaimBatchJobsLogs
+                    where hmClaimBatchJobsLogs.JobType == jobTypeDataPrep
+                       && hmClaimBatchJobsLogs.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+
+                ttsbegin;
+
+                update_recordset updateHMClaimBatchJobLogsHeader
+                setting NumberOfQualifiedClaims = hmClaimBatchJobsLogs.RecId
+                    where updateHMClaimBatchJobLogsHeader.RecId == hmClaimBatchJobLogsHeaderDataPrep;
+
+                ttscommit;
+            }
+
+            hmClaimBatchJobsLogs.clear();
+
+            if (hmClaimBatchJobLogsHeader != 0)
+            {
+
+                //Update Claim job header count
+                select count(RecId) from hmClaimBatchJobsLogs
+                    where hmClaimBatchJobsLogs.JobType == jobType
+                       && hmClaimBatchJobsLogs.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeader;
+
+                ttsbegin;
+
+                update_recordset updateHMClaimBatchJobLogsHeader
+                setting NumberOfQualifiedClaims = hmClaimBatchJobsLogs.RecId
+                    where updateHMClaimBatchJobLogsHeader.RecId == hmClaimBatchJobLogsHeader;
+
+                ttscommit;
+            }
+        }
+        catch
+        {
+            throw error(strFmt("@Optum:UpdateLogHeaderCountBatchJobFailed",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+        return [#CurrentVersion] + [pack] + [#CurrentList] + [#HMClaimBatchJobLogsHeader] + [#HMClaimBatchJobLogsHeaderDataPrep] + [#JobType] + [#JobTypeDataPrep];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret     = true;
+        int         version = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #CurrentList, #HMClaimBatchJobLogsHeader, #HMClaimBatchJobLogsHeaderDataPrep, #JobType, #JobTypeDataPrep] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+
+            default:
+                ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMClaimBatchJobLogsHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the hmClaimBatchJobLogsHeader value
+    /// </summary>
+    /// <param name="_hmClaimBatchJobLogsHeader"><c>HMClaimBatchJobLogsHeader</c> record id</param>
+    public void parmHMClaimBatchJobLogsHeader(RecId _hmClaimBatchJobLogsHeader)
+    {
+        hmClaimBatchJobLogsHeader = _hmClaimBatchJobLogsHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMClaimBatchJobLogsHeaderDataPrep</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the hmClaimBatchJobLogsHeaderDataPrep value
+    /// </summary>
+    /// <param name="_hmClaimBatchJobLogsHeaderDataPrep"><c>HMClaimBatchJobLogsHeader</c> record id</param>
+    public void parmHMClaimBatchJobLogsHeaderDataPrep(RecId _hmClaimBatchJobLogsHeaderDataPrep)
+    {
+        hmClaimBatchJobLogsHeaderDataPrep = _hmClaimBatchJobLogsHeaderDataPrep;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmJobType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the jobType value
+    /// </summary>
+    /// <param name="_jobType"><c>HMClaimJobType</c> value</param>
+    public void parmJobType(HMClaimJobType _jobType)
+    {
+        jobType = _jobType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmJobTypeDataPrep</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the jobTypeDataPrep value
+    /// </summary>
+    /// <param name="_jobTypeDataPrep"><c>HMClaimJobType</c> value</param>
+    public void parmJobTypeDataPrep(HMClaimJobType _jobTypeDataPrep)
+    {
+        jobTypeDataPrep = _jobTypeDataPrep;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

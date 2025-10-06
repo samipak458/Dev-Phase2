@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPaperClaimService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPaperClaimService
+{
+    str outputFile;
+    HMClaimTemplate hmClaimtemplate;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>operation</Name>
+				<Source><![CDATA[
+    public boolean operation(HMPaperClaimContract _dataContract)
+    {
+        HMClaimTable              claimTableLocal;
+        HMInsuranceCarrier        hmInsuranceCarrier;
+        HMInsuranceCarrierCode    insuranceCarrierCode;
+        RecId                     claimTemplateRecId;
+        HMClaimTableGeneration    claimGeneration;
+        utcDateTime               sysDateTime;
+        Query                     qry = new Query(queryStr(HMChargeEntryInsurance));
+        QueryRun                  qryRun;
+        QueryBuildDataSource      qbdChargeEntryTable, qbdInsuranceCarrier;
+        TransDate                 fromDate = _dataContract.parmFromDate();
+        TransDate                 toDate = _dataContract.parmToDate();
+        HMInsuranceCarrierCode    carrier = _dataContract.parmInsuranceCarrier();
+        HcmPersonnelNumberId      physician = _dataContract.parmPhysician();
+        HMParameters              parameters;
+        int                       i = 0;
+        List                      claimTransList = new List(Types::Int64);
+        ListEnumerator            listEnumerator;
+        utcDateTime               utcFromDate, utcToDate;
+        HMEDI837XMLCreate         hmEDI837XMLCreate;
+        List                      list;
+    
+        utcFromDate = DateTimeUtil::newDateTime(fromDate,0);
+        utcToDate = DateTimeUtil::newDateTime(toDate,timeMax());
+    
+        try
+        {
+            claimGeneration = new HMClaimTableGeneration(true, true);
+            qbdChargeEntryTable      = qry.dataSourceTable(tableNum(HMPatientChargeEntryTable));
+            qbdInsuranceCarrier      = qry.dataSourceTable(tableNum(HMInsuranceCarrier));
+    
+            if (fromDate && toDate)
+            {
+                if (utcFromDate > utcToDate)
+                {
+                    throw error("Invalid dates");
+                }
+            }
+    
+            if(carrier)
+            {
+                qbdInsuranceCarrier.addRange(fieldNum(HMInsuranceCarrier, Code)).value(queryValue(carrier));
+            }
+    
+    
+            if (!fromDate && !toDate)
+            {
+                qbdChargeEntryTable.addRange(fieldNum(HMPatientChargeEntryTable, createdDateTime)).value(SysQuery::range(utcDateTimeNull(), DateTimeUtil::getSystemDateTime()));
+            }
+            else if (!fromDate)
+            {
+                qbdChargeEntryTable.addRange(fieldNum(HMPatientChargeEntryTable, createdDateTime)).value(SysQuery::range(utcDateTimeNull(), utcToDate));
+            }
+            else if (!toDate)
+            {
+                qbdChargeEntryTable.addRange(fieldNum(HMPatientChargeEntryTable, createdDateTime)).value(SysQuery::range(utcFromDate, DateTimeUtil::getSystemDateTime()));
+            }
+            else
+            {
+                qbdChargeEntryTable.addRange(fieldNum(HMPatientChargeEntryTable, createdDateTime)).value(SysQuery::range(utcFromDate, utcToDate));
+            }
+    
+            qryRun = new QueryRun(qry);
+    
+            parameters = HMParameters::find();
+    
+            while (qryRun.next())
+            {
+                i++;
+    
+                hmInsuranceCarrier = qryRun.getno(5);
+    
+                hmInsuranceCarrier = hmInsuranceCarrier::findByCode(hmInsuranceCarrier.Code);
+    
+                insuranceCarrierCode = hmInsuranceCarrier.Code;
+    
+                claimTransList = claimGeneration.generateBatchClaims(insuranceCarrierCode, fromDate, toDate);
+    
+                listEnumerator  = claimTransList.getEnumerator();
+    
+                sysDateTime = DateTimeUtil::getSystemDateTime();
+                /*setPrefix(strFmt("Claim generation process started",hmInsuranceCarrier.Code) );
+                if (!claimTransList.empty())
+                {
+                    if (hmInsuranceCarrier.ClaimType == HMClaimType::Paper)
+                    {
+                        claimGeneration.parmOutputFile(parameters.FilePath + "\\" + insuranceCarrierCode + claimGeneration.dateFormatCMS1450(DateTimeUtil::date(sysDateTime), true)+ strReplace(time2StrHMS(timeNow()),":","") + '.pdf');
+    
+                        claimTemplateRecId = HMInsuranceCarrier::find(HMInsuranceCarrier::findByCode(insuranceCarrierCode).RecId).HMClaimTemplate;
+    
+                        claimGeneration.parmClaimTemplate(HMClaimTemplate::find(claimTemplateRecId));
+    
+                        claimGeneration.initializePDFWriter();
+    
+                        claimGeneration.parmIsFirst(false);
+    
+                        while(listEnumerator.moveNext())
+                        {
+                            claimTableLocal = HMClaimTable::find(listEnumerator.current());
+                            claimGeneration.generatePaperClaim(claimTableLocal.RecId, claimTemplateRecId, claimTableLocal.HMInsuranceCarrier, true);
+                        }
+    
+                        claimGeneration.closePDFWriter();
+    
+                        info(strFmt("Claim#: %1 generated successfully of case#:%2",claimTableLocal.ClaimID,claimTableLocal.caseNo()));
+                    }
+                    else if(hmInsuranceCarrier.ClaimType == HMClaimType::Electronic)
+                    {
+                        list = new List(Types::Record);
+                        while(listEnumerator.moveNext())
+                        {
+                            claimTableLocal = HMClaimTable::find(listEnumerator.current());
+                            list.addEnd(claimTableLocal);
+                        }
+                        if(!list.empty())
+                        {
+                            hmEDI837XMLCreate = new hmEDI837XMLCreate();
+                            hmEDI837XMLCreate.processClaim(list);
+                        }
+                    }
+                }*/
+            }
+            //HMEDI837XMLCreate::fillTriggerXML(true);
+            if (i == 0)
+            {
+                info("No record found for claim genration");
+            }
+    
+            return  true;
+        }
+        catch
+        {
+            throw Exception::Error;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

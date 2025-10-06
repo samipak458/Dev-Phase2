@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPayerNumberSeqHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// The <c>HMPayerNumberSeqHandler</c> provides an helper API to ensure
+/// proper defaulting of a record field from a number sequence,
+/// validation of manually entered values against the number sequence parameters
+/// and a way to inform the number sequence engine whether the suggested number
+/// from the sequence was actually saved to the database or discarded.
+/// </summary>
+internal final class HMPayerNumberSeqHandler
+{
+    private NumberSequenceTable numberSequenceTable;
+    private FieldId fieldId;
+    private Num generatedNumber;
+    private Num recordFieldValue;
+    private NumberSeq numberSeq;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>enableNumberSequenceControl</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Enables number sequence control for the specified field.
+    /// </summary>
+    /// <param name = "_record">The record for which the number sequence control needs to be enabled.</param>
+    /// <param name = "_fieldId">The ID of the field for which the number sequence control needs to be enabled.</param>
+    /// <param name = "_numberSequenceId">The number sequence Id that should be used for the field.</param>
+    internal static void enableNumberSequenceControl(Common _record, FieldId _fieldId, RefRecId _numberSequenceRecId)
+    {
+        if (!_numberSequenceRecId)
+        {
+            return;
+        }
+
+        const boolean MakeDecisionLater = true;
+        NumberSeq numberSeq = NumberSeq::newGetNumFromId(_numberSequenceRecId, MakeDecisionLater);
+
+        if (numberSeq)
+        {
+            HMPayerNumberSeqHandler numberSeqHelper = HMPayerNumberSeqHandler::construct();
+            numberSeqHelper.init(_fieldId, _numberSequenceRecId, numberSeq);
+            numberSeqHelper.subscribeForEvents(_record);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>handleDefaultingRecord</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Handles the <c>onDefaultingRecord</c> event of the record.
+    /// </summary>
+    /// <param name = "_record">The record which fired the event.</param>
+    /// <param name = "_eventArgs">Information about the event.</param>
+    private void handleDefaultingRecord(Common _record, DataEventArgs _eventArgs)
+    {
+        generatedNumber = numberSeq.num();
+        recordFieldValue = _record.(fieldId);
+
+        if (generatedNumber && _record.(fieldId) == '')
+        {
+            _record.(fieldId) = generatedNumber;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>handleValidatingWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Handles the <c>onValidatingWrite</c> event of the record.
+    /// </summary>
+    /// <param name = "_record">The record which fired the event.</param>
+    /// <param name = "_eventArgs">Information about the event.</param>
+    private void handleValidatingWrite(Common _record, DataEventArgs _eventArgs)
+    {
+        ValidateEventArgs args = _eventArgs as ValidateEventArgs;
+
+        if (args != null)
+        {
+            boolean ret = true;
+
+            if (generatedNumber != recordFieldValue && recordFieldValue != '')
+            {
+                if (!numberSequenceTable.numAllowEdit())
+                {
+                    ret = ret & checkFailed(strFmt("@ApplicationFoundation:NumberSeqFieldDoesNotAllowEditing", fieldId2PName(_record.TableId, fieldId)));
+                }
+
+                if (generatedNumber)
+                {
+                    ret = ret & NumberSeq::checkChangeNumber(numberSequenceTable, _record.TableId, fieldId, generatedNumber, recordFieldValue);
+                }
+            }
+            
+            args.parmValidateResult(ret);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>handleInserted</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Handles the <c>onInserted</c> event of the record.
+    /// </summary>
+    /// <param name = "_record">The record which fired the event.</param>
+    /// <param name = "_eventArgs">Information about the event.</param>
+    private void handleInserted(Common _record, DataEventArgs _eventArgs)
+    {
+        numberSeq.onNumberUsed(_record.(fieldId), generatedNumber);
+
+        this.unsubscribeFromEvents(_record);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    private void new()
+    {
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    private static HMPayerNumberSeqHandler construct()
+    {
+        return new HMPayerNumberSeqHandler();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    private void init(FieldId _fieldId, RefRecId _numberSequenceRecId, NumberSeq _numberSeq)
+    {
+        fieldId = _fieldId;
+        numberSequenceTable = NumberSequenceTable::find(_numberSequenceRecId);
+        numberSeq = _numberSeq;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subscribeForEvents</Name>
+				<Source><![CDATA[
+    private void subscribeForEvents(Common _record)
+    {
+        _record.onDefaultingRow += eventhandler(this.handleDefaultingRecord);
+        _record.onValidatingWrite += eventhandler(this.handleValidatingWrite);
+        _record.onInserted += eventhandler(this.handleInserted);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unsubscribeFromEvents</Name>
+				<Source><![CDATA[
+    private void unsubscribeFromEvents(Common _record)
+    {
+        _record.onDefaultingRow -= eventhandler(this.handleDefaultingRecord);
+        _record.onValidatingWrite -= eventhandler(this.handleValidatingWrite);
+        _record.onInserted -= eventhandler(this.handleInserted);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

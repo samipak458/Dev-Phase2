@@ -1,0 +1,1094 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaims</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClaims
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>copySchema</Name>
+				<Source><![CDATA[
+    private void copySchema(RecId _hmClaimTemplateRecId)
+    {
+        HMClaimTemplateFieldSchema      hmClaimTemplateFieldSchema;
+        HMClaimSchema                   hmClaimSchema;
+    
+        while select RecId from hmClaimSchema
+        {
+            hmClaimTemplateFieldSchema.initValue();
+            hmClaimTemplateFieldSchema.HMClaimSchema = hmClaimSchema.RecId;
+            hmClaimTemplateFieldSchema.HMClaimTemplate = _hmClaimTemplateRecId;
+            hmClaimTemplateFieldSchema.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>importClaimDocument</Name>
+				<Source><![CDATA[
+    public RecId importClaimDocument(FilePath _inputFile, HMAttachmentDocType _documentType, HMClaimTemplateName _templateName, HMClaimTemplateCode _code, HMClaimTemplateType _templateType, Boolean fileUploadResult, str fileName, str fileExtension, str fileTypeId, System.IO.MemoryStream _stream)
+    {
+        boolean ret;
+        RecId   claimTemplateRecId;
+        SysCompilerTarget compilerTarget;
+    
+        if(_templateType == HMClaimTemplateType::None)
+        {
+            compilerTarget = SysUserInfo::compilerTarget();
+            SysUserInfo::compilerTarget(SysCompilerTarget::MessageWindow);
+        }
+    
+        try
+        {
+            if(this.validateClaimDocument(_inputFile, _documentType, _templateName, _code))
+            {
+                ttsBegin;
+    
+                switch(_templateType)
+                {
+                    case HMClaimTemplateType::None:
+                        claimTemplateRecId = this.insertClaimTemplate(_templateName, _inputFile, _code);
+                        break;
+                    case HMClaimTemplateType::CMS1500:
+                        claimTemplateRecId = this.insertClaimTemplateCMS1500(_templateName, _inputFile, _code);
+                        break;
+                }
+    
+                if(claimTemplateRecId)
+                {
+                    if(this.insertIntoDocuTables(HMClaimTemplate::find(claimTemplateRecId), fileName, _documentType, fileUploadResult, fileName, fileExtension, fileTypeId, _stream))
+                    {
+                        switch(_templateType)
+                        {
+                            case HMClaimTemplateType::None:
+                                this.copySchema(claimTemplateRecId);
+                                break;
+                            case HMClaimTemplateType::CMS1500:
+                                this.insertFieldsFromTable(claimTemplateRecId);
+                                break;
+                        }
+    
+                        ret = true;
+                    }
+                }
+    
+                if(ret)
+                {
+                    ttsCommit;
+                }
+            }
+            else
+            {
+                claimTemplateRecId = 0;
+            }
+        }
+        catch
+        {
+            claimTemplateRecId = -1;
+        }
+    
+        if(_templateType == HMClaimTemplateType::None)
+        {
+            SysUserInfo::compilerTarget(compilerTarget);
+        }
+    
+        return claimTemplateRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertClaimTemplate</Name>
+				<Source><![CDATA[
+    public RecId insertClaimTemplate(HMClaimTemplateName _templateName, FilePath _filePath, HMClaimTemplateCode _code)
+    {
+        HMClaimTemplate         hmClaimTemplate;
+        HMClaimTemplateField    hmClaimTemplateField;
+        boolean ret = false;
+        str tableName;
+        iTextSharp.text.pdf.PdfReader               pdfReader;
+        iTextSharp.text.pdf.AcroFields              acroFields;
+        System.Object                               objectKey;
+        System.Collections.DictionaryEntry          dictEntry;
+        System.Collections.IDictionary      iDict;
+        System.Collections.IDictionaryEnumerator    iDictEnumr;
+    
+        HMCreateTable   hmCreateTable;
+    
+        try
+        {
+            tableName = this.removeSpecialCharacter('HM' + strReplace(_templateName,' ',''));
+            tableName = this.renameTableNameIfExist(tableName);
+            hmCreateTable = new HMCreateTable(tableName);
+    
+            if(hmCreateTable.createTable(_templateName))
+            {
+                hmCreateTable.createQuery();
+                hmCreateTable.createWorkFlowDocumentClass();
+    
+                hmClaimTemplate.initValue();
+    
+                hmClaimTemplate.TemplateName = _templateName;
+                hmClaimTemplate.Code = _code;
+                hmClaimTemplate.ClassName = hmCreateTable.parmClassName();
+                hmClaimTemplate.QueryName = hmCreateTable.parmQueryName();
+                hmClaimTemplate.TableName = hmCreateTable.parmTableName();
+                hmClaimTemplate.TemplateType = HMClaimTemplateType::None;
+    
+                if(hmClaimTemplate.validateWrite())
+                {
+                    ret = true;
+                    hmClaimTemplate.insert();
+                }
+            }
+            else
+            {
+                ret = false;
+            }
+    
+            if(ret)
+            {
+                pdfReader = new iTextSharp.text.pdf.PdfReader(_filePath);
+                //todo: ax7 Dll itextSharp comment
+                /*
+                acroFields = pdfReader.get_AcroFields();
+               //todo: ax7 Dll itextSharp comment
+                // iDict = acroFields.get_Fields();
+                iDictEnumr = iDict.GetEnumerator();
+    */
+                while(iDictEnumr.MoveNext())
+                {
+                    dictEntry = iDictEnumr.get_Current();
+                    objectKey =  dictEntry.get_Key();
+    
+                    hmClaimTemplateField.initValue();
+    
+                    hmClaimTemplateField.HMClaimTemplate = hmClaimTemplate.RecId;
+                    hmClaimTemplateField.FieldName = objectKey.ToString();
+    
+                    hmClaimTemplateField.insert();
+                }
+            }
+    
+        }
+        catch
+        {
+            hmCreateTable.deleteAll();
+        }
+    
+        return hmClaimTemplate.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertClaimTemplateCMS1500</Name>
+				<Source><![CDATA[
+    public RecId insertClaimTemplateCMS1500(HMClaimTemplateName _templateName, FilePath _filePath, HMClaimTemplateCode _code)
+    {
+        HMClaimTemplate         hmClaimTemplate;
+        HMClaimTemplateField    hmClaimTemplateField;
+        boolean ret = false;
+        str tableName;
+        iTextSharp.text.pdf.PdfReader               pdfReader;
+        iTextSharp.text.pdf.AcroFields              acroFields;
+        System.Object                               objectKey;
+        System.Collections.DictionaryEntry          dictEntry;
+        System.Collections.IDictionary              iDict;
+        System.Collections.IDictionaryEnumerator    iDictEnumr;
+        
+        List                                        fieldList;
+
+
+        try
+        {
+            hmClaimTemplate.initValue();
+
+            hmClaimTemplate.Code = _code;
+            hmClaimTemplate.TemplateName = _templateName;
+            hmClaimTemplate.TemplateType = HMClaimTemplateType::CMS1500;
+
+            if(hmClaimTemplate.validateWrite())
+            {
+                ret = true;
+                hmClaimTemplate.insert();
+            }
+
+
+            if(ret)
+            {
+                pdfReader = new iTextSharp.text.pdf.PdfReader(_filePath);
+
+                var acroFieldsTest = pdfReader.get_AcroFields();
+                var iDictTest = acroFieldsTest.get_Fields();
+                var keys = iDictTest.get_Keys();
+                var keysEnumerator = keys.GetEnumerator();
+                while(keysEnumerator.MoveNext())
+                {
+                    str result = keysEnumerator.get_Current();
+
+                    hmClaimTemplateField.initValue();
+
+                    hmClaimTemplateField.HMClaimTemplate = hmClaimTemplate.RecId;
+                    hmClaimTemplateField.FieldName = result;
+                    hmClaimTemplateField.insert();
+                }
+                
+                //iDictEnumr = iDict.GetEnumerator();
+
+                /*while(iDictEnumr.MoveNext())
+                {
+                    dictEntry = iDictEnumr.get_Current();
+                    objectKey =  dictEntry.get_Key();
+
+                    hmClaimTemplateField.initValue();
+
+                    hmClaimTemplateField.HMClaimTemplate = hmClaimTemplate.RecId;
+                    hmClaimTemplateField.FieldName = objectKey.ToString();
+
+                    hmClaimTemplateField.insert();
+                }*/
+            }
+
+        }
+        catch
+        {
+            return -1;
+        }
+
+        return hmClaimTemplate.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertFieldsFromTable</Name>
+				<Source><![CDATA[
+    private void insertFieldsFromTable(RecId _hmClaimTemplateRecId)
+    {
+        HMClaimTemplateFieldMapping         hmClaimTemplateFieldMapping;
+        SysDictTable                        dictTable;
+        SysDictField                        dictField;
+        SysDictFieldGroup                   dictFieldGroup;
+        int                             i,j;
+        int                             fieldCnt;
+        //TableId                         tableID = tableNum(HMClaimTableDetails);
+        //TableId                         tableIDDiagnosis = tableNum(HMClaimDiagnosis);
+        //TableId                         tableIDChargeLine = tableNum(HMClaimChargeLine);
+    
+        // Pinncale:Start
+        TableId                         tableIDCodesDetail            = tableNum(HmClaimCodesDetailTmp);
+        TableId                         tableIDDetails                = tableNum(HmClaimTableDetailTmp);
+        TableId                         tableIDChargeLineTmp          = tableNum(HmClaimChargeLineTmp);
+        TableId                         tableIDPI                     = tableNum(HMClaimPIEProcedureInfoTmp);
+        //TableId                         tableIDConditiontmp           = tableNum(HmClaimConditionCodeTmp);
+        // Pinncale:End
+        // Modified By: Waqas Anwer
+    
+        //dictTable   = new SysDictTable(tableID);
+    
+        // Pinncale:Start
+        //patient
+        //dictFieldGroup = new SysDictFieldGroup(tableID, 'Patient', true);
+        dictFieldGroup = new SysDictFieldGroup(tableIDDetails, 'Patient', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::Patient;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+        dictFieldGroup = new SysDictFieldGroup(tableIDDetails, 'SummaryChargeLine', true);
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::ProcedureLineTotal;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+        // Pinncale:End
+        // Modified By: Waqas Anwer
+    
+       //pinnacle:Start
+        // Modified By: Muhammad Naveed
+        //Case
+        dictFieldGroup = new SysDictFieldGroup(tableIDDetails, 'Case', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::Case;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+        //CaseOccurrence
+        dictFieldGroup = new SysDictFieldGroup(tableIDCodesDetail, 'CaseOccurrence', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseOccurrence;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+      //CaseOccurrenceSpan
+        dictFieldGroup = new SysDictFieldGroup(tableIDCodesDetail, 'CaseOccurrenceSpan', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseOccurrenceSpan;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+        //CaseValue
+        dictFieldGroup = new SysDictFieldGroup(tableIDCodesDetail, 'CaseValue', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseValue;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+    
+        //Diagnosis
+        dictFieldGroup = new SysDictFieldGroup(tableIDCodesDetail, 'Diagnosis', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::Diagnosis;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+        //CaseProcedure
+        dictFieldGroup = new SysDictFieldGroup(tableIDCodesDetail, 'CaseProcedure', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseProcedure;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+    
+        //CodeCode
+        dictFieldGroup = new SysDictFieldGroup(tableIDCodesDetail, 'CodeCode', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CCQualifier;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+        //CaseCondition
+        dictFieldGroup = new SysDictFieldGroup(tableIDCodesDetail, 'ConditionCode', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseCondition;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDCodesDetail,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+         //Physician
+        dictFieldGroup = new SysDictFieldGroup(tableIDDetails, 'Physician', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::Physician;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDDetails,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+    
+    
+        //Carrier
+        dictFieldGroup = new SysDictFieldGroup(tableIDPI, 'Carrier', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::Carrier;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+          //CaseDiagnosis
+        dictFieldGroup = new SysDictFieldGroup(tableIDPI, 'CaseDiagnosis', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseDiagnosis;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+          //CasePayer
+        dictFieldGroup = new SysDictFieldGroup(tableIDPI, 'CasePayer', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CasePayer;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+          //CasePPS
+        dictFieldGroup = new SysDictFieldGroup(tableIDPI, 'CasePPS', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                hmClaimTemplateFieldMapping.initValue();
+                hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CasePPS;
+                hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDPI,dictFieldGroup.field(i));
+                hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                hmClaimTemplateFieldMapping.insert();
+            }
+        }
+    
+          ////CaseProcedure
+        //dictFieldGroup = new SysDictFieldGroup(tableIDPI, 'CaseProcedure', true);
+    //
+        //if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        //{
+            //fieldCnt = dictFieldGroup.numberOfFields();
+            //for (i=1; i<=fieldCnt; i++)
+            //{
+                //hmClaimTemplateFieldMapping.initValue();
+                //hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseProcedure;
+                //hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDPI,dictFieldGroup.field(i));
+                //hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDPI,dictFieldGroup.field(i));
+                //hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                //hmClaimTemplateFieldMapping.insert();
+            //}
+        //}
+    
+        // Pinncale:Start
+        //Procedure
+        //dictFieldGroup = new SysDictFieldGroup(tableIDChargeLine, 'Procedure', true);
+        dictFieldGroup = new SysDictFieldGroup(tableIDChargeLineTmp, 'LineProcedure', true);
+    
+        if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        {
+            fieldCnt = dictFieldGroup.numberOfFields();
+            for (i=1; i<=fieldCnt; i++)
+            {
+                for (j=1; j<=22; j++)
+                {
+                    hmClaimTemplateFieldMapping.initValue();
+                    hmClaimTemplateFieldMapping.Entity = HMClaimEntity::Procedure;
+                    //hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDChargeLine,dictFieldGroup.field(i)) + " " +"@MAZ9690" + " " +int2str(j);
+                    hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDChargeLineTmp,dictFieldGroup.field(i)) + " " +"@MAZ9690" + " " +int2str(j);
+                    hmClaimTemplateFieldMapping.Number = j;
+                    //hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDChargeLine,dictFieldGroup.field(i));
+                    hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDChargeLineTmp,dictFieldGroup.field(i));
+                    hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                    hmClaimTemplateFieldMapping.insert();
+                }
+            }
+        }
+    
+        ////Diagnosis
+        //dictFieldGroup = new SysDictFieldGroup(tableIDPI, 'Diagnosis', true);
+    //
+        //if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        //{
+            //fieldCnt = dictFieldGroup.numberOfFields();
+            //for (i=1; i<=fieldCnt; i++)
+            //{
+                //hmClaimTemplateFieldMapping.initValue();
+                //hmClaimTemplateFieldMapping.Entity = HMClaimEntity::Diagnosis;
+                //hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDPI,dictFieldGroup.field(i));
+                //hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDPI,dictFieldGroup.field(i));
+                //hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                //hmClaimTemplateFieldMapping.insert();
+            //}
+        //}
+        // Pinncale:End
+        // ModifiedBy: Waqas Anwer, 06 Dec 2016
+    
+         ////CaseCondition
+        //dictFieldGroup = new SysDictFieldGroup(tableIDConditiontmp, 'CaseCondition', true);
+    //
+        //if (dictFieldGroup != null && dictFieldGroup.numberOfFields() > 0)
+        //{
+            //fieldCnt = dictFieldGroup.numberOfFields();
+            //for (i=1; i<=fieldCnt; i++)
+            //{
+                //for (j=1; j<=11; j++)
+                //{
+                    //hmClaimTemplateFieldMapping.initValue();
+                    //hmClaimTemplateFieldMapping.Entity = HMClaimEntity::CaseCondition;
+                    //hmClaimTemplateFieldMapping.DisplayName = fieldId2pname(tableIDConditiontmp,dictFieldGroup.field(i)) + " " + int2str(j);
+                    //hmClaimTemplateFieldMapping.Number = j;
+                    //hmClaimTemplateFieldMapping.ClaimTemplateFieldName = fieldId2name(tableIDConditiontmp,dictFieldGroup.field(i));
+                    //hmClaimTemplateFieldMapping.HMClaimTemplate = _hmClaimTemplateRecId;
+                    //hmClaimTemplateFieldMapping.insert();
+                //}
+            //}
+        //}
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoDocuTables</Name>
+				<Source><![CDATA[
+    public boolean insertIntoDocuTables(HMClaimTemplate _hmClaimTemplate, FilePath _filePath, HMAttachmentDocType _documentType, 
+        Boolean fileUploadResult, str fileName, str fileExtension, str fileTypeId, System.IO.MemoryStream _stream)
+    {
+        //todo: old document management funtionality modified
+        /*DocuRef     docuRef;
+        DocuActionArchive docuActionArchive;
+        HMSHA256    sha = new HMSHA256();
+    
+        //temp fix
+       // DocuRef     docuRefUpdate;
+    
+        try
+        {
+            docuRef.initValue();
+            docuRef.RefTableId     = tableNum(HMClaimTemplate);
+            docuRef.RefRecId       = _hmClaimTemplate.RecId;
+            docuRef.RefCompanyId   = _hmClaimTemplate.dataAreaId;
+            // ax7: todo to be fixed later.
+            //docuRef.TypeId         =  HMDocuAction::getDocuTypeId(_documentType);
+            docuRef.HMAttachmentType   = _documentType;
+            docuRef.Restriction    = DocuRestriction::Internal;
+            docuRef.smmTable       = boolean::true;
+            docuRef.HMHashValue    = sha.getHash(_filePath);
+            docuRef.insert();
+    
+            docuRef.selectForUpdate(true);
+            docuActionArchive      = new DocuActionArchive();
+            docuActionArchive.setDocuType(docuRef.TypeId);
+            docuActionArchive.add(docuRef, _filePath);
+    
+            //docuRefUpdate = DocuRef::findRecId(docuRef.RecId,true);
+            //docuRefUpdate.HMHashValue    = sha.getHash(_filePath);
+            //docuRefUpdate.update();
+    
+            return true;
+        }
+        catch
+        {
+            return false;
+        }*/
+
+        //Marij
+        if(_hmClaimTemplate)
+        {
+            if(fileUploadResult)
+            {
+                using(System.IO.MemoryStream stream = _stream)
+                {
+                    DocuRef docuRef;
+
+                    stream.Position = 0;
+
+                    try
+                    {
+                        docuRef = DocumentManagement::attachFile(tablenum(HMClaimTemplate),
+                            _hmClaimTemplate.RecId,
+                            curExt(),
+                            fileTypeId,
+                            stream,
+                            fileName,
+                            fileExtension,
+                            fileName);
+
+                        return true;
+                    }
+                    catch(Exception::Error)
+                    {
+                        return false;
+                    }
+                }
+            }
+            else return false;
+        }
+        else return false;
+        //Marij
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isCodeExist</Name>
+				<Source><![CDATA[
+    public boolean isCodeExist(HMClaimTemplateCode _code)
+    {
+        HMClaimTemplate     hmClaimTemplateLocal;
+    
+        select count(RecId) from hmClaimTemplateLocal
+            where hmClaimTemplateLocal.Code == _code;
+    
+        if(hmClaimTemplateLocal.RecId > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isTemplateAlreadyImported</Name>
+				<Source><![CDATA[
+    public boolean isTemplateAlreadyImported(Filepath _filePath)
+    {
+        HMSHA256 sha = new HMSHA256();
+        HMHashValue fileHash;
+        DocuRef     docuRef;
+    
+        //TODO: To be uncommented 
+        //fileHash = sha.getHash(_filePath);
+    
+        select count(RecId) from docuRef
+            where docuRef.RefTableId == tableNum(HMClaimTemplate)
+            && docuRef.RefCompanyId == curext()
+            && docuRef.HMHashValue == fileHash;
+    
+        if(docuRef.RecId > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isTemplateNameExist</Name>
+				<Source><![CDATA[
+    public boolean isTemplateNameExist(HMClaimTemplateName _templateName)
+    {
+        HMClaimTemplate     hmClaimTemplateLocal;
+    
+        select count(RecId) from hmClaimTemplateLocal
+            where hmClaimTemplateLocal.TemplateName == _templateName;
+    
+        if(hmClaimTemplateLocal.RecId > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isValidPDF</Name>
+				<Source><![CDATA[
+    private boolean isValidPDF(FilePath _inputFile)
+    {
+        /*iTextSharp.text.pdf.PdfReader               pdfReader;
+    
+        pdfReader = new iTextSharp.text.pdf.PdfReader(_inputFile);
+    
+        if(pdfReader.get_AcroForm() == null)
+        {
+            return false;
+        }
+        else
+        {
+            return true;
+        }*/
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>moveHMClaimChargeLine</Name>
+				<Source><![CDATA[
+    private void moveHMClaimChargeLine(HMRecordOrderMoveDirection  _hmPatientDiagnosisMoveDirection, HMClaimChargeLine   hmClaim1500ChargeLine)
+    {
+        if( _hmPatientDiagnosisMoveDirection == HMRecordOrderMoveDirection::Up)
+        {
+            HMClaimChargeLine::find(hmClaim1500ChargeLine.RecId, true).increasePriority();
+        }
+        else if( _hmPatientDiagnosisMoveDirection == HMRecordOrderMoveDirection::Down)
+        {
+            HMClaimChargeLine::find(hmClaim1500ChargeLine.RecId, true).decreasePriority();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>moveHMClaimDiagnosis</Name>
+				<Source><![CDATA[
+    private void moveHMClaimDiagnosis(HMRecordOrderMoveDirection  _hmPatientDiagnosisMoveDirection, HMClaimDiagnosis    hmClaimDiagnosis)
+    {
+        if( _hmPatientDiagnosisMoveDirection == HMRecordOrderMoveDirection::Up)
+        {
+            HMClaimDiagnosis::find(hmClaimDiagnosis.RecId, true).increasePriority();
+        }
+        else if( _hmPatientDiagnosisMoveDirection == HMRecordOrderMoveDirection::Down)
+        {
+            HMClaimDiagnosis::find(hmClaimDiagnosis.RecId, true).decreasePriority();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>removeSpecialCharacter</Name>
+				<Source><![CDATA[
+    public str removeSpecialCharacter(str fieldName)
+    {
+            str string1,appendstr,ch;
+            int k,i,len;
+            string1= fieldName;
+            k= strlen(string1);
+            for (i=1;i<=k;i++)
+            {
+                ch = substr(string1,i,1);
+                if((char2num(ch,1) >= 65 && char2num(ch,1)<=90) || (char2num(ch,1) >= 48 && char2num(ch,1)<=57) || (char2num(ch,1) >= 97 && char2num(ch,1)<=122))
+                {
+                    appendstr += ch;
+                }
+            }
+    
+            len=strlen(appendstr);
+    
+            return appendstr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>renameTableNameIfExist</Name>
+				<Source><![CDATA[
+    private str renameTableNameIfExist(String50 tablename)
+    {
+        HMClaimTemplate hmClaimTemplate;
+        str ch;
+        select RecId,TableName from hmClaimTemplate where hmClaimTemplate.TableName == tablename;
+        if(hmClaimTemplate.RecId > 0)
+        {
+            do
+            {
+                ch = subStr(tablename,strLen(tablename),1);
+                if((char2num(ch,1) >= 48 && char2num(ch,1)<=57))
+                {
+                    ch = int2str((str2int(ch))+1);
+                    tablename = strPoke(tablename,ch,strLen(tablename));
+                }
+                else
+                {
+                    tablename = tablename + '0';
+                }
+            }
+            while(this.tableNameExist(tablename) == true);
+        }
+    
+        return tablename;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>tableNameExist</Name>
+				<Source><![CDATA[
+    private boolean tableNameExist(String50 tablename)
+    {
+        HMClaimTemplate hmClaimTemplate;
+    
+        select RecId,TableName from hmClaimTemplate where hmClaimTemplate.TableName == tablename;
+    
+        if(hmClaimTemplate.RecId > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateClaimDocument</Name>
+				<Source><![CDATA[
+    public boolean validateClaimDocument(FilePath _inputFile, HMAttachmentDocType _documentType, HMClaimTemplateName _templateName, HMClaimTemplateCode _code)
+    {
+        boolean ret = true;
+    
+        if(_inputFile == '' )
+        {
+            warning("@MAZ2962");
+            ret = false;
+        }
+    
+        if(_code == '' )
+        {
+            warning(strFmt("@SYS84753","@SYS40259"));
+            ret = false;
+        }
+    
+        if(_templateName == '' )
+        {
+            warning(strFmt("@SYS84753","@SYS34979"));
+            ret = false;
+        }
+        
+        if(_documentType == 0)
+        {
+            warning("@MAZ2961");
+            ret = false;
+        }
+    
+        //todo: deprecated functionality commented, to be fixed later
+        /*if(ret && !WinAPI::fileExists(_inputFile,false))
+        {
+            warning("@MAZ4997");
+            ret = false;
+        }*/
+    
+        /* todo: ax7 to be fixed later.
+        if(ret && HMDocuAction::getDocuTypeId(_documentType) == '')
+        {
+            warning("@MAZ4999");
+            ret = false;
+        }
+        */
+        //todo: ax7 docu
+        /*
+       
+        if(ret && !HMDocuAction::isFilenameOk(_inputFile))
+        {
+            warning("@MAZ2963");
+            ret = false;
+        }
+  
+        if(ret && !HMDocuAction::isFileTypeOk(_inputFile))
+        {
+            warning("@MAZ1317");
+            ret = false;
+        }
+        
+        if(ret && HMDocuAction::getFileExtension(_inputFile) != 'pdf')
+        {
+            warning("@MAZ7155");
+            ret = false;
+        }
+        */
+        if(ret && !this.isValidPDF(_inputFile))
+        {
+            warning("@MAZ7154");
+            ret = false;
+        }
+    
+        if(ret && this.isCodeExist(_code))
+        {
+            warning("@MAZ9601");
+            ret = false;
+        }
+    
+        if(ret && this.isTemplateNameExist(_templateName))
+        {
+            warning("@MAZ7114");
+            ret = false;
+        }
+    
+       /* if(ret && this.isTemplateAlreadyImported(_inputFile))
+        {
+            warning("@MAZ7115");
+            ret = false;
+        }*/  
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClaimRecId</Name>
+				<Source><![CDATA[
+    public static RecId getClaimRecId(RecId _encounterRecId)
+    {
+        HMPatientChargeEntryTable   chargeEntryTable;
+        HMClaimTable                claimTable;
+    
+        select RecId,HMPatientChargeEntryTable from claimTable
+        join RecId//, HMPatientEncounter
+        from chargeEntryTable
+        where //chargeEntryTable.HMPatientEncounter == _encounterRecId &&
+        claimTable.HMPatientChargeEntryTable == chargeEntryTable.RecId;
+    
+        return claimTable.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    server public static void main(Args _args)
+    {
+        HMClaims                            hmClaims;
+        HMRecordOrderMoveDirection          hmPatientDiagnosisMoveDirection;
+    
+        hmClaims = new HMClaims();
+    
+        switch(_args.menuItemName())
+        {
+            case menuitemActionStr(HMClaimChargeLineMoveUp):
+            case menuitemActionStr(HMClaimChargeLineMoveDown):
+                hmPatientDiagnosisMoveDirection = _args.parmEnum();
+                hmClaims.moveHMClaimChargeLine(hmPatientDiagnosisMoveDirection,_args.record());
+                break;
+            case menuitemActionStr(HMClaimDiagnosisMoveUp):
+            case menuitemActionStr(HMClaimDiagnosisMoveDown):
+                hmPatientDiagnosisMoveDirection = _args.parmEnum();
+                hmClaims.moveHMClaimDiagnosis(hmPatientDiagnosisMoveDirection,_args.record());
+                break;
+        }
+    
+    
+    
+    
+    
+    
+        //formRun = _args.caller().owner();
+    //
+            //if(formHasMethod(formRun,identifierstr(refreshDiagnosis)))
+            //{
+                //formRunObject = formRun;
+                //formRunObject.refreshDiagnosis();
+            //}
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

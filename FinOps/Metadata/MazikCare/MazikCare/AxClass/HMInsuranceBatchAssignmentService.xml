@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMInsuranceBatchAssignmentService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMInsuranceBatchAssignmentService
+{
+    FromDate fromDate;
+    ToDate   toDate;
+    CustAccount custAccount;
+    HMInsuranceBatchAssignmentDataContract contract;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insertBatchDetailsInChargeEntry</Name>
+				<Source><![CDATA[
+    private void insertBatchDetailsInChargeEntry(custAccount _custAccount, date _fromDate, date _toDate, RecId _batchRecId)
+    {
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>performAction</Name>
+				<Source><![CDATA[
+    public void performAction(HMInsuranceBatchAssignmentDataContract _dataContract)
+    {
+        contract = _dataContract;
+    
+        if (contract.parmCustAccount())
+        {
+            this.runForSingleCustomer();
+        }
+        else if (!contract.parmFromDate())
+        {
+            this.prepareDates();
+            this.run(fromDate, toDate);
+        }
+        else
+        {
+            this.run(contract.parmFromDate(), contract.parmToDate());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prepareDates</Name>
+				<Source><![CDATA[
+    private void prepareDates()
+    {
+        fromDate = DateTimeUtil::date(DateTimeUtil::addMonths(DateTimeUtil::getSystemDateTime(), -1));
+        toDate   = DateTimeUtil::date(DateTimeUtil::addDays(DateTimeUtil::getSystemDateTime(), -1));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run(FromDate _fromDate, ToDate _toDate, CustAccount _custAccount = custAccount)
+    {
+        Query                               query;
+        QueryRun                            queryRun;
+        HMPatientChargeEntryTable           HMPatientChargeEntryTable;
+        HMPatientChargeEntryLine            HMPatientChargeEntryLine;
+        HMCaseInsurance                     hmCaseInsurance;
+        HMInsuranceCarrier                  hmInsuranceCarrier;
+        str                                 dateRange;
+        HMCase                              hmCase;
+        HMInsuranceCarrierBatchDetails      HMInsuranceCarrierBatchDetails;
+        HMResourceSchedulingAppointment     appt;
+        HMCaseTrans                         hmCaseTrans;
+        query = new query();
+        query.addDataSource(tableNum(CustTable));
+        query.dataSourceTable(tableNum(CustTable)).addDataSource(tableNum(HMInsuranceCarrier)).relations(true);
+        query.dataSourceTable(tableNum(HMInsuranceCarrier)).addDataSource(tableNum(HMInsuranceCarrierBatchDetails)).relations(true);
+        if(custAccount)
+        {
+            query.dataSourceTable(tableNum(CustTable)).addRange(fieldNum(CustTable,AccountNum)).value(custAccount);
+        }
+        dateRange = strFmt('(((%1 >= %3) && (%1 <= %4)) || ((%2 >= %3) && (%2 <= %4)) || ((%3 >= %1) && (%3 <= %2)) || ((%4 >= %1) && (%4 <= %2)))','HMInsuranceCarrierBatchDetails_1.FromDate','HMInsuranceCarrierBatchDetails_1.ToDate',date2StrXpp(dateStartMth(_fromDate)),date2StrXpp(dateEndMth(_toDate)));
+        query.dataSourceTable(tableNum(HMInsuranceCarrierBatchDetails)).addRange(fieldNum(HMInsuranceCarrierBatchDetails,RecId)).value(dateRange);
+        query.dataSourceTable(tableNum(HMInsuranceCarrierBatchDetails)).addRange(fieldNum(HMInsuranceCarrierBatchDetails,Status)).value(SysQuery::value(HMInsuranceCarrierBatchStatus::Active));
+    
+        queryRun = new queryRun(query);
+    
+        ttsBegin;
+        while(queryRun.next())
+        {
+            HMInsuranceCarrierBatchDetails = queryRun.get(tableNum(HMInsuranceCarrierBatchDetails));
+            HMInsuranceCarrier = queryRun.get(tableNum(HMInsuranceCarrier));
+            if(hmInsuranceCarrier.BatchMatching == HMInsuraceCarrierBatchMatching::ChargeEntry)
+            {
+                while select forupdate HMInsuranceCarrierBatchDetails from HMPatientChargeEntryLine
+                    join HMPatientChargeEntryTable
+                    join hmCase
+                    join hmCaseInsurance
+                    where HMPatientChargeEntryLine.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId
+                    && HMPatientChargeEntryTable.HMCase == hmCase.RecId
+                    && hmCaseInsurance.HMCase == hmCase.RecId
+                    && hmCaseInsurance.InsuranceCarrier == hmInsuranceCarrier.Code
+                    && HMPatientChargeEntryLine.HMInsuranceCarrierBatchDetails == 0
+                    && (HMPatientChargeEntryLine.PerformedDate >= _fromDate
+                    && HMPatientChargeEntryLine.PerformedDate <= _toDate)
+                {
+    
+                    HMPatientChargeEntryLine.HMInsuranceCarrierBatchDetails = HMInsuranceCarrierBatchDetails.RecId;
+                    HMPatientChargeEntryLine.update();
+                }
+            }
+            else if(hmInsuranceCarrier.BatchMatching == HMInsuraceCarrierBatchMatching::Appointment)
+            {
+                while select forupdate HMInsuranceCarrierBatchDetails from HMPatientChargeEntryLine
+                    join HMPatientChargeEntryTable
+                    join hmCase
+                    join hmCaseInsurance
+                    join appt
+                    join hmCaseTrans
+                    where HMPatientChargeEntryLine.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId
+                    && HMPatientChargeEntryTable.HMCase == hmCase.RecId
+                    && appt.HMCase == hmCase.RecId
+                    && hmCase.RecId == hmCaseInsurance.HMCase
+                    && hmCaseTrans.recid == HMPatientChargeEntryLine.HMCaseTrans
+                    && hmCaseInsurance.InsuranceCarrier == hmInsuranceCarrier.Code
+                    && HMPatientChargeEntryLine.HMInsuranceCarrierBatchDetails == 0
+                    && (appt.AppointmentDate >= _fromDate
+                    && appt.AppointmentDate <= _toDate)
+                {
+                    if((DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) - appt.AppointmentDate <= HMInsuranceCarrier.CutOffDays) || HMInventTable::findByItemId(hmCaseTrans.ItemId).HMIsAppointmentOnly == NoYes::Yes)
+                    {
+                        HMPatientChargeEntryLine.HMInsuranceCarrierBatchDetails = HMInsuranceCarrierBatchDetails.RecId;
+                        HMPatientChargeEntryLine.update();
+                    }
+                    else
+                    {
+                        HMPatientChargeEntryLine.HMInsuranceCarrierBatchDetails = HMInsuranceCarrierBatchDetails::findRecIdByCarrierAndDate(HMInsuranceCarrierBatchDetails.HMInsuranceCarrier,DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())).RecId;
+                    }
+                }
+    
+                while select forupdate HMInsuranceCarrierBatchDetails from HMPatientChargeEntryLine
+                    join HMPatientChargeEntryTable
+                    join hmCase
+                    join hmCaseInsurance
+                    where HMPatientChargeEntryLine.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId
+                    && HMPatientChargeEntryTable.HMCase == hmCase.RecId
+                    && hmCase.RecId == hmCaseInsurance.HMCase
+                    && hmCaseInsurance.InsuranceCarrier == hmInsuranceCarrier.Code
+                    && HMPatientChargeEntryLine.HMInsuranceCarrierBatchDetails == 0
+                    && hmCase.HMCaseType == HMCaseType::Emergency
+                    && (HMPatientChargeEntryLine.PerformedDate >= _fromDate
+                    && HMPatientChargeEntryLine.PerformedDate <= _toDate)
+                {
+                    HMPatientChargeEntryLine.HMInsuranceCarrierBatchDetails = HMInsuranceCarrierBatchDetails.RecId;
+                    HMPatientChargeEntryLine.update();
+                }
+            }
+        }
+        ttsCommit;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runForSingleCustomer</Name>
+				<Source><![CDATA[
+    private void runForSingleCustomer()
+    {
+        if (!contract.parmFromDate())
+        {
+            this.prepareDates();
+            this.run(fromDate, toDate, contract.parmCustAccount());
+        }
+        else
+        {
+            this.run(contract.parmFromDate(), contract.parmToDate(), contract.parmCustAccount());
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

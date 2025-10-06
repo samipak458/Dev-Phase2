@@ -1,0 +1,2992 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMMedisysProtocolSetup</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMMedisysProtocolSetup extends FormRun
+{
+    EcoResProduct                           ecoResProductLocal;
+    ItemId itemId;
+    BOMTable bomTable;
+    BOMVersion bomVersion1;
+    PmfFormCtrl_BOMConsistOf_BOM        pmfFormCtrl_BOMConsistOf_BOM;
+    NumberSeq                   _sequence;
+    QueryBuildDataSource qbdsSearchProtocol;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>activateBom</Name>
+				<Source><![CDATA[
+    public void activateBom()
+    {
+        BOMRouteVersionActivate  bomRouteVersionActivate;
+    
+        bomRouteVersionActivate = BOMRouteVersionActivate::newBOMVersion(bomVersion);
+    
+         bomRouteVersionActivate.runOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>approveBOM</Name>
+				<Source><![CDATA[
+    public void approveBOM()
+    {
+        HcmWorker worker;
+        HcmEmployment employe;
+    
+        BOMVersionApprove approve = BOMRouteVersionApprove::newBOMVersion(bomVersion);
+    
+        select firstOnly RecId from worker
+        join * from employe where employe.Worker == worker.RecId && employe.EmploymentType == HcmEmploymentType::Employee
+        && employe.LegalEntity ==CompanyInfo::find().RecId;
+    
+        approve.parmApprover(worker.RecId);
+        approve.parmApproveBOM(NoYes::Yes);
+    
+        approve.runOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    public void close()
+    {
+        if(_sequence)
+        {
+            _sequence.abort();
+        }
+        super();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAsReleasedProduct</Name>
+				<Source><![CDATA[
+    public boolean createAsReleasedProduct(ItemId _itemId, EcoResProductNumber _productNumber,EcoResDescription _desc)
+    {
+    
+        EcoResTrackingDimensionGroupRecId       localTrackingDimensionGroupId;
+        EcoResStorageDimensionGroupRecId        localStorageDimensionGroupId;
+        EcoResProductIdentifier                 ecoResProductLocalIdentifier;
+        EcoResProductDimensionGroupRecId        localProductDimensionGroupId;
+        InventTable                             inventTableLocal;
+        HMInventTable                           hmInventTable;
+        EcoResProductTranslation    ecoResProductTranslation;
+    
+        boolean                                 result = false;
+    
+          select * from inventTableLocal where inventTableLocal.ItemId == _itemId;
+    
+            if (!inventTableLocal)
+            {
+    
+                // Create a product
+                ecoResProductLocal = new SysDictTable(tableNum(EcoResDistinctProduct)).makeRecord();
+                ecoResProductLocal.DisplayProductNumber= _productNumber;
+                ecoResProductLocal.SearchName = _desc;
+                ecoResProductLocal.ProductType = EcoResProductType::Item;
+                ecoResProductLocal.write();
+    
+                ecoResProductLocalIdentifier.ProductNumber = _productNumber;
+                ecoResProductLocalIdentifier.Product = ecoResProductLocal.RecId;
+                ecoResProductLocalIdentifier.write();
+           
+                localTrackingDimensionGroupId = HMParameters::defaultInventTrackingDimension();
+                localStorageDimensionGroupId = HMParameters::defaultInventStorageDimension();
+           
+                if (EcoResProductInventoryDimensionGroups::validateNewDimensionGroupsForProduct(
+                        ecoResProductLocal.RecId, localProductDimensionGroupId, localStorageDimensionGroupId, localTrackingDimensionGroupId))
+                {
+                    EcoResProductInventoryDimensionGroups::updateDimensionGroupsForProduct(
+                        ecoResProductLocal.RecId, localProductDimensionGroupId, localStorageDimensionGroupId, localTrackingDimensionGroupId);
+                }
+    
+    
+                ecoResProductTranslation.Product        =   ecoResProductLocal.RecId;
+                ecoResProductTranslation.Name           =   _desc;
+                ecoResProductTranslation.Description    =   _desc;
+                ecoResProductTranslation.LanguageId     =    SystemParameters::getSystemLanguageId();
+    
+                if (ecoResProductTranslation.validateWrite(true))
+                {
+                    ecoResProductTranslation.insert();
+                }
+    
+                // Release product to company
+                EcoResProductReleaseManager::releaseProductWithLegalEntityData(
+                        ecoResProductLocal.RecId
+                        , CompanyInfo::findDataArea(curext()).RecId
+                        , _itemId
+                        , _desc);
+    
+                this.initPdsVendorCheckFromInventModelGroup(ecoResProductLocal.RecId);
+                itemId= _itemId;
+    
+    
+                ttsBegin;
+                select forUpdate inventTableLocal
+                where inventTableLocal.ItemId == itemId;
+    
+                inventTableLocal.HMProductType = HMInventType::HCPCS;
+                inventTableLocal.PmfProductType = PmfProductType::BOM;
+                inventTableLocal.update();
+                hmInventTable.initValue();
+                hmInventTable.InventTable = inventTableLocal.ItemId;
+                hmInventTable.insert();
+                ttsCommit;
+    
+                result = true;
+            }
+    
+        return result;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createBOMTable</Name>
+				<Source><![CDATA[
+    private void createBOMTable(Name _bomName, InventSiteId _siteId)
+    {
+        NumberSeq           numberSeq = BOMTable::numberSeq(false,true);
+    
+        bomTable.initValue();
+    
+        bomTable.bomId          = numberSeq.num();
+       // bomTable.ItemGroupId    = _itemGroupId;
+        bomTable.Name           = _bomName;
+        bomTable.SiteId         = _siteId;
+        bomTable.HMMedisysGender = BOMVersion.HMMedisysGender;
+        bomTable.AgeFrom = BOMVersion.AgeFrom;
+        bomTable.AgeTo = BOMVersion.AgeTo;
+        bomTable.ProtocolId = BOMVersion.ProtocolId;
+    
+        if (!bomTable.validateWrite())
+        {
+            throw error("@SYS23020");
+        }
+        bomTable.insert();
+        numberSeq.used();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createBOMVersion</Name>
+				<Source><![CDATA[
+    private void createBOMVersion(ItemId _itemId)
+    {
+        bomVersion.initValue();
+    
+        bomVersion.initFromInventTable(InventTable::find(_itemId));
+        bomVersion.initFromBOMTable(bomTable);
+    
+        bomVersion.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deActivateBOM</Name>
+				<Source><![CDATA[
+    public void deActivateBOM()
+    {
+        HcmWorker worker;
+        HcmEmployment employe;
+    
+        BOMVersionApprove approve = BOMRouteVersionApprove::newBOMVersion(bomVersion);
+    
+        select firstOnly RecId from worker
+        join * from employe where employe.Worker == worker.RecId && employe.EmploymentType == HcmEmploymentType::Employee
+        && employe.LegalEntity ==CompanyInfo::find().RecId;
+    
+        approve.parmApprover(worker.RecId);
+        approve.parmApproveBOM(NoYes::No);
+        approve.parmRemove(NoYes::Yes);
+        approve.runOperation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNewNumSeqForProductNumber</Name>
+				<Source><![CDATA[
+    public Num getNewNumSeqForProductNumber()
+    {
+        SysLastValue            nextNumSeq;
+        Num                     number;
+    
+        NumberSequenceTable NumberSeqTable;
+        NumberSeq NumberSeq;
+    
+        //numberSeqReference  = InventParameters::numRefItemId();
+    
+        NumberSeqTable      = NumberSequenceTable::find(EcoResProductParameters::numRefProductNumber().NumberSequenceId);
+    
+        if(NumberSeqTable)
+        {
+            // generate Appointment order number if number sequence code is created.
+            NumberSeq = NumberSeq::newGetNumFromId(NumberSeqTable.RecId, true);
+    
+            if(NumberSeq)
+            {
+                number = NumberSeq.num();
+            }
+        }
+    
+        return number;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNewNumSeqForProtocolID</Name>
+				<Source><![CDATA[
+    public Num getNewNumSeqForProtocolID()
+    {
+        SysLastValue            nextNumSeq;
+        Num                     number;
+    
+        NumberSequenceTable NumberSeqTable;
+        NumberSeq NumberSeq;
+        //numberSeqReference  = InventParameters::numRefItemId();
+        
+        NumberSeqTable      = NumberSequenceTable::find(HMParameters::numRefProtocolId().NumberSequenceId);
+    
+        if(NumberSeqTable)
+        {
+            // generate Appointment order number if number sequence code is created.
+            NumberSeq = NumberSeq::newGetNumFromId(NumberSeqTable.RecId, true);
+    
+            if(NumberSeq)
+            {
+                number = NumberSeq.num();
+            }
+        }
+    
+        return number;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        //Initialize splitter
+        
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initPdsVendorCheckFromInventModelGroup</Name>
+				<Source><![CDATA[
+    public void initPdsVendorCheckFromInventModelGroup(RecId ecoResProductId)
+    {
+        InventTable item;
+        InventModelGroupId      InventModelGroupId;
+        ItemGroupId     InventItemGroupItem;
+        InventItemGroupItem     InventItemGroupItemLocal;
+        inventModelGroupItem inventModelGroupItem;
+        ttsbegin;
+        // update the AVL list
+        item = InventTable::findByProduct(ecoResProductId, true);
+        if (item.RecId)
+        {
+            
+                InventModelGroupId = HMParameters::defaultInventModelGroupId();
+                if (InventModelGroupId != "")
+    
+                {
+                    inventModelGroupItem.ItemId                  = item.ItemId;
+                    inventModelGroupItem.ItemDataAreaId          = item.DataAreaId;
+                    inventModelGroupItem.ModelGroupDataAreaId    = curExt2dataareaid(tableNum(InventModelGroup));
+                    inventModelGroupItem.ModelGroupId            = InventModelGroupId;
+                    inventModelGroupItem.insert();
+    
+                }
+                InventItemGroupItem = HMParameters::defaultItemModelGroup();
+                if (InventItemGroupItem != '0')
+                {
+                    InventItemGroupItemLocal.ItemId                  = item.ItemId;
+                    InventItemGroupItemLocal.ItemDataAreaId          = item.DataAreaId;
+                    InventItemGroupItemLocal.itemGroupDataAreaId     = curExt2dataareaid(tableNum(InventItemGroup));
+                    InventItemGroupItemLocal.ItemGroupId             = InventItemGroupItem;
+                    InventItemGroupItemLocal.insert();
+                }
+    
+    
+    
+                 item.initPdsVendorCheckFromInventModelGroup();
+                 item.update();
+        }
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchProtocolByClient</Name>
+				<Source><![CDATA[
+    private void searchProtocolByClient(HMClientAccount _hmClientAccount)
+    {
+        if(!qbdsSearchProtocol)
+        {
+            qbdsSearchProtocol = BOMVersion_q.dataSourceTable(tableNum(BOMVersion)).addDataSource(tableNum(HMClientProtocol));
+            qbdsSearchProtocol.addLink(fieldNum(BOMVersion,ItemId),fieldNum(HMClientProtocol,ItemId));
+        }
+        qbdsSearchProtocol.enabled(true);
+        qbdsSearchProtocol.addRange(fieldNum(HMClientProtocol,ClientAccount)).value(SysQuery::value(_hmClientAccount));
+        BomVersion_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeItem</Name>
+				<Source><![CDATA[
+    public void storeItem(ItemId _itemId)
+    {
+        BOM.ItemId = _itemId;
+        BOM_ds.refresh();
+        BOM.modifiedField(fieldNum(BOM,itemId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateActivateButton</Name>
+				<Source><![CDATA[
+    public void updateActivateButton()
+    {
+        if(BOMVersion.Active)
+        {
+            Activate.text("Deactivate");
+        }
+        else
+        {
+            Activate.text("Activate");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>write</Name>
+				<Source><![CDATA[
+    public void write(Name _bomNAme)
+    {
+        EcoResProductNumber productNumber;
+        HMProtocolId        HMProtocolId;
+        try
+        {
+            ttsBegin;
+            HMProtocolId = this.getNewNumSeqForProtocolID();
+            if(!HMProtocolId)
+            {
+                warning("@MAZ12657");
+                ttsAbort;
+                return;
+            }
+            _sequence.used();
+            this.createAsReleasedProduct(BOMVersion.ItemId, HMProtocolId,_bomNAme);
+            this.createBOMTable(_bomNAme, HMParameters::defaultServiceSiteId());
+            this.createBOMVersion(itemId);
+            //this.approveBOM();
+            //this.activateBom();
+            ttsCommit;
+        }
+        catch(Exception::Error)
+        {
+            ttsAbort;
+            throw error("@SYS23020");
+    
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>BOMVersion</Name>
+				<Methods>
+					<Method>
+						<Name>create</Name>
+						<Source><![CDATA[
+        public void create(boolean _append = false)
+        {
+            NumberSequenceTable         numSeqTableInvent;
+            NumberSequenceReference     numberSeqReferencePatientNum;
+        
+            super(_append);
+            ttsBegin;
+            _sequence = NumberSeq::newGetNum( NumberSeqReference::findReference(extendedTypeNum(ItemId)));
+            numSeqTableInvent = NumberSequenceTable::find(_sequence.parmNumberSequenceId());
+            if(numSeqTableInvent.Manual)
+            {
+                BOMVersion_ItemId1.allowEdit(numSeqTableInvent.Manual == true);
+            }
+            else
+            {
+                BOMVersion.ItemId = _sequence.num();
+                BOMVersion_ItemId1.allowEdit(numSeqTableInvent.numAllowEdit());
+            }
+            ttsCommit;
+        
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+            BOMVersion_ds.allowEdit(!BOMVersion.Active);
+            HMProtocolNotes_ds.allowEdit(!BOMVersion.Active);
+            HMClientProtocol_ds.allowEdit(!BOMVersion.Active);
+            HMProtocolAttributeAptitude_ds.allowEdit(!BOMVersion.Active);
+            BOM_ds.allowEdit(!BOMVersion.Active);
+            //BOMVersion_ds.allowCreate(!BOMVersion.Active);
+            HMProtocolNotes_ds.allowCreate(!BOMVersion.Active);
+            HMClientProtocol_ds.allowCreate(!BOMVersion.Active);
+            HMProtocolAttributeAptitude_ds.allowCreate(!BOMVersion.Active);
+            BOM_ds.allowCreate(!BOMVersion.Active);
+            BOMVersion_ds.allowDelete(!BOMVersion.Active);
+            HMProtocolNotes_ds.allowDelete(!BOMVersion.Active);
+            HMClientProtocol_ds.allowDelete(!BOMVersion.Active);
+            HMProtocolAttributeAptitude_ds.allowDelete(!BOMVersion.Active);
+            BOM_ds.allowDelete(!BOMVersion.Active);
+            HMPriceOverrideDetails.enabled(!BOMVersion.Active);
+            BOMVersion_ItemId1.text(BOMVersion.ItemId);
+            element.updateActivateButton();
+            if(!BOMVersion.isNewRecord())
+            {
+                BOMVersion_ItemId1.allowEdit(false);
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>delete</Name>
+						<Source><![CDATA[
+        public void delete()
+        {
+            InventTable InventTable;
+            RecId  EcoResProduct;
+            EcoResProduct EcoResProductTable;
+            ItemId item = BOMVersion.ItemId ;
+        
+            super();
+            EcoResProduct = InventTable::find(item).Product;
+            ttsBegin;
+            /*
+            InventTable.skipDeleteActions(true);
+            delete_from InventTable
+                    where InventTable.ItemId == item;
+            */
+            while select forupdate *from  InventTable
+                    where InventTable.ItemId == item
+            {
+                InventTable.skipDeleteActions(true);
+                InventTable.delete();
+            }
+            while select forupdate *from EcoResProductTable
+                where EcoResProductTable.RecId == EcoResProduct
+            {
+                EcoResProductTable.skipDeleteActions(true);
+                EcoResProductTable.delete();
+            }
+            /*
+                EcoResProductTable.skipDeleteActions(true);
+                delete_from  EcoResProductTable
+                where EcoResProductTable.RecId == EcoResProduct;
+            */
+
+            ttsCommit;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            boolean ret;
+        
+            ret = true;//super();
+            if(BOMVersion.AgeFrom > BOMVersion.AgeTo)
+            {
+                warning(SysLabel::labelId2String2('@MAZ11061'));
+                ret=false;
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            if (BOMVersion.isNewRecord())
+            {
+                BOMVersion.ItemId = BOMVersion_ItemId1.text();
+                element.write(BOMVersion.Name);
+                BOMVersion_DS.research(true);
+            }
+            else
+            {
+                super();
+                ttsBegin;
+                select forupdate bomTable
+                where bomTable.bomid == BOMVersion.BOMId;
+        
+                BOMTable.AgeFrom = BOMVersion.AgeFrom;
+                BOMTable.AgeTo = BOMVersion.AgeTo;
+                BOMTable.HMMedisysGender = BOMVersion.HMMedisysGender;
+                BOMTable.update();
+                ttsCommit;
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>BOM</Name>
+				<Methods>
+					<Method>
+						<Name>validateDelete</Name>
+						<Source><![CDATA[
+        public boolean validateDelete()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            boolean ret;
+            BOM BOMLocal;
+            ret = super();
+        
+            select count(RecId) from  BOMLocal
+                    where BOMLocal.BOMId == BOMVersion.BOMId
+                    && BOMLocal.ItemId == BOM.ItemId;
+        
+            if(Bom.RecId == 0)
+            {
+                if (BOMLocal.RecId != 0 )
+                {
+                   error(strFmt('Cannot create a record in BOM table. Reference: 0, %1.The record already exists.',BOM.ItemId));
+                   ret = false;
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>initValue</Name>
+						<Source><![CDATA[
+        public void initValue()
+        {
+            super();
+            Bom.BOMType = BOMType::Item;
+        
+            Bom.BOMConsump = BOMConsumpType::Variable;
+        
+        
+            Bom.BOMId = BomVersion.BOMId;
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+           
+             InventDim dim;
+             dim.InventSiteId = HMParameters::defaultServiceSiteId();
+             dim.InventLocationId = HMParameters::defaultServiceLocationId();
+             BOM.InventDimId = InventDim::findOrCreate(dim).inventDimId;
+            
+        
+             super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+          //
+        
+            super();
+            this.queryBuildDataSource().clearDynalinks();
+            this.queryBuildDataSource().addDynalink(fieldNum(BOM,BOMId),BOMVersion,fieldNum(BOMVersion,BOMId));
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>ItemId</DataField>
+						<Methods>
+							<Method>
+								<Name>lookup</Name>
+								<Source><![CDATA[
+            public void lookup(FormControl _formControl, str _filterStr)
+            {
+                Args    args;
+                FormRun formRun;
+                SysTableLookup      sysTableLookup = sysTableLookup::newParameters(tablenum(InventTable),_formControl);
+                Query               query = new Query();
+                QueryBuildDataSource     queryBuildDataSource,qbd1,qbd2;
+                QueryBuildRange     queryBuildRange;
+            
+            
+            
+                //queryBuildDataSource = query.addDataSource(tableNum(BOM));
+                //queryBuildDataSource.addGroupByField(fieldNum(BOM,ItemId));
+                qbd1 = query.addDataSource(tableNum(InventTable));
+                qbd1.addRange(fieldNum(InventTable,HMProductType)).value(SysQuery::value(HMInventType::HCPCS));
+                qbd1.addRange(fieldNum(InventTable,PmfProductType)).value(SysQuery::value(PmfProductType::None));
+                //qbd1.relations(true);
+            
+                qbd2  = qbd1.addDataSource(tableNum(HMInventTable));
+                qbd2.addRange(fieldNum(HMInventTable,ChargeType)).value(SysQuery::value(HMChargeType::Immediate));
+                qbd2.relations(true);
+            
+                sysTableLookup.addLookupfield(fieldNum(InventTable, ItemId));
+                sysTableLookup.addLookupMethod('showExamName');
+            
+            
+                sysTableLookup.parmQuery(query);
+                sysTableLookup.performFormLookup();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+			<DataSource>
+				<Name>HMClientProtocol</Name>
+				<Methods>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                if(HMClientProtocol.CalculationMethod == HMProtocolCalculationMethod::BottomUp && HMClientProtocol.orig().CalculationMethod == HMProtocolCalculationMethod::PriceOverride)
+                {
+                    if(Box::yesNo("@MAZ12113",DialogButton::No,"@MAZ7757") == DialogButton::No)
+                    {
+                        ret = false;
+                    }
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+            if(ret)
+            {
+                HMPriceOverrideDetails.enabled(HMClientProtocol.CalculationMethod == HMProtocolCalculationMethod::PriceOverride);
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            Object formRun;
+        
+            Args args;
+        
+            if((HMClientProtocol.isNewRecord() && HMClientProtocol.CalculationMethod == HMProtocolCalculationMethod::PriceOverride) || (HMClientProtocol.CalculationMethod == HMProtocolCalculationMethod::PriceOverride && HMClientProtocol.orig().CalculationMethod != HMProtocolCalculationMethod::PriceOverride))
+            {
+                if(HMClientProtocol.CalculationMethod == HMProtocolCalculationMethod::PriceOverride)
+                {
+                    args = new Args();
+                    args.name(formstr(HMPriceOverrideDetails));
+                    args.record(HMClientProtocol);
+        
+                    formRun = ClassFactory.formRunClass(args);
+                    formRun.init();
+                    formRun.run();
+                    //formRun.wait();
+                    if(formRun.validateData())
+                    {
+                        super();
+                        formRun.saveData(HMClientProtocol.RecId);
+                    }
+                }
+        
+            }
+            else
+            {
+        
+                super();
+                if(HMClientProtocol.CalculationMethod == HMProtocolCalculationMethod::BottomUp)
+                {
+                    HMClientProtocolPriceClass::deleteByClientProtocolRecId(HMClientProtocol.RecId);
+                }
+        
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>initValue</Name>
+						<Source><![CDATA[
+        public void initValue()
+        {
+            super();
+        
+            HMClientProtocol.HMNotes = BOMVersion.HMNotes;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>Reset</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            qbdsSearchProtocol.enabled(false);
+            BomVersion_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Activate</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            if(BOMVersion.Active)
+            {
+                element.deActivateBOM();
+            }
+            else
+            {
+               
+                //validation removed
+                BOM.bomCombinationExist();
+               //{
+                    element.approveBOM();
+                    element.activateBom();
+                //}
+        
+            }
+            BomVersion_ds.research(true);
+            element.updateActivateButton();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>BOM_ItemId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args        args;
+            FormRun     formRun;
+            ;
+            //super();
+            args = new Args();
+            args.name(formstr(HMExamCodeLookup));
+            args.caller(element);
+            formRun = classfactory.formRunClass(args);
+            formRun.init();
+            this.performFormLookup(formRun);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>BOMVersion</Name>
+			<Table>BOMVersion</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Active</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgeFrom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgeTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approved</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approver</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Construction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInternalInstructions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMedisysGender</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMedisysServiceType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Instruction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWFromQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWSize</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfBatchSize</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfBulkParent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfCoByVarAllow</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaChangeDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaMultiple</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaVersionCalculation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfTotalCostAllocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfTypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfYieldPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProtocolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SpouseCovered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SysEmailTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>BOM</Name>
+			<Table>BOM</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>BOMConsump</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMQtySerie</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Calculation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConfigGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Constant</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Density</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Depth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndSchedConsump</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Formula</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCondition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemBOMId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemPBAId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemRouteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OprNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSBaseValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSIngredientType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritCoProductBatchAttrib</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritCoProductShelfLife</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritEndItemBatchAttrib</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSInheritEndItemShelfLife</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfFormulaPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPctEnable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanGroupPriority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfScalable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Position</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Price</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdFlushingPrincip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProjSetSubProdToConsumed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RoundUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RoundUpQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapConst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapVar</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Sequence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnitId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Width</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WrkCtrConsumption</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>BOMVersion</JoinSource>
+			<LinkType>Active</LinkType>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMProtocolNotes</Name>
+			<Table>HMProtocolNotes</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>BOMVersion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Sequence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>BOMVersion</JoinSource>
+			<LinkType>Active</LinkType>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>InventTableDS</Name>
+			<Table>InventTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ABCContributionMargin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCRevenue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCTieUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholManufacturerId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholProductionTypeId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholStrength_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ApproxTaxValue_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetGroupId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AutoReportFinished</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BatchMergeDateCalculationMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BatchNumGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMCalcGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMManualReceipt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMUnitId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Chargable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissionGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CostGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CostModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomsExportTariffCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomsImportTariffCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DAXIntegrationKey</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Density</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Depth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DSA_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EPCManager</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExceptionCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExciseRecordType_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExciseTariffCodes_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EximProductGroupTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFOAvoidCalc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFONormalValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFONormalValueCalc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForecastDMPInclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossDepth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossHeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossWidth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMIsExported</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMFGItemNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ICMSOnService_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Intracode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatExclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatProcId_CZ</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntraUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventFiscalLIFOGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProductType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemBuyerGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemDimCostPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemPriceToleranceGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemTaggingLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkupCode_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MatchingPolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinimumPalletQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NameAlias</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NetWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NGPCodesTable_FR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NRTaxGroup_LV</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigCountryRegionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigCountyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigStateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackagingGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Packing_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PalletTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAAutoStart</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAHideApproval</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAHideDialog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAInventItemGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAItemAutoGenerated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAItemConfigurable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAMandatoryConfig</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSBaseAttributeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsBestBefore</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSMinimumPalletQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSQtyPerLayer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSStandardPalletQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsFreightAllocationGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsItemRebateGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSPotencyAttribRecording</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsShelfAdvice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsShelfLife</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSTargetFactor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsVendorCheckItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Phantom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PKWiUCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanningItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfYieldPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryVendorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdFlushingPrincip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdPoolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Product</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>projCategoryId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PropertyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>qtyPerLayer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SADRateCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesContributionRatio</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPercentMarkup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPriceModelBasic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapConst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapVar</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SerialNumGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SkipIntraCompanySync_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>sortCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>standardPalletQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatisticsFactor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaraWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxationOrigin_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxFiscalClassification_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxPackagingQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxServiceCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnitVolume</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseAltItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Width</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSArrivalHandlingTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSPalletTypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSPickingQtyTime</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>BOMVersion</JoinSource>
+			<LinkType>Active</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMClientProtocol</Name>
+			<Table>HMClientProtocol</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CalculationMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInternalInstructions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProtocolAlias</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultHandlingNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>InventTableDS</JoinSource>
+			<LinkType>Active</LinkType>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMProtocolAttributeAptitude</Name>
+			<Table>HMProtocolAttributeAptitude</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResourceAptitudeAttribute</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>InventTableDS</JoinSource>
+			<LinkType>Active</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@SYS50759</Caption>
+		<Pattern xmlns="">SimpleListDetails</Pattern>
+		<PatternVersion xmlns="">1.3</PatternVersion>
+		<Style xmlns="">SimpleListDetails</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>429496729</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTab</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPaneTab</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>RecordBasics</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ButtonGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>EcoResProductDetailsExtended</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1879048189</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>InventTableDS</DataSource>
+										<MenuItemName>EcoResProductDetailsExtended</MenuItemName>
+										<MultiSelect>Yes</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+										<OpenMode>Edit</OpenMode>
+										<Primary>Yes</Primary>
+										<ShowShortCut>No</ShowShortCut>
+										<Text>Edit details</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDropDialogButtonControl">
+										<Name>ProtocolSearchByClient</Name>
+										<ElementPosition>1923787431</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>DropDialogButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<MenuItemName>HMProtocolSearchByClient</MenuItemName>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>Reset</Name>
+										<ElementPosition>1968526673</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Button</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Text>@MAZ11242</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>Activate</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>2013265917</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<NeededPermission>Manual</NeededPermission>
+										<Type>Button</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Text>Activate</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMAppointmentViewTmp_ByProtocol</Name>
+										<ElementPosition>2080374781</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>BOMVersion</DataSource>
+										<MenuItemName>HMAppointmentViewTmp_ByProtocol</MenuItemName>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Caption>@SYS114913</Caption>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>GridContainer</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>858993458</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl</Name>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+									<TypeName>str</TypeName>
+									<Value>Grid</Value>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+									<TypeName>str</TypeName>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>Grid</Name>
+						<AllowEdit>No</AllowEdit>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToContent</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>BOMVersion_ItemId</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>ItemId</DataField>
+								<DataSource>BOMVersion</DataSource>
+								<Label>@SYS116696</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>BOMVersion_Name</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>Description of the protocol</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Name</DataField>
+								<DataSource>BOMVersion</DataSource>
+								<Label>Description</Label>
+							</AxFormControl>
+						</Controls>
+						<AlternateRowShading>No</AlternateRowShading>
+						<DataSource>BOMVersion</DataSource>
+						<GridLinesStyle>Vertical</GridLinesStyle>
+						<MultiSelect>No</MultiSelect>
+						<ShowRowLabels>No</ShowRowLabels>
+						<Style>List</Style>
+					</AxFormControl>
+				</Controls>
+				<RightMargin>0</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<FrameType>None</FrameType>
+				<Style>SidePanel</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DetailsHeader</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>BOMVersion_Active</Name>
+						<ElementPosition>429496728</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>CheckBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Active</DataField>
+						<DataSource>BOMVersion</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>BOMVersion_ItemId1</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>536870910</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS116696</Label>
+						<LookupButton>Never</LookupButton>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>BOMVersion_Name1</Name>
+						<ElementPosition>644245092</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HelpText>Description of the protocol</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Name</DataField>
+						<DataSource>BOMVersion</DataSource>
+						<Label>Description</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>BOMVersion_HMMedisysServiceType</Name>
+						<ElementPosition>738197501</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>ComboBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>HMMedisysServiceType</DataField>
+						<DataSource>BOMVersion</DataSource>
+						<Label>@SYS81754</Label>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Group1</Name>
+						<ElementPosition>816491176</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>BOMVersion_HMNotes</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>HMNotes</DataField>
+								<DataSource>BOMVersion</DataSource>
+								<Label>@SYS70989</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>BOMVersion_HMInternalInstructions</Name>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>HMInternalInstructions</DataField>
+								<DataSource>BOMVersion</DataSource>
+								<Label>@MAZ12125</Label>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>BOMVersion_SpouseCovered</Name>
+						<ElementPosition>894784851</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>CheckBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SpouseCovered</DataField>
+						<DataSource>BOMVersion</DataSource>
+						<Label>@MAZ10748</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>BOMVersion_Instruction</Name>
+						<ElementPosition>1145324610</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Instruction</DataField>
+						<DataSource>BOMVersion</DataSource>
+						<DisplayHeight>3</DisplayHeight>
+						<DisplayHeightMode>Fixed</DisplayHeightMode>
+						<Label>@SYS108195</Label>
+						<Text>Instruction</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>BOMVersion_SysEmailTable</Name>
+						<ElementPosition>1395864369</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SysEmailTable</DataField>
+						<DataSource>BOMVersion</DataSource>
+						<Label>Email template</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>BOMVersion_HMMedisysGender</Name>
+						<ElementPosition>1646404128</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>ComboBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>HMMedisysGender</DataField>
+						<DataSource>BOMVersion</DataSource>
+						<Label>@MAZ4243</Label>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>AgeGroup</Name>
+						<ElementPosition>1896943887</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormIntegerControl">
+								<Name>BOMVersion_AgeFrom</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Integer</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<AllowNegative>No</AllowNegative>
+								<DataField>AgeFrom</DataField>
+								<DataSource>BOMVersion</DataSource>
+								<DisplayLength>2</DisplayLength>
+								<DisplayLengthMode>Fixed</DisplayLengthMode>
+								<Label>@MAZ343</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormIntegerControl">
+								<Name>BOMVersion_AgeTo</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Integer</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<AllowNegative>No</AllowNegative>
+								<DataField>AgeTo</DataField>
+								<DataSource>BOMVersion</DataSource>
+								<DisplayLength>2</DisplayLength>
+								<DisplayLengthMode>Fixed</DisplayLengthMode>
+								<Label>@MAZ342</Label>
+							</AxFormControl>
+						</Controls>
+						<Caption>Age</Caption>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>DetailsTab</Name>
+				<AlignControl>No</AlignControl>
+				<ElementPosition>1610612734</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Tab</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabPage</Name>
+						<ElementPosition>715827882</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>CopyOfActionPane</Name>
+								<ElementPosition>858993458</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>CopyOfActionPaneTab</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPaneTab</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>CopyOfRecordBasics</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ButtonGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>CopyOfNewButton</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>New</Command>
+														<NormalImage>New</NormalImage>
+														<Primary>Yes</Primary>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>CopyOfDeleteButton</Name>
+														<ElementPosition>1610612734</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<NeedsRecord>Yes</NeedsRecord>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<SaveRecord>No</SaveRecord>
+														<Text>@SYS14425</Text>
+													</AxFormControl>
+												</Controls>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<DataSource>BOM</DataSource>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>Grid1</Name>
+								<ElementPosition>1288490187</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_ItemId</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>858993458</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemId</DataField>
+										<DataSource>BOM</DataSource>
+										<Label>@MAZ10859</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ItemName</Name>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>Exams description</HelpText>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<CacheDataMethod>Yes</CacheDataMethod>
+										<DataMethod>itemName</DataMethod>
+										<DataSource>BOM</DataSource>
+										<Label>Description</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOM_Price</Name>
+										<ElementPosition>1717986916</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>Exams price</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Price</DataField>
+										<DataSource>BOM</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>BOM_BOMQty</Name>
+										<ElementPosition>1861152492</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>BOMQty</DataField>
+										<DataSource>BOM</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BOM_HMCondition</Name>
+										<ElementPosition>2004318068</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMCondition</DataField>
+										<DataSource>BOM</DataSource>
+										<DisplayHeight>2</DisplayHeight>
+										<DisplayHeightMode>Fixed</DisplayHeightMode>
+										<MultiLine>Yes</MultiLine>
+									</AxFormControl>
+								</Controls>
+								<DataSource>BOM</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Group_</Name>
+								<ElementPosition>1717986916</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Pattern>FieldsFieldGroups</Pattern>
+								<PatternVersion>1.1</PatternVersion>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>TotalAmount</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HelpText>Total cost of protocol</HelpText>
+										<LeftMode>RightEdge</LeftMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Alignment>Right</Alignment>
+										<DataMethod>BOMHM_Extension::showAmount</DataMethod>
+										<DataSource>BOM</DataSource>
+										<DisplayLength>17</DisplayLength>
+										<DisplayLengthMode>Fixed</DisplayLengthMode>
+										<Label>Total cost of protocol</Label>
+										<Text>$ 0.00</Text>
+									</AxFormControl>
+								</Controls>
+								<ColumnsMode>Fill</ColumnsMode>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS35620</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>Clients</Name>
+						<ElementPosition>1073741823</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>ClientsActionPane</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>ClientsActionPaneTab</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPaneTab</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>ClientsRecordBAsic</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ButtonGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>NewClient</Name>
+														<ElementPosition>905969662</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<NeededPermission>Create</NeededPermission>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>New</Command>
+														<NormalImage>New</NormalImage>
+														<Primary>Yes</Primary>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>DeleteClient</Name>
+														<ElementPosition>1358954493</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<NeededPermission>Delete</NeededPermission>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<NeedsRecord>Yes</NeedsRecord>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<SaveRecord>No</SaveRecord>
+														<Text>@SYS14425</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>HMProtocolClientNotes</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1811939325</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>MenuFunctionButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataSource>HMClientProtocol</DataSource>
+														<NeedsRecord>Yes</NeedsRecord>
+														<Text>Client notes</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>HMPriceOverrideDetails</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>2013265917</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>MenuFunctionButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataSource>HMClientProtocol</DataSource>
+														<MenuItemName>HMPriceOverrideDetails</MenuItemName>
+														<NeedsRecord>Yes</NeedsRecord>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>HMProtocolExamPriceList</Name>
+														<ElementPosition>2058005160</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>MenuFunctionButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataSource>HMClientProtocol</DataSource>
+														<MenuItemName>HMProtocolExamPriceList</MenuItemName>
+														<NeedsRecord>Yes</NeedsRecord>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDropDialogButtonControl">
+														<Name>HMProtocolExamPriceListDropDialog</Name>
+														<ElementPosition>2102744403</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>DropDialogButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<MenuItemName>HMProtocolExamPriceListDropDialog</MenuItemName>
+														<Text>Preview</Text>
+													</AxFormControl>
+												</Controls>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<DataSource>HMClientProtocol</DataSource>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>ClientGrid</Name>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMClientProtocol_ClientAccount</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ClientAccount</DataField>
+										<DataSource>HMClientProtocol</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ClientName</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>clientName</DataMethod>
+										<DataSource>HMClientProtocol</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMClientProtocol_HMProtocolAlias</Name>
+										<ElementPosition>1879048189</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMProtocolAlias</DataField>
+										<DataSource>HMClientProtocol</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMClientProtocol_CalculationMethod</Name>
+										<ElementPosition>2013265917</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CalculationMethod</DataField>
+										<DataSource>HMClientProtocol</DataSource>
+										<Items />
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMClientProtocol</DataSource>
+								<ShowRowLabels>No</ShowRowLabels>
+							</AxFormControl>
+						</Controls>
+						<Caption>@MAZ11065</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>Aptitudes</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>AptitudesActionPane</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>AptitudesActionPaneTab</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPaneTab</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>AptitudesRecordBAsic</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ButtonGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>NewAptitudes</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>New</Command>
+														<NormalImage>New</NormalImage>
+														<Primary>Yes</Primary>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>DeleteAptitudes</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<NeedsRecord>Yes</NeedsRecord>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<SaveRecord>No</SaveRecord>
+														<Text>@SYS14425</Text>
+													</AxFormControl>
+												</Controls>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<DataSource>HMProtocolAttributeAptitude</DataSource>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>AptitudesClientGrid</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMProtocolAttributeAptitude_ResourceAptitudeAttribute</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMProtocolAttributeAptitude</DataSource>
+										<ReferenceField>ResourceAptitudeAttribute</ReferenceField>
+										<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Description</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>aptitudeAttributeDesc</DataMethod>
+										<DataSource>HMProtocolAttributeAptitude</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMProtocolAttributeAptitude</DataSource>
+								<ShowRowLabels>No</ShowRowLabels>
+							</AxFormControl>
+						</Controls>
+						<Caption>@MAZ11330</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>NotesTablePage</Name>
+						<ElementPosition>1789569705</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Pattern>ToolbarList</Pattern>
+						<PatternVersion>1.2</PatternVersion>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>NotesActionPane</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>NotesActionPaneTab</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPaneTab</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>NotesRecordBAsic</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ButtonGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>NewNotes</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>New</Command>
+														<NormalImage>New</NormalImage>
+														<Primary>Yes</Primary>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>DelteNotes</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<NeedsRecord>Yes</NeedsRecord>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<SaveRecord>No</SaveRecord>
+														<Text>@SYS14425</Text>
+													</AxFormControl>
+												</Controls>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<DataSource>HMProtocolNotes</DataSource>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>NotesGrid</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormIntegerControl">
+										<Name>HMProtocolNotes_Sequence</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Integer</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<AllowNegative>No</AllowNegative>
+										<DataField>Sequence</DataField>
+										<DataSource>HMProtocolNotes</DataSource>
+										<Mandatory>Yes</Mandatory>
+										<ShowZero>Yes</ShowZero>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMProtocolNotes_Notes</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Notes</DataField>
+										<DataSource>HMProtocolNotes</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMProtocolNotes</DataSource>
+								<VisibleRows>8</VisibleRows>
+								<VisibleRowsMode>Fixed</VisibleRowsMode>
+							</AxFormControl>
+						</Controls>
+						<Caption>Notes</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+				<Style>FastTabs</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

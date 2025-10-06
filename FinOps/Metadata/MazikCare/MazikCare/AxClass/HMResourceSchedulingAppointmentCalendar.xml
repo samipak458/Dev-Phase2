@@ -1,0 +1,2109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResourceSchedulingAppointmentCalendar</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMResourceSchedulingAppointmentCalendar
+{
+    
+    #define.DataSeparator(';')
+    #define.Root('Root')
+    #define.OrganizationUnit('OU')
+    #define.Resource('Resource')
+    #define.PlanningObject('PlanningObject')
+    #define.Group('Group')
+    #define.ResourceGroup('ResourceGroup')
+    #define.Speciality('Speciality')
+
+    int                         slotInterval;
+    HMTreeSearching             hmTreeSearchingObject;
+
+    HMCalendarControl               scheduler;
+
+    RecId                   specialityCodeRecId, planningObjectRecId, resourceRecId, organizationlaUnitRecId, groupRecId, resourceGroupRecId; //to be used in resource group tab;
+
+    Set                     setSlotSearchPlanningObject;
+    Map                     mapSlotSearchPlanningObject;
+
+    HMResourceSchedulingOpenTimeSlotsTmp hmResourceSchedulingOpenTimeSlotsTmpCopy;
+
+   
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>bindNonWorkingHours</Name>
+				<Source><![CDATA[
+    public void bindNonWorkingHours()
+    {
+        System.DateTime selectedDate;
+        date tempDate;
+        date actualDate;
+        str viewDef;
+        int day;
+    
+        if(planningObjectRecId != 0)
+        {
+            viewDef = "Day";
+            if(scheduler.get_rangeStartDate() != scheduler.get_rangeEndDate())
+            {
+                viewDef = "Week";
+            }
+            
+            //scheduler.deleteNonWorkingHours();
+            actualDate = scheduler.get_rangeStartDate();
+            switch(viewDef)
+            {
+                case 'Day':
+                    this.setDayPlanNonWorkingHours(planningObjectRecId,actualDate);
+                    break;
+                case 'Week':
+                    this.setDayPlanNonWorkingHours(planningObjectRecId,actualDate, true);
+                    //selectedDate = actualDate;
+                    //for (day=1;day<8;day++)
+                    //{
+                    //    tempDate = selectedDate;
+                    //    this.setDayPlanNonWorkingHours(planningObjectRecId,tempDate);
+                    //    selectedDate = selectedDate.AddDays(1);
+                    //}
+                    //selectedDate = actualDate;
+                    //for(day=1;day<8;day++)
+                    //{
+                    //    tempDate = selectedDate;
+                    //    this.setDayPlanNonWorkingHours(planningObjectRecId,tempDate);
+                    //    selectedDate = selectedDate.AddDays(-1);
+                    //}
+                    break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>bindOpenSlots</Name>
+				<Source><![CDATA[
+        public void bindOpenSlots()
+    {
+        
+        CustTable customers;
+        HMAppointmentCalendarSlotData   app;
+        System.DateTime     dt,dtEnd, dtSlotEndTime;
+        str                 subject;
+        utcDateTime         t, tEnd;
+        int                 hour,minute;
+        int                 red, green, blue;
+        Description         calendarHeaderDisplayName;
+        date                startDateRange, endDateRange;
+    
+        hmResourceSchedulingPlanningObject          hmResourceSchedulingPlanningObjectLocal;
+        HMResourceSchedulingTypeCode                hmResourceSchedulingTypeCode;
+        HMResourceSchedulingOpenTimeSlotsTmp        hmResourceSchedulingOpenTimeSlotsTmpLocal;
+        HMResourceSchedulingOpenTimeSlotsSearch     hmResourceSchedulingOpenTimeSlotsSearch = new hmResourceSchedulingOpenTimeSlotsSearch();
+        if(!scheduler.visible())
+        {
+            return;
+        }
+        startDateRange = scheduler.get_rangeStartDate();
+        endDateRange = scheduler.get_rangeEndDate();
+    
+        hmResourceSchedulingOpenTimeSlotsTmpLocal = hmResourceSchedulingOpenTimeSlotsSearch.searchOpenTimeSlotMultiPO(startDateRange,
+                                                endDateRange,
+                                                true, 0, false, [true,true,true,true,true,true,true], planningObjectRecId, resourceRecId,
+                                                0, 0, organizationlaUnitRecId,0, specialityCodeRecId, HMIncludeExclude::Include, false, '',0,resourceGroupRecId);
+    
+        
+        
+        while select * from hmResourceSchedulingOpenTimeSlotsTmpLocal
+            where ((hmResourceSchedulingOpenTimeSlotsTmpLocal.Date > DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            || (hmResourceSchedulingOpenTimeSlotsTmpLocal.Date == DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+            && hmResourceSchedulingOpenTimeSlotsTmpLocal.Time >= DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())))
+            join Description,HMMedisysScheduleType,ColourCode from hmResourceSchedulingTypeCode
+            
+                where hmResourceSchedulingTypeCode.RecId == hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingTypeCode
+            
+            
+        {
+            //if(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date == today())
+            //{
+            //    if(hmResourceSchedulingOpenTimeSlotsTmpLocal.Time < timeNow())
+            //    {
+            //        continue;
+            //    }
+            //}
+            select HMOrganizationalUnit, HMResourceMaster from hmResourceSchedulingPlanningObjectLocal
+            where hmResourceSchedulingPlanningObjectLocal.RecId == hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingPlanningObject;
+    
+            if (resourceRecId)
+            {
+                calendarHeaderDisplayName = HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit, false, ConcurrencyModel::Auto).Description;
+            }
+            else if(organizationlaUnitRecId || resourceGroupRecId || specialityCodeRecId)
+            {
+                calendarHeaderDisplayName = HMResourceMaster::find(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster).Description;
+            }
+            else
+            {
+                calendarHeaderDisplayName = '';
+            }
+    
+            app = new HMAppointmentCalendarSlotData();
+    
+            t = DateTimeUtil::newDateTime(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date,hmResourceSchedulingOpenTimeSlotsTmpLocal.Time);
+            hour = DateTimeUtil::hour(t);
+            minute = DateTimeUtil::minute(t);
+            dt = new System.DateTime(year(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date),mthOfYr(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date),dayOfMth(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date),hour,minute,00);
+            if(hmResourceSchedulingOpenTimeSlotsTmpLocal.isBlocked || hmResourceSchedulingOpenTimeSlotsTmpLocal.isClosed)
+            {
+                if(hmResourceSchedulingOpenTimeSlotsTmpLocal.isBlocked)
+                {
+                    subject = (hmResourceSchedulingTypeCode.Description) + " - " + "@SYS103795";
+                    app.parmIsBlocked(enum2Str(true));
+                }
+                else if(hmResourceSchedulingOpenTimeSlotsTmpLocal.isClosed)
+                {
+                    subject = (hmResourceSchedulingTypeCode.Description) + " - " + "@SYS67267";
+                    app.parmIsClosed(enum2Str(true));
+                }
+            }
+            else
+            {
+                subject = hmResourceSchedulingTypeCode.Description + " - " + "@MAZ12049" + " " + strDel(time2str(hmResourceSchedulingOpenTimeSlotsTmpLocal.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+    
+                if(hmResourceSchedulingOpenTimeSlotsTmpLocal.Client > 0)
+                {
+                    subject += " - " + "@MAZ11575" + " " + CustTable::findRecId(hmResourceSchedulingOpenTimeSlotsTmpLocal.Client).name();
+                }
+            }
+    
+            app.parmStartDateTime(dt.ToString());
+            app.parmPatientId("0");
+            app.parmArrivalTime(time2StrHM(hmResourceSchedulingOpenTimeSlotsTmpLocal.ArrivalTime));
+            if(hmResourceSchedulingOpenTimeSlotsTmpLocal.IsHotspot)
+            {
+                app.parmHotSpot("(" + SysLabel::labelId2String(literalstr("@MAZ11139"), infolog.language()) +")");
+            }
+    
+            app.parmSubject(subject);
+            app.parmBody(subject
+                    + "\r\n" + "@MAZ12049" + " " + strDel(time2str(hmResourceSchedulingOpenTimeSlotsTmpLocal.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3));
+    
+            app.parmResourceName(calendarHeaderDisplayName);
+    
+            dtEnd = dt.AddMinutes(HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster, hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingTypeCode));
+    
+            if(hmResourceSchedulingOpenTimeSlotsTmpLocal.DayEndTime)
+            {
+                t = DateTimeUtil::newDateTime(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date,hmResourceSchedulingOpenTimeSlotsTmpLocal.DayEndTime);
+    
+                tEnd = dtEnd;
+    
+                if(tEnd > t)
+                {
+                    hour = DateTimeUtil::hour(t);
+                    minute = DateTimeUtil::minute(t);
+                    dtSlotEndTime = new System.DateTime(year(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date),mthOfYr(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date),dayOfMth(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date),hour,minute,00);
+    
+                    app.parmEndDateTime(dtSlotEndTime.ToString());
+                }
+                else
+                {
+                    app.parmEndDateTime(dtEnd.ToString());
+                }
+            }
+            else
+            {
+                app.parmEndDateTime(dtEnd.ToString());
+            }
+    
+            [red,green,blue] = WinAPI::RGBint2Con(hmResourceSchedulingTypeCode.ColourCode);
+    
+            app.parmColor(int2Str(red) +','+ int2Str(green) +','+ int2Str(blue));
+    
+            app.parmPlanningObjectRecId(hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingPlanningObject);
+            app.parmScheduleTypeRecId(int642Str(hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingTypeCode));
+            app.parmTaskId(int642Str(hmResourceSchedulingOpenTimeSlotsTmpLocal.RecId));
+            scheduler.addnewItem(app);
+            
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+   /*
+   
+   
+
+    public boolean checkClient(TransDate   _appStartDate, TransDate _appEndDate,
+                            HMTime      _appStartTime,
+                            HMTime      _appEndTime,
+                            RecId       _appointmetnRecId)
+    {
+        HMResourceSchedulingWeekPlan                    hmResourceSchedulingWeekPlan;
+        HMResourceSchedulingWeekDayPlan                 hmResourceSchedulingWeekDayPlan;
+        HMResourceSchedulingWeekPlanToCalender          hmResourceSchedulingWeekPlanToCalender;
+        HMResourceSchedulingDayPlan                     hmResourceSchedulingDayPlan;
+        HMResourceSchedulingDayPlanItem                 hmResourceSchedulingDayPlanItem;
+        boolean ret = true;
+    
+        HMResourceSchedulingAppointment                 HMResourceSchedulingAppointmentLocal = HMResourceSchedulingAppointment::find(_appointmetnRecId);
+    
+    
+        select RecId from hmResourceSchedulingWeekPlan
+            join HMResourceSchedulingDayPlan from hmResourceSchedulingWeekDayPlan
+            join RecId from hmResourceSchedulingWeekPlanToCalender
+            where hmResourceSchedulingWeekPlan.HMResourceSchedulingPlanningObject == HMResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject
+            && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekDayPlan.HMResourceSchedulingWeekPlan
+            && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekPlanToCalender.HMResourceSchedulingWeekPlan
+            && hmResourceSchedulingWeekPlanToCalender.WeekNo == weekOfYear(_appStartDate)
+            && hmResourceSchedulingWeekPlanToCalender.YearNo == year(_appStartDate)
+            && hmResourceSchedulingWeekDayPlan.Days == dayOfWk(_appStartDate);
+    
+    
+        // medisys - demo
+        select * from hmResourceSchedulingDayPlanItem
+            join RecId from hmResourceSchedulingDayPlan
+            where hmResourceSchedulingDayPlan.RecId == hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan
+            && hmResourceSchedulingDayPlanItem.HMResourceSchedulingDayPlan == hmResourceSchedulingDayPlan.RecId
+            && hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode == HMResourceSchedulingAppointmentLocal.HMResourceSchedulingTypeCode
+            && (_appStartTime >= hmResourceSchedulingDayPlanItem.StartTime && _appStartTime <= hmResourceSchedulingDayPlanItem.EndTime);
+    
+        if (hmResourceSchedulingDayPlanItem.Client != 0 && (hmResourceSchedulingDayPlanItem.Client != HMPatient::find(HMResourceSchedulingAppointmentLocal.HMPatient).Client))
+        {
+            error(strFmt("@MAZ11187",CustTable::findRecId(hmResourceSchedulingDayPlanItem.Client).name()));
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+    public boolean editAppointmentMovement(HMOutpatient_RadScheduleView.HISAppointment _appt)
+    {
+        RecId appointmentRecId;
+        TransDate app_StartDate,app_EndDate;
+        str appTime, appStartTime, toolTipText, patientName;
+        System.DateTime dt;
+        HMTime app_StartTime,app_EndTime;
+        HMResourceSchedulingAppointment hmResourceSchedulingAppointmentLocal;
+        boolean ret;
+        DialogButton dialogButton;
+    
+        appointmentRecId = _appt.get_PlanningObjectDetailRecId();
+        try
+        {
+            //get start date time
+            app_StartDate = _appt.get_Start();
+            dt = _appt.get_Start();
+            appTime = dt.ToString('hh:mm tt');
+            appStartTime = appTime;
+            app_StartTime = str2time(appTime);
+    
+            //get appointment end datetime
+            app_EndDate = _appt.get_End();
+            dt = _appt.get_End();
+            appTime = dt.ToString('hh:mm tt');
+            app_EndTime = str2time(appTime);
+    
+            // validate appointmetn for specific clients
+            if (this.checkClient(app_StartDate, app_EndDate, app_StartTime, app_EndTime,appointmentRecId))
+            {
+                ttsBegin;
+    
+                hmResourceSchedulingAppointmentLocal = HMResourceSchedulingAppointment::find(appointmentRecId,true);
+    
+                hmResourceSchedulingAppointmentLocal.AppointmentDate = app_StartDate;
+                hmResourceSchedulingAppointmentLocal.AppointmentTime = app_StartTime;
+                hmResourceSchedulingAppointmentLocal.AppointmentEndDate = app_EndDate;
+                hmResourceSchedulingAppointmentLocal.AppointmentEndTime = app_EndTime;
+                hmResourceSchedulingAppointmentLocal.ArrivalTime = hmResourceSchedulingAppointmentLocal.AppointmentTime;
+                hmResourceSchedulingAppointmentLocal.update();
+    
+                ttsCommit;
+    
+                if(hmResourceSchedulingAppointmentLocal.PrimaryAppointment == YesNo::Yes)
+                {
+                    dialogButton = Box::yesNo("@MAZ12124",DialogButton::No,"@MAZ7757");
+    
+                    if(dialogButton == DialogButton::Yes)
+                    {
+                        HMEmailGeneration::emailBookingDetails(hmResourceSchedulingAppointmentLocal.RecId);
+                    }
+                }
+    
+                patientName = hmResourceSchedulingAppointmentLocal.getPatientName();
+    
+                toolTipText = (appStartTime + " " + patientName + "\r\n" + "@MAZ8831" + hmResourceSchedulingAppointmentLocal.getAppointmentPhysician()
+                                + "\r\n" + "@SYS300385" + " " + enum2str(hmResourceSchedulingAppointmentLocal.AppointmentStatus) + "\r\n" + "@MAZ2858" + " " + hmResourceSchedulingAppointmentLocal.Notes);
+    
+                _appt.set_Subject(appStartTime + " " + patientName);
+                _appt.set_Body(toolTipText);
+    
+                ret = true;
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+    
+    */
+   
+    public void new()
+    {
+        HMParameters hmParamerters = HMParameters::find();
+        hmTreeSearchingObject = new HMTreeSearching();
+        slotInterval = hmParamerters.DefaultOutPatientAppointmenteDuration;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmScheduler</Name>
+				<Source><![CDATA[
+    public HMCalendarControl parmScheduler(HMCalendarControl _scheduler = scheduler)
+    {
+        scheduler = _scheduler;
+    
+        return scheduler;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectionChangeResourceDoctorTree</Name>
+				<Source><![CDATA[
+    public void selectionChangeResourceDoctorTree(Description255 _data)
+    {
+        ListEnumerator listEnumr = strSplit(_data, #DataSeparator).getEnumerator();
+    
+        listEnumr.moveNext();
+    
+        scheduler.deleteAllAppointment();
+        scheduler.ReInitializeResource();
+        
+    
+        this.parmResourceRecId(0);
+        this.parmPlanningObjectRecId(0);
+        this.parmOrganizationlaUnitRecId(0);
+        this.parmResourceGroupRecId(0);
+        this.parmSpecialityCodeRecId(0);
+    
+        switch(listEnumr.current())
+        {
+            case #Resource:
+                listEnumr.moveNext();
+                this.parmOrganizationlaUnitRecId(0);
+                this.parmPlanningObjectRecId(0);
+                this.parmSpecialityCodeRecId(0);
+                this.parmResourceRecId(listEnumr.current());
+                this.fillCalendarHeader();
+                this.fillCalendarSlots();
+                this.bindOpenSlots();
+                break;
+            case #PlanningObject:
+                listEnumr.moveNext();
+                this.parmOrganizationlaUnitRecId(0);
+                this.parmResourceRecId(0);
+                this.parmSpecialityCodeRecId(0);
+                this.parmPlanningObjectRecId(listEnumr.current());
+                this.fillCalendarSlots();
+                this.fillCalendarHeader();
+                this.bindNonWorkingHours();
+                this.bindOpenSlots();
+                break;
+        }
+        scheduler.bindAppointment();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectionChangeResourceGroupTree</Name>
+				<Source><![CDATA[
+    public void selectionChangeResourceGroupTree(Description255 _data)
+    {
+        ListEnumerator listEnumr = strSplit(_data, #DataSeparator).getEnumerator();
+    
+        listEnumr.moveNext();
+    
+        scheduler.deleteAllAppointment();
+        scheduler.ReInitializeResource();
+        scheduler.bindAppointment();
+    
+        this.parmResourceRecId(0);
+        this.parmPlanningObjectRecId(0);
+        this.parmOrganizationlaUnitRecId(0);
+        this.parmResourceGroupRecId(0);
+        this.parmSpecialityCodeRecId(0);
+    
+        switch(listEnumr.current())
+        {
+            case #ResourceGroup:
+                listEnumr.moveNext();
+                this.parmResourceRecId(0);
+                this.parmPlanningObjectRecId(0);
+                this.parmSpecialityCodeRecId(0);
+                this.parmOrganizationlaUnitRecId();
+                this.parmResourceGroupRecId(listEnumr.current());
+                this.fillCalendarHeader();
+                this.fillCalendarSlots();
+                this.bindOpenSlots();
+                break;
+            case #PlanningObject:
+                listEnumr.moveNext();
+                this.parmOrganizationlaUnitRecId(0);
+                this.parmResourceRecId(0);
+                this.parmSpecialityCodeRecId(0);
+                this.parmPlanningObjectRecId(listEnumr.current());
+                this.fillCalendarSlots();
+                this.fillCalendarHeader();
+                this.bindNonWorkingHours();
+                this.bindOpenSlots();
+                break;
+        }
+        scheduler.bindAppointment();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectionChangeSearchTree</Name>
+				<Source><![CDATA[
+    public void selectionChangeSearchTree(Description255 _data)
+    {
+        ListEnumerator listEnumr = strSplit(_data, #DataSeparator).getEnumerator();
+    
+        listEnumr.moveNext();
+    
+        scheduler.deleteAllAppointment();
+        scheduler.ReInitializeResource();
+        scheduler.bindAppointment();
+    
+        this.parmResourceRecId(0);
+        this.parmPlanningObjectRecId(0);
+        this.parmOrganizationlaUnitRecId(0);
+        this.parmGroupRecId(0);
+        this.parmResourceGroupRecId(0);
+        this.parmSpecialityCodeRecId(0);
+    
+        switch(listEnumr.current())
+        {
+            case #Root:
+                this.setTimeSlotsData();
+                break;
+            case #Group:
+                listEnumr.moveNext();
+                this.parmGroupRecId(listEnumr.current());
+                this.setTimeSlotsData();
+                break;
+            case #PlanningObject:
+                listEnumr.moveNext();
+                this.parmPlanningObjectRecId(listEnumr.current());
+                this.setTimeSlotsData();
+                break;
+        }
+        scheduler.bindAppointment();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectionChangeSpecialityTree</Name>
+				<Source><![CDATA[
+    public void selectionChangeSpecialityTree(Description255 _data)
+    {
+        ListEnumerator listEnumr = strSplit(_data, #DataSeparator).getEnumerator();
+    
+        listEnumr.moveNext();
+    
+        scheduler.deleteAllAppointment();
+        scheduler.ReInitializeResource();
+        scheduler.bindAppointment();
+    
+        this.parmResourceRecId(0);
+        this.parmPlanningObjectRecId(0);
+        this.parmOrganizationlaUnitRecId(0);
+        this.parmResourceGroupRecId(0);
+        this.parmSpecialityCodeRecId(0);
+    
+        switch(listEnumr.current())
+        {
+            case #Speciality:
+                listEnumr.moveNext();
+                this.parmOrganizationlaUnitRecId(0);
+                this.parmPlanningObjectRecId(0);
+                this.parmSpecialityCodeRecId(listEnumr.current());
+                this.parmResourceRecId(0);
+                this.fillCalendarHeader();
+                this.fillCalendarSlots();
+                this.bindOpenSlots();
+                break;
+    
+            case #PlanningObject:
+                listEnumr.moveNext();
+                this.parmOrganizationlaUnitRecId(0);
+                this.parmResourceRecId(0);
+                this.parmPlanningObjectRecId(listEnumr.current());
+                this.parmSpecialityCodeRecId(0);
+                this.fillCalendarSlots();
+                this.fillCalendarHeader();
+                this.bindNonWorkingHours();
+                this.bindOpenSlots();
+                break;
+        }
+        scheduler.bindAppointment();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCategoryColor</Name>
+				<Source><![CDATA[
+    private void setCategoryColor(HMResourceSchedulingAppointmentStatus  _appointmentStatus, HMAppointmentCalendarSlotData  _app, NoYes _delayed = NoYes::No)
+    {
+        int   red, green, blue;
+    
+        if (_delayed == NoYes::Yes)
+        {
+            [red,green,blue] = WinAPI::RGBint2Con(HMColourCodingParameters::findByElementNameAndValue(extendedTypeStr(HMDelayed),enum2str(_delayed)).ColourCode);
+        }
+        else
+        {
+            [red,green,blue] = WinAPI::RGBint2Con(HMColourCodingParameters::findByElementNameAndValue(enumStr(HMResourceSchedulingAppointmentStatus),enum2str(_appointmentStatus)).ColourCode);
+        }
+        _app.parmColor(int2Str(red)+','+int2Str(green)+','+int2Str(blue));
+        //scheduler.setCustomColour(red, green, blue, _app);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDayPlanNonWorkingHours</Name>
+				<Source><![CDATA[
+    private void setDayPlanNonWorkingHours(RecId _planningObjectRecId, date inputDate, boolean _isWeek = false)
+    {
+        System.DateTime nextDate;
+        System.DateTime prevDate;
+        str minutes,hours,time;
+    
+        System.DateTime currDateTimeStart,currDateTimeEnd;
+    
+        List list;
+        ListEnumerator listEnum;
+        HMResourceSchedulingWeekPlan hmResourceSchedulingWeekPlan;
+        HMResourceSchedulingWeekDayPlan hmResourceSchedulingWeekDayPlan;
+        HMResourceSchedulingWeekPlanToCalender hmResourceSchedulingWeekPlanToCalender;
+    
+        select RecId from hmResourceSchedulingWeekPlan
+            join HMResourceSchedulingDayPlan from hmResourceSchedulingWeekDayPlan
+            join RecId from hmResourceSchedulingWeekPlanToCalender
+            where hmResourceSchedulingWeekPlan.HMResourceSchedulingPlanningObject == _planningObjectRecId
+            && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekDayPlan.HMResourceSchedulingWeekPlan
+            && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekPlanToCalender.HMResourceSchedulingWeekPlan
+            && hmResourceSchedulingWeekDayPlan.Days == dayOfWk(inputDate)
+            && hmResourceSchedulingWeekPlanToCalender.WeekNo == weekOfYear(inputDate)
+            && hmResourceSchedulingWeekPlanToCalender.YearNo == year(inputDate);
+    
+        //nextDate = new System.DateTime(year(inputDate),mthOfYr(inputDate),dayOfMth(inputDate),00,00,00);
+        //nextDate = nextDate.AddDays(1);
+
+        //prevDate = new System.DateTime(year(inputDate),mthOfYr(inputDate),dayOfMth(inputDate),23,59,59);
+        //prevDate = prevDate.AddDays(-1);
+        if(_isWeek)
+        {
+            scheduler.parmWorkStartTime("12:00 AM");
+            scheduler.parmWorkEndTime("11:59 PM");
+            return;
+        }
+        time = time2str(HMResourceSchedulingDayPlan::find(hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan).DayStartTime,TimeSeparator::Colon,TimeFormat::AMPM);
+        scheduler.parmWorkStartTime(time);
+        //list = strSplit(time,':');
+        //listEnum = list.getEnumerator();
+        //listEnum.moveNext();
+        //hours = listEnum.current();
+        //listEnum.moveNext();
+        //minutes = listEnum.current();
+    
+        //currDateTimeStart = new System.DateTime(year(inputDate),mthOfYr(inputDate),dayOfMth(inputDate),str2int(hours),str2int(minutes),0);
+    
+        time = time2str(HMResourceSchedulingDayPlan::find(hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan).DayEndTime,TimeSeparator::Colon,TimeFormat::AMPM);
+        scheduler.parmWorkEndTime(time);
+        //list = strSplit(time,':');
+        //listEnum = list.getEnumerator();
+        //listEnum.moveNext();
+        //hours = listEnum.current();
+        //listEnum.moveNext();
+        //minutes = listEnum.current();
+
+        //currDateTimeEnd = new System.DateTime(year(inputDate),mthOfYr(inputDate),dayOfMth(inputDate),str2int(hours),str2int(minutes),0);
+
+        //scheduler.addNonWorkingHours(currDateTimeStart,prevDate);
+        //scheduler.addNonWorkingHours(nextDate,currDateTimeEnd);
+
+        //scheduler.bindSpecialSlot();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setTimeSlotsData</Name>
+				<Source><![CDATA[
+    /*
+    public void setSlotInterval()
+    {
+        HMParameters hmParamerters = HMParameters::find();
+    
+        if(hmParamerters.DefaultOutPatientAppointmenteDuration > 0 )
+        {
+            scheduler.setSlotInterval(hmParamerters.DefaultOutPatientAppointmenteDuration);
+        }
+    }
+    */
+    public void setTimeSlotsData()
+    {
+        
+        HMAppointmentCalendarSlotData                       app;
+        System.DateTime                                     dt,dtEnd, dtSlotEndTime;
+        utcDateTime                                         t, tEnd;
+        int                                                 hour,minute;
+        HMResourceSchedulingTypeCode                        hmResourceSchedulingTypeCode;
+        int                                                 red, green, blue;
+        str                 subject;
+        RecId               lastPORecId;
+        Description         calendarHeaderDisplayName;
+        HMAppointmentCalendarResource   employeeRes;
+    
+        scheduler.deleteAllAppointment();
+    
+        while select * from hmResourceSchedulingOpenTimeSlotsTmpCopy
+            order by hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject
+            where (hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject == planningObjectRecId || !planningObjectRecId)
+            && hmResourceSchedulingOpenTimeSlotsTmpCopy.isBlocked == NoYes::No
+            && hmResourceSchedulingOpenTimeSlotsTmpCopy.isClosed == NoYes::No
+            && hmResourceSchedulingOpenTimeSlotsTmpCopy.Client == 0
+            join Description,HMMedisysScheduleType,ColourCode from hmResourceSchedulingTypeCode
+                where hmResourceSchedulingTypeCode.RecId == hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingTypeCode
+        {
+            if(groupRecId && conFind(mapSlotSearchPlanningObject.lookup(groupRecId), hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject) == 0)
+            {
+                continue;
+            }
+    
+            if(!planningObjectRecId && lastPORecId != hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject)
+            {
+                lastPORecId = hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject;
+    
+                calendarHeaderDisplayName = this.getSearchTreeDescription(lastPORecId);
+    
+                employeeRes =  new HMAppointmentCalendarResource();
+                employeeRes.parmDisplayName(calendarHeaderDisplayName);
+                employeeRes.parmDisplayName(calendarHeaderDisplayName);
+                employeeRes.parmPlanningObjectDetailRecId(lastPORecId);
+                scheduler.AddResourceType(employeeRes);
+            }
+    
+            app = new HMAppointmentCalendarSlotData();
+    
+            t = DateTimeUtil::newDateTime(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date,hmResourceSchedulingOpenTimeSlotsTmpCopy.Time);
+            hour = DateTimeUtil::hour(t);
+            minute = DateTimeUtil::minute(t);
+            dt = new System.DateTime(year(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date),mthOfYr(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date),dayOfMth(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date),hour,minute,00);
+    
+            app.parmStartDateTime(dt.ToString());
+            app.parmPatientId("0");
+    
+    
+            if (hmResourceSchedulingOpenTimeSlotsTmpCopy.IsOverBooked)
+            {
+                app.parmSubject('Overbook' + ' - ' + hmResourceSchedulingTypeCode.Description);
+                app.parmBody('Overbook' + ' - '  + hmResourceSchedulingTypeCode.Description);
+            }
+            else
+            {
+                subject = hmResourceSchedulingTypeCode.Description + " - " + "@MAZ12049" + " " + strDel(time2str(hmResourceSchedulingOpenTimeSlotsTmpCopy.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+    
+                if(hmResourceSchedulingOpenTimeSlotsTmpCopy.Client > 0)
+                {
+                    subject += " - " + "@MAZ11575" + " " + CustTable::findRecId(hmResourceSchedulingOpenTimeSlotsTmpCopy.Client).name();
+                }
+    
+                app.parmSubject(subject);
+    
+                app.parmBody(hmResourceSchedulingTypeCode.Description
+                    + "\r\n" + "@MAZ12049" + " " + strDel(time2str(hmResourceSchedulingOpenTimeSlotsTmpCopy.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3));
+    
+                if(hmResourceSchedulingOpenTimeSlotsTmpCopy.IsHotspot)
+                {
+                    app.parmHotSpot("(" + SysLabel::labelId2String(literalstr("@MAZ11139"), infolog.language()) +")");
+                }
+            }
+    
+            app.parmResourceName(calendarHeaderDisplayName);
+    
+            //[red,green,blue] = WinAPI::RGBint2Con(hmResourceSchedulingTypeCode.ColourCode);
+            //app.parmColor(System.Drawing.ColorTranslator::FromWin32(hmResourceSchedulingTypeCode.ColourCode);
+            //app.parmColor(int2Str(red) + "," + int2Str(green) + ","  + int2Str(blue));
+    
+            app.parmScheduleTypeRecId(int642Str(hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingTypeCode));
+    
+            dtEnd = dt.AddMinutes(HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceMaster, hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingTypeCode));
+    
+            if(hmResourceSchedulingOpenTimeSlotsTmpCopy.DayEndTime)
+            {
+                t = DateTimeUtil::newDateTime(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date,hmResourceSchedulingOpenTimeSlotsTmpCopy.DayEndTime);
+    
+                tEnd = dtEnd;
+    
+                if(tEnd > t)
+                {
+                    hour = DateTimeUtil::hour(t);
+                    minute = DateTimeUtil::minute(t);
+                    dtSlotEndTime = new System.DateTime(year(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date),mthOfYr(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date),dayOfMth(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date),hour,minute,00);
+    
+                    app.parmEndDateTime(dtSlotEndTime.ToString());
+                }
+                else
+                {
+                    app.parmEndDateTime(dtEnd.ToString());
+                }
+            }
+            else
+            {
+                app.parmEndDateTime(dtEnd.ToString());
+            }
+    
+    
+            app.parmEndDateTime(dt.AddMinutes(hmResourceSchedulingOpenTimeSlotsTmpCopy.Duration).ToString());
+            app.parmPlanningObjectRecId(hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject);
+            app.parmTaskId(int642str(hmResourceSchedulingOpenTimeSlotsTmpCopy.RecId));
+    
+            scheduler.addnewItem(app);
+        }
+    
+        
+        scheduler.AddGroupCollection();
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillCalendarSlots</Name>
+				<Source><![CDATA[
+    public void fillCalendarSlots()
+    {
+    HMResourceSchedulingAppointment             hmResourceSchedulingAppointmentLocal;
+    HMResourceSchedulingTypeCode                hmResourceSchedulingTypeCodeLocal;
+    HMResourceSchedulingPlanningObject          hmResourceSchedulingPlanningObjectLocal;
+    str                                         apptStatusFilterString;
+    date                                        startDateRange, endDateRange;
+    Query                       qry = new Query(queryStr(HMMedisysPlanningObject));
+    QueryRun                    qryRun;
+    QueryBuildDataSource        qbds,qbdsGroup,qbdsSpeciality;
+    
+    HMAppointmentCalendarSlotData     apptRes;
+    System.DateTime                                 apptDateTimeNet;
+    
+    int yr,mth,day,hr,mint;
+    String15       apptTime;
+    str            toolTipText, patientName;
+    TransDateTime      tmpApptDateTime;
+    Description         calendarHeaderDisplayName;
+    if(!scheduler.visible())
+    {
+        return;
+    }
+    startDateRange = scheduler.get_rangeStartDate();
+    endDateRange = scheduler.get_rangeEndDate();
+    
+    qbds =  qry.dataSourceTable(tableNum(HMResourceSchedulingAppointment));
+    apptStatusFilterString = strFmt('((%1 != %2) && (%1 != %3) && (%1 != %4))','HMResourceSchedulingAppointment_1.AppointmentStatus',enum2int(HMResourceSchedulingAppointmentStatus::Cancelled),enum2int(HMResourceSchedulingAppointmentStatus::Reserved),enum2int(HMResourceSchedulingAppointmentStatus::ToBeReschedule));
+    //qbds.addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::valueNot(HMResourceSchedulingAppointmentStatus::Cancelled));
+    qbds.addRange(fieldNum(HMResourceSchedulingAppointment,RecId)).value(apptStatusFilterString);
+    qbds.addRange(fieldNum(HMResourceSchedulingAppointment,HMAppointmentType)).value(SysQuery::valueNot(HMAppointmentType::Admission));
+    qbds.addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate)).value(SysQuery::range(startDateRange,endDateRange));
+    qbds = qry.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject));
+    
+    if (planningObjectRecId)
+    {
+    qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,RecId)).value(SysQuery::value(planningObjectRecId));
+    }
+    else if (organizationlaUnitRecId)
+    {
+    qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,HMOrganizationalUnit)).value(SysQuery::value(organizationlaUnitRecId));
+    }
+    else if (resourceRecId)
+    {
+    qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,HMResourceMaster)).value(SysQuery::value(resourceRecId));
+    }
+    else if (resourceGroupRecId || specialityCodeRecId)
+    {
+    qbdsGroup = qry.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject));
+    qbdsGroup = qbdsGroup.addDataSource(tableNum(HMResourceMaster));
+    qbdsGroup.relations(true);
+    
+    if (resourceGroupRecId)
+    {
+    qbdsGroup = qbdsGroup.addDataSource(tableNum(HMResourceGroupResourceMaster));
+    qbdsGroup.relations(true);
+    qbdsGroup.addRange(fieldNum(HMResourceGroupResourceMaster,HMResourceGroup)).value(SysQuery::value(resourceGroupRecId));
+    }
+    if (specialityCodeRecId)
+    {
+    qbdsSpeciality = qbdsGroup.addDataSource(tableNum(HMResourceMasterSpeciality));
+    qbdsSpeciality.relations(true);
+    qbdsSpeciality.addRange(fieldNum(HMResourceMasterSpeciality, HMSpecialtyCode)).value(SysQuery::value(specialityCodeRecId));
+    }
+    }
+    
+    qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,CaseType)).value(SysQuery::value(HMCaseType::OutPatient));
+    qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,CaseType)).value(SysQuery::value(HMCaseType::Surgery));
+    
+    qryRun = new QueryRun(qry);
+    
+    while(qryRun.next())
+    {
+    hmResourceSchedulingAppointmentLocal =  qryRun.get(tableNum(HMResourceSchedulingAppointment));
+    hmResourceSchedulingPlanningObjectLocal =  qryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+    hmResourceSchedulingTypeCodeLocal =  qryRun.get(tableNum(hmResourceSchedulingTypeCode));
+    
+    apptRes = new HMAppointmentCalendarSlotData();
+    
+    if(resourceRecId)
+    {
+    calendarHeaderDisplayName = HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description;
+    }
+    else if(organizationlaUnitRecId || resourceGroupRecId || specialityCodeRecId)
+    {
+    calendarHeaderDisplayName = HMResourceMaster::find(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster).Description;
+    }
+    else
+    {
+    calendarHeaderDisplayName = '';
+    }
+    
+    apptRes.parmResourceName(calendarHeaderDisplayName);
+    
+    tmpApptDateTime = DateTimeUtil::newDateTime(hmResourceSchedulingAppointmentLocal.AppointmentDate, hmResourceSchedulingAppointmentLocal.AppointmentTime);
+    
+    yr = DateTimeUtil::year(tmpApptDateTime);
+    mth = DateTimeUtil::month(tmpApptDateTime);
+    day = DateTimeUtil::day(tmpApptDateTime);
+    hr = DateTimeUtil::hour(tmpApptDateTime);
+    mint = DateTimeUtil::minute(tmpApptDateTime);
+    apptDateTimeNet = new System.DateTime( yr,mth,day,hr,mint,00);
+    apptRes.parmStartDateTime(apptDateTimeNet.toString());
+    
+    apptTime = time2str(DateTimeUtil::time(tmpApptDateTime),1,TimeFormat::AMPM);
+    apptTime = strDel(apptTime,6,3);
+    
+    patientName = hmResourceSchedulingAppointmentLocal.getPatientName();
+    
+    toolTipText = (apptTime + " " + patientName
+    + "\r\n" + "@SYS300385" + " " + enum2str(hmResourceSchedulingAppointmentLocal.AppointmentStatus)
+    + "\r\n" + "@MAZ12049" + " " + strDel(time2str(hmResourceSchedulingAppointmentLocal.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3));
+    
+    if(hmResourceSchedulingAppointmentLocal.HMConfirmationStatus == HMAppointmentConfirmationStatus::IncompleteInfo)
+    {
+    apptRes.parmSubject(apptTime + " " + patientName + " (" + SysLabel::labelId2String(literalstr("@MAZ355"), infolog.language()) +")");
+    }
+    else
+    {
+    apptRes.parmSubject(apptTime + " " + patientName + " - " + hmResourceSchedulingTypeCodeLocal.Description);
+    }
+    apptRes.parmBody(toolTipText);
+    
+    apptDateTimeNet = apptDateTimeNet.AddMinutes(HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster, hmResourceSchedulingTypeCodeLocal.RecId));
+    
+    apptRes.parmEndDateTime(apptDateTimeNet.ToString());
+    apptRes.parmPlanningObjectRecId(hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject);
+    apptRes.parmPatientId(int642str(hmResourceSchedulingAppointmentLocal.HMPatient));
+    apptRes.parmAppointmentRecId(int642str(hmResourceSchedulingAppointmentLocal.RecId));
+    
+    switch(hmResourceSchedulingAppointmentLocal.AppointmentStatus)
+    {
+        case HMResourceSchedulingAppointmentStatus::Open:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::Open, apptRes, hmResourceSchedulingAppointmentLocal.IsDelayed);
+            break;
+        case HMResourceSchedulingAppointmentStatus::Confirmed:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::Confirmed, apptRes, hmResourceSchedulingAppointmentLocal.IsDelayed);
+            break;
+        case HMResourceSchedulingAppointmentStatus::CheckedIn:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::CheckedIn, apptRes, hmResourceSchedulingAppointmentLocal.IsDelayed);
+            break;
+        case HMResourceSchedulingAppointmentStatus::CheckedOut:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::CheckedOut, apptRes);
+            break;
+        case HMResourceSchedulingAppointmentStatus::Examined:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::Examined, apptRes);
+            break;
+        case HMResourceSchedulingAppointmentStatus::NoShow:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::NoShow, apptRes);
+            break;
+        case HMResourceSchedulingAppointmentStatus::Tentative:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::Tentative, apptRes);
+            break;
+        case HMResourceSchedulingAppointmentStatus::Closed:
+            this.setCategoryColor(HMResourceSchedulingAppointmentStatus::Closed, apptRes);
+            break;
+    
+    }
+    
+        scheduler.addnewItem(apptRes);
+    }
+    
+    
+    scheduler.AddGroupCollection();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildClinicsTree</Name>
+				<Source><![CDATA[
+    public void buildClinicsTree(FormTreeControl _tree)
+    {
+        TreeItemIdx                             parentItemIdx, rootRecId, childIdx;
+        HMOrganizationalUnit                    hmOrganizationalUnit;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        FormTreeItem                            formTreeItem;
+        RecId                                   lastOURecId;
+        Description255                          availabilityStatus;
+    
+        _tree.deleteAll();
+    
+        formTreeItem = new FormTreeItem();
+        //BP deviation documented
+        formTreeItem.text("@MAZ6075");
+    
+        formTreeItem.data(#Root + #DataSeparator + "0");
+    
+        rootRecId = _tree.addItem(FormTreeAdd::Root, FormTreeAdd::Root,formTreeItem);
+    
+        while select HMOrganizationalUnit, AvailabilityStatus, RecId from hmResourceSchedulingPlanningObject
+                order by hmResourceSchedulingPlanningObject.HMOrganizationalUnit
+                where (hmResourceSchedulingPlanningObject.CaseType == HMCaseType::OutPatient
+                    || hmResourceSchedulingPlanningObject.CaseType == HMCaseType::Surgery)
+                join Description from hmResourceMaster
+                    where hmResourceMaster.RecId == hmResourceSchedulingPlanningObject.HMResourceMaster
+                    && hmResourceMaster.Status == HMResourceStatus::Active
+                join Description from hmOrganizationalUnit where hmOrganizationalUnit.RecId == hmResourceSchedulingPlanningObject.HMOrganizationalUnit
+                    && hmResourceSchedulingPlanningObject.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        {
+            if(lastOURecId != hmResourceSchedulingPlanningObject.HMOrganizationalUnit)
+            {
+                if (HMResourceSchedulingPlanningObject::getAvailableCountByOU(hmResourceSchedulingPlanningObject.HMOrganizationalUnit) > 0)
+                {
+                    availabilityStatus = "" ;
+                }
+                else
+                {
+                    availabilityStatus =  ' (OUT)';
+                }
+    
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(hmOrganizationalUnit.Description + availabilityStatus);
+                formTreeItem.data(#OrganizationUnit + #DataSeparator + int642str(hmResourceSchedulingPlanningObject.HMOrganizationalUnit));
+    
+                parentItemIdx = _tree.addItem(rootRecId,FormTreeAdd::Sort,formTreeItem);
+    
+                hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+    
+                lastOURecId = hmResourceSchedulingPlanningObject.HMOrganizationalUnit;
+            }
+    
+            if (hmResourceSchedulingPlanningObject.AvailabilityStatus == NoYes::No)
+            {
+                availabilityStatus = "";
+            }
+            else
+            {
+                availabilityStatus = ' (OUT)';
+            }
+    
+            formTreeItem = new FormTreeItem();
+            //BP deviation documented
+            formTreeItem.text(hmResourceMaster.Description);
+            formTreeItem.data(#PlanningObject + #DataSeparator + int642str(hmResourceSchedulingPlanningObject.RecId));
+    
+            childIdx = _tree.addItem(parentItemIdx,FormTreeAdd::Sort,formTreeItem);
+    
+            hmTreeSearchingObject.insertItem(childIdx, formTreeItem.text(), formTreeItem.data());
+        }
+    
+        _tree.expand(rootRecId);
+        _tree.select(rootRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildDoctorsTree</Name>
+				<Source><![CDATA[
+    public void buildDoctorsTree(FormTreeControl _tree)
+    {
+        TreeItemIdx                             parentItemIdx, rootRecId, childIdx;
+        HMOrganizationalUnit                    hmOrganizationalUnit;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        FormTreeItem                            formTreeItem;
+        RecId                                   lastResourceRecId;
+        Description255                          availabilityStatus;
+    
+        _tree.deleteAll();
+    
+        formTreeItem = new FormTreeItem();
+        //BP deviation documented
+        formTreeItem.text("@MAZ9209");
+    
+        formTreeItem.data(#Root + #DataSeparator + "0");
+    
+        rootRecId = _tree.addItem(FormTreeAdd::Root, FormTreeAdd::Root,formTreeItem);
+    
+        while select HMResourceMaster, AvailabilityStatus, RecId from hmResourceSchedulingPlanningObject
+                order by hmResourceSchedulingPlanningObject.HMResourceMaster
+                where (hmResourceSchedulingPlanningObject.CaseType == HMCaseType::OutPatient
+                    || hmResourceSchedulingPlanningObject.CaseType == HMCaseType::Surgery)
+                join Description from hmResourceMaster
+                    where hmResourceMaster.RecId == hmResourceSchedulingPlanningObject.HMResourceMaster
+                    && hmResourceMaster.Status == HMResourceStatus::Active
+                join Description from hmOrganizationalUnit where hmOrganizationalUnit.RecId == hmResourceSchedulingPlanningObject.HMOrganizationalUnit
+                    && hmResourceSchedulingPlanningObject.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        {
+            if(lastResourceRecId != hmResourceSchedulingPlanningObject.HMResourceMaster)
+            {
+                if (HMResourceSchedulingPlanningObject::getAvailableCountByResource(hmResourceSchedulingPlanningObject.HMResourceMaster) > 0)
+                {
+                    availabilityStatus = "" ;
+                }
+                else
+                {
+                    availabilityStatus =  ' (OUT)';
+                }
+    
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(hmResourceMaster.Description + availabilityStatus);
+                formTreeItem.data(#Resource + #DataSeparator + int642str(hmResourceSchedulingPlanningObject.HMResourceMaster));
+    
+                parentItemIdx = _tree.addItem(rootRecId,FormTreeAdd::Sort,formTreeItem);
+    
+                hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+    
+                lastResourceRecId = hmResourceSchedulingPlanningObject.HMResourceMaster;
+            }
+    
+            if (hmResourceSchedulingPlanningObject.AvailabilityStatus == NoYes::No)
+            {
+                availabilityStatus = "";
+            }
+            else
+            {
+                availabilityStatus = ' (OUT)';
+            }
+    
+            formTreeItem = new FormTreeItem();
+            //BP deviation documented
+            formTreeItem.text(hmOrganizationalUnit.Description);
+            formTreeItem.data(#PlanningObject + #DataSeparator + int642str(hmResourceSchedulingPlanningObject.RecId));
+    
+            childIdx = _tree.addItem(parentItemIdx,FormTreeAdd::Sort,formTreeItem);
+    
+            hmTreeSearchingObject.insertItem(childIdx, formTreeItem.text(), formTreeItem.data());
+        }
+    
+        _tree.expand(rootRecId);
+        _tree.select(rootRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildResourceGroupTree</Name>
+				<Source><![CDATA[
+    public void buildResourceGroupTree(FormTreeControl _tree)
+    {
+        TreeItemIdx                             parentItemIdx, rootRecId, childIdx;
+        HMOrganizationalUnit                    hmOrganizationalUnit;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        HMResourceGroup                         hmResourceGroup;
+        HMResourceGroupResourceMaster           HMResourceGroupResourceMaster;
+        FormTreeItem                            formTreeItem;
+        RecId                                   lastResourceGroupRecId;
+        Description255                          availabilityStatus;
+    
+        _tree.deleteAll();
+    
+        formTreeItem = new FormTreeItem();
+        //BP deviation documented
+        formTreeItem.text("@SYS15433");
+    
+        formTreeItem.data(#Root + #DataSeparator + "0");
+    
+        rootRecId = _tree.addItem(FormTreeAdd::Root, FormTreeAdd::Root,formTreeItem);
+    
+        while select HMOrganizationalUnit, AvailabilityStatus, RecId from hmResourceSchedulingPlanningObject
+            order by hmresourcegroup.RecId
+            where (hmResourceSchedulingPlanningObject.CaseType == HMCaseType::OutPatient
+                || hmResourceSchedulingPlanningObject.CaseType == HMCaseType::Surgery)
+            join Description from hmResourceMaster
+                where hmResourceMaster.RecId == hmResourceSchedulingPlanningObject.HMResourceMaster
+                && hmResourceMaster.Status == HMResourceStatus::Active
+            join Description from hmOrganizationalUnit where hmOrganizationalUnit.RecId == hmResourceSchedulingPlanningObject.HMOrganizationalUnit
+            join Priority from HMResourceGroupResourceMaster where HMResourceGroupResourceMaster.HMResourceMaster == hmResourceMaster.RecId
+            join Description,RecId from hmresourcegroup where hmresourcegroup.recid == HMResourceGroupResourceMaster.HMResourceGroup
+                && hmResourceSchedulingPlanningObject.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        {
+            if(lastResourceGroupRecId != hmresourcegroup.recid)
+            {
+                if (HMResourceSchedulingPlanningObject::getAvailableCountByOU(hmResourceSchedulingPlanningObject.HMOrganizationalUnit) > 0)
+                {
+                    availabilityStatus = "" ;
+                }
+                else
+                {
+                    availabilityStatus =  ' (OUT)';
+                }
+    
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(hmresourcegroup.Description + availabilityStatus);
+                formTreeItem.data(#ResourceGroup + #DataSeparator + int642str(hmresourcegroup.recid));
+    
+                parentItemIdx = _tree.addItem(rootRecId,FormTreeAdd::Sort,formTreeItem);
+    
+                hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+    
+                lastResourceGroupRecId = hmresourcegroup.recid;
+            }
+    
+            if (hmResourceSchedulingPlanningObject.AvailabilityStatus == NoYes::No)
+            {
+                availabilityStatus = "";
+            }
+            else
+            {
+                availabilityStatus = ' (OUT)';
+            }
+    
+            formTreeItem = new FormTreeItem();
+            //BP deviation documented
+            formTreeItem.text(hmResourceMaster.Description);
+            formTreeItem.data(#PlanningObject + #DataSeparator + int642str(hmResourceSchedulingPlanningObject.RecId));
+    
+            childIdx = _tree.addItem(parentItemIdx,FormTreeAdd::Sort,formTreeItem);
+    
+            hmTreeSearchingObject.insertItem(childIdx, formTreeItem.text(), formTreeItem.data());
+        }
+    
+        _tree.expand(rootRecId);
+        _tree.select(rootRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildSpecialitiesTree</Name>
+				<Source><![CDATA[
+    public void buildSpecialitiesTree(FormTreeControl _tree)
+    {
+        TreeItemIdx                             parentItemIdx, rootRecId, childIdx;
+        HMOrganizationalUnit                    hmOrganizationalUnit;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+        FormTreeItem                            formTreeItem;
+        RecId                                   lastSpecialityCodeRecId;
+        Description255                          availabilityStatus;
+        HMResourceMasterSpeciality              resourceMasterSpeciality;
+        HMSpecialtyCode                         HMSpecialtyCode;
+    
+        _tree.deleteAll();
+    
+        formTreeItem = new FormTreeItem();
+        //BP deviation documented
+        formTreeItem.text("@MAZ1706");
+    
+        formTreeItem.data(#Root + #DataSeparator + "0");
+    
+        rootRecId = _tree.addItem(FormTreeAdd::Root, FormTreeAdd::Root, formTreeItem);
+    
+        while select HMResourceMaster, AvailabilityStatus, RecId from hmResourceSchedulingPlanningObject
+            order by hmResourceSchedulingPlanningObject.HMResourceMaster
+            where (hmResourceSchedulingPlanningObject.CaseType == HMCaseType::OutPatient
+                || hmResourceSchedulingPlanningObject.CaseType == HMCaseType::Surgery)
+            join Description from hmResourceMaster
+                where hmResourceMaster.RecId == hmResourceSchedulingPlanningObject.HMResourceMaster
+                && hmResourceMaster.Status == HMResourceStatus::Active
+            join Description from hmOrganizationalUnit
+            where hmOrganizationalUnit.RecId == hmResourceSchedulingPlanningObject.HMOrganizationalUnit
+            join resourceMasterSpeciality
+            where resourceMasterSpeciality.HMResource == hmResourceMaster.RecId
+            join HMSpecialtyCode
+            where resourceMasterSpeciality.HMSpecialtyCode == HMSpecialtyCode.RecId
+                && hmResourceSchedulingPlanningObject.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        {
+            if(lastSpecialityCodeRecId != resourceMasterSpeciality.HMSpecialtyCode)
+            {
+                /*  if (HMResourceSchedulingPlanningObject::getAvailableCountByResource(hmResourceSchedulingPlanningObject.HMResourceMaster) > 0)
+                {
+                availabilityStatus = "" ;
+                }
+                else
+                {
+                availabilityStatus =  ' (OUT)';
+                }
+                */
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(HMSpecialtyCode.Description);
+    
+                formTreeItem.data(#Speciality + #DataSeparator + int642str(HMSpecialtyCode.RecId));
+    
+                parentItemIdx = _tree.addItem(rootRecId,FormTreeAdd::Sort,formTreeItem);
+    
+                hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+    
+                lastSpecialityCodeRecId = HMSpecialtyCode.RecId;
+            }
+    
+            if (hmResourceSchedulingPlanningObject.AvailabilityStatus == NoYes::No)
+            {
+                availabilityStatus = "";
+            }
+            else
+            {
+                availabilityStatus = ' (OUT)';
+            }
+    
+            formTreeItem = new FormTreeItem();
+            //BP deviation documented
+            formTreeItem.text(hmResourceMaster.Description + availabilityStatus);
+            formTreeItem.data(#PlanningObject + #DataSeparator + int642str(hmResourceSchedulingPlanningObject.RecId));
+    
+            childIdx = _tree.addItem(parentItemIdx,FormTreeAdd::Sort,formTreeItem);
+    
+            hmTreeSearchingObject.insertItem(childIdx, formTreeItem.text(), formTreeItem.data());
+        }
+    
+        _tree.expand(rootRecId);
+        _tree.select(rootRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillSearchTree</Name>
+				<Source><![CDATA[
+    public void fillSearchTree(FormTreeControl _tree, HMResourceSchedulingSlotSearchGroupBy _slotSearchGroupBy)
+    {
+        TreeItemIdx                 parentItemIdx, rootRecId;
+        FormTreeItem                formTreeItem;
+    
+        _tree.deleteAll();
+    
+        formTreeItem = new FormTreeItem();
+        //BP deviation documented
+        formTreeItem.text("@SYS127113");
+    
+        formTreeItem.data(#Root + #DataSeparator + "0");
+    
+        rootRecId = _tree.addItem(FormTreeAdd::Root, FormTreeAdd::Root,formTreeItem);
+    
+        setSlotSearchPlanningObject = new Set(Types::Int64);
+        mapSlotSearchPlanningObject = new Map(Types::Int64, Types::Container);
+    
+        while select HMResourceSchedulingPlanningObject from hmResourceSchedulingOpenTimeSlotsTmpCopy
+            group by hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject
+        {
+            if(_slotSearchGroupBy == HMResourceSchedulingSlotSearchGroupBy::None)
+            {
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(this.getSearchTreeDescription(hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject));
+                formTreeItem.data(#PlanningObject + #DataSeparator + int642str(hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject));
+    
+                parentItemIdx = _tree.addItem(rootRecId,FormTreeAdd::Sort,formTreeItem);
+    
+                hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+            }
+            else
+            {
+                setSlotSearchPlanningObject.add(hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingPlanningObject);
+            }
+        }
+    
+        if(_slotSearchGroupBy != HMResourceSchedulingSlotSearchGroupBy::None)
+        {
+            this.buildGroupedSearchTree(_tree, rootRecId, _slotSearchGroupBy);
+        }
+    
+        _tree.expand(rootRecId);
+        _tree.select(rootRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMapSlotSearchPlanningObjectByGroup</Name>
+				<Source><![CDATA[
+    public container getMapSlotSearchPlanningObjectByGroup()
+    {
+        return mapSlotSearchPlanningObject.lookup(groupRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientInfo</Name>
+				<Source><![CDATA[
+    public Description255 getPatientInfo(RecId _patientRecId)
+    {
+        HMPatient hmPatientLocal;
+        Description255 patientInfo;
+    
+        hmPatientLocal = HMPatient::find(_patientRecId);
+        patientInfo = hmPatientLocal.patientChartNum() + " : " + hmPatientLocal.patientName() + ", " + enum2str(hmPatientLocal.Gender) + ", " + hmPatientLocal.patientAgeNew();
+    
+        return patientInfo;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSearchTreeIdx</Name>
+				<Source><![CDATA[
+    public TreeItemIdx getSearchTreeIdx(String255 _description)
+    {
+        return hmTreeSearchingObject.searchByDescription(_description);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isMovementConfirmationRequired</Name>
+				<Source><![CDATA[
+    public boolean isMovementConfirmationRequired()
+    {
+        return HMParameters::find().AppointmentMovementConfirmation == NoYes::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isSlotBreak</Name>
+				<Source><![CDATA[
+    public boolean isSlotBreak(RecId _scheduleTypeRecId)
+    {
+        return HMResourceSchedulingTypeCode::find(_scheduleTypeRecId).IsBreak == NoYes::Yes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markAvailaibility</Name>
+				<Source><![CDATA[
+    public boolean markAvailaibility()
+    {
+        HMResourceSchedulingPlanningObject      planningObject;
+        boolean ret, isAvailaible;
+    
+        try
+        {
+            if(this.parmPlanningObjectRecId())
+            {
+                ttsBegin;
+    
+                select forUpdate RecId from planningObject
+                    where planningObject.RecId == this.parmPlanningObjectRecId();
+    
+                if (planningObject.AvailabilityStatus == NoYes::No)
+                {
+                    planningObject.AvailabilityStatus = NoYes::Yes;
+                }
+                else
+                {
+                    planningObject.AvailabilityStatus = NoYes::No;
+                }
+    
+                planningObject.update();
+    
+                ttsCommit;
+                ret = true;
+            }
+            else if(this.parmOrganizationlaUnitRecId())
+            {
+                if (HMResourceSchedulingPlanningObject::getAvailableCountByOU(this.parmOrganizationlaUnitRecId()) > 0)
+                {
+                    isAvailaible = true;
+                }
+                else
+                {
+                    isAvailaible = false;
+                }
+    
+                while select forUpdate RecId from planningObject
+                    where planningObject.HMOrganizationalUnit == this.parmOrganizationlaUnitRecId()
+                    && (planningObject.CaseType == HMCaseType::OutPatient || planningObject.CaseType == HMCaseType::Surgery)
+                {
+                    // mark unavailablle
+                    if (isAvailaible)
+                    {
+                        planningObject.AvailabilityStatus = NoYes::Yes;
+                    }
+                    else
+                    {
+                        planningObject.AvailabilityStatus = NoYes::No;
+                    }
+                    planningObject.update();
+                }
+                ttsCommit;
+                ret = true;
+            }
+            else if(this.parmResourceRecId())
+            {
+                if (HMResourceSchedulingPlanningObject::getAvailableCountByResource(this.parmResourceRecId()) > 0)
+                {
+                    isAvailaible = true;
+                }
+                else
+                {
+                    isAvailaible = false;
+                }
+    
+                ttsBegin;
+                while select forUpdate RecId from planningObject
+                    where planningObject.HMClinicStaff == this.parmResourceRecId()
+                    && (planningObject.CaseType == HMCaseType::OutPatient || planningObject.CaseType == HMCaseType::Surgery)
+                {
+                    // mark unavailablle
+                    if (isAvailaible)
+                    {
+                        planningObject.AvailabilityStatus = NoYes::Yes;
+                    }
+                    else
+                    {
+                        planningObject.AvailabilityStatus = NoYes::No;
+                    }
+                    planningObject.update();
+                }
+                ttsCommit;
+                ret = true;
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmGroupRecId</Name>
+				<Source><![CDATA[
+    public RecId parmGroupRecId(RecId _groupRecId = groupRecId)
+    {
+        groupRecId = _groupRecId;
+    
+        return groupRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmOpenTimeSlotsTmpCopy</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingOpenTimeSlotsTmp parmOpenTimeSlotsTmpCopy(HMResourceSchedulingOpenTimeSlotsTmp _hmResourceSchedulingOpenTimeSlotsTmpCopy = hmResourceSchedulingOpenTimeSlotsTmpCopy)
+    {
+        hmResourceSchedulingOpenTimeSlotsTmpCopy = _hmResourceSchedulingOpenTimeSlotsTmpCopy;
+    
+        return hmResourceSchedulingOpenTimeSlotsTmpCopy;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmOrganizationlaUnitRecId</Name>
+				<Source><![CDATA[
+    public RecId parmOrganizationlaUnitRecId(RecId _organizationlaUnitRecId = organizationlaUnitRecId)
+    {
+        organizationlaUnitRecId = _organizationlaUnitRecId;
+    
+        return organizationlaUnitRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPlanningObjectRecId</Name>
+				<Source><![CDATA[
+    public RecId parmPlanningObjectRecId(RecId _planningObjectRecId = planningObjectRecId)
+    {
+        planningObjectRecId = _planningObjectRecId;
+    
+        return planningObjectRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmResourceGroupRecId</Name>
+				<Source><![CDATA[
+    public RecId parmResourceGroupRecId(RecId _resourceGroupRecId = resourceGroupRecId)
+    {
+        resourceGroupRecId = _resourceGroupRecId;
+    
+        return resourceGroupRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmResourceRecId</Name>
+				<Source><![CDATA[
+    public RecId parmResourceRecId(RecId _resourceRecId = resourceRecId)
+    {
+        resourceRecId = _resourceRecId;
+    
+        return resourceRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildGroupedSearchTree</Name>
+				<Source><![CDATA[
+    private void buildGroupedSearchTree(FormTreeControl _tree, TreeItemIdx _rootIdx, HMResourceSchedulingSlotSearchGroupBy _slotSearchGroupBy)
+    {
+        TreeItemIdx                 parentItemIdx, childIdx;
+        FormTreeItem                formTreeItem;
+        RecId                       lastGroupRecId;
+        boolean                     enumeratorEmpty = true;
+        Query                       qry = new Query();
+        QueryRun                    qryRun;
+        Map                         mapGroup;
+        QueryBuildDataSource qbds;
+    
+        SetEnumerator setEnumr = setSlotSearchPlanningObject.getEnumerator();
+    
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceGroupResourceMaster           hmResourceGroupResourceMaster;
+        HMResourceMasterAptitudeAttribute       hmResourceMasterAptitudeAttribute;
+        HMResourceMasterSpeciality              hmResourceMasterSpeciality;
+    
+        mapGroup = new Map(Types::Int64,Types::Int64);
+    
+        qbds = qry.addDataSource(tableNum(HMResourceSchedulingPlanningObject));
+    
+        while(setEnumr.moveNext())
+        {
+            enumeratorEmpty = false;
+            qbds.addRange(fieldNum(hmResourceSchedulingPlanningObject, RecId)).value(SysQuery::value(setEnumr.current()));
+        }
+        if(!enumeratorEmpty)
+        {
+            qbds = qbds.addDataSource(tableNum(HMResourceMaster));
+            qbds.relations(true);
+    
+            switch(_slotSearchGroupBy)
+            {
+                case HMResourceSchedulingSlotSearchGroupBy::ResourceGroup:
+                    qbds = qbds.addDataSource(tableNum(HMResourceGroupResourceMaster));
+                    qbds.relations(true);
+    
+                    qbds.addSortField(fieldNum(HMResourceGroupResourceMaster, Priority),SortOrder::Ascending);
+                    break;
+                case HMResourceSchedulingSlotSearchGroupBy::Aptitude:
+                    qbds = qbds.addDataSource(tableNum(HMResourceMasterAptitudeAttribute));
+                    qbds.relations(true);
+    
+                    qbds.addSortField(fieldNum(HMResourceMasterAptitudeAttribute, HMResourceAptitudeAttribute));
+                    break;
+                case HMResourceSchedulingSlotSearchGroupBy::Specialty:
+qbds = qbds.addDataSource(tableNum(HMResourceMasterSpeciality));
+                    qbds.relations(true);
+    
+                    qbds.addSortField(fieldNum(HMResourceMasterSpeciality, HMSpecialtyCode));
+                    break;
+            }
+    
+            qryRun = new QueryRun(qry);
+    
+            while(qryRun.next())
+            {
+                hmResourceSchedulingPlanningObject = qryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+    
+                switch(_slotSearchGroupBy)
+                {
+                    case HMResourceSchedulingSlotSearchGroupBy::ResourceGroup:
+                        hmResourceGroupResourceMaster = qryRun.get(tableNum(HMResourceGroupResourceMaster));
+    
+                        if(!mapGroup.exists(hmResourceGroupResourceMaster.HMResourceGroup))
+                        {
+                            formTreeItem = new FormTreeItem();
+                            //BP deviation documented
+                            formTreeItem.text(hmResourceGroupResourceMaster.resourceGroupDescription());
+                            formTreeItem.data(#Group + #DataSeparator + int642str(hmResourceGroupResourceMaster.HMResourceGroup));
+    
+                            parentItemIdx = _tree.addItem(_rootIdx,FormTreeAdd::Sort,formTreeItem);
+    
+                            hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+    
+                            mapGroup.insert(hmResourceGroupResourceMaster.HMResourceGroup,parentItemIdx);
+    
+                            lastGroupRecId = hmResourceGroupResourceMaster.HMResourceGroup;
+                        }
+                        else
+                        {
+                            parentItemIdx = mapGroup.lookup(hmResourceGroupResourceMaster.HMResourceGroup);
+                        }
+                        break;
+                    case HMResourceSchedulingSlotSearchGroupBy::Aptitude:
+                        hmResourceMasterAptitudeAttribute = qryRun.get(tableNum(HMResourceMasterAptitudeAttribute));
+    
+                        if(lastGroupRecId != hmResourceMasterAptitudeAttribute.HMResourceAptitudeAttribute)
+                        {
+                            formTreeItem = new FormTreeItem();
+                            //BP deviation documented
+                            formTreeItem.text(hmResourceMasterAptitudeAttribute.aptitudeAttributeDescription());
+                            formTreeItem.data(#Group + #DataSeparator + int642str(hmResourceMasterAptitudeAttribute.HMResourceAptitudeAttribute));
+    
+                            parentItemIdx = _tree.addItem(_rootIdx,FormTreeAdd::Sort,formTreeItem);
+    
+                            hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+    
+                            lastGroupRecId = hmResourceMasterAptitudeAttribute.HMResourceAptitudeAttribute;
+                        }
+                        break;
+                    case HMResourceSchedulingSlotSearchGroupBy::Specialty:
+                        hmResourceMasterSpeciality = qryRun.get(tableNum(HMResourceMasterSpeciality));
+    
+                        if(lastGroupRecId != hmResourceMasterSpeciality.HMSpecialtyCode)
+                        {
+                            formTreeItem = new FormTreeItem();
+                            //BP deviation documented
+                            formTreeItem.text(hmResourceMasterSpeciality.specialityDescription());
+                            formTreeItem.data(#Group + #DataSeparator + int642str(hmResourceMasterSpeciality.HMSpecialtyCode));
+    
+                            parentItemIdx = _tree.addItem(_rootIdx,FormTreeAdd::Sort,formTreeItem);
+    
+                            hmTreeSearchingObject.insertItem(parentItemIdx, formTreeItem.text(), formTreeItem.data());
+    
+                            lastGroupRecId = hmResourceMasterSpeciality.HMSpecialtyCode;
+                        }
+                        break;
+                }
+    
+                if(mapSlotSearchPlanningObject.exists(lastGroupRecId))
+                {
+                    mapSlotSearchPlanningObject.insert(lastGroupRecId, mapSlotSearchPlanningObject.lookup(lastGroupRecId) + [hmResourceSchedulingPlanningObject.RecId]);
+                }
+                else
+                {
+                    mapSlotSearchPlanningObject.insert(lastGroupRecId, [hmResourceSchedulingPlanningObject.RecId]);
+                }
+    
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(this.getSearchTreeDescription(hmResourceSchedulingPlanningObject.RecId));
+                formTreeItem.data(#PlanningObject + #DataSeparator + int642str(hmResourceSchedulingPlanningObject.RecId));
+    
+                childIdx = _tree.addItem(parentItemIdx,FormTreeAdd::Last,formTreeItem);
+    
+                hmTreeSearchingObject.insertItem(childIdx, formTreeItem.text(), formTreeItem.data());
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setVisibleTime</Name>
+				<Source><![CDATA[
+    public void setVisibleTime()
+    {
+        System.TimeSpan span;
+        int hours, minutes;
+    
+        HMParameters hmParamerters = HMParameters::find();
+    
+        hours = hmParamerters.OperatingTime/60/60;
+        minutes = (hmParamerters.OperatingTime/60) mod 60;
+    
+        span = new System.TimeSpan(hours,minutes,0);
+        //todo:ax7 calender
+        //scheduler.setVisibleTime(span);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectClinicTreeNodeAppointment</Name>
+				<Source><![CDATA[
+    public TreeItemIdx selectClinicTreeNodeAppointment(FormTreeControl _tree, Recid _planningObjectRecId, Recid _orgUnitRecId)
+    {
+        TreeItemIdx treeItemIdxOU, treeItemIdxPO, treeItemIdxRet;
+        FormTreeItem        selectedTreeItem;
+        ListEnumerator listEnumrOU, listEnumrPO;
+        String10 planningObjectRecIdLocal, orgUnitRecIdLocal;
+    
+        planningObjectRecIdLocal = int642str(_planningObjectRecId);
+        orgUnitRecIdLocal = int642str(_orgUnitRecId);
+    
+        treeItemIdxOU = _tree.getChild(_tree.getRoot());
+    
+        while(treeItemIdxOU)
+        {
+            selectedTreeItem = _tree.getItem(treeItemIdxOU);
+    
+            listEnumrOU = strSplit(selectedTreeItem.data(), #DataSeparator).getEnumerator();
+    
+            listEnumrOU.moveNext();
+    
+            if(listEnumrOU.current() == #OrganizationUnit)
+            {
+                listEnumrOU.moveNext();
+    
+                if(listEnumrOU.current() == orgUnitRecIdLocal)
+                {
+                    treeItemIdxPO = _tree.getChild(treeItemIdxOU);
+    
+                    while(treeItemIdxPO)
+                    {
+                        selectedTreeItem = _tree.getItem(treeItemIdxPO);
+    
+                        listEnumrPO = strSplit(selectedTreeItem.data(), #DataSeparator).getEnumerator();
+    
+                        listEnumrPO.moveNext();
+    
+                        if(listEnumrPO.current() == #PlanningObject)
+                        {
+                            listEnumrPO.moveNext();
+    
+                            if(listEnumrPO.current() == planningObjectRecIdLocal)
+                            {
+                                treeItemIdxRet = treeItemIdxPO;
+                                break;
+                            }
+                        }
+    
+                        treeItemIdxPO = _tree.getNextSibling(treeItemIdxPO);
+                    }
+                }
+            }
+    
+            if(treeItemIdxRet)
+            {
+                break;
+            }
+    
+            treeItemIdxOU = _tree.getNextSibling(treeItemIdxOU);
+        }
+    
+        return treeItemIdxRet;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSearchTreeDescription</Name>
+				<Source><![CDATA[
+    private Description255 getSearchTreeDescription(RecId _planningObjectRecId)
+    {
+        Description255 descr;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+    
+        select HMResourceMaster, HMOrganizationalUnit from hmResourceSchedulingPlanningObject
+            where hmResourceSchedulingPlanningObject.RecId == _planningObjectRecId;
+    
+        descr = hmResourceSchedulingPlanningObject.showResourceName() + '(' + hmResourceSchedulingPlanningObject.showOrganizationUnit() + ')';
+    
+        return descr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshScheduleView</Name>
+				<Source><![CDATA[
+    public void refreshScheduleView()
+    {   
+        if(scheduler)
+        {
+            scheduler.parmRefreshData(guid2Str(newGuid()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>selectionChangeClinicsTree</Name>
+				<Source><![CDATA[
+    public void selectionChangeClinicsTree(Description255 _data)
+    {
+        ListEnumerator listEnumr = strSplit(_data, #DataSeparator).getEnumerator();
+    
+        listEnumr.moveNext();
+        scheduler.deleteAllAppointment();
+        scheduler.ReInitializeResource();
+        
+    
+        this.parmResourceRecId(0);
+        this.parmPlanningObjectRecId(0);
+        this.parmOrganizationlaUnitRecId(0);
+        this.parmResourceGroupRecId(0);
+        this.parmSpecialityCodeRecId(0);
+        this.parmSpecialityCodeRecId(0);
+    
+        switch(listEnumr.current())
+        {
+            case #OrganizationUnit:
+                listEnumr.moveNext();
+                this.parmResourceRecId(0);
+                this.parmPlanningObjectRecId(0);
+                this.parmSpecialityCodeRecId(0);
+                this.parmOrganizationlaUnitRecId(listEnumr.current());
+                this.fillCalendarHeader();
+                //todo: ax7 calender
+                this.fillCalendarSlots();
+                this.bindOpenSlots();
+                break;
+            case #PlanningObject:
+                listEnumr.moveNext();
+                this.parmOrganizationlaUnitRecId(0);
+                this.parmSpecialityCodeRecId(0);
+                this.parmResourceRecId(0);
+                this.parmPlanningObjectRecId(listEnumr.current());
+                this.fillCalendarHeader();
+                
+                //todo: ax7 calendar
+                this.fillCalendarSlots();
+                this.bindNonWorkingHours();
+                
+                this.bindOpenSlots();
+                
+                break;
+        }
+        scheduler.bindAppointment();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillCalendarHeader</Name>
+				<Source><![CDATA[
+    private void fillCalendarHeader()
+    {
+        HMResourceSchedulingPlanningObject          hmResourceSchedulingPlanningObjectLocal;
+    
+       
+        HMAppointmentCalendarResource   employeeRes;
+    
+        Query                       qry = new Query();
+        QueryRun                    qryRun;
+        QueryBuildDataSource        qbds, qbdsGroup, qbdsSpecialty;
+    
+        Description     calendarHeaderDisplayName;
+        if(!scheduler.visible())
+        {
+            return;
+        }
+        qbds = qry.addDataSource(tableNum(HMResourceSchedulingPlanningObject));
+    
+        qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, CaseType)).value(SysQuery::value(HMCaseType::OutPatient));
+        qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, CaseType)).value(SysQuery::value(HMCaseType::Surgery));
+    
+        if(resourceRecId)
+        {
+            qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, HMResourceMaster)).value(SysQuery::value(resourceRecId));
+        }
+        else if(organizationlaUnitRecId)
+        {
+            qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, HMOrganizationalUnit)).value(SysQuery::value(organizationlaUnitRecId));
+        }
+        else if(PlanningObjectRecId)
+        {
+            qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, recId)).value(SysQuery::value(PlanningObjectRecId));
+        }
+    
+        qbds = qbds.addDataSource(tableNum(HMResourceMaster));
+        qbds.relations(true);
+        qbds.addRange(fieldNum(HMResourceMaster, Status)).value(SysQuery::value(HMResourceStatus::Active));
+    
+    
+        if (resourceGroupRecId)
+        {
+            qbdsGroup = qbds.addDataSource(tableNum(HMResourceGroupResourceMaster));
+            qbdsGroup.relations(true);
+    
+            qbdsGroup.addRange(fieldNum(HMResourceGroupResourceMaster,HMResourceGroup)).value(SysQuery::value(resourceGroupRecId));
+        }
+    
+        if (specialityCodeRecId)
+        {
+            qbdsSpecialty = qbds.addDataSource(tableNum(HMResourceMasterSpeciality));
+            qbdsSpecialty.relations(true);
+            qbdsSpecialty.addRange(fieldNum(HMResourceMasterSpeciality, HMSpecialtyCode)).value(SysQuery::value(specialityCodeRecId));
+        }
+    
+        qryRun = new QueryRun(qry);
+    
+        while(qryRun.next())
+        {
+            hmResourceSchedulingPlanningObjectLocal = qryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+    
+            if (resourceRecId)
+            {
+                calendarHeaderDisplayName = HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description;
+            }
+            else if (organizationlaUnitRecId || resourceGroupRecId ||specialityCodeRecId)
+            {
+                calendarHeaderDisplayName = HMResourceMaster::find(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster).Description;
+            }
+            else if(planningObjectRecId)
+            {
+                calendarHeaderDisplayName = HMResourceMaster::find(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster).Description;
+            }
+            
+            employeeRes =  new HMAppointmentCalendarResource();
+            employeeRes.parmDisplayName(calendarHeaderDisplayName);
+            employeeRes.parmResourceName(calendarHeaderDisplayName);
+            employeeRes.parmPlanningObjectDetailRecId(hmResourceSchedulingPlanningObjectLocal.RecId);
+            scheduler.AddResourceType(employeeRes);
+            
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSpecialityCodeRecId</Name>
+				<Source><![CDATA[
+    public RecId parmSpecialityCodeRecId(RecId _specialityCodeRecId = specialityCodeRecId)
+    {
+        specialityCodeRecId = _specialityCodeRecId;
+    
+        return specialityCodeRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>zoomOutSlotInterval</Name>
+				<Source><![CDATA[
+    public void zoomOutSlotInterval()
+    {
+        switch (slotInterval)
+        {
+            case 5:
+                slotInterval = 10;
+                break;
+            case 10:
+                slotInterval = 15;
+                break;
+            case 15:
+                slotInterval = 20;
+                break;
+            case 20:
+                slotInterval = 30;
+                break;
+            case 30:
+                slotInterval = 60;
+                break;
+            case 60:
+                slotInterval = 90;
+                break;
+            case 90:
+                slotInterval = 180;
+                break;
+            case 180:
+                slotInterval = 180;
+                break;
+        }
+        //todo: ax7 calender
+        //scheduler.setSlotInterval(slotInterval);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>zoomInSlotInterval</Name>
+				<Source><![CDATA[
+    public void zoomInSlotInterval()
+    {
+        switch (slotInterval)
+        {
+            case 5:
+                slotInterval = 5;
+                break;
+            case 10:
+                slotInterval = 5;
+                break;
+            case 15:
+                slotInterval = 10;
+                break;
+            case 20:
+                slotInterval = 15;
+                break;
+            case 30:
+                slotInterval = 20;
+                break;
+            case 60:
+                slotInterval = 30;
+                break;
+            case 90:
+                slotInterval = 60;
+                break;
+            case 180:
+                slotInterval = 90;
+                break;
+        }
+        //todo: ax7 calender
+       // scheduler.setSlotInterval(slotInterval);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>bindAppointmentTypeColor</Name>
+				<Source><![CDATA[
+    public void bindAppointmentTypeColor()
+    {
+        HMAppointmentColorData data;
+        HMResourceSchedulingTypeCode HMResourceSchedulingTypeCode;
+        System.Int32 intValue;
+        System.Drawing.Color c;
+        int red,green,blue;
+        while select * from HMResourceSchedulingTypeCode
+        {
+            intValue = HMResourceSchedulingTypeCode.ColourCode;
+            data = new HMAppointmentColorData();
+            data.parmTypeId(HMResourceSchedulingTypeCode.RecId);
+            [red, green, blue] = WinAPI::RGBint2Con(HMResourceSchedulingTypeCode.ColourCode);
+            c = System.Drawing.Color::FromArgb(red, green, blue);
+            data.parmcolor(System.Drawing.ColorTranslator::ToHtml(c));
+            data.parmappointmentTypeName(HMResourceSchedulingTypeCode.Description);
+            scheduler.addColor(data);
+        }
+        scheduler.bindAppointmentColor();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

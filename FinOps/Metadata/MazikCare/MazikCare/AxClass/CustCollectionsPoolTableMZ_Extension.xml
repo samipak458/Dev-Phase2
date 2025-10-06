@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>CustCollectionsPoolTableMZ_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(Tablestr(CustCollectionsPool))]
+final class CustCollectionsPoolTableMZ_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        this.ClaimQueryPacked = CustCollectionsPool::defaultClaimQuery().pack();
+
+        next insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    public boolean validateDelete()
+    {
+        HMClaimTable                hmClaimTable;
+        boolean                     ret;
+        CustCollectionsAgentPool    custCollectionsAgentPool;
+        CustCollectionsAgent        custCollectionsAgent;
+        DirPartyRelationShip        dirPartyRelationShip;
+
+        select firstonly RecId from custCollectionsAgentPool
+            where custCollectionsAgentPool.CustomerPoolId == this.Name
+            join custCollectionsAgent
+                where custCollectionsAgent.RecId == custCollectionsAgentPool.CustCollectionsAgent
+            join dirPartyRelationShip
+                where dirPartyRelationShip.RecId == custCollectionsAgent.DirPartyRelationship
+                    && dirPartyRelationShip.ValidTo > DateTimeUtil::getSystemDateTime();
+
+        if(!custCollectionsAgentPool.RecId)
+        {
+            delete_from custCollectionsAgentPool
+                where custCollectionsAgentPool.CustomerPoolId == this.Name;
+        }
+
+        ret = next validateDelete();
+
+        select firstonly RecId from HMClaimTable 
+            where HMClaimTable.ClaimPool == this.RecId;
+
+        if (HMClaimTable.RecId)
+        {
+            error("@MAZ:DeleteAssignedPoolToClaim");
+            return false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>defaultClaimQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Creates a default, empty query.
+    /// </summary>
+    /// <param name="_type">
+    ///    The pool type of the query.
+    /// </param>
+    /// <returns>
+    ///    A query with appropriate data sources and ranges.
+    /// </returns>
+    public static Query defaultClaimQuery()
+    {
+        Query query = new Query(queryStr(HMClaimQuery));
+
+        return query;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

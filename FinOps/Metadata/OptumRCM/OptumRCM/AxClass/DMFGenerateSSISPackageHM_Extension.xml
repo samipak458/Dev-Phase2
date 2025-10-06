@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>DMFGenerateSSISPackageHM_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(classStr(DMFGenerateSSISPackage))]
+final class DMFGenerateSSISPackageHM_Extension
+{
+    #OCCRetryCount
+
+    private const str claimV2Entity = 'Claims V2';
+    private const str claimV3Entity = 'Claims V3';
+    private const str claimDetails = 'Claim details';
+    private const str claimPaymentPosting = 'Claim payment posting V2';
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>generateStagingData</Name>
+				<Source><![CDATA[
+    public static container generateStagingData(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution,
+                                                DMFEntityTypes              _entityType,
+                                                RefRecId                    _batchId,
+                                                boolean                     _runOnService,
+                                                boolean                     _calledFromScheduler)
+    {
+        int                                 claimsToDelete;
+        HMClaimDetailsV2StagingArchive      claimStagingTableArchive;
+        HMClaimDetailsV3StagingArchive      claimStagingTableV3Archive;
+        HMClaimChargeLineStagingArchive     claimLineStagingArchive;
+        HMClaimPaymentPostingStagingArchive claimPaymPostingStagingArchive;
+
+        container retCon = next generateStagingData(_dmfDefinitionGroupExecution, _entityType, _batchId, _runOnService, _calledFromScheduler);
+
+        switch (_dmfDefinitionGroupExecution.Entity)
+        {
+            case claimV2Entity:
+                select count(RecId) from claimStagingTableArchive
+                    where claimStagingTableArchive.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                        && claimStagingTableArchive.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                        && claimStagingTableArchive.IsClaimDeleted == NoYes::Yes;
+
+                claimsToDelete = claimStagingTableArchive.RecId;
+                break;
+
+            case claimV3Entity:
+                select count(RecId) from claimStagingTableV3Archive
+                    where claimStagingTableV3Archive.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                        && claimStagingTableV3Archive.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                        && claimStagingTableV3Archive.IsClaimDeleted == NoYes::Yes;
+
+                claimsToDelete = claimStagingTableV3Archive.RecId;
+                break;
+
+            case claimDetails:
+                select count(RecId) from claimLineStagingArchive
+                    where claimLineStagingArchive.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                        && claimLineStagingArchive.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                        && claimLineStagingArchive.IsClaimDeleted == NoYes::Yes;
+
+                claimsToDelete = claimLineStagingArchive.RecId;
+                break;
+
+            case claimPaymentPosting:
+                select count(RecId) from claimPaymPostingStagingArchive
+                    where claimPaymPostingStagingArchive.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                        && claimPaymPostingStagingArchive.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                        && claimPaymPostingStagingArchive.IsClaimDeleted == NoYes::Yes;
+
+                claimsToDelete = claimPaymPostingStagingArchive.RecId;
+                break;
+        }
+        
+        if (_dmfDefinitionGroupExecution.NumOfStagingNew > 0 && claimsToDelete > 0)
+        {
+            try
+            {
+                ttsbegin;
+
+                _dmfDefinitionGroupExecution.NumOfStagingNew = _dmfDefinitionGroupExecution.NumOfStagingNew - claimsToDelete;
+                _dmfDefinitionGroupExecution.doUpdate();
+
+                ttscommit;
+            }
+            catch (Exception::Deadlock)
+            {
+                retry;
+            }
+            catch (Exception::UpdateConflict)
+            {
+                if (appl.ttsLevel() ==  0)
+                {
+                    if (xSession::currentRetryCount() >= #RetryNum)
+                    {
+                        throw Exception::UpdateConflictNotRecovered;
+                    }
+                    else
+                    {
+                        retry;
+                    }
+                }
+                else
+                {
+                    throw Exception::UpdateConflict;
+                }
+
+            }
+
+        }
+
+        return retCon;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

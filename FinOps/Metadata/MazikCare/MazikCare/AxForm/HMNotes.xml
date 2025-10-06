@@ -1,0 +1,595 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMNotes</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) [Dialog Caption] Two conflicting captions are defined on this form - 1) Ensure the value in Form.Design.Caption contains the caption you want for this form; and, 2) Remove the now redundant static text main instruction control MainInstruction. */
+[Form]
+public class HMNotes extends FormRun
+{
+    #define.NoEditPlusInstructions('NoEditPlusInstructions')
+    #define.Language1('Language1')
+    #define.Language2('Language2')
+    boolean             allowEdit, showInstructions;
+    AccountNum          clientAccount;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    public void closeOk()
+    {
+        HMClientProtocol            hmClientProtocol;
+    
+        super();
+    
+        if(allowEdit)
+        {
+            if(element.args().dataset() == tableNum(HMClientProtocol))
+            {
+                hmClientProtocol = element.args().record();
+    
+                HMClientProtocol::updateNotes(hmClientProtocol.ClientAccount, hmClientProtocol.ItemId, Notes.text(), Notes2.text(), Notes3.text());
+            }
+            else if(element.args().dataset() == tableNum(HMVendInventTable))
+            {
+                if(element.args().parm() == #Language1)
+                {
+                    HMVendInventTable::updateIntructions1(element.args().record().RecId, Notes.text(), Language.text());
+                }
+                else if(element.args().parm() == #Language2)
+                {
+                    HMVendInventTable::updateIntructions2(element.args().record().RecId, Notes.text(), Language.text());
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        HMAppointmentInventTmp      hmAppointmentInventTmp;
+        HMClientProtocol            hmClientProtocol;
+        CustTable                   custTable;
+        BOMVersion                  bomVersion;
+        HMVendInventTable           hmVendInventTable;
+        HMResourceSchedulingAppointmentInvent   apptInvent;
+        HMResourceSchedulingAppointment         appt;
+        object                                  formRun;
+        RecId                                   appointmentRecId;
+        super();
+    
+        if(element.args().dataset() == tableNum(hmAppointmentInventTmp))
+        {
+            allowEdit = false;
+            clientAccount = element.args().parm();
+    
+            hmAppointmentInventTmp = element.args().record();
+    
+            bomVersion = HMResourceSchedulingHelper::getActiveBomversion((hmAppointmentInventTmp.IsProtcol ? hmAppointmentInventTmp.ItemId : hmAppointmentInventTmp.ProtocolId));
+            if(clientAccount)
+            {
+                MainInstruction.text("@MAZ12067");
+                element.design().caption("@MAZ12067");
+    
+                hmClientProtocol = HMClientProtocol::find(clientAccount, (hmAppointmentInventTmp.IsProtcol ? hmAppointmentInventTmp.ItemId : hmAppointmentInventTmp.ProtocolId));
+    
+                Notes.text(hmClientProtocol.HMNotes);
+                if(Notes.text() == '')
+                {
+                    Notes.text(bomversion.HMNotes);
+                }
+                ClientGroup.visible(true);
+                ProtocolGroup.visible(true);
+    
+                ClientAccountNumber.text(hmClientProtocol.ClientAccount);
+                ClientName.text(hmClientProtocol.clientName());
+                ItemId.text(hmClientProtocol.ItemId);
+                ItemName.text(hmClientProtocol.itemAlias());
+            }
+            else
+            {
+                MainInstruction.text("@MAZ10819");
+                element.design().caption("@MAZ10819");
+    
+                Notes.text(bomVersion.HMNotes);
+    
+                ClientGroup.visible(false);
+                ProtocolGroup.visible(true);
+    
+                ItemId.text(bomVersion.ItemId);
+                ItemName.text(bomVersion.Name);
+            }
+    
+            Notes2.text(hmClientProtocol.HMInternalInstructions);
+    
+            Notes.label("@SYS40182");
+            Notes.visible(true);
+            Notes.allowEdit(allowEdit);
+            Notes2.allowEdit(allowEdit);
+            Notes2.visible(true);
+            Notes2.label("@MAZ12125");
+            formRun = element.args().caller();
+            if(formHasMethod(formRun,identifierStr(getAppointmentRecId)))
+            {
+                appointmentRecId = element.args().caller().getAppointmentRecId();
+            }
+    
+            if(hmAppointmentInventTmp.RefRecId != 0 || appointmentRecId != 0)
+            {
+                if(appointmentRecId==0)
+                {
+                    select HMResourceSchedulingAppointment from apptInvent
+                    where apptInvent.RecId == hmAppointmentInventTmp.RefRecId;
+                    appointmentRecId=apptInvent.HMResourceSchedulingAppointment;
+                }
+    
+                if(appointmentRecId!=0)
+                {
+                    select ImportedNotes from appt
+                    where appt.REcId == appointmentRecId;
+                    if(appt.ImportedNotes != '')
+                    {
+                        Notes.text(appt.ImportedNotes);
+                        Notes.label("@SYS40182");
+                    }
+                }
+            }
+    
+        }
+        else if(element.args().dataset() == tableNum(HMClientProtocol))
+        {
+            if(element.args().parm() == #NoEditPlusInstructions)
+            {
+                allowEdit = false;
+                showInstructions = true;
+            }
+            else
+            {
+                allowEdit = true;
+                showInstructions = false;
+            }
+    
+            hmClientProtocol = hmClientProtocol::findRecId(element.args().record().RecId);
+            allowEdit = !HMResourceSchedulingHelper::getActiveBomversion(hmClientProtocol.ItemId).Active;
+            MainInstruction.text("@MAZ12067");
+            element.design().caption("@MAZ12067");
+            Notes.label("@SYS40182");
+            Notes.visible(true);
+            Notes.allowEdit(allowEdit);
+            Notes2.allowEdit(allowEdit);
+            Notes2.visible(true);
+            Notes2.label("@MAZ12125");
+            Notes2.text(hmClientProtocol.HMInternalInstructions);
+    
+            Notes3.visible(element.args().menuItemName() == menuitemDisplayStr(HMProtocolClientNotes));
+    
+            Notes3.text(hmClientProtocol.ResultHandlingNotes);
+    
+            Notes3.allowEdit(allowEdit);
+            Notes3.label("@MAZ12701");
+            /*if(showInstructions)
+            {
+                Notes2.visible(true);
+                Notes2.text(HMResourceSchedulingHelper::getActiveBomversion(hmClientProtocol.ItemId).HMInternalInstructions);
+                Notes2.label("@MAZ12125");
+    
+            }
+            else
+            {
+                Notes2.visible(false);
+                Notes2.label("");
+            }
+            */
+            if(hmClientProtocol.HMNotes)
+            {
+                Notes.text(hmClientProtocol.HMNotes);
+            }
+            if(Notes2.text() == '' && showInstructions)
+            {
+                Notes2.text(HMResourceSchedulingHelper::getActiveBomversion(hmClientProtocol.ItemId).HMNotes);
+            }
+    
+            ClientGroup.visible(true);
+            ProtocolGroup.visible(true);
+    
+            ClientAccountNumber.text(hmClientProtocol.ClientAccount);
+            ClientName.text(hmClientProtocol.clientName());
+            ItemId.text(hmClientProtocol.ItemId);
+            ItemName.text(hmClientProtocol.itemAlias());
+        }
+        else if(element.args().dataset() == tableNum(CustTable))
+        {
+            allowEdit = false;
+    
+            custTable = element.args().record();
+    
+            MainInstruction.text("@MAZ11332");
+            element.design().caption("@MAZ11332");
+            Notes.label("@MAZ11331");
+            Notes.visible(true);
+            Notes.allowEdit(allowEdit);
+            Notes2.allowEdit(allowEdit);
+            Notes2.visible(false);
+            Notes2.label("");
+    
+            Notes.text(custTable.ClientBookingNotes);
+    
+            ClientGroup.visible(true);
+            ProtocolGroup.visible(false);
+    
+            ClientAccountNumber.text(custTable.AccountNum);
+            ClientName.text(custTable.name());
+        }
+        else if(element.args().dataset() == tableNum(BOMVersion))
+        {
+            if(element.args().parm() == #NoEditPlusInstructions)
+            {
+                allowEdit = false;
+                showInstructions = true;
+            }
+            else
+            {
+                allowEdit = true;
+                showInstructions = false;
+            }
+    
+            bomVersion = element.args().record();
+    
+            MainInstruction.text("@MAZ10819");
+            element.design().caption("@MAZ10819");
+            Notes.label("@SYS40182");
+            Notes.visible(true);
+            Notes.allowEdit(allowEdit);
+            Notes2.allowEdit(allowEdit);
+    
+            /*if(showInstructions)
+            {
+                Notes2.visible(true);
+                Notes2.text(bomVersion.HMInternalInstructions);
+                Notes2.label("@MAZ12125");
+            }
+            else
+            {
+                Notes2.visible(false);
+                Notes2.label("");
+            }
+            */
+            Notes2.label("@MAZ12125");
+            Notes2.text(bomVersion.HMNotes);
+    
+            ClientGroup.visible(false);
+            ProtocolGroup.visible(true);
+    
+            ItemId.text(bomVersion.ItemId);
+            ItemName.text(bomVersion.Name);
+        }
+        else if(element.args().dataset() == tableNum(HMVendInventTable))
+        {
+            allowEdit = true;
+    
+            hmVendInventTable = HMVendInventTable::findRecId(element.args().record().RecId);
+    
+            MainInstruction.text("@MAZ12190");
+            element.design().caption("@MAZ12190");
+            Notes.label("@SYS30061");
+            Notes.visible(true);
+            Notes.allowEdit(allowEdit);
+    
+            Notes2.visible(false);
+            Notes2.label("");
+    
+            Language.visible(true);
+    
+            if(element.args().parm() == #Language1)
+            {
+                Language.text(hmVendInventTable.HMLanguageId_1);
+                Notes.text(hmVendInventTable.HMInstruction_1);
+            }
+            else if(element.args().parm() == #Language2)
+            {
+                Language.text(hmVendInventTable.HMLanguageId_2);
+                Notes.text(hmVendInventTable.HMInstruction_2);
+            }
+    
+            ClientGroup.visible(true);
+            ProtocolGroup.visible(true);
+    
+            ClientAccountNumber.text(hmVendInventTable.VendTable);
+            ClientName.text(VendTable::find(hmVendInventTable.VendTable).name());
+            ClientAccountNumber.label("@SYS80105");
+    
+            ItemId.text(hmVendInventTable.InventTable);
+            ItemName.text(hmVendInventTable.itemName());
+            ItemId.label("@MAZ10590");
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ12067</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<Height xmlns="">400</Height>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Style xmlns="">Dialog</Style>
+		<Width xmlns="">600</Width>
+		<WindowResize xmlns="">Dynamic</WindowResize>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStaticTextControl">
+						<Name>MainInstruction</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>715827882</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>StaticText</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Style>MainInstruction</Style>
+						<Text>@MAZ12067</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ClientGroup</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>954437176</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ClientAccountNumber</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS14787</Label>
+								<ViewEditMode>View</ViewEditMode>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ClientName</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ShowLabel>No</ShowLabel>
+								<ViewEditMode>View</ViewEditMode>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+						<Columnspace>0</Columnspace>
+						<ColumnspaceMode>Fixed</ColumnspaceMode>
+						<ViewEditMode>Edit</ViewEditMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ProtocolGroup</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1193046470</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ItemId</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ10609</Label>
+								<ViewEditMode>View</ViewEditMode>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ItemName</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ShowLabel>No</ShowLabel>
+								<ViewEditMode>View</ViewEditMode>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+						<Columnspace>0</Columnspace>
+						<ColumnspaceMode>Fixed</ColumnspaceMode>
+						<ViewEditMode>Edit</ViewEditMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Language</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>LanguageId</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Notes</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1670265058</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>Notes</ExtendedDataType>
+						<Label>@SYS40182</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Notes2</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1908874352</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>Notes</ExtendedDataType>
+						<Label>@SYS40182</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Notes3</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>2028178999</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>Notes</ExtendedDataType>
+						<Label>@SYS40182</Label>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogCommit</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormCommandButtonControl">
+								<Name>OKButton</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>CommandButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Command>OK</Command>
+								<DefaultButton>Yes</DefaultButton>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Footnote</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls />
+						<TopMargin>10</TopMargin>
+						<TopMarginMode>Fixed</TopMarginMode>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<Style>DialogCommit</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

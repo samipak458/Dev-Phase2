@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientEODStatementClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientEODStatementClass
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>calculateStatement</Name>
+				<Source><![CDATA[
+    private void calculateStatement(HMPatientEODStatement _hmPatientEODStatement)
+    {
+        HMPatientEODStatementLines          HMPatientEODStatementLines ;
+        CustTrans                           custTrans;
+        HMResourceSchedulingAppointment     HMResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject  HMResourceSchedulingPlanningObject;
+        Set                                 setCustTrans;
+        date                                startDate,endDate;
+        TimeOfDay                           startTime,endTime;
+        LedgerJournalTrans                  ledgerJournalTrans;
+        HMOrganizationalUnit                hmOrganizationalUnit;
+        HMPatientEODStatementSummaryLines   HMPatientEODStatementSummaryLines;
+        try
+        {
+            if(Box::yesNo("@MAZ11745",DialogButton::No,"@MAZ7757") == dialogButton::Yes)
+            {
+                startDate = DateTimeUtil::date(_hmPatientEODStatement.IntervalStartDateTime);
+                endDate = DateTimeUtil::date(_hmPatientEODStatement.IntervalEndDateTime);
+                setCustTrans = new set(Types::Int64);
+                ttsBegin;
+    
+                while select forupdate custTrans
+                where (custTrans.modifiedDateTime >= _hmPatientEODStatement.IntervalStartDateTime
+                && custTrans.modifiedDateTime <= _hmPatientEODStatement.IntervalEndDateTime)
+                && custTrans.TransType == LedgerTransType::Payment
+                && custTrans.createdBy == _hmPatientEODStatement.UserId
+                && custTrans.EODProcessed == NoYes::No
+                && custTrans.HMMerchantDetails == _hmPatientEODStatement.HMMerchantDetails
+                {
+                    HMPatientEODStatementLines.clear();
+                    HMPatientEODStatementLines.AmountCur = custTrans.AmountCur > 0 ? -custTrans.AmountCur : abs(custTrans.AmountCur);
+                    HMPatientEODStatementLines.CurrencyCode = custTrans.CurrencyCode;
+                    HMPatientEODStatementLines.CustTrans = custTrans.RecId;
+                    select PaymMode from ledgerJournalTrans
+                    where ledgerJournalTrans.CustTransId == custTrans.RecId;
+                    if(ledgerJournalTrans.PaymMode == '')
+                    {
+                        warning(strFmt("@MAZ12003",  custTrans.Voucher));
+                        ttsAbort;
+                        return;
+                    }
+                    HMPatientEODStatementLines.CustPaymModeTable = ledgerJournalTrans.PaymMode;
+                    HMPatientEODStatementLines.HMResourceSchedulingAppointment = HMResourceSchedulingAppointment::findRecIdByAppointmentNum(custTrans.HMAppointmentNumber);
+                    HMPatientEODStatementLines.StatementNumber = _hmPatientEODStatement.StatementNumber;
+                    if(HMPatientEODStatementLines.validateWrite())
+                    {
+                        HMPatientEODStatementLines.insert();
+                    }
+                    else
+                    {
+                        ttsAbort;
+                        return;
+                    }
+                    if(!setCustTrans.in(custTrans.RecId))
+                    {
+                        custTrans.EODProcessed = NoYes::Yes;
+                        custTrans.update();
+                        setCustTrans.add(custTrans.RecId);
+                    }
+                }
+    
+                while select sum(AmountCur), CustPaymModeTable, CurrencyCode, StatementNumber
+                from HMPatientEODStatementLines
+                group by CustPaymModeTable, CurrencyCode, StatementNumber
+                where HMPatientEODStatementLines.StatementNumber == _hmPatientEODStatement.StatementNumber
+                {
+                    HMPatientEODStatementSummaryLines.clear();
+                    HMPatientEODStatementSummaryLines.AmountCur = HMPatientEODStatementLines.AmountCur;
+                    HMPatientEODStatementSummaryLines.AmountDifference = abs(HMPatientEODStatementSummaryLines.AmountCounted) - abs(HMPatientEODStatementSummaryLines.AmountCur);
+                    HMPatientEODStatementSummaryLines.CurrencyCode = HMPatientEODStatementLines.CurrencyCode;
+                    HMPatientEODStatementSummaryLines.CustPaymModeTable = HMPatientEODStatementLines.CustPaymModeTable;
+                    HMPatientEODStatementSummaryLines.StatementNumber = HMPatientEODStatementLines.StatementNumber;
+                    if(HMPatientEODStatementSummaryLines.validateWrite())
+                    {
+                        HMPatientEODStatementSummaryLines.insert();
+                    }
+                    else
+                    {
+                        ttsAbort;
+                        return;
+                    }
+    
+                }
+                while select * from HMPatientEODStatementSummaryLines
+                    where  HMPatientEODStatementSummaryLines.StatementNumber == _hmPatientEODStatement.StatementNumber
+                {
+                    update_recordSet HMPatientEODStatementLines
+                    setting HMPatientEODStatementSummaryLines = HMPatientEODStatementSummaryLines.RecId
+                    where HMPatientEODStatementLines.CustPaymModeTable == HMPatientEODStatementSummaryLines.CustPaymModeTable
+                    && HMPatientEODStatementLines.CurrencyCode == HMPatientEODStatementSummaryLines.CurrencyCode
+                    && HMPatientEODStatementLines.StatementNumber == HMPatientEODStatementSummaryLines.StatementNumber;
+                }
+    
+                _hmPatientEODStatement.selectForUpdate(true);
+                _hmPatientEODStatement.Status = HMPatientEODStatementStatus::Calculated;
+                _hmPatientEODStatement.CalculatedDateTime = DateTimeUtil::utcNow();
+                _hmPatientEODStatement.update();
+                ttsCommit;
+                info(strFmt("@MAZ11742", _hmPatientEODStatement.StatementNumber));
+            }
+        }
+        catch
+        {
+            throw error("@MAZ11730");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearStatement</Name>
+				<Source><![CDATA[
+    private void clearStatement(HMPatientEODStatement _hmPatientEODStatement)
+    {
+        HMPatientEODStatementLines          HMPatientEODStatementLines ;
+        HMPatientEODStatementSummaryLines   HMPatientEODStatementSummaryLines;
+        CustTrans                           custTrans;
+        try
+        {
+            if(Box::yesNo("@MAZ11840",DialogButton::No,"@MAZ7757") == dialogButton::Yes)
+            {
+                ttsBegin;
+                while select forupdate HMPatientEODStatementLines
+                where HMPatientEODStatementLines.StatementNumber == _hmPatientEODStatement.StatementNumber
+                {
+                    select forupdate EODProcessed,REcId from custTrans
+                    where custTrans.recid == HMPatientEODStatementLines.CustTrans;
+                    if(custTrans)
+                    {
+                        custTrans.EODProcessed = NoYes::No;
+                        custTrans.update();
+                        HMPatientEODStatementLines.delete();
+                    }
+                    else
+                    {
+                        warning("@MAZ11841");
+                        ttsAbort;
+                        return;
+                    }
+                }
+                delete_from HMPatientEODStatementSummaryLines
+                where HMPatientEODStatementSummaryLines.StatementNumber == _hmPatientEODStatement.StatementNumber;
+    
+                _hmPatientEODStatement.selectForUpdate(true);
+                _hmPatientEODStatement.Status = HMPatientEODStatementStatus::Open;
+                _hmPatientEODStatement.CalculatedDateTime = utcDateTimeNull();
+                _hmPatientEODStatement.update();
+                ttsCommit;
+                info("@MAZ11731");
+            }
+        }
+        catch
+        {
+            warning("@MAZ11732");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>endUserShift</Name>
+				<Source><![CDATA[
+    public void endUserShift(UserId _userId)
+    {
+        HMPatientEODStatement hmPatientEODStatement;
+        try
+        {
+            ttsBegin;
+            select forUpdate hmPatientEODStatement
+            where hmPatientEODStatement.IntervalStartDateTime != utcDateTimeNull()
+            && hmPatientEODStatement.IntervalEndDateTime == utcDateTimeNull()
+            && hmPatientEODStatement.Status == HMPatientEODStatementStatus::Open
+            && hmPatientEODStatement.UserId == _userId;
+            if(hmPatientEODStatement)
+            {
+                hmPatientEODStatement.IntervalEndDateTime  = DateTimeUtil::utcNow();
+                hmPatientEODStatement.update();
+            }
+            ttsCommit;
+            if(hmPatientEODStatement)
+            {
+                this.calculateStatement(hmPatientEODStatement);
+            }
+            else
+            {
+                warning("@MAZ13451");
+            }
+        }
+        catch
+        {
+    
+            warning("@MAZ13451");
+            ttsAbort;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postStatement</Name>
+				<Source><![CDATA[
+    private void postStatement(HMPatientEODStatement _hmPatientEODStatement)
+    {
+        HMPatientEODStatementSummaryLines   HMPatientEODStatementSummaryLines;
+        JournalNameId                       journalId;
+        //Zain  -- Deprecated in AX7
+        //AxLedgerJournalTrans                journalTrans;
+        //AxLedgerJournalTable                header = new AxLedgerJournalTable();
+        LedgerJournalCheckPost              LedgerJournalCheckPost;
+        LedgerJournalTable                  ledgerJournalTable;
+        LedgerJournalTrans                  ledgerJournalTrans;
+        LedgerJournalName                   LedgerJournalName;
+        HMFinancialDimensionHelper          dimensionHelper = new HMFinancialDimensionHelper();
+        HMDimensionClass                    HMDimensionClass =new HMDimensionClass();
+        MainAccountNum                      mainAccountId;
+        RecId                               workerRecId;
+        HcmWorker                           hcmWorker;
+        DirPersonUser                       personUser;
+        HcmEmployment                       hcmEmployment;
+        boolean isFirst = true;
+        try
+        {
+            if(Box::yesNo("@MAZ11746",DialogButton::No,"@MAZ7757") == dialogButton::Yes)
+            {
+                ttsBegin;
+                _hmPatientEODStatement.selectForUpdate(true);
+                _hmPatientEODStatement.Status = HMPatientEODStatementStatus::Posted;
+                _hmPatientEODStatement.PostingDateTime = DateTimeUtil::utcNow();
+                _hmPatientEODStatement.update();
+    
+                select RecId from HcmWorker
+                join DefaultDimension from hcmEmployment
+                where hcmEmployment.Worker == hcmWorker.RecId
+                && hcmEmployment.LegalEntity == CompanyInfo::findDataArea(curext()).RecId
+                exists join personUser where personUser.PersonParty == HcmWorker.Person
+                && personUser.User == _hmPatientEODStatement.UserId;
+    
+                if(!hcmEmployment.DefaultDimension)
+                {
+                    throw warning("@MAZ13657");
+                }
+    
+                while select forupdate HMPatientEODStatementSummaryLines
+                    where HMPatientEODStatementSummaryLines.StatementNumber == _hmPatientEODStatement.StatementNumber
+                    && HMPatientEODStatementSummaryLines.AmountDifference != 0
+                {
+                    if(isFirst)
+                    {
+                        LedgerJournalName = LedgerJournalName::find(HMBillParameters::getReconcileJournalName());
+                        if (LedgerJournalName.RecId)
+                        {
+                            //Zain  
+                            //header.parmJournalName(LedgerJournalName.JournalName);
+                            //header.parmJournalType(LedgerJournalType::Daily);
+                            //header.parmDefaultDimension(hcmEmployment.DefaultDimension);
+                            //header.save();
+                            //ledgerJournalTable = header.ledgerJournalTable();
+                            ledgerJournalTable.JournalName = LedgerJournalName.JournalName;
+                            ledgerJournalTable.JournalType = LedgerJournalType::Daily;
+                            ledgerJournalTable.DefaultDimension = hcmEmployment.DefaultDimension;
+                            ledgerJournalTable.insert();
+                        }
+                        else
+                        {
+                            throw error("@MAZ13658");
+                        }
+                        isFirst = false;
+                    }
+                    if(ledgerJournalTable)
+                    {
+                        //Zain
+                        //journalTrans = new AxLedgerJournalTrans();
+                        //journalTrans.parmJournalNum(ledgerJournalTable.JournalNum);
+                        //journalTrans.parmAccountType(LedgerJournalACType::Ledger);
+                        //journalTrans.parmDefaultDimension(ledgerJournalTable.DefaultDimension);
+                        ledgerJournalTrans.JournalNum = ledgerJournalTable.JournalNum;
+                        ledgerJournalTrans.AccountType = LedgerJournalACType::Ledger;
+                        ledgerJournalTrans.DefaultDimension = ledgerJournalTable.DefaultDimension;
+    
+                        mainAccountId = MainAccount::find(HMBillParameters::getReconcileCreditAccount()).MainAccountId;
+                        //journalTrans.parmLedgerDimension(HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, journalTrans.parmDefaultDimension()));
+                        //journalTrans.parmOffsetAccountType(LedgerJournalACType::Ledger);
+                        ledgerJournalTrans.LedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, ledgerJournalTrans.DefaultDimension);
+                        ledgerJournalTrans.OffsetAccountType = LedgerJournalACType::Ledger;
+    
+                        //ledgerJournalTrans = journalTrans.ledgerJournalTrans();
+                        mainAccountId = MainAccount::find(HMBillParameters::getReconcileDebitAccount()).MainAccountId;
+                        //ledgerJournalTrans.OffsetLedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, journalTrans.parmDefaultDimension());
+                        //journalTrans.parmTransDate(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+                        ledgerJournalTrans.OffsetLedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, ledgerJournalTrans.DefaultDimension);
+                        ledgerJournalTrans.TransDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+                        //if(!journalTrans.parmLedgerDimension() ||!journalTrans.parmOffsetLedgerDimension())
+                        //{
+                        //    throw error("@MAZ13659");
+                        //}
+                        if (!ledgerJournalTrans.LedgerDimension || !ledgerJournalTrans.OffsetLedgerDimension)
+                        {
+                            throw error("@MAZ13659");
+                        }
+                        if(HMPatientEODStatementSummaryLines.AmountDifference < 0)
+                        {
+                            //journalTrans.parmAmountCurCredit(abs(HMPatientEODStatementSummaryLines.AmountDifference));
+                            ledgerJournalTrans.AmountCurCredit = abs(HMPatientEODStatementSummaryLines.AmountDifference);
+                        }
+                        else
+                        {
+                            //journalTrans.parmAmountCurDebit(HMPatientEODStatementSummaryLines.AmountDifference);
+                            ledgerJournalTrans.AmountCurDebit = HMPatientEODStatementSummaryLines.AmountDifference;
+                        }
+                        //journalTrans.save();
+                        ledgerJournalTrans.insert();
+                        HMPatientEODStatementSummaryLines.LedgerJournalTrans = ledgerJournalTrans.RecId;//journalTrans.parmRecId();
+                        HMPatientEODStatementSummaryLines.update();
+                    }
+                }
+                if(!isFirst)
+                {
+                    LedgerjournalCheckPost = LedgerjournalCheckPost::newLedgerJournalTable(ledgerJournalTable,NoYes::Yes);
+                    LedgerjournalCheckPost.run();
+                }
+                info(strFmt("@MAZ11743", _hmPatientEODStatement.StatementNumber));
+                ttsCommit;
+            }
+        }
+        catch
+        {
+            warning(strFmt("@MAZ11839",_hmPatientEODStatement.StatementNumber));
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startUserShift</Name>
+				<Source><![CDATA[
+    private void startUserShift(UserId _userId)
+    {
+        NumberSequenceReference     numberSeqReferenceNum;
+        NumberSequenceTable         numberSeqTableNum;
+        NumberSeq                   numberSeqNum;
+        try
+        {
+            numberSeqReferenceNum  = NumberSeqReference::findReference(extendedtypenum(HMPatientEODStatementNumber));
+            numberSeqTableNum      = NumberSequenceTable::find(numberSeqReferenceNum.NumberSequenceId);
+            if(numberSeqTableNum)
+            {
+                numberSeqNum = NumberSeq::newGetNumFromId(numberSeqTableNum.RecId, true);
+                HMPatientEODStatementClass::insertHeaderFromDialog(numberSeqNum.num(),
+                                                                    0,
+                                                                    0,
+                                                                    0,
+                                                                    _userId,
+                                                                    DateTimeUtil::utcNow(),
+                                                                    utcDateTimeNull());
+    
+            }
+        }
+        catch
+        {
+            warning("@MAZ13452");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>defaultMerchantIdByOU</Name>
+				<Source><![CDATA[
+    public static container defaultMerchantIdByOU(RecId _subClinicRecId)
+    {
+        HMOrganizationalUnit                HMOrganizationalUnit;
+        HMOrganizationalUnitMerchantDetails HMOrganizationalUnitMerchantDetails;
+        HMMerchantDetails                   hmMerchantDetails;
+        select count(RecId) from HMOrganizationalUnitMerchantDetails
+        where HMOrganizationalUnitMerchantDetails.HMOrganizationalUnit == _subClinicRecId;
+    
+        if(HMOrganizationalUnitMerchantDetails.RecId == 1)
+        {
+            select HMMerchantDetails from HMOrganizationalUnitMerchantDetails
+            join Code from hmMerchantDetails
+            where hmMerchantDetails.RecId == HMOrganizationalUnitMerchantDetails.HMMerchantDetails
+            && HMOrganizationalUnitMerchantDetails.HMOrganizationalUnit == _subClinicRecId;
+            return [HMOrganizationalUnitMerchantDetails.HMMerchantDetails,hmMerchantDetails.Code];
+        }
+        return conNull();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertHeaderFromDialog</Name>
+				<Source><![CDATA[
+    public static boolean insertHeaderFromDialog(HMPatientEODStatementNumber _statementNumber,
+                                        RecId _locationId,
+                                        RecId _subLocationId,
+                                        RecId _merchantRecId,
+                                        str   _userId,
+                                        utcDateTime _intervalStartDateTime,
+                                        utcDateTime _intervalEndDateTime)
+    {
+    
+        HMPatientEODStatement   HMPatientEODStatement;
+        try
+        {
+            HMPatientEODStatement.initvalue();
+            HMPatientEODStatement.StatementNumber = _statementNumber;
+            HMPatientEODStatement.HMOrganizationalUnit = _locationId;
+            HMPatientEODStatement.HMOrganizationalUnit_ServiceLocation = _subLocationId;
+            HMPatientEODStatement.HMMerchantDetails = _merchantRecId;
+            HMPatientEODStatement.IntervalStartDateTime = _intervalStartDateTime;
+            HMPatientEODStatement.IntervalEndDateTime = _intervalEndDateTime;
+            HMPatientEODStatement.Status = HMPatientEODStatementStatus::Open;
+            HMPatientEODStatement.userId = _userId;
+            if(HMPatientEODStatement.validateWrite())
+            {
+                HMPatientEODStatement.insert();
+                info(strFmt("@MAZ13453",_statementNumber));
+                return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMPatientEODStatementClass HMPatientEODStatementClass = new HMPatientEODStatementClass();
+    
+        if(_args.menuItemName() == menuitemActionStr(HMPatientEODStatementClass_ClearStmt))
+        {
+            HMPatientEODStatementClass.clearStatement(_args.record());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPatientEODStatementClass_PostStmt))
+        {
+            HMPatientEODStatementClass.postStatement(_args.record());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPatientEODStatementClass_CalcStmt))
+        {
+            HMPatientEODStatementClass.calculateStatement(_args.record());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPatientEODStatementStartShift))
+        {
+            HMPatientEODStatementClass.startUserShift(curUserId());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPatientEODStatementEndShift))
+        {
+            HMPatientEODStatementClass.endUserShift(curUserId());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>userHasOpenStatement</Name>
+				<Source><![CDATA[
+    public static boolean userHasOpenStatement(UserId _userId)
+    {
+        HMPatientEODStatement hmPatientEODStatement;
+        select RecId from hmPatientEODStatement
+        where hmPatientEODStatement.IntervalStartDateTime != utcDateTimeNull()
+        && hmPatientEODStatement.IntervalEndDateTime == utcDateTimeNull()
+        && hmPatientEODStatement.Status == HMPatientEODStatementStatus::Open
+        && hmPatientEODStatement.UserId == _userId;
+    
+        return hmPatientEODStatement.RecId > 0;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

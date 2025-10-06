@@ -1,0 +1,873 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMResourceSchedulingAppointmentStatus</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMResourceSchedulingAppointmentStatus extends FormRun
+{
+    recId       hmResourceSchedulingAppointmentrecId;
+    RecId       encounterId;
+    RecId       appointmentReason;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateAppointmentDeadlineLimitHours</Name>
+				<Source><![CDATA[
+    public int calculateAppointmentDeadlineLimitHours(HMResourceSchedulingAppointment  _hmResourceSchedulingAppointment)
+    {
+        utcDateTime     apptDT, currentDT;
+        str             diff;
+        container       con;
+        boolean         ret = true;
+        int hours;
+    
+        apptDT      = DateTimeUtil::newDateTime(_hmResourceSchedulingAppointment.AppointmentDate,_hmResourceSchedulingAppointment.AppointmentTime);
+        currentDT   = DateTimeUtil::newDateTime(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()));
+        diff        = time2StrHMS(int642int(DateTimeUtil::getDifference(apptDT, currentDT)));
+        con         = str2con(diff,':');
+        hours       = conPeek(con,1);
+    
+    
+        return hours;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        HMResourceSchedulingAppointment          hmResourceSchedulingAppointment;
+        CustTable                               custTable;
+        HMAppointLogTime.value(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()));
+        HMAppointLogDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+        // called from ER register
+        if (element.args().parm() =='EmergencyChecked-Out')
+        {
+            element.design().caption("@MAZ7887");
+            MainInstruction.text("@MAZ7887");
+            Close.text("@MAZ2892");
+        }
+        else
+        {
+            if(element.args().parm() != 'CancelForBooked')
+            {
+                hmResourceSchedulingAppointment         = HMResourceSchedulingAppointment::find(element.args().record().RecId);
+                hmResourceSchedulingAppointmentrecId    = element.args().record().RecId;
+            }
+    
+            HMAppointLogNote.text("");
+    
+            if(element.args().parm()=='Checked-in')
+            {
+                element.design().caption("@MAZ3383");
+                MainInstruction.text("@MAZ3383");
+                Close.text("@MAZ2672");
+            }
+            else if(element.args().parm()=='Checked-out')
+            {
+                element.design().caption("@MAZ3382");
+                MainInstruction.text("@MAZ3382");
+                Close.text("@MAZ2892");
+                hmResourceSchedulingAppointment = element.args().record();
+                select clientBillingnotes from custTable
+                where custTable.AccountNum == hmResourceSchedulingAppointment.Client;
+                BillingNotes.visible(true);
+                BillingNotes.text(custTable.ClientBillingNotes);
+                PatientName.visible(true);
+                PatientName.text(hmResourceSchedulingAppointment.getPatientName());
+            }
+            else if(element.args().parm()=='No-show')
+            {
+                element.design().caption("@MAZ6247");
+                MainInstruction.text("@MAZ6247");
+                Close.text("@MAZ6124");
+                Reason.visible(true);
+                Reason.mandatory(true);
+            }
+            else if(element.args().parm() == 'Cancel' || element.args().parm() == 'CancelForceBooked')
+            {
+                element.design().caption("@MAZ2460");
+                MainInstruction.text("@MAZ2460");
+                Close.text("@SYS12778");
+                Reason.visible(true);
+                Reason.mandatory(true);
+            }
+            else if (element.args().parm() == 'OT Order')
+            {
+                element.design().caption("@SYS117673");
+                MainInstruction.text("@SYS117673");
+                Close.text("@SYS12778");
+                Reason.visible(true);
+                Reason.mandatory(true);
+                DateTime.visible(false);
+            }
+            else if(element.args().parm() == 'InclinicNotes')
+            {
+                element.design().caption("@MAZ12334");
+                MainInstruction.text("@MAZ12334");
+                HMAppointLogDate.visible(false);
+                HMAppointLogTime.visible(false);
+                HMAppointLogNote.label("@MAZ12331");
+                Close.text("@MAZ5193");
+                HMAppointLogNote.text(HMResourceSchedulingAppointment::find(hmResourceSchedulingAppointmentrecId).InclinicNotes);
+            }
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeReason</Name>
+				<Source><![CDATA[
+    public void storeReason(RecId _recId)
+    {
+        appointmentReason = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateData</Name>
+				<Source><![CDATA[
+    public boolean validateData()
+    {
+        HMAppoinmentLog                         hmAppoinmentLogLocal;
+        #define.DATEISLESS("@MAZ4772")
+        HMResourceSchedulingAppointment          hmResourceSchedulingAppointment;
+        DialogButton                            dialogButton;
+        boolean result = true;
+        if(element.args().parm() == 'CancelForceBooked')
+        {
+            if (appointmentReason == 0)
+            {
+                warning("@MAZ6614");
+                result = false;
+            }
+            return true;
+        }
+        hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(element.args().record().RecId);
+    
+        if(element.args().parm() == 'Cancel')
+        {
+            if(hmResourceSchedulingAppointment.AppointmentDate < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                result = false;
+                warning("@MAZ4770");
+            }
+            /*else
+            {
+                result = true;
+            }
+            */
+    
+            // medisys-demo
+            if (result &&
+                element.calculateAppointmentDeadlineLimitHours(hmResourceSchedulingAppointment) < HMParameters::find().AppointmentCancellationDeadlineLimit)
+            {
+    
+                dialogButton = Box::yesNo(SysLabel::labelId2String2('@MAZ11026'), DialogButton::No, "@SYS301622");
+                if (dialogButton == DialogButton::No)
+                {
+                    result = false;
+                }
+            }
+    
+            // added by yasir
+            if (result && appointmentReason == 0)
+            {
+                warning("@MAZ6614");
+                result = false;
+            }
+           /* else
+            {
+                result = true;
+            }
+           */
+    
+            if(result && hmResourceSchedulingAppointment.HMWaitingList)
+            {
+                if(HMClinicStaff::findByWorker(HcmWorkerLookup::currentWorker()).RecId == 0)
+                {
+                    warning("@MAZ3825");
+                    result = false;
+                }
+    
+    
+                if(result)
+                {
+                    if(HMAppointLogDate.dateValue() > DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                    {
+                        warning("@MAZ4053");
+                        result = false;
+                    }
+                }
+            }
+        }
+        else
+        {
+            result = true;
+        }
+    
+        return result;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>Reason</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            if(element.args().parm() == 'CancelForBooked')
+            {
+                new MenuFunction(MenuItemDisplayStr(HMComplementForceBookingCancelReason),MenuItemType::Display).run();
+            }
+            else
+            {
+                new MenuFunction(MenuItemDisplayStr(HMAppointmentsReason),MenuItemType::Display).run();
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMAppointmentResonsLookup));
+            args.caller(element);
+            if(element.args().parm() == 'OT Order' || element.args().parm() == 'CancelForBooked')
+            {
+                args.parm(element.args().parm());
+            }
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ReasonTable     reasonTable;
+            HMlookupClass   HMlookupClassObj = new HMlookupClass();
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.text() != "")
+                {
+                    if(element.args().parm() == 'OT Order')
+                    {
+                        reasonTable = HMlookupClassObj.checkValidOrderingReason(this.text());
+                    }
+                    else if(element.args().parm() == 'CancelForceBooked')
+                    {
+                        reasonTable = HMlookupClassObj.checkValidForceBookingCanceReason(this.text());
+                    }
+                    else
+                    {
+                        reasonTable = HMlookupClassObj.checkValidAppointmentReason(this.text());
+                    }
+        
+                    if (reasonTable.RecId)
+                    {
+                        element.storeReason(reasonTable.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@SYS86426"));
+                        this.text("");
+                    }
+                }
+                else
+                {
+                    element.storeReason(0);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Close</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            #Task
+            HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+            Object                              formRunObject;
+            FormRun                             formRun;
+            HMResourceSchedulingAppointment     hmResourceSchedulingAppointmentStatusCheck;
+            HMResourceSchedulingAppointment     HMResourceSchedulingAppointmentCheckin;
+            HMResourceSchedulingAppointmentInvent HMResourceSchedulingAppointmentInvent;
+            DialogButton                            dialogButton;
+            //cancel waiting list
+            HMWaitingList               hmWaitingListLocal;
+            HMAppoinmentLog             hmAppoinmentLogWaitList;
+            HMAppointmentReserveSLot    apptReserveSlot;
+            HMResourceSchedulingAppointment hmResourceSchedulingAppointmentWaitList,appt;
+        
+            CustTable                   custTable;
+        
+            HMPatientClass                      objPatient          = new HMPatientClass();
+        
+            RecId chargeEntryRecId;
+        
+            CustInvoiceJour                     custInvoiceJour;
+            CustTrans                           custTrans;
+        
+            Args                                args;
+            HMResourceSchedulingHelper          hmResourceSchedulingHelper = new HMResourceSchedulingHelper();
+        
+            super();
+            HMResourceSchedulingAppointmentcheckin = HMResourceSchedulingAppointment::find(element.args().record().RecId);
+            if(HMResourceSchedulingAppointmentcheckin.ActualArrivalTime != -1)
+            {
+                /*
+              while select *from HMResourceSchedulingAppointmentInvent where HMResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == HMResourceSchedulingAppointmentcheckin.RecId
+                {
+                    if(HMResourceSchedulingAppointmentInvent.HMServiceStatus != HMServiceStatus::Complete)
+                    {
+                        throw error ( '@MAZ13203');
+                    }
+                }
+                */
+            }
+            else
+            {
+                throw error('@MAZ13204');
+            }
+        
+        
+        
+            if (element.validateData())
+            {
+                if (element.args().parm() == 'Checked-in')
+                {
+                    if(!hmResourceSchedulingHelper.expandAppointmentProtocols(element.args().record().RecId))
+                    {
+                        return;
+                    }
+        
+                    if(element.args().menuItemName() == menuitemDisplayStr(HMResourceSchedulingCheckedInListPage))
+                    {
+                        select * from hmResourceSchedulingAppointmentStatusCheck
+                            where hmResourceSchedulingAppointmentStatusCheck.RecId == element.args().record().RecId;
+                        if(hmResourceSchedulingAppointmentStatusCheck.AppointmentStatus != HMResourceSchedulingAppointmentStatus::Confirmed)
+                        {
+                            warning('Appointment should be in confirmed state');
+                            return;
+                        }
+                    }
+                    HMAppoinmentLog.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::CheckedIn;
+        
+        
+                }
+                else if (element.args().parm() == 'No-show') //added by faizan
+                {
+                    select HMPatient,AppointmentDate,RecId, PrimaryAppointment from hmResourceSchedulingAppointmentStatusCheck
+                                where hmResourceSchedulingAppointmentStatusCheck.RecId == element.args().record().RecId;
+                    HMAppoinmentLog.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::NoShow;
+                    HMAppoinmentLog.AppointmentReason  = appointmentReason;
+                }
+                else if (element.args().parm() == 'Checked-out')
+                {
+                    select HMPatient,AppointmentDate,RecId, PrimaryAppointment from hmResourceSchedulingAppointmentStatusCheck
+                                where hmResourceSchedulingAppointmentStatusCheck.RecId == element.args().record().RecId;
+        
+                    if(hmResourceSchedulingAppointmentStatusCheck.PrimaryAppointment == YesNo::No)
+                    {
+                        HMAppoinmentLog.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::CheckedOut;
+                    }
+                    else
+                    {
+                        //dialogButton = Box::yesNo("@MAZ12313", DialogButton::No, "@SYS301622");
+                        //if (dialogButton == DialogButton::Yes)
+                        //{
+                            HMAppoinmentLog.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::CheckedOut;
+        
+                            select HMPatient,AppointmentDate,RecId from hmResourceSchedulingAppointmentStatusCheck
+                                    where hmResourceSchedulingAppointmentStatusCheck.RecId == element.args().record().RecId;
+        
+        
+                            //if(HMChargeEntryClass_Medisys::importServices(element.args().record().RecId))
+                            //{
+                                //args = new args();
+                                //args.record(element.args().record());
+                                //new MenuFunction(menuitemDisplayStr(HMPatientChargeEntry_Medisys),MenuItemType::Display).run(args);
+                            //}
+                        //}
+                        //else
+                        //{
+                            //element.close();
+                            //return;
+                        //}
+                    }
+                }
+                else if (element.args().parm() == 'Cancel')
+                {
+                    HMAppoinmentLog.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::Cancelled;
+                    HMAppoinmentLog.AppointmentReason  = appointmentReason; // added by yasir
+        
+                    select HMPatient,AppointmentDate from hmResourceSchedulingAppointmentStatusCheck
+                            where hmResourceSchedulingAppointmentStatusCheck.RecId == element.args().record().RecId;
+        
+                }
+                else if(element.args().parm() == 'InclinicNotes')
+                {
+                    ttsBegin;
+                    hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(hmResourceSchedulingAppointmentrecId,true);
+                    hmResourceSchedulingAppointment.InclinicNotes = HMAppointLogNote.valueStr();
+                    hmResourceSchedulingAppointment.update();
+                    ttsCommit;
+                    element.close();
+                    return;
+                }
+        
+                //updating HMResourceSchedulingAppointment
+                ttsBegin;
+        
+                hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(hmResourceSchedulingAppointmentrecId,true);
+                hmResourceSchedulingAppointment.AppointmentStatus = HMAppoinmentLog.HMAppointLogStatus;
+                hmResourceSchedulingAppointment.update();
+                if(hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::NoShow)
+                {
+                    delete_from apptReserveSlot where apptReserveSlot.HMResourceSchedulingAppointment == hmResourceSchedulingAppointment.RecId;
+                }
+                ttsCommit;
+        
+                HMAppoinmentLog.HMResScheduleAppointment = hmResourceSchedulingAppointmentrecId;
+                HMAppoinmentLog.HMAppointLogDate = HMAppointLogDate.dateValue();
+                HMAppoinmentLog.HMAppointLogTime = HMAppointLogTime.value();
+                HMAppoinmentLog.HMAppointLogNote = HMAppointLogNote.valueStr();
+                HMAppoinmentLog.insert();
+        
+                if(element.args().parm() == 'Checked-out')
+                {
+                    //try
+                    //{
+                        //select ClientBillingType from custTable
+                        //join appt where custTable.AccountNum == appt.Client
+                        //&& appt.RecId == hmResourceSchedulingAppointmentrecId;
+                        //if(custTable.ClientBillingType == HMClientBillingType::MonthlyInvoice)
+                        //{
+                            //ttsBegin;
+                            //HMChargeEntryClass_Medisys::importServices(hmResourceSchedulingAppointmentrecId,true);
+                            //ttsCommit;
+                        //}
+                    //}
+                    //catch
+                    //{
+                        //error(SysLabel::labelId2String2("@MAZ11018"));
+                    //}
+        
+        
+                    // objMovementClass.markOrderCheckout(encounterId,HMAppoinmentLog.HMAppointLogDate,HMAppoinmentLog.HMAppointLogTime);
+                    objPatient.parmPatientRecId(HMResourceSchedulingAppointment::find(hmResourceSchedulingAppointmentrecId).HMPatient);
+                    objPatient.markEncounterInActive();
+                }
+                else if(element.args().parm() == 'Checked-in')
+                {
+                    //if(HMBillParameters::find().AutoCreateBill == NoYes::Yes && HMBillParameters::find().AutoCreateBillEvent == HMAutoCreateBillEvent::CheckedIn && !HMPatientChargeEntryTable::findByAppointment(hmResourceSchedulingAppointment.RecId).RecId)
+        
+                    objPatient.parmPatientRecId(HMResourceSchedulingAppointment::find(hmResourceSchedulingAppointmentrecId).HMPatient);
+                    objPatient.markEncounterActive();
+                }
+                else if(element.args().parm() == 'No-show')//added by faizan
+                {
+                    objPatient.parmPatientRecId(HMResourceSchedulingAppointment::find(hmResourceSchedulingAppointmentrecId).HMPatient);
+                    //objPatient.markEncounterInActive();
+                }
+                //else if(element.args().parm() == 'Cancel' && hmResourceSchedulingAppointment.HMWaitingList)//added by usama
+                //{
+                    //if (HMWaitingList::find(hmResourceSchedulingAppointment.HMWaitingList).WaitType == HMWaitType::Admission || HMWaitingList::find(hmResourceSchedulingAppointment.HMWaitingList).WaitType == HMWaitType::Transfer)
+                    //{
+                        //ttsBegin;
+        //
+                        //hmWaitingListLocal = HMWaitingList::find(hmResourceSchedulingAppointment.HMWaitingList,true);
+        //
+                        //hmWaitingListLocal.Status = HMWaitingListStatus::Cancelled;
+                        //hmWaitingListLocal.CancelDate = HMAppointLogDate.dateValue();
+                        //hmWaitingListLocal.ReasonTable = ReasonTable::findByRecid(appointmentReason).Reason;
+                        //hmWaitingListLocal.update();
+        //
+                        //hmAppoinmentLogWaitList.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::Cancelled;
+                        //hmAppoinmentLogWaitList.AppointmentReason  = appointmentReason;
+        //
+                        //hmResourceSchedulingAppointmentWaitList = HMResourceSchedulingAppointment::find(hmWaitingListLocal.RefRecId,true);
+                        //hmResourceSchedulingAppointmentWaitList.AppointmentStatus = hmAppoinmentLogWaitList.HMAppointLogStatus;
+                        //hmResourceSchedulingAppointmentWaitList.update();
+        //
+                        //hmAppoinmentLogWaitList.HMResScheduleAppointment = hmResourceSchedulingAppointmentWaitList.RecId;
+                        //hmAppoinmentLogWaitList.HMAppointLogDate = hmWaitingListLocal.CancelDate;
+                        //hmAppoinmentLogWaitList.HMAppointLogTime = timeNow();
+                        //hmAppoinmentLogWaitList.insert();
+        //
+                        //ttsCommit;
+                    //}
+                //}
+                element.close();
+        
+                //formRun = element.args().caller();
+        
+                //if (formHasMethod(formRun, identifierstr(refreshGrid)))
+                //{
+                        //formRunObject = formRun;
+                        //formRunObject.refreshGrid();
+                //}
+        
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMAppoinmentLog</Name>
+			<Table>HMAppoinmentLog</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AppointmentReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogNote</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResScheduleAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<BottomMargin xmlns="">0</BottomMargin>
+		<BottomMarginMode xmlns="">Fixed</BottomMarginMode>
+		<Caption xmlns="">@MAZ207</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<LeftMargin xmlns="">0</LeftMargin>
+		<LeftMarginMode xmlns="">Fixed</LeftMarginMode>
+		<RightMargin xmlns="">0</RightMargin>
+		<RightMarginMode xmlns="">Fixed</RightMarginMode>
+		<Scrollbars xmlns="">No</Scrollbars>
+		<SetCompany xmlns="">No</SetCompany>
+		<StatusBarStyle xmlns="">None</StatusBarStyle>
+		<Style xmlns="">DropDialog</Style>
+		<TopMargin xmlns="">0</TopMargin>
+		<TopMarginMode xmlns="">Fixed</TopMarginMode>
+		<WindowResize xmlns="">Fixed</WindowResize>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>TopGroup</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>DetailsGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>MainInstruction</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>715827882</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>StaticText</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<BackgroundColorRGB>
+									<Red>15</Red>
+									<Green>0</Green>
+									<Blue>0</Blue>
+								</BackgroundColorRGB>
+								<ColorScheme>RGB</ColorScheme>
+								<FontSize>13</FontSize>
+								<ForegroundColorRGB>
+									<Red>0</Red>
+									<Green>51</Green>
+									<Blue>153</Blue>
+								</ForegroundColorRGB>
+								<Style>MainInstruction</Style>
+								<Text></Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>DateTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741823</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>HMAppointLogDate</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>TransDate</ExtendedDataType>
+										<Label>@MAZ795</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTimeControl">
+										<Name>HMAppointLogTime</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Time</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>HMTime</ExtendedDataType>
+										<LookupButton>Never</LookupButton>
+									</AxFormControl>
+								</Controls>
+								<Columns>2</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PatientName</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1252698793</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ9</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Reason</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS86426</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMAppointLogNote</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1789569705</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ812</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS58386</Label>
+								<MultiLine>Yes</MultiLine>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>BillingNotes</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1968526675</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11333</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ11334</Label>
+								<MultiLine>Yes</MultiLine>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<BottomMargin>11</BottomMargin>
+				<BottomMarginMode>Fixed</BottomMarginMode>
+				<LeftMargin>11</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>11</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<TopMargin>0</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonsGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>Close</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ4768</HelpText>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Text>@SYS113428</Text>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+				</Controls>
+				<LeftMargin>11</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>11</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<TopMargin>11</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<BackStyle>Opaque</BackStyle>
+				<Style>DialogCommit</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

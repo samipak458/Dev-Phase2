@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>PriceDiscAdmCheckPost_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(classStr(PriceDiscAdmCheckPost))]
+final class PriceDiscAdmCheckPost_Extension
+{
+    #LocalMacro.WhileSelectForCheckJournalHM
+    while select forupdate
+            JournalNum,
+            Currency,
+            UnitId,
+            InventDimId,
+            Relation,
+            AccountRelation,
+            AccountCode,
+            ItemRelation,
+            ItemCode
+            // <GEERU>
+            , AgreementHeaderExt_RU
+            // </GEERU>
+            , FromDate,
+            ToDate,
+            QuantityAmountFrom,
+            QuantityAmountTo,
+            Log,
+            //Musab - Start:
+            HMInsuranceNetwork,
+            HMInsuranceContract,
+            HMCaseType,
+            HMRevenueCode,
+            HMCPTHCPCCode,
+            Modifier1,
+            Modifier2,
+            Modifier3,
+            Modifier4,
+            HMInsuranceContractClassOrPlans
+            //End.
+        from priceDiscAdmTrans
+        order by JournalNum,
+            Currency,
+            UnitId,
+            InventDimId,
+            Relation,
+            AccountRelation,
+            AccountCode,
+            ItemRelation,
+            ItemCode
+            // <GEERU>
+            , AgreementHeaderExt_RU
+            // </GEERU>
+             , QuantityAmountFrom
+         where priceDiscAdmTrans.JournalNum == journalNum
+    #EndMacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkJournalHM</Name>
+				<Source><![CDATA[
+     public boolean checkJournalHM(boolean _acceptWarnings = true)
+     {
+         // <GEERU>
+         #ISOCountryRegionCodes
+         // </GEERU>
+
+         SetEnumerator                   recIdTempSetEnumerator;
+         PriceDiscAdmTransRecIdTemp      recIdTemp;
+
+         PriceDiscAdmTrans               priceDiscAdmTrans;
+
+         overlapsFound = false;
+         gapsFound = false;
+         priceDiscAdmTransArrayBuffer = new Array(Types::Record);
+
+         // <GEERU>
+         countryRegion_RU = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoRU]);
+         // </GEERU>
+
+         // Validate the trade agreement lines.
+         switch (checkActionType)
+         {
+             // Check the selected records only.
+         case PriceDiscAdmCheckActionType::ValidateSelected :
+             recIdTempSetEnumerator = priceDiscAdmTransSetSelected.getEnumerator();
+             while (recIdTempSetEnumerator.moveNext())
+             {
+                 recIdTemp.TransRecId = recIdTempSetEnumerator.current();
+                 recIdTemp.insert();
+             }
+             #WhileSelectForCheckJournalHM
+             exists join recIdTemp
+       where priceDiscAdmTrans.RecId == recIdTemp.TransRecId
+             {
+                 this.checkForOverlapsAndGapsHM(priceDiscAdmTrans);
+             }
+             break;
+
+             // Check the records with a non-empty log only.
+         case PriceDiscAdmCheckActionType::ValidateErrorsOrWarnings :
+             #WhileSelectForCheckJournalHM
+             && priceDiscAdmTrans.Log
+             {
+                 this.checkForOverlapsAndGapsHM(priceDiscAdmTrans);
+             }
+             break;
+
+         case PriceDiscAdmCheckActionType::ValidateAll :
+         default :
+             // Check all the records in the journal.
+             #WhileSelectForCheckJournalHM
+             {
+                 this.checkForOverlapsAndGapsHM(priceDiscAdmTrans);
+             }
+             break;
+         }
+
+         // Check the remaining records in the priceDiscAdmTransArrayBuffer.
+         priceDiscAdmTrans.clear();
+         this.checkForOverlapsAndGapsHM(priceDiscAdmTrans);
+
+         if (overlapsFound)
+         {
+             switch (checkActionType)
+             {
+                 case PriceDiscAdmCheckActionType::ValidateSelected :
+                     checkFailed("@SYS4004590");
+                     break;
+
+                 case PriceDiscAdmCheckActionType::ValidateErrorsOrWarnings :
+                     checkFailed("@SYS4004591");
+                     break;
+
+                 case PriceDiscAdmCheckActionType::ValidateAll :
+                 default :
+                     checkFailed("@SYS4004586");
+                     break;
+             }
+         }
+         if (gapsFound)
+         {
+             switch (checkActionType)
+             {
+                 case PriceDiscAdmCheckActionType::ValidateSelected :
+                     checkFailed("@SYS4004587");
+                     break;
+
+                 case PriceDiscAdmCheckActionType::ValidateErrorsOrWarnings :
+                     checkFailed("@SYS4004588");
+                     break;
+
+                 case PriceDiscAdmCheckActionType::ValidateAll :
+                 default :
+                     checkFailed("@SYS4004589");
+                     break;
+             }
+         }
+
+         return overlapsFound || gapsFound;
+     }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkForOverlapsAndGapsHM</Name>
+				<Source><![CDATA[
+     public void checkForOverlapsAndGapsHM(PriceDiscAdmTrans _priceDiscAdmTrans)
+     {
+         PriceDiscAdmTrans   priceDiscAdmTrans;
+         PriceDiscAdmTrans   tempPriceDiscAdmTrans;
+
+         int                 priceDiscAdmTransArrayBufferLastIndex = priceDiscAdmTransArrayBuffer.lastIndex();
+
+         boolean             firstDateOverlap;
+
+         boolean             hasGaps[];
+         boolean             hasOverlaps[];
+
+         int i;
+         int j;
+
+         if (priceDiscAdmTransArrayBufferLastIndex)
+         {
+             tempPriceDiscAdmTrans = priceDiscAdmTransArrayBuffer.value(1);
+             if (tempPriceDiscAdmTrans.JournalNum != _priceDiscAdmTrans.JournalNum
+                // <GEERU>
+             || (countryRegion_RU && tempPriceDiscAdmTrans.AgreementHeaderExt_RU != _priceDiscAdmTrans.AgreementHeaderExt_RU)
+                // </GEERU>
+             || tempPriceDiscAdmTrans.Currency != _priceDiscAdmTrans.Currency
+             || tempPriceDiscAdmTrans.UnitId != _priceDiscAdmTrans.UnitId
+             || tempPriceDiscAdmTrans.InventDimId != _priceDiscAdmTrans.InventDimId
+             || tempPriceDiscAdmTrans.Relation != _priceDiscAdmTrans.Relation
+             || tempPriceDiscAdmTrans.AccountRelation != _priceDiscAdmTrans.AccountRelation
+             || tempPriceDiscAdmTrans.AccountCode != _priceDiscAdmTrans.AccountCode
+             || tempPriceDiscAdmTrans.ItemRelation != _priceDiscAdmTrans.ItemRelation
+             || tempPriceDiscAdmTrans.ItemCode != _priceDiscAdmTrans.ItemCode
+             || tempPriceDiscAdmTrans.HMCaseType != _priceDiscAdmTrans.HMCaseType
+             || tempPriceDiscAdmTrans.HMCPTHCPCCode != _priceDiscAdmTrans.HMCPTHCPCCode
+             || tempPriceDiscAdmTrans.HMInsuranceContract != _priceDiscAdmTrans.HMInsuranceContract
+             || tempPriceDiscAdmTrans.HMInsuranceContractClassOrPlans != _priceDiscAdmTrans.HMInsuranceContractClassOrPlans
+             || tempPriceDiscAdmTrans.HMInsuranceNetwork != _priceDiscAdmTrans.HMInsuranceNetwork
+             || tempPriceDiscAdmTrans.HMRevenueCode != _priceDiscAdmTrans.HMRevenueCode
+             || tempPriceDiscAdmTrans.Modifier1 != _priceDiscAdmTrans.Modifier1
+             || tempPriceDiscAdmTrans.Modifier2 != _priceDiscAdmTrans.Modifier2
+             || tempPriceDiscAdmTrans.Modifier3 != _priceDiscAdmTrans.Modifier3
+             || tempPriceDiscAdmTrans.Modifier4 != _priceDiscAdmTrans.Modifier4)                
+             {
+                 for (i = 1; i <= priceDiscAdmTransArrayBufferLastIndex; i++)
+                 {
+                     firstDateOverlap = true;
+                     priceDiscAdmTrans = priceDiscAdmTransArrayBuffer.value(i);
+                     priceDiscAdmTrans.Log = '';
+                     for (j = i + 1; j <= priceDiscAdmTransArrayBufferLastIndex; j++)
+                     {
+                         tempPriceDiscAdmTrans = priceDiscAdmTransArrayBuffer.value(j);
+                         if (priceDiscAdmTrans.dateRangesOverlap(tempPriceDiscAdmTrans))
+                         {
+                             if (priceDiscAdmTrans.amountQuantitiesOverlap(tempPriceDiscAdmTrans))
+                             {
+                                 hasOverlaps[i] = true;
+                                 hasOverlaps[j] = true;
+                                 overlapsFound = true;
+                             }
+                             else if (firstDateOverlap && tempPriceDiscAdmTrans.QuantityAmountFrom != priceDiscAdmTrans.QuantityAmountTo)
+                             {
+                                 hasGaps[i] = true;
+                                 hasGaps[j] = true;
+                                 gapsFound = true;
+                             }
+                             if (firstDateOverlap)
+                             {
+                                 firstDateOverlap = false;
+                             }
+                         }
+                     }
+                     if (hasOverlaps[i])
+                     {
+                         priceDiscAdmTrans.Log = "@SYS134950";
+                     }
+                     if (hasGaps[i])
+                     {
+                         priceDiscAdmTrans.Log += "@SYS134952";
+                     }
+                     if (priceDiscAdmTrans.Log != priceDiscAdmTrans.orig().Log)
+                     {
+                         priceDiscAdmTrans.update();
+                     }
+                 }
+                 priceDiscAdmTransArrayBuffer = new Array(Types::Record);
+                 priceDiscAdmTransArrayBufferLastIndex = 0;
+             }
+         }
+         priceDiscAdmTransArrayBuffer.value(priceDiscAdmTransArrayBufferLastIndex + 1, _priceDiscAdmTrans);
+     }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PriceDiscAdmCheckPost_Post_checkJournal</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="args"></param>
+    [PostHandlerFor(classStr(PriceDiscAdmCheckPost), methodStr(PriceDiscAdmCheckPost, checkJournal))]
+    public static void PriceDiscAdmCheckPost_Post_checkJournal(XppPrePostArgs args)
+    {
+        boolean isValid = args.getReturnValue();
+        PriceDiscAdmCheckPost priceDiscAdmChecPost = args.getThis();
+
+        infolog.clear();
+
+        isValid = priceDiscAdmChecPost.checkJournalHM();
+        args.setReturnValue(isValid);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

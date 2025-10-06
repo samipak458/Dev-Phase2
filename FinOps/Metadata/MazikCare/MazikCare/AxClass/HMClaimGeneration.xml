@@ -1,0 +1,1266 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimGeneration</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClaimGeneration
+{
+    #define.outputFileName("ClaimGenerated")
+
+    HMClaimTemplate     hmClaimTemplate;
+    RecId               appointmentRecId;
+    RecId               recordRecId;
+    RecId               claimRecId;
+    RecId               claimVersionRecId;
+    RecId               chargeEntryRecId;
+
+    HMPatient                           hmpatient;
+    HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+    HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+    CustTable                           custTable;
+    DirPartyTable                       dirPartyTable;
+    DirPerson                           dirPerson;
+    DirPersonName                       dirPersonName;
+    LogisticsPostalAddress              logisticsPostalAddress;
+
+    //Todo:HMPatientEncounter                  hmPatientEncounter;
+    HMPatientEncounterClinicStaff       hmPatientEncounterClinicStaff;
+
+    HMClinicStaff                       hmClinicStaff;
+    HcmWorker                           hcmWorker;
+    DirPerson                           dirPersonPhysician;
+    DirPersonName                       dirPersonNamePhysician;
+
+
+    HMPatientInsurance                  hmPatientInsurance;
+    HMCaseInsurance                     hmCaseInsurance;
+    HMInsuranceCarrier                  hmInsuranceCarrier;
+    CustTable                           custTableInsurance;
+
+    HMPatient                           hmPatientInsured;
+    LogisticsPostalAddress              logisticsPostalAddressInsured;
+    CustTable                           custTableInsured;
+    DirPartyTable                       dirPartyTableInsured;
+    DirPerson                           dirPersonInsured;
+    DirPersonName                       dirPersonNameInsured;
+
+
+    str inputFile;
+    str outputFile;
+
+    iTextSharp.text.pdf.PdfReader       pdfReader;
+    iTextSharp.text.pdf.PdfStamper      pdfStamper;
+    iTextSharp.text.Document            pdfDocument;
+    iTextSharp.text.pdf.PdfSmartCopy    pdfCopy;
+    System.IO.MemoryStream              pdfStream;
+
+    boolean isFirst;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>closePDFWriter</Name>
+				<Source><![CDATA[
+    private void closePDFWriter()
+    {
+        if(pdfDocument && pdfDocument.IsOpen())
+        {
+            pdfDocument.Close();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaimErrors</Name>
+				<Source><![CDATA[
+    private void deleteClaimErrors(RecId _appoinemtRecId)
+    {
+        HMClaimError hmClaimError;
+        try
+        {
+            ttsBegin;
+            delete_from hmClaimError where hmClaimError.HMResourceSchedulingAppointment == _appoinemtRecId;
+            ttsCommit;
+        }
+        catch
+        {
+            ttsAbort;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fetchClaimData</Name>
+				<Source><![CDATA[
+    private void fetchClaimData()
+    {
+        HMClaimTemplateFieldSchema      hmClaimTemplateFieldSchema;
+        HMClaimSchema                   hmClaimSchema;
+    
+        TableId             tableid;
+        FieldId             fieldid;
+        Common              common;
+        DictTable           dictTable;
+    
+        tableid = tableName2Id(hmClaimTemplate.TableName);
+    
+        dictTable = new DictTable(tableid);
+        common = dictTable.makeRecord();
+    
+        common.selectForUpdate(true);
+    
+        this.loadSchemaData();
+    
+        while select * from hmClaimTemplateFieldSchema
+            where hmClaimTemplateFieldSchema.HMClaimTemplate == hmClaimTemplate.RecId
+            && hmClaimTemplateFieldSchema.HMClaimTemplateField != 0
+            join * from hmClaimSchema
+            where hmClaimSchema.RecId == hmClaimTemplateFieldSchema.HMClaimSchema
+        {
+            fieldid = fieldName2id(tableid,hmClaimTemplateFieldSchema.ClaimTemplateFieldName);
+    
+            common.(fieldid) = this.getSchemaFieldData(hmClaimSchema);
+        }
+    
+        common.insert();
+        recordRecId = common.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generate</Name>
+				<Source><![CDATA[
+    public boolean generate(RecId _chargeEntry, RecId _appointmentRecId, Recid _templateRecId, Recid _claimRecid, boolean _inBatch = false, boolean _viewOnly = false)
+    {
+        boolean ret;
+    
+        try
+        {
+            hmClaimTemplate = HMClaimTemplate::find(_templateRecId);
+            appointmentRecId = _appointmentRecId;
+            claimRecId = _claimRecid;
+            chargeEntryRecId = _chargeEntry;
+    
+            if(!HMPatientChargeEntryTable::find(chargeEntryRecId).isChargeEntryInsured())
+            {
+                info("@MAZ7547");
+                return false;
+            }
+    
+            if(hmClaimTemplate)
+            {
+                if(!_inBatch)
+                {
+                    ttsBegin;
+                }
+    
+                //claimVersionRecId = HMClaim::find(claimRecId).ClaimVersionEdit;
+    //
+                //if(claimVersionRecId)
+                //{
+                    //this.getRecordRecIdByVersion();
+                //}
+                //else
+                //{
+                    //this.fetchClaimData();
+                //}
+    
+                this.fetchClaimData();
+    
+                if(this.validateClaim(!_viewOnly))
+                {
+                    if(!_viewOnly)
+                    {
+                        this.updateAppointmentBillStatus(true);
+                    }
+    
+                    //this.insertInClaimTemplate();
+    
+                    if(!_inBatch)
+                    {
+                        this.initializePDFWriter();
+                    }
+    
+                    this.generatePdf();
+    
+                    if(!_inBatch)
+                    {
+                        this.closePDFWriter();
+                        this.openClaimPDF();
+                    }
+    
+                    ret = true;
+                }
+                else
+                {
+                    if(!_viewOnly)
+                    {
+                        this.updateAppointmentBillStatus(false);
+                    }
+    
+                    ret = false;
+                }
+    
+                if(!_inBatch)
+                {
+                    ttsCommit;
+                }
+            }
+            else //template not found
+            {
+                if(!HMPatientChargeEntryTable::find(chargeEntryRecId).getPrimaryInsurance())
+                {
+                    info("@MAZ7548");
+                }
+                else
+                {
+                    info("@MAZ7549");
+                }
+                ret = false;
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generateClaims</Name>
+				<Source><![CDATA[
+    public void generateClaims(date _fromDOS, date _toDOS, container _patientCon, recid _physicianRecId, container _carrierCon)
+    {
+        int     counter = 0, success = 0, failures = 0, i;
+    
+        Query                       qry = new Query();
+        QueryRun                    qryRun;
+        QueryBuildDataSource        qbdChargeEntry;
+        HMPatientChargeEntryTable   hmPatientChargeEntryTableLocal;
+    
+        RecId                               templateRecId;
+        hmResourceSchedulingAppointment     appointemnt;
+        hmResourceSchedulingPlanningObject  planningObject;
+    
+        qbdChargeEntry = qry.addDataSource(tableNum(HMPatientChargeEntryTable));
+        qbdChargeEntry.addRange(fieldNum(HMPatientChargeEntryTable, Status)).value(SysQuery::value(HMBillStatus::Posted));
+    
+        if(_fromDOS != dateNull() && _toDOS != dateNull())
+        {
+            qbdChargeEntry.addRange(fieldNum(HMPatientChargeEntryTable,CreatedDateTime)).value(SysQuery::range(_fromDOS,_toDOS));
+        }
+    
+        for(i = 1; i <= conLen(_patientCon);i++)
+        {
+            qbdChargeEntry.addRange(fieldNum(HMPatientChargeEntryTable, HMPatient)).value(SysQuery::value(conPeek(_patientCon,i)));
+        }
+    
+        qryRun = new QueryRun(qry);
+    
+        while (qryRun.next())
+        {
+            hmPatientChargeEntryTableLocal = qryRun.get(tableNum(HMPatientChargeEntryTable));
+    
+            if(!hmPatientChargeEntryTableLocal.isChargeEntryInsured())
+            {
+                continue;
+            }
+    
+            if(!hmPatientChargeEntryTableLocal.getPrimaryInsurance())
+            {
+                continue;
+            }
+    
+            if(conLen(_carrierCon) > 0)
+            {
+                if(conFind(_carrierCon, hmPatientChargeEntryTableLocal.getPrimaryInsurance()) != 1)
+                {
+                    continue;
+                }
+            }
+    
+            if(_physicianRecId)
+            {
+                appointemnt = HMResourceSchedulingAppointment::find(hmPatientChargeEntryTableLocal.HMResourceSchedulingAppointment);
+    
+                if (appointemnt)
+                {
+                    planningObject = hmResourceSchedulingPlanningObject::find(appointemnt.HMResourceSchedulingPlanningObject);
+    
+                    if (planningObject)
+                    {
+                        if ( _physicianRecId == planningObject.HMResourceMaster)
+                        {
+                            continue;
+                        }
+                    }
+                }
+            }
+    
+            templateRecId = HMInsuranceCarrier::find(hmPatientChargeEntryTableLocal.getPrimaryInsurance()).HMClaimTemplate;
+    
+            if(counter == 0)
+            {
+                this.initializePDFWriter(HMClaimTemplate::find(templateRecId));
+                ttsBegin;
+            }
+    
+            counter++;
+    
+            if(this.generate(hmPatientChargeEntryTableLocal.RecId,hmPatientChargeEntryTableLocal.HMResourceSchedulingAppointment, templateRecId,0, true))
+            {
+                success++;
+            }
+            else
+            {
+                failures++;
+            }
+        }
+    
+        if(counter > 0)
+        {
+            ttsCommit;
+            this.closePDFWriter();
+        }
+    
+        if(success > 0)
+        {
+            this.openClaimPDF();
+        }
+    
+        info(strFmt("@MAZ7169",counter));
+        info(strFmt("@MAZ7170",success));
+        info(strFmt("@MAZ7171",failures));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generatePdf</Name>
+				<Source><![CDATA[
+    private void generatePdf()
+    {
+        iTextSharp.text.pdf.AcroFields  acroFields;
+    
+        TableId             tableid;
+        FieldId             fieldid;
+        Common              common;
+        DictTable           dictTable;
+        str value;
+    
+        HMClaimTemplateFieldSchema      hmClaimTemplateFieldSchema;
+        HMClaimTemplateField            hmClaimTemplateField;
+    
+        if(!isFirst)
+        {
+            pdfCopy = new iTextSharp.text.pdf.PdfSmartCopy(pdfDocument, new System.IO.FileStream(
+                            outputFile,System.IO.FileMode::Create));
+    
+            pdfDocument.Open();
+    
+            isFirst = true;
+        }
+    
+        pdfReader = new iTextSharp.text.pdf.PdfReader(inputFile);
+        pdfStream = new System.IO.MemoryStream();
+        pdfStamper = new iTextSharp.text.pdf.PdfStamper(pdfReader, pdfStream);
+    
+        acroFields = pdfStamper.get_AcroFields();
+    
+        tableid = tableName2Id(hmClaimTemplate.TableName);
+        dictTable = new DictTable(tableid);
+        common = dictTable.makeRecord();
+    
+        select common where common.RecId == recordRecId;
+    
+        while select * from hmClaimTemplateFieldSchema
+            where hmClaimTemplateFieldSchema.HMClaimTemplate == hmClaimTemplate.RecId
+            && hmClaimTemplateFieldSchema.HMClaimTemplateField != 0
+            join * from hmClaimTemplateField
+            where hmClaimTemplateField.RecId == hmClaimTemplateFieldSchema.HMClaimTemplateField
+        {
+            fieldid = fieldName2id(tableid,hmClaimTemplateFieldSchema.ClaimTemplateFieldName);
+            value = common.(fieldid);
+            acroFields.SetField(hmClaimTemplateField.FieldName,value);
+        }
+    
+        pdfStamper.set_FormFlattening(true);
+    
+        pdfStamper.Close();
+    
+        pdfReader = new iTextSharp.text.pdf.PdfReader(pdfStream.ToArray());
+        pdfCopy.AddPage(pdfCopy.GetImportedPage(pdfReader, 1));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSchemaFieldData</Name>
+				<Source><![CDATA[
+    private HMMemo getSchemaFieldData(HMClaimSchema _hmClaimSchema)
+    {
+        HMMemo  data;
+        FieldId fieldId;
+    
+        switch(_hmClaimSchema.Entity)
+        {
+            case HMClaimEntity::Patient:
+                switch(_hmClaimSchema.RefTableId)
+                {
+                    case tableNum(HMPatient):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                             data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmpatient.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = hmpatient.(fieldId);
+                        }
+                        break;
+                    case tableNum(CustTable):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, custTable.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = custTable.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPartyTable):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPartyTable.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = dirPartyTable.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPerson):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPerson.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = dirPerson.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPersonName):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPersonName.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+                            data = dirPersonName.(fieldId);
+                        }
+                        break;
+                    case tableNum(LogisticsPostalAddress):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, logisticsPostalAddress.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+                            data = logisticsPostalAddress.(fieldId);
+                        }
+                        break;
+                /*Todo:    case tableNum(HMPatientEncounter):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmPatientEncounter.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+                            data = hmPatientEncounter.(fieldId);
+                        }
+                        break;*/
+                }
+                break;
+            case HMClaimEntity::Carrier:
+                switch(_hmClaimSchema.RefTableId)
+                {
+                    case tableNum(HMPatientInsurance):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmPatientInsurance.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = hmPatientInsurance.(fieldId);
+                        }
+                        break;
+                    case tableNum(CustTable):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, custTableInsurance.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = custTableInsurance.(fieldId);
+                        }
+                        break;
+                    case tableNum(HMCaseInsurance):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmCaseInsurance.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = hmCaseInsurance.(fieldId);
+                        }
+                        break;
+                    case tableNum(HMInsuranceCarrier):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmInsuranceCarrier.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = hmInsuranceCarrier.(fieldId);
+                        }
+                        break;
+                    case tableNum(HMPatient):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                             data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmPatientInsured.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = hmPatientInsured.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPartyTable):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPartyTableInsured.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = dirPartyTableInsured.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPerson):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPersonInsured.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = dirPersonInsured.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPersonName):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPersonNameInsured.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+                            data = dirPersonNameInsured.(fieldId);
+                        }
+                        break;
+                    case tableNum(LogisticsPostalAddress):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, logisticsPostalAddressInsured.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+                            data = logisticsPostalAddressInsured.(fieldId);
+                        }
+                        break;
+                    case tableNum(HMResourceSchedulingAppointment):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmResourceSchedulingAppointment.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+                            data = hmResourceSchedulingAppointment.(fieldId);
+                        }
+                        break;
+                }
+                break;
+            /*Todo: case HMClaimEntity::Diagnosis:
+                switch(_hmClaimSchema.RefTableId)
+                {
+                    case tableNum(HMPatientEncounter):
+                            if(_hmClaimSchema.IsMethod)
+                            {
+                                data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmPatientEncounter.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                            }
+                            else
+                            {
+                                fieldId = str2int(_hmClaimSchema.Field);
+                                data = hmPatientEncounter.(fieldId);
+                            }
+                            break;
+                }
+                break;*/
+            case HMClaimEntity::Physician:
+                switch(_hmClaimSchema.RefTableId)
+                {
+                    case tableNum(HMClinicStaff):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmClinicStaff.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = hmClinicStaff.(fieldId);
+                        }
+                        break;
+                    case tableNum(HcmWorker):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hcmWorker.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = hcmWorker.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPerson):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPersonPhysician.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+    
+                            data = dirPersonPhysician.(fieldId);
+                        }
+                        break;
+                    case tableNum(DirPersonName):
+                        if(_hmClaimSchema.IsMethod)
+                        {
+                            data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, dirPersonNamePhysician.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                        }
+                        else
+                        {
+                            fieldId = str2int(_hmClaimSchema.Field);
+                            data = dirPersonNamePhysician.(fieldId);
+                        }
+                        break;
+                }
+                break;
+            case HMClaimEntity::Procedure:
+                switch(_hmClaimSchema.RefTableId)
+                {
+                    case tableNum(HMResourceSchedulingAppointment):
+                            if(_hmClaimSchema.IsMethod)
+                            {
+                                data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmResourceSchedulingAppointment.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                            }
+                            else
+                            {
+                                fieldId = str2int(_hmClaimSchema.Field);
+                                data = hmResourceSchedulingAppointment.(fieldId);
+                            }
+                            break;
+                }
+                break;
+            case HMClaimEntity::Case:
+                switch(_hmClaimSchema.RefTableId)
+                {
+                    /*Todo: case tableNum(HMPatientEncounter):
+                            if(_hmClaimSchema.IsMethod)
+                            {
+                                data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmPatientEncounter.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                            }
+                            else
+                            {
+                                fieldId = str2int(_hmClaimSchema.Field);
+                                data = hmPatientEncounter.(fieldId);
+                            }
+                            break;*/
+                    case tableNum(HMResourceSchedulingAppointment):
+                            if(_hmClaimSchema.IsMethod)
+                            {
+                                data = this.getSchemaMethodData(_hmClaimSchema.RefTableId, hmResourceSchedulingAppointment.RecId,_hmClaimSchema.Field,_hmClaimSchema.HasParameter,_hmClaimSchema.Parameter);
+                            }
+                            else
+                            {
+                                fieldId = str2int(_hmClaimSchema.Field);
+                                data = hmResourceSchedulingAppointment.(fieldId);
+                            }
+                            break;
+                }
+                break;
+        }
+    
+        return data;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSchemaMethodData</Name>
+				<Source><![CDATA[
+    private HMMemo getSchemaMethodData(TableId _tableId, RecId _selectedRecordRecId, str _methodName, boolean _hasParameter, str _parm)
+    {
+        Dicttable         dictTable;
+        Common            common;
+        HMMemo            result;
+        ExecutePermission perm;
+    
+        perm = new ExecutePermission();
+    
+        dictTable= new DictTable(_tableId);
+    
+        if (dictTable != null)
+        {
+            common = dictTable.makeRecord();
+    
+            select common where common.RecId == _selectedRecordRecId;
+    
+            perm.assert();
+    
+            if(_hasParameter)
+            {
+                result   = dictTable.callObject(_methodName, common, _parm);
+            }
+            else
+            {
+                result   = dictTable.callObject(_methodName, common);
+            }
+    
+            CodeAccessPermission::revertAssert();
+        }
+    
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializePDFWriter</Name>
+				<Source><![CDATA[
+    private void initializePDFWriter(HMClaimTemplate _hmClaimTemplateLocal = hmClaimTemplate)
+    {
+        //todo: ax7 DocuRef
+        /*
+        DocuRef docuRefLocal;
+        HMDocuAction action = new HMDocuAction();
+    
+        select * from docuRefLocal
+            where docuRefLocal.RefRecId == _hmClaimTemplateLocal.RecId
+            && docuRefLocal.RefTableId == _hmClaimTemplateLocal.TableId
+            && docuRefLocal.RefCompanyId == _hmClaimTemplateLocal.dataAreaId;
+    
+        if(DocuType::find(docuRefLocal.TypeId).FilePlace == DocuFilePlace::Database)
+        {
+            inputFile = action.getDBFileTempPath(docuRefLocal);
+        }
+        else
+        {
+            inputFile = docuRefLocal.completeFilename();
+        }
+    
+        pdfDocument = new iTextSharp.text.Document();
+    */
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadSchemaData</Name>
+				<Source><![CDATA[
+    private void loadSchemaData()
+    {
+        RecId patientInsured;
+    
+        select * from hmResourceSchedulingAppointment
+            join * from hmResourceSchedulingPlanningObject
+            join * from hmpatient
+            join * from custTable
+            join * from dirPartyTable
+            join * from dirPerson
+            join * from dirPersonName
+            where hmResourceSchedulingAppointment.RecId == appointmentRecId
+            && hmResourceSchedulingPlanningObject.RecId == hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject
+            && hmResourceSchedulingAppointment.HMPatient == hmpatient.RecId
+            && hmpatient.CustTable == custTable.RecId
+            && custTable.Party == dirPartyTable.RecId
+            && dirPartyTable.RecId == dirPerson.RecId
+            && dirPerson.RecId == dirPersonName.Person;
+    
+        logisticsPostalAddress = custTable.postalAddress();
+    
+    //    if(hmResourceSchedulingAppointment.isEncounterExist()) todo: Fetch From CRM
+        if (true)
+        {
+            select * from  //Todo: hmPatientEncounter            join * from
+                hmPatientEncounterClinicStaff
+                join * from hmClinicStaff
+                join * from hcmWorker
+          // todo:      where hmPatientEncounter.HMResScheduleAppointment == hmResourceSchedulingAppointment.RecId
+                where //hmPatientEncounterClinicStaff.HMPatientEncounter == hmPatientEncounter.RecId            && \
+                hmPatientEncounterClinicStaff.HMClinicStaff == hmClinicStaff.RecId
+                && hmClinicStaff.HcmWorker == hcmWorker.RecId;
+    
+            select firstOnly * from hmCaseInsurance
+                order by hmCaseInsurance.Priority
+                join * from hmPatientInsurance
+                where //Todo: hmCaseInsurance.HMPatientEncounter == hmPatientEncounter.RecId &&
+                hmCaseInsurance.HMPayerType == HMPayerType::InsuranceCarrier
+                && hmCaseInsurance.HMPatientInsurance == hmPatientInsurance.RecId;
+    
+            select * from hmInsuranceCarrier
+                join * from custTableInsurance
+                where custTableInsurance.AccountNum == hmCaseInsurance.InsuranceCarrier
+                && hmInsuranceCarrier.CustTable == custTableInsurance.RecId;
+        }
+        else
+        {
+            select * from hmClinicStaff
+                join * from hcmWorker
+                join * from dirPersonPhysician
+                join * from dirPersonNamePhysician
+                where hmClinicStaff.RecId == hmResourceSchedulingAppointment.HMClinicStaff
+                && hmClinicStaff.HcmWorker == hcmWorker.RecId
+                && hcmWorker.Person == dirPerson.RecId
+                && dirPerson.RecId == dirPersonName.Person;
+    
+            select firstOnly * from hmPatientInsurance
+                order by hmPatientInsurance.Priority
+                join * from hmInsuranceCarrier
+                join * from custTableInsurance
+                where hmPatientInsurance.HMPatient == hmPatient.RecId
+                && hmPatientInsurance.HMPayerType == HMPayerType::InsuranceCarrier
+                && hmPatientInsurance.InsuranceStatus == HMInsuranceStatus::Active
+                && (hmPatientInsurance.EffectiveDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmPatientInsurance.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                && hmPatientInsurance.InsuranceCarrier == custTable.AccountNum
+                && hmInsuranceCarrier.CustTable == custTable.RecId;
+        }
+    
+        if(hmPatientInsurance.HMPatientSubscriber)
+        {
+            patientInsured = hmPatientInsurance.HMPatientSubscriber;
+        }
+        else
+        {
+            patientInsured = hmPatientInsurance.HMPatient;
+        }
+    
+        select * from hmpatientInsured
+            join * from custTableInsured
+            join * from dirPartyTableInsured
+            join * from dirPersonInsured
+            join * from dirPersonNameInsured
+            where  hmpatientInsured.RecId == patientInsured
+            && hmpatientInsured.CustTable == custTableInsured.RecId
+            && custTableInsured.Party == dirPartyTableInsured.RecId
+            && dirPartyTableInsured.RecId == dirPersonInsured.RecId
+            && dirPersonInsured.RecId == dirPersonNameInsured.Person;
+    
+        logisticsPostalAddressInsured = custTableInsured.postalAddress();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    public void new(boolean isCreate = true)
+    {
+        boolean fileNotCreated = true;
+        int i = 1;
+        outputFile = xInfo::directory(DirectoryType::Log) + #outputFileName + '.pdf';
+        if(isCreate)
+        {
+            do
+            {
+                if(WinAPI::fileExists(outputFile,false))
+                {
+                    //todo: ax7 docu
+                    /*
+                    
+                    if(HMDocuAction::isFileLocked(outputFile))
+                    {
+                        outputFile = xInfo::directory(DirectoryType::Log) + #outputFileName + int2str(i) +'.pdf';
+                        i++;
+                    }
+                    else
+                    {
+                        if(WinAPI::deleteFile(outputFile))
+                        {
+                            fileNotCreated = false;
+                        }
+                        else
+                        {
+                            outputFile = xInfo::directory(DirectoryType::Log) + #outputFileName + int2str(i) +'.pdf';
+                            i++;
+                        }
+                    }
+                    */
+                }
+                else
+                {
+                    fileNotCreated = false;
+                }
+            }
+            while (fileNotCreated);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>openClaimPDF</Name>
+				<Source><![CDATA[
+    private void openClaimPDF()
+    {
+        ;
+        System.Diagnostics.Process::Start(outputFile);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAppointmentBillStatus</Name>
+				<Source><![CDATA[
+    private void updateAppointmentBillStatus(boolean _success)
+    {
+        HMPatientChargeEntryTable       hmPatientChargeEntryTableLocal;
+    
+        select forUpdate firstOnly hmPatientChargeEntryTableLocal
+            where hmPatientChargeEntryTableLocal.RecId == chargeEntryRecId;
+    
+        if(hmPatientChargeEntryTableLocal.RecId > 0)
+        {
+            if(_success)
+            {
+                hmPatientChargeEntryTableLocal.Status = HMBillStatus::ClaimGenerated;
+            }
+            else
+            {
+                hmPatientChargeEntryTableLocal.Status = HMBillStatus::ClaimNotValidated;
+            }
+    
+            hmPatientChargeEntryTableLocal.update();
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateClaimStatus</Name>
+				<Source><![CDATA[
+    public Recid updateClaimStatus(RecId claimRecIdLocal, HMClaimStatus _status)
+    {
+        HMClaimVersion hmClaimVersionLocal;
+        smmActivities activity;
+        RecId custRecId;
+        //HMClaimTemplate1500 hmClaimTemplate1500Local;
+        custRecId = HMInsuranceCarrier::find(HMResourceSchedulingAppointment::find(HMClaim::find(claimRecIdLocal).HMResourceSchedulingAppointment).getVisitPrimaryInsurance()).CustTable;
+    
+        //hmClaimTemplate1500Local = HMClaimGeneration::getLastVersionDataRecId(claimRecIdLocal);
+    
+        try
+        {
+            hmClaimVersionlocal.validTimeStateUpdateMode(ValidTimeStateUpdate::CreateNewTimePeriod);
+            hmClaimVersionlocal.initValue();
+            hmClaimVersionlocal.HMClaimTable = claimRecIdLocal;
+            hmClaimVersionlocal.ValidFrom = DateTimeUtil::utcNow();
+            hmClaimVersionlocal.ValidTo = DateTimeUtil::maxValue();
+            hmClaimVersionlocal.Status = _status;
+            hmClaimVersionlocal.insert();
+    
+            //hmClaimTemplate1500Local.ClaimVersionRecId= hmClaimVersionlocal.RecId;
+            //hmClaimTemplate1500Local.insert();
+    
+            if(_status != HMClaimStatus::Submitted)
+            {
+                if(!HMBillParameters::find().smmActivityTypeGroupClaimStatus)
+                {
+                    throw error("@MAZ7625");
+                }
+    
+    
+                activity.initValue(smmActivityCategory::Action);
+                activity.setActivityNum();
+                activity.Closed = NoYes::Yes;
+                activity.modifiedField(fieldNum(smmActivities, Closed));
+                activity.TypeId = HMBillParameters::find().smmActivityTypeGroupClaimStatus;
+                activity.Purpose = strFmt("@MAZ7627",HMPatient::find(HMResourceSchedulingAppointment::find(HMClaim::find(claimRecIdLocal).HMResourceSchedulingAppointment).HMPatient).patientName(),HMPatient::find(HMResourceSchedulingAppointment::find(HMClaim::find(claimRecIdLocal).HMResourceSchedulingAppointment).HMPatient).patientChartNum());
+                activity.insertParentLink(smmActivityParentType::Customer, custRecId, true);
+                activity.insertParentLink(smmActivityParentType::Claim, claimRecIdLocal);
+                activity.insertParentLink(smmActivityParentType::Collections, custRecId);
+                activity.ActualEndDateTime = hmClaimVersionlocal.ValidFrom;
+                activity.StartDateTime = activity.ActualEndDateTime;
+                activity.EndDateTime = activity.ActualEndDateTime;
+                activity.ResponsibleWorker = HcmWorkerLookup::currentWorker();
+                activity.insert();
+            }
+        }
+        catch
+        {
+            error("@MAZ7630");
+        }
+    
+        return hmClaimVersionlocal.RecId;
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateClaim</Name>
+				<Source><![CDATA[
+    public boolean validateClaim(boolean _insertInLog, RecId _claimRecId = recordRecId, HMClaimTemplate _hmClaimTemplate = hmClaimTemplate, RecId _appointmentRecId = appointmentRecId)
+    {
+        HMClaimSchema                   hmClaimSchemaLocal;
+        HMClaimTemplate                 hmClaimTemplateLocal;
+        HMClaimTemplateFieldSchema      hmClaimTemplateFieldSchema;
+        DictTable   dictTable;
+        FieldId                         fieldid;
+        String50                        mapCurrentKey;
+        str                             result;
+        TableId  tableid;
+        MapEnumerator                   mapEnumerator;
+        Map                             fieldMap = new Map(Types::String,Types::Int64);
+        Common                          common;
+        boolean                         ret = true;
+        boolean noErrorInClaim = true;
+        HMClaimFieldValidation          hmClaimFieldValidation;
+        HMClaimFieldValidationExpression      hmClaimFieldValidationExpression;
+        ExpressionResultType Expressionresult = ExpressionResultType::False;
+        HMClaimError                   hmClaimError;
+    
+        this.deleteClaimErrors(_appointmentRecId);
+    
+        if(!_claimRecId)
+        {
+            hmClaimTemplate = _hmClaimTemplate;
+            appointmentRecId = _appointmentRecId;
+            this.fetchClaimData();
+            _claimRecId = recordRecId;
+        }
+    
+        while select * from hmClaimTemplateFieldSchema
+            join * from hmClaimTemplateLocal
+            join * from hmClaimSchemaLocal
+            where hmClaimTemplateFieldSchema.HMClaimTemplate == hmClaimTemplateLocal.RecId
+            && hmClaimTemplateFieldSchema.HMClaimSchema == hmClaimSchemaLocal.RecId
+            && hmClaimTemplateFieldSchema.HMClaimTemplate == _hmClaimTemplate.RecId
+            && hmClaimTemplateFieldSchema.HMClaimTemplateField != 0
+        {
+            tableid = tableName2Id(hmClaimTemplateLocal.TableName);
+            fieldid = fieldName2id(tableid,hmClaimTemplateFieldSchema.ClaimTemplateFieldName);
+            fieldMap.insert(hmClaimTemplateFieldSchema.ClaimTemplateFieldName,fieldid);
+        }
+    
+        dictTable = new DictTable(tableid);
+        common = dictTable.makeRecord();
+    
+        select common where common.RecId == _claimRecId;
+        mapEnumerator = fieldMap.getEnumerator();
+    
+        while(mapEnumerator.moveNext())
+        {
+            mapCurrentKey =mapEnumerator.currentKey();
+            fieldid =  mapEnumerator.currentValue();
+    
+            select * from hmClaimTemplateFieldSchema
+            join * from hmClaimTemplateLocal
+            join * from hmClaimSchemaLocal
+            //join * from hmClaimFieldValidation
+            where hmClaimTemplateFieldSchema.HMClaimTemplate == hmClaimTemplateLocal.RecId
+            && hmClaimTemplateFieldSchema.HMClaimSchema == hmClaimSchemaLocal.RecId
+            && hmClaimTemplateFieldSchema.HMClaimTemplate == _hmClaimTemplate.RecId
+            ///&& hmClaimFieldValidation.HMClaimTemplateFieldSchema == hmClaimTemplateFieldSchema.RecId
+            && hmClaimTemplateFieldSchema.ClaimTemplateFieldName == mapCurrentKey
+            && hmClaimTemplateFieldSchema.HMClaimTemplateField != 0;
+    
+            if(hmClaimTemplateFieldSchema.RecId > 0)
+            {
+                select * from hmClaimFieldValidation where hmClaimFieldValidation.HMClaimTemplateFieldSchema == hmClaimTemplateFieldSchema.RecId;
+                result = common.(fieldid);
+                if(hmClaimTemplateFieldSchema.ClaimFieldRequired == NoYes::Yes)
+                {
+                    if(result == '')
+                    {
+                        ret = false;
+                        noErrorInClaim = false;
+                        if(_insertInLog)
+                        {
+                            hmClaimError.initValue();
+                            hmClaimError.HMResourceSchedulingAppointment = _appointmentRecId;
+                            hmClaimError.HMClaimSchema = hmClaimSchemaLocal.RecId;
+                            hmClaimError.ClaimErrorLog = strFmt("@MAZ7167",mapCurrentKey);
+                            hmClaimError.insert();
+                        }
+                        else
+                        {
+                            info(strFmt("@MAZ7167",mapCurrentKey));
+                        }
+                    }
+                }
+                else
+                {
+                    select * from hmClaimFieldValidationExpression
+                    where hmClaimFieldValidationExpression.HMClaimTemplateFieldSchema == hmClaimTemplateFieldSchema.RecId;
+                    if(hmClaimFieldValidationExpression.RecId > 0)
+                    {
+                        Expressionresult = Expression::evaluate(Common.(fieldName2id(tableid,'dataAreaId')), tableid, _claimRecId, hmClaimFieldValidationExpression.RootExpressionId);
+                        if(Expressionresult == ExpressionResultType::True)
+                        {
+                            if(result != "")
+                            {
+                                ret = true;
+                            }
+                            else
+                            {
+                                ret = false;
+                                noErrorInClaim = false;
+                                if(_insertInLog)
+                                {
+                                    hmClaimError.initValue();
+                                    hmClaimError.HMResourceSchedulingAppointment = _appointmentRecId;
+                                    hmClaimError.HMClaimSchema = hmClaimSchemaLocal.RecId;
+                                    hmClaimError.ClaimErrorLog = strFmt("@MAZ7168",mapCurrentKey);
+                                    hmClaimError.insert();
+                                }
+                                else
+                                {
+                                    info(strFmt("@MAZ7168",mapCurrentKey));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if(noErrorInClaim)
+        {
+            return ret;
+        }
+        else
+        {
+            return noErrorInClaim;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClaimNumber</Name>
+				<Source><![CDATA[
+    public static num getClaimNumber()
+    {
+        SysLastValue            nextNumSeq;
+        Num                     number;
+        NumberSequenceReference         numberSeqReference;
+        NumberSequenceTable             numberSeqTable;
+        NumberSeq                       numberSeq;
+    
+        numberSeqReference  = NumberSeqReference::findReference(extendedtypenum(HMClaimNumber));
+        numberSeqTable      = NumberSequenceTable::find(numberSeqReference.NumberSequenceId);
+    
+        if(numberSeqTable)
+        {
+            // generate admission order number if number sequence code is created.
+            numberSeq = NumberSeq::newGetNumFromId(numberSeqTable.RecId, true, true, nextNumSeq, true);
+    
+            if(numberSeq)
+            {
+                [number] = nextNumSeq.value;
+            }
+        }
+    
+        return number;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        #Task
+    
+        HMClaimGeneration hmClaimGeneration;
+        HMClaimTable hmclaimLocal;
+        /*if(_args.menuItemName() == menuitemActionStr(HMClaimCMSGeneration))
+        {
+            hmClaimGeneration = new HMClaimGeneration();
+            hmClaimGeneration.generate(HMClaimTable::find(_args.record().RecId).HMResourceSchedulingAppointment,
+            HMInsuranceCarrier::find(HMResourceSchedulingAppointment::find(HMClaimTable::find(_args.record().RecId).HMResourceSchedulingAppointment).getVisitPrimaryInsurance()).HMClaimTemplateCMS1500,_args.record().RecId,false,true);
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMOpenClaimGeneration))
+        {
+            hmClaimGeneration = new HMClaimGeneration();
+            select * from hmclaimLocal where hmclaimLocal.HMResourceSchedulingAppointment == _args.record().RecId;
+            hmClaimGeneration.generate(_args.record().RecId,
+                                    //HMInsuranceCarrier::find(HMResourceSchedulingAppointment::find(_args.record().RecId).getVisitPrimaryInsurance()).HMClaimTemplateCMS1500,hmclaimLocal.RecId,false,false);
+        }*/
+        if (_args.menuItemName() == menuitemActionStr(HMClaimValidation))
+        {
+            hmClaimGeneration = new HMClaimGeneration();
+            hmClaimGeneration.validateClaim(true,0,HMClaimTemplate::find(HMInsuranceCarrier::find(HMResourceSchedulingAppointment::find(_args.record().RecId).getVisitPrimaryInsurance()).HMClaimTemplate),_args.record().RecId);
+        }
+        else if((_args.menuItemName() == menuitemActionStr(HMClaimStatusSubmit) || (_args.menuItemName() == menuitemActionStr(HMClaimStatusPaid))))
+        {
+            hmClaimGeneration = new HMClaimGeneration(false);
+            hmClaimGeneration.updateClaimStatus(HMClaimVersion::find(_args.record().RecId).HMClaimTable,_args.parmEnum());
+            if(_args.parm() == 'RefreshQuery')
+            {
+                _args.caller().task(#taskRefresh);
+                return;
+            }
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>mzkClaimManagerAgedBalancesChart</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class mzkClaimManagerAgedBalancesChart extends FormRun
+{
+    CustCollectionsAgedBalancesChartDataTmp agingBuckets;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+
+        element.buildTempTable();
+        custCollectionsAgedBalancesChartDataTmp.linkPhysicalTableInstance(agingBuckets);
+
+        element.updateTitle();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateTitle</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates title on the chart to the new date to display
+    /// </summary>
+    public void updateTitle()
+    {
+        CustAging aging;
+
+        select firstonly crosscompany aging;
+
+        SysChartTitle title = agedBalances.Title();
+
+        title.parmText(strFmt('%1 - %2', "@AccountsReceivable:CustCollectionsAgedBalancesChartTitle", aging.displayAgingDate()));
+
+        agedBalances.Title(title);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildTempTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds the data in the temp table to display on the graph
+    /// </summary>
+    /// <param name = "_update">True if updating the temp table with new values</param>
+    /// <remarks>If _update is true the method first deletes all records from the temp table then inserts the new calculated values</remarks>
+    public void buildTempTable(boolean _update = false)
+    {
+        CustCollectionsCustomerFilterTmp custFilter;
+        CustCollectionsAgedBalancesChartData chartData;
+        boolean filterToCust;
+
+        changecompany(curExt())
+        {
+            if (_update)
+            {
+                select firstonly StatRepInterval from agingBuckets;
+                var currentStatRep = agingBuckets.StatRepInterval;
+
+                delete_from agingBuckets
+                    where agingBuckets.StatRepInterval == currentStatRep;
+            }
+
+            if (!filterToCust)
+            {
+                insert_recordset agingBuckets(StatRepInterval, StatRepIntervalHeading, StatRepIntervalLineNum, CustAgingDataAreaId, OpenBalanceMst)
+                    select StatRepInterval, StatRepIntervalHeading, StatRepIntervalLineNum, CustAgingDataAreaId, sum(OpenBalanceMst) from chartData
+                        group by StatRepIntervalHeading, StatRepIntervalLineNum, StatRepInterval, CustAgingDataAreaId
+                            where chartData.OpenBalanceMst >= 0;
+            }
+            else
+            {
+                insert_recordset agingBuckets(StatRepInterval, StatRepIntervalHeading, StatRepIntervalLineNum, CustAgingDataAreaId, OpenBalanceMst)
+                    select StatRepInterval, StatRepIntervalHeading, StatRepIntervalLineNum, CustAgingDataAreaId, sum(OpenBalanceMst) from chartData
+                        group by StatRepIntervalHeading, StatRepIntervalLineNum, StatRepInterval, CustAgingDataAreaId
+                            where chartData.OpenBalanceMst >= 0
+                        exists join custFilter
+                            where custFilter.AccountNum == chartData.CustTable;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAgingBuckets</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the title variables and temp table
+    /// </summary>
+    public void updateAgingBuckets()
+    {
+        element.updateTitle();
+
+        element.buildTempTable(true);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>AgedBalances</Name>
+				<Type>Container</Type>
+				<Methods>
+					<Method>
+						<Name>DrillThrough</Name>
+						<Source><![CDATA[
+        public void DrillThrough(str _contextObject)
+        {
+            str context = subStr(_contextObject, 2, strLen(_contextObject)-2);
+            ListEnumerator contextEnum = strSplit(context, ',').getEnumerator();
+
+            str temp, newContext;
+            while (contextEnum.moveNext())
+            {
+                container param = str2con(contextEnum.current(), ':');
+
+                temp = contextEnum.current();
+
+                if (newContext == '')
+                {
+                    newContext = temp;
+                }
+                else
+                {
+                    newContext = strFmt('%1,%2', newContext, temp);
+                }
+            }
+
+            newContext = strFmt('{%1}', newContext);
+            
+            super(newContext);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>CustCollectionsAgedBalancesChartDataTmp</Name>
+			<Table>CustCollectionsAgedBalancesChartDataTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CustAgingDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OpenBalanceMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatRepInterval</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatRepIntervalHeading</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatRepIntervalLineNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<CrossCompanyAutoQuery>Yes</CrossCompanyAutoQuery>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Pattern xmlns="">HubPartChart</Pattern>
+		<PatternVersion xmlns="">1.0</PatternVersion>
+		<SetCompany xmlns="">No</SetCompany>
+		<Style xmlns="">FormPart</Style>
+		<ViewEditMode xmlns="">View</ViewEditMode>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormContainerControl">
+				<Name>AgedBalances</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ExtendedStyle>chart_2x4</ExtendedStyle>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Container</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension>
+					<Name>SysChart</Name>
+					<ExtensionComponents>
+						<AxFormControlExtensionComponent xmlns=""
+							i:type="AxFormControlExtensionComponentComposite">
+							<Name>parmDataSets</Name>
+							<ExtensionComponents>
+								<AxFormControlExtensionComponent xmlns=""
+									i:type="AxFormControlExtensionComponentLeaf">
+									<Name>CustAging</Name>
+									<ComponentType>SysBuildChartDataSet</ComponentType>
+									<ExtensionProperties>
+										<AxFormControlExtensionProperty>
+											<Name>parmDataSource</Name>
+											<Type>String</Type>
+											<Value>CustCollectionsAgedBalancesChartDataTmp</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmCategoryField</Name>
+											<Type>String</Type>
+											<Value>StatRepIntervalHeading</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmGroupBy</Name>
+											<Type>String</Type>
+										</AxFormControlExtensionProperty>
+									</ExtensionProperties>
+								</AxFormControlExtensionComponent>
+							</ExtensionComponents>
+						</AxFormControlExtensionComponent>
+						<AxFormControlExtensionComponent xmlns=""
+							i:type="AxFormControlExtensionComponentComposite">
+							<Name>parmMeasures</Name>
+							<ExtensionComponents>
+								<AxFormControlExtensionComponent xmlns=""
+									i:type="AxFormControlExtensionComponentLeaf">
+									<Name>AgedBalances</Name>
+									<ComponentType>SysBuildChartMeasure</ComponentType>
+									<ExtensionProperties>
+										<AxFormControlExtensionProperty>
+											<Name>parmChartType</Name>
+											<Type>Enum</Type>
+											<TypeName>SysChartType</TypeName>
+											<Value>Pie</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmMeasureField</Name>
+											<Type>String</Type>
+											<Value>OpenBalanceMst</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmTitle</Name>
+											<Type>String</Type>
+											<Value>@AccountsReceivable:CustCollectionsAgedBalancesChartDataTitle</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmDataLabels</Name>
+											<Type>Enum</Type>
+											<TypeName>SysChartDataLabels</TypeName>
+											<Value>Outside</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmDataSet</Name>
+											<Type>String</Type>
+											<Value>CustAging</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmUseSecondaryYAxis</Name>
+											<Type>Enum</Type>
+											<TypeName>boolean</TypeName>
+											<Value>False</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmSecondaryYAxisName</Name>
+											<Type>String</Type>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmClickMenuItemType</Name>
+											<Type>Enum</Type>
+											<TypeName>MenuItemType</TypeName>
+											<Value>Display</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmClickMenuItemName</Name>
+											<Type>ExtendedDataType</Type>
+											<TypeName>MenuItemName</TypeName>
+											<Value>CustCollectionsAgedBucketsChartClick</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmKeyField</Name>
+											<Type>String</Type>
+											<Value>StatRepIntervalLineNum</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmParameter1</Name>
+											<Type>String</Type>
+											<Value>StatRepInterval</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>parmParameter2</Name>
+											<Type>String</Type>
+											<Value>StatRepIntervalLineNum</Value>
+										</AxFormControlExtensionProperty>
+									</ExtensionProperties>
+								</AxFormControlExtensionComponent>
+							</ExtensionComponents>
+						</AxFormControlExtensionComponent>
+						<AxFormControlExtensionComponent xmlns=""
+							i:type="AxFormControlExtensionComponentComposite">
+							<Name>parmSecondaryYAxes</Name>
+							<ExtensionComponents />
+						</AxFormControlExtensionComponent>
+					</ExtensionComponents>
+					<ExtensionProperties>
+						<AxFormControlExtensionProperty>
+							<Name>parmLegendEnabled</Name>
+							<Type>Enum</Type>
+							<TypeName>boolean</TypeName>
+							<Value>True</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmLegendAlignment</Name>
+							<Type>Enum</Type>
+							<TypeName>SysChartHorizontalAlignment</TypeName>
+							<Value>Auto</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmLegendPosition</Name>
+							<Type>Enum</Type>
+							<TypeName>SysChartVerticalAlignment</TypeName>
+							<Value>Auto</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmLegendLayout</Name>
+							<Type>Enum</Type>
+							<TypeName>SysChartLegendLayout</TypeName>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmTitleAlignment</Name>
+							<Type>Enum</Type>
+							<TypeName>SysChartHorizontalAlignment</TypeName>
+							<Value>Auto</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmText</Name>
+							<Type>String</Type>
+							<Value>@AccountsReceivable:CustCollectionsAgedBalancesChartTitle</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmTitlePosition</Name>
+							<Type>Enum</Type>
+							<TypeName>SysChartVerticalAlignment</TypeName>
+							<Value>Auto</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmSerializedButtons</Name>
+							<Type>String</Type>
+							<Value>Line;Bar;Column;Pie;Funnel</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmYAxisTitle</Name>
+							<Type>String</Type>
+							<Value>test</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmYAxisVisible</Name>
+							<Type>Enum</Type>
+							<TypeName>boolean</TypeName>
+							<Value>True</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmXAxisTitle</Name>
+							<Type>String</Type>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmClickMenuItemType</Name>
+							<Type>Enum</Type>
+							<TypeName>MenuItemType</TypeName>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmClickMenuItemName</Name>
+							<Type>ExtendedDataType</Type>
+							<TypeName>MenuItemName</TypeName>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmInteractionsDisabled</Name>
+							<Type>Enum</Type>
+							<TypeName>boolean</TypeName>
+							<Value>False</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmZoomLimit</Name>
+							<Type>Enum</Type>
+							<TypeName>SysChartDateTimeInterval</TypeName>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmToolbarEnabled</Name>
+							<Type>Enum</Type>
+							<TypeName>boolean</TypeName>
+							<Value>False</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmPadMargin</Name>
+							<Type>Int32</Type>
+							<Value>0</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmCrosshairsEnabled</Name>
+							<Type>Enum</Type>
+							<TypeName>boolean</TypeName>
+							<Value>False</Value>
+						</AxFormControlExtensionProperty>
+						<AxFormControlExtensionProperty>
+							<Name>parmTooltipShared</Name>
+							<Type>Enum</Type>
+							<TypeName>boolean</TypeName>
+							<Value>False</Value>
+						</AxFormControlExtensionProperty>
+					</ExtensionProperties>
+				</FormControlExtension>
+				<Controls />
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,1969 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMTransferAppointments</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMTransferAppointments extends FormRun
+{
+
+    HMResourceSchedulingPlanningObject  sourcePlanningObject, targetPlanningObject;
+    date                                sourceDate, targetDate;
+    HMTime                              targetTime;
+    RecId                               targetApptScheduleTypeRecId;
+    RecId                               appointmentRecId, sourceScheduleTypeRecId;
+    boolean                             isSource,isSourcePhy;
+    int                                 targetDuration;
+    boolean                             skipMessage;
+    str                                 physicianCheck,ouCheck;
+    Common                              buffer;
+    RecId                               RsrcTgtRecId;
+    Map                                 targetdataList;
+    MapEnumerator                       enumer;
+    RecId                               appointmentReason;
+    Map                                 mapKeyValueReason;
+    MapEnumerator                       enumerReason;
+    RecId                               scheduleTypeRecId;
+    List                                newApptlist;
+    Set                                 apptRecIdLookup;
+    Set                                 apptSet;
+    TimeOfDay                           arrivalTime;
+    boolean                             isHotSpot;
+
+    HMResourceSchedulingOpenTimeSlotsTmp hmResourceSchedulingOpenTimeSlotsTmpMain;
+
+
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>bindConfirmationStatus</Name>
+				<Source><![CDATA[
+    private void bindConfirmationStatus()
+    {
+        SysFormEnumComboBox     sysFormEnumComboBox;
+        Set enumSet = new Set(Types::Enum); // collection of selected values.
+        enumSet.add(HMAppointmentConfirmationStatus::None);
+        enumSet.add(HMAppointmentConfirmationStatus::MovedByClinic);
+        enumSet.add(HMAppointmentConfirmationStatus::RescheduleBusy);
+        enumSet.add(HMAppointmentConfirmationStatus::RescheduledBookingError);
+        enumSet.add(HMAppointmentConfirmationStatus::RescheduledDoctorClosedSchedule);
+        enumSet.add(HMAppointmentConfirmationStatus::RescheduledForceBookConfirmed);
+        enumSet.add(HMAppointmentConfirmationStatus::RescheduleIllnessWeather);
+        enumSet.add(HMAppointmentConfirmationStatus::RescheduleOther);
+        enumSet.add(HMAppointmentConfirmationStatus::RescheduleVacation);
+    
+        SysFormEnumComboBox = SysFormEnumComboBox::newParameters(element,
+        element.controlId(formControlStr(HMResourceSchedulingAppointmentDialog, ConfirmationStatus)),
+        enumName2Id(enumStr(HMAppointmentConfirmationStatus)), enumSet);
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkExistingAppointmentOnCurrentTime</Name>
+				<Source><![CDATA[
+    public boolean checkExistingAppointmentOnCurrentTime()
+    {
+    
+        HMResourceSchedulingAppointment                 hmResourceSchedulingAppointmentLocal;
+        HMResourceSchedulingPlanningObject              hmResourceSchedulingPlanningObjectLocal;
+        boolean ret = false;
+    
+        //to check appointment of the patient at same time
+        while select * from hmResourceSchedulingAppointmentLocal
+            join * from hmResourceSchedulingPlanningObjectLocal
+                where hmResourceSchedulingAppointmentLocal.HMPatient == HMResourceSchedulingAppointment::find(appointmentRecId).HMPatient
+                && hmResourceSchedulingAppointmentLocal.RecId != appointmentRecId
+                && hmResourceSchedulingAppointmentLocal.AppointmentDate == targetDate
+                && hmResourceSchedulingAppointmentLocal.AppointmentTime == targetTime
+                && hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+                && (hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::Surgery)
+                && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObjectLocal.RecId
+                && hmResourceSchedulingAppointmentLocal.HMAppointmentType != HMAppointmentType::Admission
+        {
+            if (hmResourceSchedulingPlanningObjectLocal.RecId == targetPlanningObject.RecId)
+            {
+                // warning(strFmt("@MAZ4656",HMClinicStaff::getPhysicianNameByRecId(hmResourceSchedulingPlanningObjectLocal.HMClinicStaff), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+                ret = true;
+                targetApptScheduleTypeRecId = hmResourceSchedulingAppointmentLocal.HMResourceSchedulingTypeCode;
+            }
+    
+            if (ret)
+            {
+                break;
+            }
+        }
+    
+        if (!ret)   //to check appointment of the physician at same time
+        {
+            hmResourceSchedulingAppointmentLocal        = null;
+            hmResourceSchedulingPlanningObjectLocal     = null;
+    
+            while select * from hmResourceSchedulingAppointmentLocal
+                join * from hmResourceSchedulingPlanningObjectLocal
+                    where hmResourceSchedulingAppointmentLocal.AppointmentDate == targetDate
+                    && hmResourceSchedulingAppointmentLocal.AppointmentTime == targetTime
+                    && hmResourceSchedulingAppointmentLocal.RecId != appointmentRecId
+                    && hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+                    && (hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::Surgery)
+                    && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObjectLocal.RecId
+                    && hmResourceSchedulingPlanningObjectLocal.HMClinicStaff == targetPlanningObject.HMClinicStaff
+                    && hmResourceSchedulingAppointmentLocal.HMAppointmentType != HMAppointmentType::Admission
+            {
+    
+                ret = true;
+                targetApptScheduleTypeRecId = hmResourceSchedulingAppointmentLocal.HMResourceSchedulingTypeCode;
+                //  warning(strFmt("@MAZ7076",HMPatient::find(hmResourceSchedulingAppointmentLocal.HMPatient).patientName(), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+    
+                if (ret)
+                {
+                    break;
+                }
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPatientAdmissionAppointments</Name>
+				<Source><![CDATA[
+    public boolean checkPatientAdmissionAppointments()
+    {
+        HMResourceSchedulingAppointment                 hmResourceSchedulingAppointmentLocal;
+        HMResourceSchedulingPlanningObject              hmResourceSchedulingPlanningObjectLocal;
+        boolean ret = true;
+    
+    
+        while select * from hmResourceSchedulingAppointmentLocal
+            join * from hmResourceSchedulingPlanningObjectLocal
+                where hmResourceSchedulingAppointmentLocal.HMPatient == HMResourceSchedulingAppointment::find(appointmentRecId).HMPatient
+                && hmResourceSchedulingAppointmentLocal.RecId != appointmentRecId
+                && hmResourceSchedulingAppointmentLocal.AppointmentDate == targetDate
+                && hmResourceSchedulingAppointmentLocal.AppointmentTime == targetTime
+                && hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+                && hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::InPatient
+                && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObjectLocal.RecId
+                && hmResourceSchedulingPlanningObjectLocal.RecId == targetPlanningObject.RecId
+                && hmResourceSchedulingAppointmentLocal.HMAppointmentType != HMAppointmentType::Admission
+        {
+            if(hmResourceSchedulingPlanningObjectLocal.HMClinicStaff)
+            {
+                warning(strFmt("@MAZ4656",HMClinicStaff::getPhysicianNameByRecId(hmResourceSchedulingPlanningObjectLocal.HMClinicStaff), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+            }
+            else
+            {
+                warning(strFmt("@MAZ4658", HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+            }
+            ret = false;
+    
+            break;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPatientAppointments</Name>
+				<Source><![CDATA[
+    public boolean checkPatientAppointments()
+    {
+        HMResourceSchedulingAppointment                 hmResourceSchedulingAppointmentLocal;
+        HMResourceSchedulingPlanningObject              hmResourceSchedulingPlanningObjectLocal;
+        boolean ret = true;
+        DialogButton        dialogButton;
+    
+        while select * from hmResourceSchedulingAppointmentLocal
+            join * from hmResourceSchedulingPlanningObjectLocal
+                where hmResourceSchedulingAppointmentLocal.HMPatient == HMResourceSchedulingAppointment::find(appointmentRecId).HMPatient
+                && hmResourceSchedulingAppointmentLocal.RecId != appointmentRecId
+                && hmResourceSchedulingAppointmentLocal.AppointmentDate == targetDate
+                && hmResourceSchedulingAppointmentLocal.AppointmentTime == targetTime
+                && hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                && (hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::Surgery)
+                && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObjectLocal.RecId
+                && hmResourceSchedulingAppointmentLocal.HMAppointmentType != HMAppointmentType::Admission
+        {
+            if (hmResourceSchedulingPlanningObjectLocal.RecId == targetPlanningObject.RecId)
+            {
+                warning(strFmt("@MAZ4656",HMClinicStaff::getPhysicianNameByRecId(hmResourceSchedulingPlanningObjectLocal.HMClinicStaff), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+                ret = false;
+            }
+            else
+            {
+                if (skipMessage)
+                {
+                    ret = false;
+                    warning(strFmt("@MAZ4656",HMResourceMaster::getResourceNameByRecId(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+                }
+                else
+                {
+                    dialogButton = Box::yesNo(strFmt("@MAZ4657",HMResourceMaster::getResourceNameByRecId(hmResourceSchedulingPlanningObjectLocal.HMResourceMaster), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description), DialogButton::No, "@SYS301622");
+                    if (dialogButton == DialogButton::No)
+                    {
+                        ret = false;
+                    }
+                }
+            }
+    
+            if (!(ret))
+            {
+                break;
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPatientTimeOverlapping</Name>
+				<Source><![CDATA[
+    public boolean checkPatientTimeOverlapping()
+    {
+        HMResourceSchedulingAppointment                 hmResourceSchedulingAppointmentLocal;
+        HMResourceSchedulingPlanningObject              hmResourceSchedulingPlanningObjectLocal;
+        boolean             ret = true;
+        DialogButton        dialogButton;
+        TimeOfDay           newAppointmentEndTime;
+        date                newAppointmentEndDate;
+        utcDateTime         newAppointmentEnd,oldAppointmentEnd,newAppointmentStart,oldAppointmentStart;
+    
+        newAppointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(targetDate,targetTime),targetDuration);
+        newAppointmentStart = DateTimeUtil::newDateTime(targetDate,targetTime);
+    
+        newAppointmentEndTime = DateTimeUtil::time(newAppointmentEnd);
+        newAppointmentEndDate = DateTimeUtil::date(newAppointmentEnd);
+    
+        while select * from hmResourceSchedulingAppointmentLocal
+            join * from hmResourceSchedulingPlanningObjectLocal
+            where hmResourceSchedulingAppointmentLocal.HMPatient == HMResourceSchedulingAppointment::find(appointmentRecId).HMPatient
+            && hmResourceSchedulingAppointmentLocal.RecId != appointmentRecId
+            && hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObjectLocal.RecId
+            && (hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::Surgery)
+            && ((hmResourceSchedulingAppointmentLocal.AppointmentDate >= targetDate && hmResourceSchedulingAppointmentLocal.AppointmentDate <= newAppointmentEndDate)
+            ||(hmResourceSchedulingAppointmentLocal.AppointmentEndDate >= targetDate && hmResourceSchedulingAppointmentLocal.AppointmentEndDate <= newAppointmentEndDate)
+            || (targetDate >= hmResourceSchedulingAppointmentLocal.AppointmentDate && targetDate <= hmResourceSchedulingAppointmentLocal.AppointmentEndDate)
+            ||(newAppointmentEndDate >= hmResourceSchedulingAppointmentLocal.AppointmentDate && newAppointmentEndDate <= hmResourceSchedulingAppointmentLocal.AppointmentEndDate))
+            && hmResourceSchedulingAppointmentLocal.HMAppointmentType != HMAppointmentType::Admission
+        {
+            oldAppointmentStart = DateTimeUtil::newDateTime(hmResourceSchedulingAppointmentLocal.AppointmentDate,hmResourceSchedulingAppointmentLocal.AppointmentTime);
+            oldAppointmentEnd = DateTimeUtil::newDateTime(hmResourceSchedulingAppointmentLocal.AppointmentEndDate,hmResourceSchedulingAppointmentLocal.AppointmentEndTime);
+    
+            if(oldAppointmentStart == newAppointmentStart)
+            {
+                continue;
+            }
+    
+            if((oldAppointmentStart > newAppointmentStart && oldAppointmentStart < newAppointmentEnd)
+            ||(oldAppointmentEnd > newAppointmentStart && oldAppointmentEnd < newAppointmentEnd)
+            || (newAppointmentStart > oldAppointmentStart && newAppointmentStart < oldAppointmentEnd)
+            ||(newAppointmentEnd > oldAppointmentStart && newAppointmentEnd < oldAppointmentEnd))
+            {
+                if (skipMessage)
+                {
+                    ret = false;
+                    warning(strFmt("@MAZ7077",hmResourceSchedulingAppointmentLocal.AppointmentDate,strDel(time2str(hmResourceSchedulingAppointmentLocal.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3),HMClinicStaff::getPhysicianNameByRecId(hmResourceSchedulingPlanningObjectLocal.HMClinicStaff),HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+                }
+                else
+                {
+                    dialogButton = Box::yesNo(strFmt("@MAZ4655",hmResourceSchedulingAppointmentLocal.AppointmentDate,strDel(time2str(hmResourceSchedulingAppointmentLocal.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3),HMClinicStaff::getPhysicianNameByRecId(hmResourceSchedulingPlanningObjectLocal.HMClinicStaff),HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description), DialogButton::No, "@SYS301622");
+                    if(dialogButton == DialogButton::No)
+                    {
+                        ret = false;
+                    }
+                }
+    
+                if(!(ret))
+                {
+                    break;
+                }
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPhysicianAppointments</Name>
+				<Source><![CDATA[
+    public boolean checkPhysicianAppointments()
+    {
+        HMResourceSchedulingAppointment                 hmResourceSchedulingAppointmentLocal;
+        HMResourceSchedulingPlanningObject              hmResourceSchedulingPlanningObjectLocal;
+        boolean ret = true;
+        DialogButton        dialogButton;
+    
+        while select * from hmResourceSchedulingAppointmentLocal
+            join * from hmResourceSchedulingPlanningObjectLocal
+                where hmResourceSchedulingAppointmentLocal.AppointmentDate == targetDate
+                && hmResourceSchedulingAppointmentLocal.AppointmentTime == targetTime
+                && hmResourceSchedulingAppointmentLocal.RecId != appointmentRecId
+                && hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                && (hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::Surgery)
+                && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObjectLocal.RecId
+                && hmResourceSchedulingPlanningObjectLocal.HMResourceMaster == targetPlanningObject.HMResourceMaster
+                && hmResourceSchedulingAppointmentLocal.HMAppointmentType != HMAppointmentType::Admission
+        {
+            if (skipMessage)
+            {
+                ret = false;
+                warning(strFmt("@MAZ7076",HMPatient::find(hmResourceSchedulingAppointmentLocal.HMPatient).patientName(), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+            }
+            else
+            {
+                dialogButton = Box::yesNo(strFmt("@MAZ4654",HMPatient::find(hmResourceSchedulingAppointmentLocal.HMPatient).patientName(), HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description), DialogButton::No, "@SYS301622");
+                if(dialogButton == DialogButton::No)
+                {
+                    ret = false;
+                }
+            }
+    
+            if(!(ret))
+            {
+                break;
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPhysicianTimeOverlapping</Name>
+				<Source><![CDATA[
+    public boolean checkPhysicianTimeOverlapping()
+    {
+        HMResourceSchedulingAppointment                 hmResourceSchedulingAppointmentLocal;
+        HMResourceSchedulingPlanningObject              hmResourceSchedulingPlanningObjectLocal;
+        boolean             ret = true;
+        DialogButton        dialogButton;
+        TimeOfDay           newAppointmentEndTime;
+        date newAppointmentEndDate;
+        utcDateTime newAppointmentEnd,oldAppointmentEnd,newAppointmentStart,oldAppointmentStart;
+    
+    
+        newAppointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(targetDate,targetTime),targetDuration);
+        newAppointmentStart = DateTimeUtil::newDateTime(targetDate,targetTime);
+    
+        newAppointmentEndTime = DateTimeUtil::time(newAppointmentEnd);
+        newAppointmentEndDate = DateTimeUtil::date(newAppointmentEnd);
+    
+        while select * from hmResourceSchedulingAppointmentLocal
+            join * from hmResourceSchedulingPlanningObjectLocal
+            where hmResourceSchedulingPlanningObjectLocal.HMClinicStaff == targetPlanningObject.HMClinicStaff
+            && hmResourceSchedulingAppointmentLocal.RecId != appointmentRecId
+            && hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObjectLocal.RecId
+            && (hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObjectLocal.CaseType == HMCaseType::Surgery)
+            && ((hmResourceSchedulingAppointmentLocal.AppointmentDate >= targetDate && hmResourceSchedulingAppointmentLocal.AppointmentDate <= newAppointmentEndDate)
+            ||(hmResourceSchedulingAppointmentLocal.AppointmentEndDate >= targetDate && hmResourceSchedulingAppointmentLocal.AppointmentEndDate <= newAppointmentEndDate)
+            || (targetDate >= hmResourceSchedulingAppointmentLocal.AppointmentDate && targetDate <= hmResourceSchedulingAppointmentLocal.AppointmentEndDate)
+            ||(newAppointmentEndDate >= hmResourceSchedulingAppointmentLocal.AppointmentDate && newAppointmentEndDate <= hmResourceSchedulingAppointmentLocal.AppointmentEndDate))
+            && hmResourceSchedulingAppointmentLocal.HMAppointmentType != HMAppointmentType::Admission
+        {
+            oldAppointmentStart = DateTimeUtil::newDateTime(hmResourceSchedulingAppointmentLocal.AppointmentDate,hmResourceSchedulingAppointmentLocal.AppointmentTime);
+            oldAppointmentEnd = DateTimeUtil::newDateTime(hmResourceSchedulingAppointmentLocal.AppointmentEndDate,hmResourceSchedulingAppointmentLocal.AppointmentEndTime);
+    
+            if(oldAppointmentStart == newAppointmentStart)
+            {
+                continue;
+            }
+    
+            if((oldAppointmentStart > newAppointmentStart && oldAppointmentStart < newAppointmentEnd)
+                ||(oldAppointmentEnd > newAppointmentStart && oldAppointmentEnd < newAppointmentEnd)
+                || (newAppointmentStart > oldAppointmentStart && newAppointmentStart < oldAppointmentEnd)
+                ||(newAppointmentEnd > oldAppointmentStart && newAppointmentEnd < oldAppointmentEnd))
+            {
+                if (skipMessage)
+                {
+                    ret = false;
+                    warning(strFmt("@MAZ7078",hmResourceSchedulingAppointmentLocal.AppointmentDate,strDel(time2str(hmResourceSchedulingAppointmentLocal.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3),HMPatient::find(hmResourceSchedulingAppointmentLocal.HMPatient).patientName(),HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description));
+                }
+                else
+                {
+                    dialogButton = Box::yesNo(strFmt("@MAZ4653",hmResourceSchedulingAppointmentLocal.AppointmentDate,strDel(time2str(hmResourceSchedulingAppointmentLocal.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3),HMPatient::find(hmResourceSchedulingAppointmentLocal.HMPatient).patientName(),HMOrganizationalUnit::find(hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit).Description, HMBuildingUnit::find(hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit).Description), DialogButton::No, "@SYS301622");
+                    if(dialogButton == DialogButton::No)
+                    {
+                        ret = false;
+                    }
+                }
+    
+                if(!(ret))
+                {
+                    break;
+                }
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkValidations</Name>
+				<Source><![CDATA[
+    public boolean checkValidations()
+    {
+        boolean                                         ret = true;
+        HMResourceSchedulingPublicHoliday               hmResourceSchedulingPublicHoliday;
+        HMResourceSchedulingWeekPlan                    hmResourceSchedulingWeekPlan;
+        HMResourceSchedulingWeekDayPlan                 hmResourceSchedulingWeekDayPlan;
+        HMResourceSchedulingWeekPlanToCalender          hmResourceSchedulingWeekPlanToCalender;
+        HMResourceSchedulingDayPlan                     hmResourceSchedulingDayPlan;
+        HMResourceSchedulingDayPlanItem                 hmResourceSchedulingDayPlanItem;
+        int                                             day;
+        int                                             month;
+        DialogButton                                    dialogButton;
+        boolean                                         check = false;
+    
+        if (ret)
+        {
+            if (DateTarget.dateValue() < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                warning("@MAZ7084");
+                ret = false;
+            }
+    
+            if (ret && DateTarget.dateValue() == DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) &&  targetTime < DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                warning("@MAZ7085");
+                ret = false;
+            }
+    
+            if (ret && TimeTarget.value() == -1)
+            {
+                warning("@MAZ11526");
+                ret = false;
+            }
+        }
+    
+        if (ret && (targetPlanningObject.CaseType == HMCaseType::OutPatient || targetPlanningObject.CaseType == HMCaseType::Surgery))
+        {
+            //to check appointment of the patient at same time
+            ret = element.checkPatientAppointments();
+    
+            //to check appointment of the physician at same time
+            if (ret)
+            {
+                ret = element.checkPhysicianAppointments();
+            }
+    
+            //to check overlapping of physician
+            if (ret)
+            {
+                //ret = element.checkPatientTimeOverlapping();
+            }
+    
+            //to check overlapping of the physician
+            if (ret)
+            {
+                //ret = element.checkPhysicianTimeOverlapping();
+            }
+        }
+    
+    
+        if (ret)
+        {
+            if (targetPlanningObject.ScheduleOnPublicHoliday == NoYes::No)
+            {
+                day     = dayOfMth(DateTarget.dateValue());
+                month   = mthOfYr(DateTarget.dateValue());
+    
+                select count(recId) from hmResourceSchedulingPublicHoliday
+                    where month == hmResourceSchedulingPublicHoliday.Month
+                    && (day >= hmResourceSchedulingPublicHoliday.FromDay && day <= hmResourceSchedulingPublicHoliday.ToDay);
+    
+                if (hmResourceSchedulingPublicHoliday.RecId > 0)
+                {
+                    if (skipMessage)
+                    {
+                        ret = false;
+                        warning("@MAZ7079");
+                    }
+                    else
+                    {
+                        dialogButton = Box::yesNo("@MAZ1981", DialogButton::No, "@SYS301622");
+                        if(dialogButton == DialogButton::No)
+                        {
+                            ret = false;
+                        }
+                    }
+    
+                }
+            }
+    
+            if (ret)
+            {
+                select * from hmResourceSchedulingWeekPlan
+                    join * from hmResourceSchedulingWeekDayPlan
+                    join * from hmResourceSchedulingWeekPlanToCalender
+                    where hmResourceSchedulingWeekPlan.HMResourceSchedulingPlanningObject == targetPlanningObject.RecId
+                    && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekDayPlan.HMResourceSchedulingWeekPlan
+                    && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekPlanToCalender.HMResourceSchedulingWeekPlan
+                    && hmResourceSchedulingWeekPlanToCalender.WeekNo == weekOfYear(DateTarget.dateValue())
+                    && hmResourceSchedulingWeekPlanToCalender.YearNo == year(DateTarget.dateValue())
+                    && hmResourceSchedulingWeekDayPlan.Days == dayOfWk(DateTarget.dateValue());
+    
+                if (hmResourceSchedulingWeekPlan.RecId == 0)
+                {
+                    if (skipMessage)
+                    {
+                        ret = false;
+                        warning("@MAZ7080");
+                    }
+                    else
+                    {
+                        dialogButton = Box::yesNo("@MAZ1982", DialogButton::No, "@SYS301622");
+                        if (dialogButton == DialogButton::No)
+                        {
+                            ret = false;
+                        }
+                    }
+                }
+                else
+                {
+                    check = true;
+                }
+            }
+    
+            if (ret && check && (targetPlanningObject.CaseType == HMCaseType::OutPatient || targetPlanningObject.CaseType == HMCaseType::Surgery))
+            {
+                select count(recId) from hmResourceSchedulingDayPlanItem
+                    join * from hmResourceSchedulingDayPlan
+                    where hmResourceSchedulingDayPlan.RecId==hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan
+                    && hmResourceSchedulingDayPlanItem.HMResourceSchedulingDayPlan == hmResourceSchedulingDayPlan.RecId
+                    && hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode == targetApptScheduleTypeRecId
+                    && (targetTime >= hmResourceSchedulingDayPlanItem.StartTime && targetTime <= hmResourceSchedulingDayPlanItem.EndTime);
+    
+                if (hmResourceSchedulingDayPlanItem.RecId < 1)
+                {
+                    if (skipMessage)
+                    {
+                        ret = false;
+                        warning("@MAZ7081");
+                    }
+                    else
+                    {
+                        dialogButton = Box::yesNo("@MAZ1983", DialogButton::No, "@SYS301622");
+                        if(dialogButton == DialogButton::No)
+                        {
+                            ret = false;
+                        }
+                    }
+                }
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkValidPlanningObjects</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingPlanningObject checkValidPlanningObjects(Description255 _text)
+    {
+    
+        Query                               q;
+        QueryRun                            qr;
+        QueryBuildDataSource                qbds;
+        QueryBuildRange                     qbr;
+        HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObjectLocal;
+    
+        q       = new Query();
+        qbds    = q.addDataSource(TableNum(HMResourceSchedulingPlanningObject));
+        qbr     = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, PlanningObjectStatus));
+        qbr.value(SysQuery::value(AllowanceStatus::Active));
+        qbr     = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, CaseType));
+        qbr.value(SysQuery::value(HMCaseType::OutPatient));
+        qbr     = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, CaseType));
+        qbr.value(SysQuery::value(HMCaseType::Surgery));
+        qbr     = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, StartDate));
+        qbr.value('<='+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None));
+        qbr     = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, EndDate));
+        qbr.value('>='+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None));
+        qbr     = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, Description));
+        qbr.value(_text);
+    
+        if (element.args().menuItemName() == menuitemDisplayStr('HMTransferAppointments'))
+        {
+            switch (ouCheck)
+            {
+                case 'AllWithPhysician': // Root node
+                case 'AllWithOutPhysician': // Root node
+                    qbr = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, HMClinicStaff));
+                    qbr.value(SysQuery::valueNot(0));
+                    break;
+    
+                case 'SelectedPhysician':
+                    qbr = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, HMClinicStaff));
+                    qbr.value(SysQuery::value(buffer.RecId));
+                    break;
+    
+                case 'SelectedOU':
+                    qbr = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, HMOrganizationalUnit));
+                    qbr.value(SysQuery::value(buffer.RecId));
+    
+                    qbr = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, HMClinicStaff));
+                    qbr.value(SysQuery::valueNot(0));
+                    break;
+    
+                case 'SelectedOUWithOutPhysician':
+                    qbr = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, HMOrganizationalUnit));
+                    qbr.value(SysQuery::value(buffer.RecId));
+    
+                    qbr = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, HMClinicStaff));
+                    qbr.value(SysQuery::value(0));
+                    break;
+    
+                case 'PlanningObject':
+                    qbr = qbds.addRange(FieldNum(HMResourceSchedulingPlanningObject, RecId));
+                    qbr.value(SysQuery::value(buffer.RecId));
+                    break;
+            }
+        }
+    
+        qr = new QueryRun(q);
+        while (qr.next())
+        {
+            hmResourceSchedulingPlanningObjectLocal = qr.get(tableNum(HMResourceSchedulingPlanningObject));
+            break;
+        }
+        return hmResourceSchedulingPlanningObjectLocal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    public void closeOk()
+    {
+        #Task
+        DialogButton                    dialogButton;
+        Object                          formRun;
+        FormRun                         caller;
+        HMAppointmentConfirmationStatus HMAppointmentConfirmationStatus;
+    
+        dialogButton = Box::yesNo("@MAZ11918", DialogButton::No, "@SYS301622");
+        if (dialogButton == DialogButton::Yes)
+        {
+            HMAppointmentConfirmationStatus = str2enum(HMAppointmentConfirmationStatus,ConfirmationStatus.valueStr());
+            if(HMResourceSchedulingHelper::transferAppointments(newApptlist,HMAppointmentConfirmationStatus, CancellationStatus.selection(),EmailToBeSent.checked()))
+            {
+                super();
+                formRun = element.args().caller();
+                caller= element.args().caller();
+                if( caller.name()==formStr(hmAppointmentsearch))
+                {
+                    if (formHasMethod(formRun, identifierstr(refreshGrid)))
+                    {
+                        formRun.refreshGrid('','','');
+                    }
+                    else
+                    {
+                        formRun.task(#taskRefresh);
+                    }
+
+                }
+                else
+                {
+
+                    if (formHasMethod(formRun, identifierstr(refreshGrid)))
+                    {
+                        formRun.refreshGrid();
+                    }
+                    else
+                    {
+                        formRun.task(#taskRefresh);
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillSourceList</Name>
+				<Source><![CDATA[
+    public void fillSourceList()
+    {
+        int                             counts = 0;
+        int                             idx;
+        FormListItem                    item;
+        Query                           query;
+        HMResourceSchedulingAppointment appt;
+        str                             time;
+        ListEnumerator                  listEnumerator;
+        container                       apptList;
+        QueryRun                        queryRun;
+    
+        SourceListview.deleteAll();
+        appt = element.args().record();
+        query = new query();
+        query.addDataSource(tableNum(HMResourceSchedulingAppointment));
+    
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,HMPatientVisit)).value(SysQuery::value(appt.HMPatientVisit));
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::value(HMResourceSchedulingAppointmentStatus::Confirmed));
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::value(HMResourceSchedulingAppointmentStatus::ToBeReschedule));
+        queryRun = new QueryRun(query);
+        while(queryRun.next())
+        {
+            appt = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+            if(!appt.isEligibleForRescheduleCancel())
+            {
+                element.close();
+            }
+            if(!apptRecIdLookup.in(appt.RecId))
+            {
+    
+                time = this.removeSeconds(time2Str(appt.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM));
+                time = date2StrUsr(appt.AppointmentDate) + '-' + time;
+                // BP deviation documented
+                item = new FormListItem(time,0,int642str(appt.RecId));
+                idx = SourceListview.addItem(item);
+                // BP deviation documented
+                item = new FormListItem(appt.getPatientName());
+                item.subItem(1);
+                item.idx(idx);
+                SourceListview.setItem(item);
+                // BP deviation documented
+                item = new FormListItem(appt.getAppointmentResource());
+                item.subItem(2);
+                item.idx(idx);
+                SourceListview.setItem(item);
+                // BP deviation documented
+                item = new FormListItem(HMResourceSchedulingTypeCode::find(appt.HMResourceSchedulingTypeCode).Description);
+                item.subItem(3);
+                item.idx(idx);
+                SourceListview.setItem(item);
+                // BP deviation documented
+                item = new FormListItem(enum2str(appt.PrimaryAppointment));
+                item.subItem(4);
+                item.idx(idx);
+                SourceListview.setItem(item);
+            }
+        }
+    
+        appointmentReason = 0;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillTargetList</Name>
+				<Source><![CDATA[
+    public void fillTargetList()
+    {
+        HMResourceSchedulingOpenTimeSlotsTmp    tmp;
+        HMResourceSchedulingOpenTimeSlotsSearch Obj = new HMResourceSchedulingOpenTimeSlotsSearch();
+        int                                     idx;
+        FormListItem                            item;
+        str                                     data, time;
+        container                               dataContainer;
+        boolean flag;
+    
+        TargetListView.deleteAll();
+        targetdataList = new Map(Types::String,Types::Int64);
+    
+        tmp = Obj.searchOpenTimeSlot(targetPlanningObject.RecId,targetDate,targetDate,false, sourceScheduleTypeRecId,true,[true,true,true,true,true,true,true]);
+    
+        while select * from tmp
+            order by tmp.date, time desc
+            where tmp.isBlocked == NoYes::No
+            && tmp.isClosed == NoYes::No
+        {
+            flag = true;
+    
+            while select * from hmResourceSchedulingOpenTimeSlotsTmpMain
+            where hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject == tmp.HMResourceSchedulingPlanningObject
+            && hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingTypeCode == tmp.HMResourceSchedulingTypeCode
+            && hmResourceSchedulingOpenTimeSlotsTmpMain.Date == tmp.Date
+            {
+                if(hmResourceSchedulingOpenTimeSlotsTmpMain.Time == tmp.Time || (hmResourceSchedulingOpenTimeSlotsTmpMain.Duration &&
+                    tmp.Time > hmResourceSchedulingOpenTimeSlotsTmpMain.Time && tmp.Time < (hmResourceSchedulingOpenTimeSlotsTmpMain.Time + (hmResourceSchedulingOpenTimeSlotsTmpMain.Duration * 60))))
+                {
+                    flag = false;
+                    break;
+                }
+            }
+    
+            if(flag)
+            {
+                data = time2Str(tmp.Time,TimeSeparator::Colon,TimeFormat::AMPM) + ',' + int642str(tmp.HMResourceSchedulingTypeCode) + ',' + this.removeSeconds(time2Str(tmp.Time,TimeSeparator::Colon,TimeFormat::AMPM)) + ',' + int2str(tmp.IsHotspot);
+                dataContainer = [tmp.Time,tmp.HMResourceSchedulingTypeCode,tmp.HMResourceSchedulingPlanningObject];
+                time = this.removeSeconds(time2Str(tmp.Time,TimeSeparator::Colon,TimeFormat::AMPM));
+                time = date2StrUsr(tmp.Date);
+                targetdataList.insert(date2StrUsr(tmp.Date) + '-' + time,tmp.HMResourceSchedulingTypeCode);
+                // BP deviation documented
+                item = new FormListItem(time,0,data);
+                idx = TargetListView.addItem(item);
+                // BP deviation documented
+                item = new FormListItem(this.removeSeconds(time2Str(tmp.Time,TimeSeparator::Colon,TimeFormat::AMPM)));
+                item.subItem(1);
+                TargetListView.addItem(item);
+                item.idx(idx);
+                TargetListView.setItem(item);
+                //// BP deviation documented
+                //time = this.removeSeconds(time2Str(tmp.Time,TimeSeparator::Colon,TimeFormat::AMPM));
+                //item = new FormListItem(time);
+                //item.subItem(1);
+                //TargetListView.addItem(item);
+                //item.idx(idx);
+                //TargetListView.setItem(item);
+                // BP deviation documented
+                item = new FormListItem(HMResourceSchedulingTypeCode::find(tmp.HMResourceSchedulingTypeCode).Description);
+                item.subItem(2);
+                TargetListView.addItem(item);
+                item.idx(idx);
+                TargetListView.setItem(item);
+                // BP deviation documented
+                item = new FormListItem(enum2str(tmp.IsHotspot));
+                item.subItem(3);
+                TargetListView.addItem(item);
+                item.idx(idx);
+                TargetListView.setItem(item);
+                // BP deviation documented
+                item = new FormListItem(this.removeSeconds(time2Str(tmp.Time,TimeSeparator::Colon,TimeFormat::AMPM)));
+                item.subItem(4);
+                TargetListView.addItem(item);
+                item.idx(idx);
+                TargetListView.setItem(item);
+    
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        date                                cancelledDate;
+        SysFormEnumComboBox     sysFormEnumComboBox;
+        Set enumSet = new Set(Types::Enum); // collection of selected values.
+    
+        cancelledDate = HMResourceSchedulingHelper::getCancellationDate(element.args().record().RecId);
+    
+        if(cancelledDate)
+        {
+            if(cancelledDate+1 <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                enumSet.add(HMAppointmentCancellationStatus::None);
+                enumSet.add(HMAppointmentCancellationStatus::WithFeesBusySchedule);
+                enumSet.add(HMAppointmentCancellationStatus::WithFeesForceBookConfirmed);
+                enumSet.add(HMAppointmentCancellationStatus::WithFeesIllnessWeather);
+                enumSet.add(HMAppointmentCancellationStatus::WithFeesNotCoveredPriceTooHigh);
+                enumSet.add(HMAppointmentCancellationStatus::WithFeesNotSatisfied);
+                enumSet.add(HMAppointmentCancellationStatus::WithFeesOther);
+                enumSet.add(HMAppointmentCancellationStatus::WithFeesVacation);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesBusySchedule);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesCancelledByClinic);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesForceBookConfirmed);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesForceBookedRefused);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesIllnessWeather);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesNotCoveredPriceTooHigh);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesNotSatisfied);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesOther);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesVacation);
+            }
+            else
+            {
+                enumSet.add(HMAppointmentCancellationStatus::None);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesBusySchedule);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesCancelledByClinic);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesForceBookConfirmed);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesForceBookedRefused);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesIllnessWeather);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesNotCoveredPriceTooHigh);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesNotSatisfied);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesOther);
+                enumSet.add(HMAppointmentCancellationStatus::NoFeesVacation);
+            }
+        }
+        else
+        {
+            enumSet.add(HMAppointmentCancellationStatus::None);
+            enumSet.add(HMAppointmentCancellationStatus::WithFeesBusySchedule);
+            enumSet.add(HMAppointmentCancellationStatus::WithFeesForceBookConfirmed);
+            enumSet.add(HMAppointmentCancellationStatus::WithFeesIllnessWeather);
+            enumSet.add(HMAppointmentCancellationStatus::WithFeesNotCoveredPriceTooHigh);
+            enumSet.add(HMAppointmentCancellationStatus::WithFeesNotSatisfied);
+            enumSet.add(HMAppointmentCancellationStatus::WithFeesOther);
+            enumSet.add(HMAppointmentCancellationStatus::WithFeesVacation);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesBusySchedule);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesCancelledByClinic);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesForceBookConfirmed);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesForceBookedRefused);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesIllnessWeather);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesNotCoveredPriceTooHigh);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesNotSatisfied);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesOther);
+            enumSet.add(HMAppointmentCancellationStatus::NoFeesVacation);
+        }
+    
+       
+        //super();
+        SysFormEnumComboBox = SysFormEnumComboBox::newParameters(element,
+            element.controlId(formControlStr(HMTransferAppointments, CancellationStatus)),  enumName2Id(enumStr(HMAppointmentCancellationStatus)), enumSet);
+    
+    
+        this.bindConfirmationStatus();
+        super();
+        Source.width(450);
+    
+        SourceListView.addColumn(1,new FormListColumn("@SYS108609",0,120));
+        SourceListView.addColumn(2,new FormListColumn("@MAZ9",1,120));
+        SourceListView.addColumn(3,new FormListColumn("@SYS89158",2,120));
+        SourceListView.addColumn(4,new FormListColumn("@MAZ7340",3,120));
+        SourceListView.addColumn(5,new FormListColumn("@SYS80168",4,50));
+    
+        TargetListView.addColumn(1,new FormListColumn("Date",0,70));
+        TargetListView.addColumn(2,new FormListColumn("@SYS92604",0,70));
+        TargetListView.addColumn(3,new FormListColumn("@MAZ7340",1,100));
+        TargetListView.addColumn(4,new FormListColumn("@MAZ11139",1,70));
+        //TargetListView.addColumn(5,new FormListColumn("@MAZ11147",1,70));
+    
+        SourceListView.rowSelect(true);
+        TargetListView.rowSelect(true);
+        Transfer.text('>');
+        newApptlist = new List(Types::Container);
+        apptSet = new Set(Types::String);
+        apptRecIdLookup = new Set(Types::Int64);
+    
+        CancellationDeadLineDate.dateValue(cancelledDate);
+        if(cancelledDate && cancelledDate+1 <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        {
+            DeadlineReached.selection(1);
+        }
+    
+        SysFormEnumComboBox.select(HMAppointmentCancellationStatus::None); // To select value in combo
+        CancellationStatus.Label("@MAZ12324");
+    
+        if (!isConfigurationKeyEnabled(configurationKeyNum(MZKTemp)))
+        {
+            CancellationDeadLineDate.visible(false);
+            DeadlineReached.visible(false);
+            CancellationStatus.visible(false);
+            confirmationStatus.visible(false);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertBulkTransfer</Name>
+				<Source><![CDATA[
+    public void insertBulkTransfer()
+    {
+        container       appointmentIds;
+        FormListItem    sourceItem;
+        int             i;
+        List            li = new List(Types::String);
+    
+        if (appointmentReason != 0)
+        {
+            i = SourceListview.getNextItem(FormListNext::Selected);
+            while (i != -1)
+            {
+                sourceItem      = SourceListview.getItem(i);
+                appointmentIds  += [sourceItem.data()];
+                i               = SourceListview.getNextItem(FormListNext::Selected,i);
+            }
+    
+            if (SourceListview.getSelectedCount() > 0 && str2time(TimeTarget.valueStr()) != -1)
+            {
+                element.transferBulkAppointments(appointmentIds);
+                TimeTarget.value(-1);
+                element.refreshCallerForm();
+            }
+            else
+            {
+                warning("@MAZ7786");
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertSingleTransfer</Name>
+				<Source><![CDATA[
+    public void insertSingleTransfer()
+    {
+        FormListItem    sourceItem;
+        List            li = new List(Types::AnyType);
+        int             i;
+        RecId           appointmentId;
+    
+        i = SourceListview.getNextItem(FormListNext::Selected);
+        if (i != -1)
+        {
+            sourceItem                  = SourceListview.getItem(i);
+            appointmentId               = sourceItem.data();
+            targetDuration              = HMResourceMasterHelper::getDurationInMinutes(RsrcTgtRecId,targetApptScheduleTypeRecId);
+            i                           = SourceListview.getNextItem(FormListNext::Selected,i);
+        }
+    
+        if (SourceListview.getSelectedCount() == 1 && TimeTarget.value() != -1)
+        {
+            if(element.transferSingleAppointment(appointmentId))
+            {
+                TimeTarget.value(-1);
+                element.refreshCallerForm();
+            }
+        }
+        else
+        {
+            warning("@MAZ7092");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshCallerForm</Name>
+				<Source><![CDATA[
+    public void refreshCallerForm()
+    {
+        FormRun         formRun;
+        List            dsList;
+        ListEnumerator  dsListEnumerator;
+        FormDataSource  formDS;
+    
+        formRun = element.args().caller();
+    
+        // If the caller is a form, find and refresh the specified root data source.
+        if (formRun)
+        {
+            dsList = formRun.rootFormDataSources();
+    
+            if (dsList && dsList.elements() > 0)
+            {
+                dsListEnumerator = dsList.getEnumerator();
+    
+                while(dsListEnumerator.moveNext())
+                {
+                    formDS = dsListEnumerator.current();
+                    if(formDS.table() == tableNum(HMResourceSchedulingPlanningObject))
+                    {
+                        formDS.executeQuery();
+                        formDS.research();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>removeSeconds</Name>
+				<Source><![CDATA[
+    private str removeSeconds(str _time)
+    {
+        str newTime;
+    
+        newTime = subStr(_time,1,5);
+        newTime += subStr(_time,strLen(_time)-2,strLen(_time));
+    
+        return newTime;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        ConfirmationStatus.selection(5);
+        super();
+    
+        isSource    = true;
+        isSourcePhy = true;
+        sourceDate  = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        targetDate  = sourceDate;
+        DateTarget.dateValue(targetDate);
+    
+    
+        this.fillSourceList();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storePlanningObject</Name>
+				<Source><![CDATA[
+    public void storePlanningObject(RecId _recordId)
+    {
+        targetPlanningObject = HMResourceSchedulingPlanningObject::find(_recordId);
+        PlanningObjectTarget.text(HMResourceSchedulingPlanningObject::find(targetPlanningObject.RecId).Description);
+        this.fillTargetList();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeReason</Name>
+				<Source><![CDATA[
+    public void storeReason(RecId _recId)
+    {
+        appointmentReason = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeResource</Name>
+				<Source><![CDATA[
+    public void storeResource(RecId _resourceRecId, boolean _loadPO = true)
+    {
+        HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+        RsrcTgtRecId = _resourceRecId;
+        if(_loadPO)
+        {
+            select count(RecId) from hmResourceSchedulingPlanningObject
+            where hmResourceSchedulingPlanningObject.HMResourceMaster == _resourceRecId;
+            if(hmResourceSchedulingPlanningObject.recid == 1)
+            {
+                select RecId,Description from hmResourceSchedulingPlanningObject
+                    where hmResourceSchedulingPlanningObject.HMResourceMaster == _resourceRecId;
+                element.storePlanningObject(hmResourceSchedulingPlanningObject.RecId);
+            }
+            else
+            {
+                element.storePlanningObject(0);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferBulkAppointments</Name>
+				<Source><![CDATA[
+    public void transferBulkAppointments(container _appointmnettId)
+    {
+        // for transfering multiple appointments
+        HMResourceSchedulingAppointment hmResourceSchedulingAppointment;
+        int                             i = 1;
+        RecId                           Id;
+        utcDateTime                     appointmentEnd;
+    
+        skipMessage = true;
+        targetTime  = str2time(TimeTarget.valueStr());
+    
+        for (i = 1; i <= conLen(_appointmnettId); i++)
+        {
+            Id                  = conPeek(_appointmnettId,i);
+            appointmentRecId    = Id;
+    
+            if (targetdataList.exists(this.removeSeconds(time2Str(targetTime,TimeSeparator::Colon,TimeFormat::AMPM)))) //  if time exist in open slots then get its schedule type
+            {
+                targetApptScheduleTypeRecId = targetdataList.lookup(this.removeSeconds(time2Str(targetTime,TimeSeparator::Colon,TimeFormat::AMPM)));
+            }
+            else // get the default schedule type of planning object.
+            {
+                targetApptScheduleTypeRecId = targetPlanningObject.DefaultScheduleType;
+            }
+    
+            HMResourceMasterHelper::getDurationInMinutes(targetPlanningObject.HMResourceMaster,targetApptScheduleTypeRecId);
+    
+            ttsBegin;
+            select forUpdate hmResourceSchedulingAppointment
+                where hmResourceSchedulingAppointment.RecId == Id;
+    
+            if (targetPlanningObject.CaseType == HMCaseType::OutPatient || targetPlanningObject.CaseType == HMCaseType::Surgery)
+            {
+                appointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(targetDate,targetTime),targetDuration);
+            }
+            else if (targetPlanningObject.CaseType == HMCaseType::InPatient)
+            {
+                appointmentEnd = DateTimeUtil::addDays(DateTimeUtil::newDateTime(targetDate,targetTime),targetDuration);
+            }
+    
+            hmResourceSchedulingAppointment.AppointmentDate                     = targetDate;
+            hmResourceSchedulingAppointment.AppointmentTime                     = targetTime;
+            hmResourceSchedulingAppointment.AppointmentEndDate                  = DateTimeUtil::date(appointmentEnd);
+            hmResourceSchedulingAppointment.AppointmentEndTime                  = DateTimeUtil::time(appointmentEnd);
+            hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject  = targetPlanningObject.RecId;
+            hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode        = targetApptScheduleTypeRecId;
+            hmResourceSchedulingAppointment.AppointmentReason                   = appointmentReason;
+            setPrefix("@SYS8500");
+           // setPrefix("The appointment for "+hmResourceSchedulingAppointment::find(Id).getPatientName()+ " at " + this.removeSeconds(time2Str(targetTime,TimeSeparator::Colon,TimeFormat::AMPM)) + " can not be transfered.");
+            setPrefix(strFmt("@MAZ7094",hmResourceSchedulingAppointment::find(Id).getPatientName(), this.removeSeconds(time2Str(targetTime,TimeSeparator::Colon,TimeFormat::AMPM))));
+            if (this.checkValidations())
+            {
+                hmResourceSchedulingAppointment.update();
+                ttsCommit;
+            }
+            else
+            {
+                ttsAbort;
+            }
+    
+            targetTime = DateTimeUtil::time(appointmentEnd);
+    
+        }
+        this.fillSourceList();
+        this.fillTargetList();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferSingleAppointment</Name>
+				<Source><![CDATA[
+    public boolean transferSingleAppointment(RecId _appointmnentId)
+    {
+        // for transfering single appointment
+        HMResourceSchedulingAppointment hmResourceSchedulingAppointment;
+        utcDateTime                     appointmentEnd;
+        int                             i;
+        FormListItem                    targetItem;
+        container                       targetItemData;
+        HMResourceSchedulingTypeCode    HMResourceSchedulingTypeCode, hmResourceSchedulingTypeCodeSource;
+        container                       apptContainer;
+        container                       sourceContainer;
+    
+        appointmentRecId    = _appointmnentId;
+        skipMessage         = false;
+        targetTime          = TimeTarget.value();//str2time(TimeTarget.valuestr());
+        //HMTime   _time           = TimeTarget.value();
+        
+    
+        //select forUpdate hmResourceSchedulingAppointment
+            //where hmResourceSchedulingAppointment.RecId == _appointmnentId;
+    
+        HMResourceSchedulingTypeCode = HMResourceSchedulingTypeCode::find(scheduleTypeRecId);
+        hmResourceSchedulingTypeCodeSource = HMResourceSchedulingTypeCode::find(HMResourceSchedulingAppointment::find(_appointmnentId).HMResourceSchedulingTypeCode);
+    
+    
+        //hmResourceSchedulingAppointment.AppointmentDate                     = targetDate;
+        //hmResourceSchedulingAppointment.AppointmentTime                     = targetTime;
+        //hmResourceSchedulingAppointment.AppointmentEndDate                  = DateTimeUtil::date(appointmentEnd);
+        //hmResourceSchedulingAppointment.AppointmentEndTime                  = DateTimeUtil::time(appointmentEnd);
+        //hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject  = targetPlanningObject.RecId;
+        //hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode        = hmResourceSchedulingTypeCode.RecId;
+    
+        if(hmResourceSchedulingTypeCodeSource.AppointmentSubType == HMAppointmentSubType::Searchable && hmResourceSchedulingTypeCodeSource.RecId !=  hmResourceSchedulingTypeCode.RecId)
+        {
+            warning("@MAZ11525");
+            return false;
+        }
+        else if(hmResourceSchedulingTypeCodeSource.AppointmentSubType == HMAppointmentSubType::Open && hmResourceSchedulingTypeCodeSource.ParentAppointmentType !=  hmResourceSchedulingTypeCode.RecId)
+        {
+            warning("@MAZ11525");
+            return false;
+        }
+    
+        appointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(targetDate,targetTime), HMResourceMasterHelper::getDurationInMinutes(targetPlanningObject.HMResourceMaster, hmResourceSchedulingTypeCodeSource.RecId));
+    
+        apptContainer = [_appointmnentId,targetDate,targetTime,DateTimeUtil::date(appointmentEnd),DateTimeUtil::time(appointmentEnd),targetPlanningObject,hmResourceSchedulingTypeCodeSource.RecId, arrivalTime, isHotspot];
+        sourceContainer = [scheduleTypeRecId,targetPlanningObject.RecId,targetDate,targetTime];
+    
+        //if (this.checkValidations())
+        {
+            newApptlist.addEnd(apptContainer);
+    
+            hmResourceSchedulingOpenTimeSlotsTmpMain.clear();
+            hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject = targetPlanningObject.RecId;
+            hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingTypeCode = scheduleTypeRecId;
+            hmResourceSchedulingOpenTimeSlotsTmpMain.Date = targetDate;
+            hmResourceSchedulingOpenTimeSlotsTmpMain.Time = targetTime;
+            if(hmResourceSchedulingTypeCodeSource.AppointmentSubType == HMAppointmentSubType::Open)
+            {
+                hmResourceSchedulingOpenTimeSlotsTmpMain.Duration = HMResourceMasterHelper::getDurationInMinutes(HMResourceSchedulingPlanningObject::find(HMResourceSchedulingAppointment::find(_appointmnentId).HMResourceSchedulingPlanningObject).HMResourceMaster, hmResourceSchedulingTypeCodeSource.RecId);
+    
+            }
+    
+            hmResourceSchedulingOpenTimeSlotsTmpMain.insert();
+    
+            apptset.add(strFmt('%1 - %2',targetPlanningObject.RecId,targetDate));
+            apptRecIdLookup.add(_appointmnentId);
+            this.fillSourceList();
+            this.fillTargetList();
+            return true;
+        }
+    
+    
+    
+        return false;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>SourceListView</Name>
+				<Type>ListView</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChanged</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name = "_Idx"></param>
+        /// <param name = "_Data"></param>
+        public void selectionChanged(int _Idx, anytype _Data)
+        {
+            
+            HMResourceSchedulingAppointment apptlocal = HMResourceSchedulingAppointment::find(any2int64(_Data));
+        
+            sourceScheduleTypeRecId = HMResourceSchedulingHelper::getOrignalAppointmentType(apptlocal.HMResourceSchedulingTypeCode);
+        
+            element.storeResource(apptlocal.getAppointmentResourceRecId(), false);
+            element.storePlanningObject(apptlocal.HMResourceSchedulingPlanningObject);
+        
+            Resources.text(apptlocal.getAppointmentResource());
+            PlanningObjectTarget.text(hmResourceSchedulingPlanningObject::find(apptlocal.HMResourceSchedulingPlanningObject).Description);
+        
+            super(_Idx, _Data);
+            
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Transfer</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            element.insertSingleTransfer();
+            Schedule.enabled(true);
+            //if(SourceListView.getNextItem(FormListNext::All) == -1)
+            //{
+                //Schedule.enabled(true);
+            //}
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DateTarget</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+    
+            ret = super();
+    
+            if (ret)
+            {
+                targetDate = this.dateValue();
+                if(targetDate < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                {
+                    warning("@MAZ11905");
+                    this.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+                    return ret;
+                }
+                element.fillTargetList();
+            }
+    
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Resources</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+    
+            args.name(formstr(HMResourceMasterLookup));
+            args.caller(element);
+            args.parm('NoDevice');
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+            isSourcePhy = false;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMlookupClass           HMlookupClassObj =new HMlookupClass();
+            HMResourceMaster        hmResourceMaster;
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.text() != "")
+                {
+                    select RecId, Description from hmResourceMaster
+                    where hmResourceMaster.Type != HMResourceType::Device
+                    && hmResourceMaster.Description == this.text();
+        
+                    if (hmResourceMaster.RecId)
+                    {
+                        element.storeResource(hmResourceMaster.RecId);
+                        this.text(hmResourceMaster.Description);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",this.label()));
+                        this.text(HMResourceMaster::getResourceNameByRecId(RsrcTgtRecId));
+                    }
+                }
+                else
+                {
+                    element.storeResource(0);
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>PlanningObjectTarget</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args         args = new Args();
+            FormRun     itemLookUp;
+    
+            args.name(formstr(HMPlanningObjectLookupNew));
+            args.caller(element);
+            if(RsrcTgtRecId)
+            {
+                args.record(HMResourceMaster::find(RsrcTgtRecId));
+            }
+            args.parm('Resource');
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+            isSource = false;
+            isSourcePhy = false;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+            boolean                                 ret;
+        
+            ret = super();
+        
+            isSource    = false;
+            isSourcePhy = false;
+        
+            if (ret)
+            {
+                if (this.text() != "")
+                {
+                    select * from hmResourceSchedulingPlanningObject
+                        where hmResourceSchedulingPlanningObject.PlanningObjectStatus == AllowanceStatus::Active
+                        && (hmResourceSchedulingPlanningObject.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObject.CaseType == HMCaseType::Surgery)
+                        && (hmResourceSchedulingPlanningObject.StartDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmResourceSchedulingPlanningObject.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                        && hmResourceSchedulingPlanningObject.Description == this.text()
+                        && (!RsrcTgtRecId || hmResourceSchedulingPlanningObject.HMResourceMaster == RsrcTgtRecId);
+        
+                    if (hmResourceSchedulingPlanningObject.RecId)
+                    {
+                        element.storePlanningObject(hmResourceSchedulingPlanningObject.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",'Resource'));
+                        PlanningObjectTarget.text(hmResourceSchedulingPlanningObject::find(targetPlanningObject.RecId).Description);
+                    }
+                }
+                else
+                {
+                    element.storePlanningObject(0);
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>TargetListView</Name>
+				<Type>ListView</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChanged</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name = "_Idx"></param>
+        /// <param name = "_Data"></param>
+        public void selectionChanged(int _Idx, anytype _Data)
+        {
+            List            li = new List(Types::String);
+            ListEnumerator  enum;
+            str             time;
+        
+            super(_Idx, _Data);
+        
+            li = strSplit(_Data,',');
+            enum = li.getEnumerator();
+        
+            enum.moveNext();
+            time = enum.current();
+            TimeTarget.value(str2time(time));
+            enum.moveNext();
+            scheduleTypeRecId = str2int64(enum.current());
+            enum.moveNext();
+            arrivalTime = str2time(enum.current());
+            enum.moveNext();
+            isHotspot = str2int(enum.current());
+            if (SourceListView.getSelectedCount() > 1 )
+            {
+                Transfer.enabled(false);
+            }
+            else
+            {
+                Transfer.enabled(true);
+            }
+            // enum.moveNext();
+            // enum.moveNext();
+            // targetApptScheduleTypeRecId = enum.current();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@MAZ11615</Caption>
+		<ColumnSpace xmlns="">0</ColumnSpace>
+		<ColumnSpaceMode xmlns="">Fixed</ColumnSpaceMode>
+		<Columns xmlns="">4</Columns>
+		<DialogSize xmlns="">Full</DialogSize>
+		<HeightMode xmlns="">Column</HeightMode>
+		<HideIfEmpty xmlns="">No</HideIfEmpty>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">Custom</Pattern>
+		<SetCompany xmlns="">No</SetCompany>
+		<StatusBarStyle xmlns="">None</StatusBarStyle>
+		<Style xmlns="">Dialog</Style>
+		<WidthMode xmlns="">Column</WidthMode>
+		<WindowType xmlns="">ContentPage</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>LeftGroup</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>HeaderFields_SourceCopy1</Name>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>CancellationDeadLineDate</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>596523234</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ12322</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>DeadlineReached</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>894784851</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ComboBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<EnumType>NoYes</EnumType>
+								<Label>@MAZ12323</Label>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>CancellationStatus</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1193046468</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ComboBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<EnumType>HMAppointmentCancellationStatus</EnumType>
+								<Label>@MAZ12324</Label>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>EmailToBeSent</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1491308087</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ12029</Label>
+								<Value>1</Value>
+							</AxFormControl>
+						</Controls>
+						<HideIfEmpty>No</HideIfEmpty>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Source</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>715827882</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormListViewControl">
+								<Name>SourceListView</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1789569705</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>SizeToAvailable</HeightMode>
+								<Type>ListView</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<SingleSelection>No</SingleSelection>
+								<ViewType>List</ViewType>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<Caption>@MAZ11523</Caption>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>SplitterVerticalContainer</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<Style>SplitterVerticalContainer</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>TransferButtons</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Height>10</Height>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>Transfer</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Height>25</Height>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ7091</HelpText>
+						<Skip>Yes</Skip>
+						<Top>250</Top>
+						<TopMode>Manual</TopMode>
+						<Type>Button</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@SYS75361</Text>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>RightGroup</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>HeaderField_target</Name>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Group_Copy1</Name>
+								<ElementPosition>715827882</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>DateTarget</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ7348</HelpText>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>TransDate</ExtendedDataType>
+										<Label>@MAZ4437</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTimeControl">
+										<Name>TimeTarget</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1610612734</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ7349</HelpText>
+										<Type>Time</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@SYS4444</Label>
+										<TimeSeconds>No</TimeSeconds>
+										<Value>2</Value>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>ConfirmationStatus</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>894784852</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ComboBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<EnumType>HMAppointmentConfirmationStatus</EnumType>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Resources</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741823</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@SYS111249</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS89158</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PlanningObjectTarget</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11141</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS118429</Label>
+							</AxFormControl>
+						</Controls>
+						<HideIfEmpty>No</HideIfEmpty>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormListViewControl">
+						<Name>TargetListView</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1789569705</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>ListView</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ViewType>List</ViewType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<LeftMode>AutoRight</LeftMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormCommandButtonControl">
+								<Name>Schedule</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<Enabled>No</Enabled>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>CommandButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Command>OK</Command>
+								<DefaultButton>Yes</DefaultButton>
+								<Text>@SYS69944</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCommandButtonControl">
+								<Name>CancelButton</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>CommandButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Command>Cancel</Command>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>HorizontalRight</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+				</Controls>
+				<Caption>Open Slots</Caption>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,519 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMNewFixedAssestsDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) [Dialog Caption] Two conflicting captions are defined on this form - 1) Ensure the value in Form.Design.Caption contains the caption you want for this form; and, 2) Remove the now redundant static text main instruction control MainInstruction. */
+[Form]
+public class HMNewFixedAssestsDialog extends FormRun
+{
+    RecId  parentUnitRecId, categoryId, assetRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+       // FormRun formRun;
+        //formRun = element.args().caller();
+    
+        super();
+       // this.design().top(formRun.design().topValue()+100);
+       // this.design().left(formRun.design().leftValue()+300);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCategory</Name>
+				<Source><![CDATA[
+    public void setCategory(RecId  _categoryId)
+    {
+        categoryId = _categoryId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setParentID</Name>
+				<Source><![CDATA[
+    public void setParentID(RecId _parentID)
+    {
+        parentUnitRecId = _parentID;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>AssetCode</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            // super();
+            Query                   query = new Query();
+            QueryBuildDataSource    qbds;
+        
+            SysTableLookup          sysTableLookup  = SysTableLookup::newParameters(tableNum(AssetTable), this);
+        
+            // For filtering data in lookup
+            qbds = query.addDataSource(tableNum(AssetTable));
+            qbds.addRange(fieldnum(AssetTable, HMBuildingUnit)).value(SysQuery::value(0));
+            sysTableLookup.addLookupfield(fieldNum(AssetTable, AssetId), true);
+            // true/false – optional value for displaying that field in lookup.
+            sysTableLookup.addLookupfield(fieldNum(AssetTable, Name));
+        
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.performFormLookup();
+        
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            AssetTable  AssetTable;
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    select RecId, AssetId from AssetTable
+                        where AssetTable.AssetId == this.valueStr();
+        
+                    if (AssetTable.RecId)
+                    {
+                        AssetDescription.text(AssetTable::find(this.valueStr()).Name);
+                        ShortName.text(AssetTable::find(this.valueStr()).Name);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@SYS67376"));
+                        this.text("");
+                        AssetDescription.text("");
+                        ShortName.text("");
+                    }
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Category</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            // super();
+        
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMBuildingUnitCategoryLookupNew));
+            args.caller(element);
+        
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMBuildingUnitCategory  HMBuildingUnitCategory;
+            HMBuildingUnitType      HMBuildingUnitType;
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    select * from HMBuildingUnitCategory
+                        join * from HMBuildingUnitType
+                        where HMBuildingUnitCategory.HMBuildingUnitType == HMBuildingUnitType.RecId
+                        && (HMBuildingUnitType.Indicators == HMBuildingUnitTypeIndicator::BedLocation || HMBuildingUnitType.Indicators == HMBuildingUnitTypeIndicator::Building)
+                        && HMBuildingUnitCategory.Description == this.valueStr();
+        
+                    if (HMBuildingUnitCategory.RecId)
+                    {
+                        element.setCategory(HMBuildingUnitCategory.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ2483"));
+                        this.text("");
+                        element.setCategory(0);
+                    }
+                }
+                else
+                {
+                    element.setCategory(0);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Location</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMBuildingUnitLookup));
+            args.caller(element);
+            args.parm(int642str(categoryId));
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMBuildingUnit  HMBuildingUnit;
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    select Description, RecId from HMBuildingUnit
+                        where HMBuildingUnit.Description == this.valueStr()
+                        && HMBuildingUnit.HMBuildingUnitCategory == HMBuildingUnitCategory::find(categoryId).HMBuildingUnitCategory;
+        
+                    if (HMBuildingUnit.RecId)
+                    {
+                        element.setParentID(HMBuildingUnit.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ1970"));
+                        this.text("");
+                        element.setParentID(0);
+                    }
+                }
+                else
+                {
+                    element.setParentID(0);
+                }
+        
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Ok</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            HMBuildingUnit                  HMBuildingUnitLocal;
+            AssetTable                      AssetTableLocal;
+           FormRun                         formRun;
+            Object                          formRunObject;
+            super();
+        
+        
+            HMBuildingUnitLocal.initValue();
+            HMBuildingUnitLocal.Code                    = AssetCode.valueStr();
+            HMBuildingUnitLocal.Description             = AssetDescription.valueStr();
+            HMBuildingUnitLocal.ShortName               = ShortName.valueStr();
+            HMBuildingUnitLocal.HMBuildingUnitCategory  = categoryId;
+            HMBuildingUnitLocal.HMBuildingUnit          = parentUnitRecId;
+            HMBuildingUnitLocal.ToDate                  = 31\12\2154;
+        
+            if (HMBuildingUnitLocal.validateWrite())
+            {
+                HMBuildingUnitLocal.insert();
+        
+                if (HMBuildingUnitLocal.RecId)
+                {
+                    ttsBegin;
+                    select forUpdate AssetTableLocal
+                        where AssetTableLocal.AssetId == AssetCode.valueStr();
+        
+                    AssetTableLocal.HMBuildingUnit =  HMBuildingUnitLocal.RecId;
+                    AssetTableLocal.update();
+                    ttsCommit;
+        
+                }
+        
+                formRun = element.args().caller();
+        
+                if (formHasMethod(formRun, identifierstr(refresh)))
+                {
+                    formRunObject = formRun;
+                    formRunObject.refresh(HMBuildingUnitLocal.RecId);
+                }
+                element.close();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ7656</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">None</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Scrollbars xmlns="">No</Scrollbars>
+		<StatusBarStyle xmlns="">None</StatusBarStyle>
+		<Style xmlns="">Dialog</Style>
+		<WidthMode xmlns="">Column</WidthMode>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStaticTextControl">
+						<Name>MainInstruction</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>536870910</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>StaticText</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<BackgroundColorRGB>
+							<Red>15</Red>
+							<Green>0</Green>
+							<Blue>0</Blue>
+						</BackgroundColorRGB>
+						<ColorScheme>RGB</ColorScheme>
+						<FontSize>13</FontSize>
+						<ForegroundColorRGB>
+							<Red>0</Red>
+							<Green>51</Green>
+							<Blue>153</Blue>
+						</ForegroundColorRGB>
+						<Style>MainInstruction</Style>
+						<Text>@MAZ7652</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AssetCode</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>805306365</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS25653</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>AssetDescription</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741820</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>AssetName</ExtendedDataType>
+						<Label>@SYS25589</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ShortName</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1342177275</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>AssetName</ExtendedDataType>
+						<Label>@SYS190530</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Category</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612730</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS69410</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Location</Name>
+						<ElementPosition>1879048185</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ1897</HelpText>
+						<NeededPermission>Manual</NeededPermission>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS14719</Label>
+					</AxFormControl>
+				</Controls>
+				<BottomMargin>11</BottomMargin>
+				<BottomMarginMode>Fixed</BottomMarginMode>
+				<LeftMargin>11</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>11</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<TopMargin>11</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogCommit</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>Ok</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ7656</HelpText>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DefaultButton>Yes</DefaultButton>
+								<SaveRecord>No</SaveRecord>
+								<Text>@SYS112171</Text>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+				</Controls>
+				<BottomMargin>11</BottomMargin>
+				<BottomMarginMode>Fixed</BottomMarginMode>
+				<LeftMargin>11</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>11</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<TopMargin>11</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<BackStyle>Opaque</BackStyle>
+				<Style>DialogCommit</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

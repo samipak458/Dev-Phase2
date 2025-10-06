@@ -1,0 +1,570 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientMerge</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Removed unused footnote group. */
+/* TODO: (Code Upgrade) Two conflicting captions were defined on this form. The StaticText caption previously on the form was removed, and contained the following label: @MAZ8284. Ensure the value in formDesign.Caption contains the caption you want for this form. */
+[Form]
+public class HMPatientMerge extends FormRun
+{
+    recId                   hmPatientRecId;
+    recId                   reasonRecId;
+    recId                   sourcePatientRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatient</Name>
+				<Source><![CDATA[
+    public void getPatient(Common _record)
+    {
+        HMPatientRecId = _record.RecId;
+        Patient.text(HMPatient::find(_record.RecId).PatientName());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        sourcePatientRecId = element.args().record().RecId;
+    
+        super();
+    
+        SourcePatient.text(HMPatient::find(sourcePatientRecId).patientName());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeReason</Name>
+				<Source><![CDATA[
+    public void storeReason(ReasonTable  _reasonTable)
+    {
+        reasonRecId = _reasonTable.RecId;
+        Reason.text(_reasonTable.Description);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    public boolean validate()
+    {
+        boolean ret = true;
+    
+        if(!hmPatientRecId)
+        {
+            warning(strFmt("@SYS84753","@MAZ8293"));
+            ret = false;
+        }
+    
+        if(!reasonRecId)
+        {
+            warning(strFmt("@SYS84753","@SYS86426"));
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>Patient</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+            ContainerClass conClass_Obj;
+            Container conSend;
+            //super();
+        
+            conSend = conins(conSend, 1, sourcePatientRecId);
+        
+            args.name(formstr(HMPatientAdvanceLookup));
+        
+            args.parm('NotShowCurrent');
+            conClass_Obj = new ContainerClass(conSend);
+            args.parmObject(conClass_Obj);
+        
+            args.caller(element);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMPatient           hmPatientLocal;
+            DirPartyTable       dirPartyTableLocal;
+            CustTable           custTableLocal;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    select * from hmPatientLocal
+                        join * from custTableLocal
+                        join * from dirPartyTableLocal
+                        where hmPatientLocal.CustTable == custTableLocal.RecId
+                        && custTableLocal.Party == dirPartyTableLocal.RecId
+                        && hmPatientLocal.Status == PatientStatus::Active
+                        && dirPartyTableLocal.Name == this.valueStr()
+                        && hmPatientLocal.RecId != sourcePatientRecId;
+        
+                    if (hmPatientLocal.RecId)
+                    {
+                        element.getPatient(hmPatientLocal);
+                    }
+        
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ9"));
+                        this.text(HMPatient::find(HMPatientRecId).PatientName());
+                    }
+                }
+                else
+                {
+                    element.getPatient(hmPatientLocal);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Reason</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            Args                             args;
+            MenuFunction                     menuFunction;
+        
+            args = new Args();
+            args.caller(element);
+        
+            menuFunction = new MenuFunction(menuitemdisplaystr(HMPatientMergeReason),MenuItemType::Display);
+        
+            menuFunction.run(args);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMReasonsLookup));
+            args.caller(element);
+            args.parm('PatientMerge');
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            ReasonTable             reasonTable;
+            boolean                 ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (Reason.valueStr() != "")
+                {
+                    select * from reasonTable
+                        where
+                        reasonTable.Description == Reason.valueStr()
+                        &&  reasonTable.PatientMerge == NoYes::Yes;
+        
+                        if (reasonTable.RecId)
+                        {
+                            //flag = true;
+                            reasonRecId = reasonTable.RecId;
+                        }
+        
+                        else
+                        {
+                            warning(strFmt("@SYS316757","@SYS86426"));
+                            //save;
+                            //
+                            //todo: ax7 patient listpage uncomment after reasons
+                            /*
+                            Reason.text(ReasonTable::findByRecid(reasonRecId).Description);
+                            */
+                        }
+                }
+                else
+                {
+                    reasonRecId = 0;
+        
+                }
+        
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            #task
+            FormRun                     formRunRefresh;
+            HMPatientMerge  hmPatientMergeObj = new HMPatientMerge();
+        
+            if(element.validate())
+            {
+                super();
+        
+                hmPatientMergeObj.parmSourcePatientRecId(sourcePatientRecId);
+                hmPatientMergeObj.parmTargetPatientRecId(hmPatientRecId);
+                hmPatientMergeObj.parmReasonRecId(reasonRecId);
+                hmPatientMergeObj.parmDemographics(Demographics.value());
+                hmPatientMergeObj.parmAddresses(Addresses.value());
+                hmPatientMergeObj.parmContacts(Contacts.value());
+                hmPatientMergeObj.parmDocuments(Documents.value());
+                hmPatientMergeObj.parmRelationships(Relationships.value());
+                hmPatientMergeObj.parmComplements(Complements.value());
+                hmPatientMergeObj.parmAppointments(Appointments.value());
+                hmPatientMergeObj.parmCalltasks(Calltasks.value());
+                hmPatientMergeObj.parmNotes(Notes.value());
+                if(hmPatientMergeObj.mergePatient())
+                {
+                    info("@MAZ8289");
+                    formRunRefresh = element.args().caller();
+                    formRunRefresh.task(#taskRefresh);
+                }
+                else
+                {
+                    error("@MAZ8290");
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ8284</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>SourcePatient</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741823</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ8292</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ12663</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Patient</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ8282</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ12664</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Reason</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1789569705</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ8288</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS86426</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Details</Name>
+						<ElementPosition>1968526675</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Demographics</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>390451572</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11360</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ123</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Addresses</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>585677358</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11361</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ5495</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Contacts</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>780903144</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11362</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS36170</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Notes</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>976128930</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11370</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS40182</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Documents</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1171354716</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11369</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS105418</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Relationships</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1366580502</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11368</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ11367</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Complements</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1561806288</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11366</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>Complements</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>Appointments</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1757032074</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11365</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ3701</Label>
+								<Value>1</Value>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>CallTasks</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1952257860</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11364</HelpText>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ11363</Label>
+								<Value>1</Value>
+							</AxFormControl>
+						</Controls>
+						<Columns>3</Columns>
+						<Caption>Merging details</Caption>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@MAZ2582</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,573 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCreateTable</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCreateTable
+{
+    #AOT
+    TreeNode    tableTreenode,queryTreeNode,classTreeNode;
+    QueryName   queryName;
+    ClassName   className;
+    TableName   tableName;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addNewField</Name>
+				<Source><![CDATA[
+    public boolean addNewField(String50 fieldName, DictField dictField = null)
+    {
+        AOTTableFieldList           fieldlist;
+        TreeNode                    fieldNode;
+        boolean                     fieldCreated=false;
+        ExtendedDataTypeName                  EDTName;
+        EnumName                              enumName;
+        HMFieldType                 type;
+    
+        if(dictField == null)
+        {
+            EDTName = 'String50';
+            type = HMFieldType::String;
+        }
+        else
+        {
+            enumName = enumId2Name(dictField.enumId());
+    
+            EDTName = extendedTypeId2name(dictField.typeId());
+    
+            type = this.getFieldType(dictField);
+        }
+        if(EDTName == '')
+        {
+            EDTName = 'String50';
+        }
+        try
+        {
+            fieldlist = tableTreenode.AOTfindchild('Fields');
+            if(fieldlist.AOTfindChild(fieldName) == null)
+            {
+                switch(type)
+                {
+                    case HMFieldType::Container:
+                        fieldList.addContainer(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::Date:
+                        fieldList.addDate(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::Enum:
+                        fieldlist.addEnum(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::Int64:
+                        fieldlist.addInt64(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::Integer:
+                        fieldlist.addInteger(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::Real:
+                        fieldlist.addReal(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::String:
+                        fieldlist.addString(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::Time:
+                        fieldlist.addTime(fieldName);
+                        fieldCreated=true;
+                        break;
+                    case HMFieldType::UtcDateTime:
+                        fieldlist.addDateTime(fieldName);
+                        fieldCreated=true;
+                        break;
+    
+                }
+            }
+            if(fieldCreated)
+            {
+                fieldlist.AOTsave();
+                fieldNode = fieldlist.AOTfindChild(subStr(fieldName,1,40));
+                if(dictField == null || type != HMFieldType::Enum)
+                {
+                    fieldNode.AOTsetProperty('ExtendedDataType',EDTName);
+                }
+                else
+                {
+                    if(type == HMFieldType::Enum)
+                    {
+                        fieldNode.AOTsetProperty('EnumType',enumName);
+                        if(EDTName != '')
+                        {
+                            fieldNode.AOTsetProperty('ExtendedDataType',EDTName);
+                        }
+                    }
+                }
+                fieldNode.AOTsetProperty('Label',subStr(fieldName,1,40));
+                fieldNode.AOTsave();
+                tableTreenode.AOTsave();
+                SqlDataDictionary::synchronize();
+    
+            }
+            return true;
+        }
+        catch
+        {
+    
+            return false;
+    
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addNewRelation</Name>
+				<Source><![CDATA[
+    public boolean addNewRelation(str relationName,
+                                str relationshipTableName,
+                                str Fieldname,
+                                str RelatedFieldName,
+                                Cardinality cardinality,
+                                RelatedTableCardinality relatedTableCardinlaity,
+                                RelationshipType relationShipType)
+    {
+        TreeNode    relationNode;
+        relationNode = tableTreenode.AOTfindChild('Relations');
+        try
+        {
+            if(relationNode != null)
+            {
+                relationNode.AOTadd(relationName);
+                relationNode = relationNode.AOTfindChild(relationName);
+                relationNode.AOTsetProperty('Table',relationshipTableName);
+                relationNode.AOTsetProperty('Cardinality',enum2str(cardinality));
+                relationNode.AOTsetProperty('RelatedTableCardinality',enum2str(relatedTableCardinlaity));
+                relationNode.AOTsetProperty('RelationshipType',enum2str(relationShipType));
+                //relationNode.AOTaddSubNode(251);
+                relationNode = relationNode.AOTfirstChild();
+                relationNode.AOTsetProperty('Field',Fieldname);
+                relationNode.AOTsetProperty('RelatedField',RelatedFieldName);
+    
+                this.save(relationNode);
+            }
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addQueryDataSource</Name>
+				<Source><![CDATA[
+    public TreeNode addQueryDataSource(str dataSourceTable, TreeNode queryDataSourceNode = queryTreeNode)
+    {
+        QueryBuildDataSource    qbds;
+        TreeNode        treeNodeObj;
+        str properties;
+        qbds = queryDataSourceNode;
+        qbds = qbds.addDataSource(tableName2id(dataSourceTable));
+        properties = qbds.AOTgetProperties(false,false);
+        properties = setProperty(properties,'Relations','Yes');
+        qbds.AOTsetProperties(properties);
+        treeNodeObj = qbds.AOTfindChild('Fields');
+        properties = treeNodeObj.AOTgetProperties(false,false);
+        properties = setProperty(properties,'Dynamic','Yes');
+        treeNodeObj.AOTsetProperties(properties);
+        treeNodeObj.AOTsave();
+        treeNodeObj.AOTcompile(1);
+        return qbds;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>compile</Name>
+				<Source><![CDATA[
+    public void compile()
+    {
+        tableTreenode.AOTcompile(1);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createQuery</Name>
+				<Source><![CDATA[
+    public TreeNode createQuery()
+    {
+        Query                   queryObj; // Extends TreeNode class.
+        QueryBuildDataSource    qbds;
+    
+        str properties;
+        queryName = tableName + 'Query';
+        queryTreeNode = TreeNode::findNode(#QueriesPath);
+        queryTreeNode = queryTreeNode.AOTfindChild(queryName);
+        if (queryTreeNode)
+        {
+            queryTreeNode.AOTdelete();
+        }
+    
+        // Add the query to the AOT.
+        queryTreeNode = TreeNode::findNode(#QueriesPath);
+        queryTreeNode.AOTadd(queryName);
+        queryObj = queryTreeNode.AOTfindChild(queryName);
+    
+        qbds  = queryObj.addDataSource(tableName2id(tableName));
+        queryTreeNode = qbds.AOTfindChild('Fields');
+        properties = queryTreeNode.AOTgetProperties(false,false);
+        properties = setProperty(properties,'Dynamic','Yes');
+        queryTreeNode.AOTsetProperties(properties);
+        queryTreeNode.AOTsave();
+        queryTreeNode.AOTcompile(1);
+        queryObj.AOTsave();
+        queryObj.AOTcompile(1);
+        return qbds;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createTable</Name>
+				<Source><![CDATA[
+    public boolean createTable(String255 tableLabel)
+    {
+        try
+        {
+            // Delete the query from the AOT, if the query exists.
+            tableTreenode = TreeNode::findNode(#TablesPath);
+            tableTreenode = tableTreenode.AOTfindChild(tableName);
+            if (tableTreenode)
+            {
+                tableTreenode.AOTdelete();
+            }
+    
+            //create table
+            tableTreenode = TreeNode::findNode(#TablesPath);
+            tableTreenode.AOTadd(tableName);
+            tableTreenode = tableTreenode.AoTFindChild(tableName);
+            tableTreenode.AOTsetProperty('ConfigurationKey','BillNClaimMgmt');
+            tableTreenode.AOTsetProperty('DeveloperDocumentation','MDAX HIS table to store claim management template');
+            tableTreenode.AOTsetProperty('Label',tableLabel);
+            tableTreenode.AOTrefresh();
+            this.save(tableTreenode);
+            sqlDataDictionary::Synchronize();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createWorkFlowDocumentClass</Name>
+				<Source><![CDATA[
+    public void createWorkFlowDocumentClass()
+    {
+    
+        TreeNode methodsNode;
+        MemberFunction newMethod;
+        str source;
+        ;
+        className = tableName + 'Class';
+        classTreeNode = TreeNode::findNode(#ClassesPath);
+        classTreeNode = classTreeNode.AOTfindChild(className);
+        if (classTreeNode)
+        {
+            classTreeNode.AOTdelete();
+        }
+    
+        classTreeNode = TreeNode::findNode(#ClassesPath);
+        classTreeNode.AOTadd(className);
+        classTreeNode = classTreeNode.AOTfindChild(className);
+        methodsNode = classTreeNode.AOTfindChild('classDeclaration');
+        source = 'class '+  className + ' ' + 'extends' + ' ' + 'WorkflowDocument' + '\n{\n\n}';
+        methodsNode.AOTsetSource(source, false);
+        methodsNode.AOTsave();
+        classTreeNode.AOTsave();
+    
+        classTreeNode.AOTadd('getQueryName');
+        newMethod = classTreeNode.AOTfindChild('getQueryName');
+        source = 'queryName getQueryName()\n'+
+        '{\n'+
+        ' return querystr('+ queryName + ');\n'+
+        '}\n';
+        newMethod.AOTsetSource(source, false);
+        newMethod.AOTsave();
+        classTreeNode.AOTsave();
+        classTreeNode.AOTcompile(1);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteAll</Name>
+				<Source><![CDATA[
+    public boolean deleteAll()
+    {
+        try
+        {
+            if(tableTreenode)
+            {
+                tableTreenode.AOTdelete();
+            }
+    
+            if(queryTreeNode)
+            {
+                queryTreeNode.AOTdelete();
+            }
+    
+            if(classTreeNode)
+            {
+                classTreeNode.AOTdelete();
+            }
+    
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteField</Name>
+				<Source><![CDATA[
+    public boolean deleteField(str fieldName)
+    {
+        AOTTableFieldList           fieldlist;
+        TreeNode                    fieldNode;
+        SysCompilerTarget compilerTarget;
+    
+        compilerTarget = SysUserInfo::compilerTarget();
+        SysUserInfo::compilerTarget(SysCompilerTarget::MessageWindow);
+        fieldlist = tableTreenode.AOTfindchild('Fields');
+        fieldNode = fieldlist.AOTfindChild(fieldName);
+        try
+        {
+            if(fieldNode != null)
+            {
+                fieldNode.AOTdelete();
+                fieldlist.AOTsave();
+                fieldlist.AOTcompile(1);
+                return true;
+            }
+            SysUserInfo::compilerTarget(compilerTarget);
+            return false;
+        }
+        catch
+        {
+            SysUserInfo::compilerTarget(compilerTarget);
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFieldType</Name>
+				<Source><![CDATA[
+    private HMFieldType getFieldType(DictField dictField)
+    {
+        if(dictField.type() == Types::Enum)
+        {
+            return HMFieldType::Enum;
+        }
+        switch(dictField.baseType())
+        {
+            case Types::Container:
+                return HMFieldType::Container;
+            case Types::Date:
+                return HMFieldType::Date;
+            case Types::Enum:
+                return HMFieldType::Enum;
+            case Types::Int64:
+                return HMFieldType::Int64;
+            case Types::Integer:
+                return HMFieldType::Integer;
+            case Types::Real:
+                return HMFieldType::Real;
+            case Types::String:
+                return HMFieldType::String;
+            case Types::Time:
+                return HMFieldType::Time;
+            case Types::UtcDateTime:
+                return HMFieldType::UtcDateTime;
+        }
+        return HMFieldType::String;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    public void new(String50 _tableName)
+    {
+        tableName = this.removeSpecialCharacter(_tableName);
+        tableTreenode = TreeNode::findNode(#TablesPath);
+        tableTreenode = tableTreenode.AOTfindChild(tableName);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmClassName</Name>
+				<Source><![CDATA[
+    public ClassName parmClassName(ClassName _className = className)
+    {
+        className = _className;
+        return className;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQueryName</Name>
+				<Source><![CDATA[
+    public QueryName parmQueryName(QueryName _queryName = queryName)
+    {
+        queryName = _queryName;
+        return queryName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTableName</Name>
+				<Source><![CDATA[
+    public TableName parmTableName(TableName _tableName = tableName)
+    {
+        tableName = _tableName;
+        return tableName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>removeSpecialCharacter</Name>
+				<Source><![CDATA[
+    public str removeSpecialCharacter(str _tmp)
+    {
+        str string1,appendstr,ch;
+        int k,i,len;
+        string1= _tmp;
+        k= strlen(string1);
+        for (i=1;i<=k;i++)
+        {
+            ch = substr(string1,i,1);
+            if((char2num(ch,1) >= 65 && char2num(ch,1)<=90) || (char2num(ch,1) >= 48 && char2num(ch,1)<=57) || (char2num(ch,1) >= 97 && char2num(ch,1)<=122))
+            {
+                appendstr += ch;
+            }
+        }
+    
+        len=strlen(appendstr);
+    
+        return appendstr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>restoreQuery</Name>
+				<Source><![CDATA[
+    public void restoreQuery()
+    {
+        TreeNode                treeNodeObj;
+        queryName = tableName + 'Query';
+        treeNodeObj = TreeNode::findNode(#QueriesPath);
+        treeNodeObj = treeNodeObj.AOTfindChild(queryName);
+        treeNodeObj.AOTrestore();
+        treeNodeObj.AOTsave();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>save</Name>
+				<Source><![CDATA[
+    private void save(TreeNode node)
+    {
+        node.AOTsave();
+        node.AOTcompile(1);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClass</Name>
+				<Source><![CDATA[
+    public static void deleteClass(ClassName _className)
+    {
+        #AOT
+        TreeNode                treeNodeObj;
+    
+        treeNodeObj = TreeNode::findNode(#ClassesPath);
+        treeNodeObj = treeNodeObj.AOTfindChild(_className);
+        if (treeNodeObj)
+        {
+            treeNodeObj.AOTdelete();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteQuery</Name>
+				<Source><![CDATA[
+    public static void deleteQuery(QueryName _queryName)
+    {
+        #AOT
+        TreeNode                treeNodeObj;
+    
+        treeNodeObj = TreeNode::findNode(#QueriesPath);
+        treeNodeObj = treeNodeObj.AOTfindChild(_queryName);
+        if (treeNodeObj)
+        {
+            treeNodeObj.AOTdelete();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteTable</Name>
+				<Source><![CDATA[
+    public static void deleteTable(TableName _tableName)
+    {
+        #AOT
+        TreeNode                treeNodeObj;
+    
+        treeNodeObj = TreeNode::findNode(#TablesPath);
+        treeNodeObj = treeNodeObj.AOTfindChild(_tableName);
+        if (treeNodeObj)
+        {
+            treeNodeObj.AOTdelete();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

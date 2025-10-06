@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMProformaInvoiceDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMProformaInvoiceContract))
+]
+class HMProformaInvoiceDP extends SRSReportDataProviderBase
+{
+    HMSalesInvoiceReportHeader      hmSalesInvoiceReportHeader;
+    HMSalesInvoiceReportLine        hmSalesInvoiceReportLine;
+    HMSalesInvoiceReportTaxLine     hmSalesInvoiceReportTaxLine;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMSalesInvoiceReportHeader</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMSalesInvoiceReportHeader')]
+    public HMSalesInvoiceReportHeader getHMSalesInvoiceReportHeader()
+    {
+        select * from hmSalesInvoiceReportHeader;
+        return hmSalesInvoiceReportHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMSalesInvoiceReportLine</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMSalesInvoiceReportLine')]
+    public HMSalesInvoiceReportLine getHMSalesInvoiceReportLine()
+    {
+        select * from hmSalesInvoiceReportLine;
+        return hmSalesInvoiceReportLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMSalesInvoiceReportTaxLine</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMSalesInvoiceReportTaxLine')]
+    public HMSalesInvoiceReportTaxLine getHMSalesInvoiceReportTaxLine()
+    {
+        select * from hmSalesInvoiceReportTaxLine;
+        return hmSalesInvoiceReportTaxLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTaxPeriod</Name>
+				<Source><![CDATA[
+    private TaxCode getTaxPeriod(TaxCode _taxCode)
+    {
+        TaxTable                                taxtable;
+        TaxGroupData                            taxgroupdata;
+        String255                                taxGroup;
+        TaxRegistration                         taxRegistration;
+        TaxRegistrationTypeApplicabilityRule    taxRegistrationTypeApplicabilityRule;
+        TaxRegistrationType                     taxRegistrationType;
+    
+        while select TaxCode from taxgroupdata where taxgroupdata.TaxGroup == _taxCode
+        {
+            select TaxPeriod from taxtable where taxtable.TaxCode == taxgroupdata.TaxCode;
+    
+            if(taxtable.TaxPeriod == 'CCRA')
+            {
+                taxGroup = 'GST/HST';
+            }
+            else
+            {
+                taxGroup = 'QST/PST';
+            }
+        }
+    
+        select RegistrationNumber from taxRegistration
+            join RecId from taxRegistrationTypeApplicabilityRule
+                where taxRegistration.TaxRegistrationTypeApplicabilityRule == taxRegistrationTypeApplicabilityRule.RecId
+            join  TaxRegstrationType, RecId from taxRegistrationType
+                where taxRegistrationType.RecId == taxRegistrationTypeApplicabilityRule.TaxRegistrationType
+                    && taxRegistrationType.TaxRegstrationType == taxGroup;
+    
+        if(taxRegistration)
+        {
+            taxGroup = taxGroup + "(#" + taxRegistration.RegistrationNumber + ")";
+        }
+    
+        return taxGroup;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemDescription</Name>
+				<Source><![CDATA[
+    private EcoResDescription itemDescription(ItemId _itemId)
+    {
+        EcoResDescription description;
+        HMInventTable hmInventTable;
+        InventTable inventTable;
+    
+        select DIN from hmInventTable
+            join * from inventTable
+                where hmInventTable.InventTable == _itemId
+                && inventTable.ItemId == _itemId;
+    
+        description = inventTable.itemDescriptionOrName();
+    
+    
+    
+        return description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paymentReference</Name>
+				<Source><![CDATA[
+    private str paymentReference(CustInvoiceJour custInvoiceJour)
+    {
+        CustSettlement  settlement;
+        CustTrans       custTransInvoice;
+        str             paymReference;
+    
+        while select Recid from settlement
+            where settlement.OffsetRecid == custInvoiceJour.custTrans().RecId
+            join PaymReference from custTransInvoice
+            where settlement.TransCompany == custTransInvoice.dataAreaId
+            && settlement.TransRecId == custTransInvoice.RecId
+            && settlement.AccountNum == custTransInvoice.AccountNum
+        {
+            paymReference += custTransInvoice.PaymReference + '; ';
+        }
+    
+        return paymReference;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMProformaInvoiceContract   dataContract;
+        InventTable                 inventTable;
+        HMPatient                   patient;
+    
+        HMPatientChargeEntryTable           chargeTable;
+        HMResourceSchedulingAppointment     appointment;
+        HMCase                              emergencyCase;
+        RecId                               billedToAddress;
+        HMResourceSchedulingPlanningObject  planning;
+        HMResourceMaster                    resource;
+        HMClaimTableDetails                 claimTableDetails;
+        HMClaimTable                        claimTable;
+        HMClaimChargeLine                   claimChargeLine;
+        HMCaseTrans                         caseTrans;
+        DirPerson                           person;
+        HMOrganizationalUnit                orgUnit;
+        HMPatientInsurance                  patientInsurance;
+        HMInsuranceCarrier                  carrier;
+        LedgerJournalTable                  journalTable;
+        LedgerJournalTrans                  journalTrans;
+        HMCaseTransDetail                   caseTransDetails;
+    
+        dataContract        = this.parmDataContract() as HMProformaInvoiceContract;
+    
+        hmSalesInvoiceReportHeader.clear();
+    
+        select firstOnly claimTable
+            where claimTable.RecId == dataContract.parmClaimTableRecId();
+    
+        select firstOnly claimTableDetails
+            where claimTableDetails.HMClaimTable == claimTable.RecId;
+    
+        select firstOnly patient
+            where patient.RecId == claimTable.HMPatient;
+    
+        select person
+            where person.RecId              == patient.DirPartyTable;
+    
+        select firstOnly chargeTable
+            where chargeTable.RecId         == claimTable.HMPatientChargeEntryTable;
+    
+        select firstOnly appointment
+            where appointment.RecId         == chargeTable.HMResourceSchedulingAppointment;
+    
+        if (appointment)
+        {
+            select firstOnly planning
+                where planning.RecId            == appointment.HMResourceSchedulingPlanningObject;
+    
+            select firstOnly orgUnit
+                where orgUnit.RecId             == planning.HMOrganizationalUnit;
+    
+            select firstOnly patientInsurance
+                where patientInsurance.RecId    == appointment.HMPatientInsurance;
+        }
+    
+        if (!appointment)
+        {
+            emergencyCase   = HMCase::find(chargeTable.HMCase);
+    
+            orgUnit         = HMOrganizationalUnit::find(emergencyCase.Clinic);
+    
+            patientInsurance= HMPatientInsurance::find(emergencyCase.HMPatientInsurance);
+        }
+    
+        resource = HMResourceMaster::find(claimTable.HMResourceMaster);
+        carrier = patientInsurance.getCarrier();
+    
+        hmSalesInvoiceReportHeader.SalesId                  = claimTable.ClaimID;
+        hmSalesInvoiceReportHeader.createdDate              = DateTimeUtil::toStr(DateTimeUtil::getSystemDateTime());
+    
+        select firstOnly journalTable
+               order by journalTable.PostedDateTime asc
+                    join  JournalTrans
+                        where journalTrans.JournalNum == journalTable.JournalNum
+                        join caseTransDetails
+                        where  JournalTrans.CustTransId == caseTransDetails.RefRecId
+                        join caseTrans
+                            where caseTransDetails.HMCaseTrans == caseTrans.RecId
+                            && caseTrans.HMResourceSchedulingAppointment == appointment.RecId
+                            && journalTable.Posted;
+    
+        billedToAddress = appointment.ClientBillingLogisticsPostalAddress;
+    
+        hmSalesInvoiceReportHeader.MembershipId         = patientInsurance.HMPatientInsuranceMembershipId;
+        hmSalesInvoiceReportHeader.InvoiceId            = journalTable.JournalNum;
+        hmSalesInvoiceReportHeader.InvoiceDate          = DateTimeUtil::date(journalTable.PostedDateTime);
+        hmSalesInvoiceReportHeader.BillingDate          = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        hmSalesInvoiceReportHeader.ExaminationDate      = appointment.AppointmentDate;
+        hmSalesInvoiceReportHeader.ClientAccount        = patient.getMRN();
+        hmSalesInvoiceReportHeader.PatientName          = person.getFullName();
+        hmSalesInvoiceReportHeader.PatientNameArabic    = person.getFullArabicName();
+        hmSalesInvoiceReportHeader.PhysicianName        = resource.Description;
+        hmSalesInvoiceReportHeader.ClinicName           = orgUnit.Description;
+        hmSalesInvoiceReportHeader.InsuranceCarrierName = carrier.Name;
+        hmSalesInvoiceReportHeader.ContractName         = patientInsurance.getContractName();
+        hmSalesInvoiceReportHeader.AppointmentNumber    = appointment.AppointmentNumber;
+        hmSalesInvoiceReportHeader.InvoicedBy           = curUserId();
+        hmSalesInvoiceReportHeader.PrintedBy            = curUserId();
+        hmSalesInvoiceReportHeader.BatchNumber          = claimTableDetails.BatchNumber;
+    
+        hmSalesInvoiceReportHeader.AmountPaid = claimTableDetails.amountPaidEdit(false);
+        hmSalesInvoiceReportHeader.Balance = claimTableDetails.balanceDueEdit(false);
+    
+        while select * from claimChargeLine
+            where claimChargeLine.HMClaimTable == claimTable.RecId
+                join caseTrans
+                    where caseTrans.RecId    == claimChargeLine.HMCaseTrans
+        {
+            hmSalesInvoiceReportLine.clear();
+    
+            hmSalesInvoiceReportLine.ItemId             = claimChargeLine.InventTable;
+            hmSalesInvoiceReportLine.ItemDescription    = this.itemDescription(hmSalesInvoiceReportLine.ItemId);
+            hmSalesInvoiceReportLine.Qty                = caseTrans.Qty;
+            hmSalesInvoiceReportLine.DiscPercent        = caseTrans.DiscPercent1;
+            hmSalesInvoiceReportLine.DiscountAmount     = caseTrans.Discount + caseTrans.DiscountAmount;
+            hmSalesInvoiceReportLine.Deductible         = caseTrans.DeductibleActual + caseTrans.CashAmount;
+         //   hmSalesInvoiceReportLine.NetAmount          = caseTrans.InsuranceAmount;
+            hmSalesInvoiceReportLine.NetAmount          = caseTrans.TotalAmount - caseTrans.DiscountAmount - caseTrans.DeductibleActual - caseTrans.CashAmount;
+            hmSalesInvoiceReportLine.Amount             = caseTrans.TotalAmount - caseTrans.DiscountAmount;
+            hmSalesInvoiceReportLine.SalesPrice         = caseTrans.SalesPrice;
+    
+            hmSalesInvoiceReportLine.insert();
+        }
+    
+        hmSalesInvoiceReportHeader.insert();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

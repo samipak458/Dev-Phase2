@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCaseTracking</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMCaseTracking
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHeaderRecord</Name>
+				<Source><![CDATA[
+    private HMCaseTrackingHeader getHeaderRecord(RecId   _appointmentRecId)
+    {
+        HMCaseTrackingHeader header;
+    
+        select * from header
+        where header.HMResourceSchedulingAppointment == _appointmentRecId;
+    
+        if(header.RecId != 0)
+        {
+            return header;
+        }
+    
+        return null;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>headerRecordExist</Name>
+				<Source><![CDATA[
+    private boolean headerRecordExist(RecId     _appointmentRecId)
+    {
+        HMCaseTrackingHeader header;
+        if (_appointmentRecId != 0)
+        {
+            select count(RecId) from header
+            where header.HMResourceSchedulingAppointment == _appointmentRecId;
+    
+            if(header.RecId != 0)
+            {
+                return true;
+            }
+        }
+    
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertHeader</Name>
+				<Source><![CDATA[
+    private RecId insertHeader(RecId    _hmPatient,
+                                RecId   _hmResourceSchedulingAppointment)
+    {
+        HMCaseTrackingHeader hmCaseTrackingHeader;
+        hmCaseTrackingHeader.HMPatient = _hmPatient;
+        hmCaseTrackingHeader.HMResourceSchedulingAppointment = _hmResourceSchedulingAppointment;
+        hmCaseTrackingHeader.Status = HMCaseTrackingHeaderStatus::Open;
+        hmCaseTrackingHeader.insert();
+        return hmCaseTrackingHeader.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertLine</Name>
+				<Source><![CDATA[
+    private RecId insertLine(   RecId                               _HeaderRecId,
+                                HMCaseTrackingLineTransactionType   _transactionType,
+                                AmountMst                           _amount,
+                                Date                                _date,
+                                NoYes                               _posted,
+                                RecId                               _transRecId,
+                                TableId                             _transTableId,
+                                AccountNum                          _payee = "")
+    {
+        HMCaseTrackingLine          hmCaseTrackingLine;
+        HMCaseTrackingHeaderStatus  status;
+    
+        hmCaseTrackingLine.HMCaseTrackingHeader = _HeaderRecId;
+        hmCaseTrackingLine.TransactionType = _transactionType;
+        hmCaseTrackingLine.Amount = _amount;
+        hmCaseTrackingLine.TransactionDate = _date;
+        hmCaseTrackingLine.Posted = _posted;
+        hmCaseTrackingLine.RefRecId = _transRecId;
+        hmCaseTrackingLine.RefTableId = _transTableId;
+        hmCaseTrackingLine.PayerAccount = _payee;
+        hmCaseTrackingLine.insert();
+        if(_transactionType == HMCaseTrackingLineTransactionType::PaymentReceived ||
+                _transactionType == HMCaseTrackingLineTransactionType::Transfer ||
+                _transactionType == HMCaseTrackingLineTransactionType::Writeoff)
+        {
+    
+            if(!this.transactionOpen(_HeaderRecId))
+            {
+                status = HMCaseTrackingHeaderStatus::Closed;
+            }
+        }
+    
+        this.updateCaseTrackingHeaderStatus(_HeaderRecId,status);
+        return hmCaseTrackingLine.RecId;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transactionOpen</Name>
+				<Source><![CDATA[
+    private boolean transactionOpen(RecId _HeaderRecId)
+    {
+        CustTransOpen       custTransOpen;
+        HMCaseTrackingLine  trackingLine;
+        boolean             open = false;
+        while select RefRecId, RefTableId from trackingline
+            where trackingline.RefTableId == tableNum(CustTrans)
+            && trackingline.HMCaseTrackingHeader == _HeaderRecId
+        {
+            select count(RecId) from custTransOpen
+            where custTransOpen.RefRecId == trackingLine.RefRecId;
+            if(custTransOpen.RecId != 0)
+            {
+                open = true;
+            }
+        }
+        return open;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTrackingHeaderStatus</Name>
+				<Source><![CDATA[
+    private void updateCaseTrackingHeaderStatus(RecId _HeaderRecId,
+                                            HMCaseTrackingHeaderStatus _status = HMCaseTrackingHeaderStatus::None)
+    {
+    
+        HMCaseTrackingLine      hmCaseTrackingLine;
+        HMCaseTrackingHeader    hmCaseTrackingHeader;
+        ttsBegin;
+        select forUpdate hmCaseTrackingHeader
+        where hmCaseTrackingHeader.recid == _HeaderRecId;
+    
+        if(hmCaseTrackingHeader.recid != 0)
+        {
+            if(_status != HMCaseTrackingHeaderStatus::None)
+            {
+                hmCaseTrackingHeader.Status = _status;
+                hmCaseTrackingHeader.update();
+            }
+            else
+            {
+                if(hmCaseTrackingHeader.Status == HMCaseTrackingHeaderStatus::Open
+                    && hmCaseTrackingHeader.Status != HMCaseTrackingHeaderStatus::Invoiced)
+                {
+                    select count(RecId) from hmCaseTrackingLine
+                    where hmCaseTrackingLine.HMCaseTrackingHeader == _HeaderRecId
+                    && hmCaseTrackingLine.TransactionType == HMCaseTrackingLineTransactionType::Invoice;
+    
+                    if(hmCaseTrackingLine.RecId != 0)
+                    {
+                        hmCaseTrackingHeader.Status = HMCaseTrackingHeaderStatus::Invoiced;
+                        hmCaseTrackingHeader.update();
+                    }
+                }
+                else if(hmCaseTrackingHeader.Status == HMCaseTrackingHeaderStatus::Invoiced
+                        && hmCaseTrackingHeader.Status != HMCaseTrackingHeaderStatus::ClaimGenerated)
+                {
+                    select count(RecId) from hmCaseTrackingLine
+                    where hmCaseTrackingLine.HMCaseTrackingHeader == _HeaderRecId
+                    && hmCaseTrackingLine.TransactionType == HMCaseTrackingLineTransactionType::Claim;
+    
+                    if(hmCaseTrackingLine.RecId != 0)
+                    {
+                        hmCaseTrackingHeader.Status = HMCaseTrackingHeaderStatus::ClaimGenerated;
+                        hmCaseTrackingHeader.update();
+                    }
+                }
+                else if(hmCaseTrackingHeader.Status == HMCaseTrackingHeaderStatus::ClaimGenerated
+                        && _status == HMCaseTrackingHeaderStatus::Closed)
+                {
+                    hmCaseTrackingHeader.Status = _status;
+                    hmCaseTrackingHeader.update();
+                }
+            }
+    
+        }
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTrackingLinePostingStatus</Name>
+				<Source><![CDATA[
+    public void updateCaseTrackingLinePostingStatus(RecId _lineRecId, NoYes _postingStatus)
+    {
+        HMCaseTrackingLine hmCaseTrackingLine;
+        ttsBegin;
+        hmCaseTrackingLine = HMCaseTrackingLine::find(_lineRecId,true);
+    
+        hmCaseTrackingLine.posted = _postingStatus;
+        hmCaseTrackingLine.update();
+        ttsCommit;
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateHeader</Name>
+				<Source><![CDATA[
+    private void updateHeader(  RecId _appointmentRecId,
+                                RecId _headerRecId)
+    {
+        HMCaseTrackingHeader header;
+        try
+        {
+            ttsBegin;
+            header = HMCaseTrackingHeader::find(_headerRecId,true);
+            if(header.RecId != 0)
+            {
+                if(_appointmentRecId != 0)
+                {
+                    header.HMResourceSchedulingAppointment = _appointmentRecId;
+                }
+                header.update();
+            }
+            ttsCommit;
+        }
+        catch
+        {
+            ttsAbort;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public static void insert(RecId                         _appointmentRecId,
+                        HMCaseTrackingLineTransactionType   _transactionType,
+                        AmountMst                           _amount,
+                        Date                                _date,
+                        NoYes                               _posted,
+                        RecId                               _transRecId,
+                        TableId                             _transTableId,
+                        AccountNum                          _payee = "")
+    {
+        RecId                   patientRecId;
+        RecId                   headerRecId;
+        HMCaseTracking          hmcaseTracking;
+        HMCaseTrackingHeader    header;
+        hmcaseTracking =  new hmcaseTracking();
+        if(!hmcaseTracking.headerRecordExist(_appointmentRecId))
+        {
+            if(_appointmentRecId != 0)
+            {
+                patientRecId = HMResourceSchedulingAppointment::find(_appointmentRecId).HMPatient;
+            }
+    
+            if(patientRecId == 0)
+            {
+    //            warning("@MAZ10530");
+                return;
+            }
+            headerRecId = hmcaseTracking.insertHeader(patientRecId,_appointmentRecId);
+            if(headerRecId != 0)
+            {
+                hmcaseTracking.insertLine(headerRecId,_transactionType,_amount,_date,_posted,_transRecId,_transTableId,_payee);
+            }
+            else
+            {
+                warning("@MAZ10531");
+            }
+        }
+        else
+        {
+            header = hmcaseTracking.getHeaderRecord(_appointmentRecId);
+            headerRecId  = header.RecId;
+            if((header.HMResourceSchedulingAppointment == 0 && _appointmentRecId != 0))
+            {
+                hmcaseTracking.updateHeader(_appointmentRecId,headerRecId);
+            }
+            if(headerRecId != 0)
+            {
+                hmcaseTracking.insertLine(headerRecId,_transactionType,_amount,_date,_posted,_transRecId,_transTableId,_payee);
+            }
+            else
+            {
+                warning("@MAZ10531");
+            }
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

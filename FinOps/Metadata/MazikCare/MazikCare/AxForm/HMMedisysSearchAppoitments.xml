@@ -1,0 +1,1119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMMedisysSearchAppoitments</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMMedisysSearchAppoitments extends FormRun
+{
+    RecId   patientId,PhysicianId, clinicId,clientRecId,ResourceId,SpecialityId;
+
+    boolean allStatus;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyFilter</Name>
+				<Source><![CDATA[
+    public void applyFilter(boolean _allStatus)
+    {
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject,hmResourceSchedulingPlanningObjectSpeciality;
+        HMOPApointmentsHistoryTmp           hmOPApointmentsHistoryTmpFill;
+        HMClinicStaffSpeciality                     HMClinicStaffSpeciality;
+        HMResourceSchedulingAppointmentStaffMemb   HMResourceSchedulingAppointmentStaffMemb;
+        str apptTime,format;
+        Str queryValue;
+        QueryBuildDataSource qbd,qbd1,qbdStaff,qbdPatient,abdSpeiality;
+    
+        Query query = new Query(queryStr(HMMedisysSerachAppointment));
+        QueryRun queryRun;
+        HMOPApointmentsHistoryTmp.clear();
+    
+        if (_allStatus)
+        {
+    
+            if (this.validateWrite())
+            {
+                qbd = query.dataSourceTable(tableNum(HMResourceSchedulingAppointment));
+                qbdPatient = query.dataSourceTable(tableNum(HMPatient));
+                qbd1 = query.dataSourceTable(tableNum(hmResourceSchedulingPlanningObject));
+                abdSpeiality = query.dataSourceTable(tableNum(HMClinicStaffSpeciality));
+    
+                qbdStaff = query.dataSourceTable(tableNum(HMResourceSchedulingAppointmentStaffMemb));
+                if (patientId != 0)
+                {
+                    qbd.addRange(fieldNum(HMResourceSchedulingAppointment,HMPatient)).value(SysQuery::value(patientId));
+                }
+                   queryValue=strFmt('((AppointmentDate >= %2) && (AppointmentDate <= %1))',Date2StrXpp(ToDate.dateValue()),Date2StrXpp(FromDate.dateValue()));
+                   qbd.addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate)).value(queryValue);
+    
+                if(clientRecId != 0)
+                {
+                    qbdPatient.addRange(fieldNum(HMPatient,client)).value(SysQuery::value(clientRecId));
+                }
+    
+                if (clinicId != 0)
+                {
+                     qbd1.addRange(fieldNum(hmResourceSchedulingPlanningObject,HMOrganizationalUnit)).value(SysQuery::value(clinicId));
+                }
+                if (PhysicianId != 0)
+                {
+                     qbd1.addRange(fieldNum(hmResourceSchedulingPlanningObject,HMClinicStaff)).value(SysQuery::value(PhysicianId));
+                }
+    
+    
+    
+                 queryRun =  new QueryRun((query));
+                while (queryRun.next())
+                {
+                    hmResourceSchedulingAppointment = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+    
+                    if (SpecialityId != 0)
+                    {
+                        hmResourceSchedulingPlanningObjectSpeciality = queryRun.get(tableNum(hmResourceSchedulingPlanningObject));
+                        select * from HMClinicStaffSpeciality
+                            where HMClinicStaffSpeciality.HMClinicStaff == hmResourceSchedulingPlanningObjectSpeciality.HMClinicStaff
+                            && HMClinicStaffSpeciality.HMSpecialtyCode == SpecialityId;
+    
+                        if (!HMClinicStaffSpeciality.RecId)
+                        {
+                            continue;
+                        }
+                    }
+                    if (ResourceId != 0)
+                    {
+                        select * from HMResourceSchedulingAppointmentStaffMemb
+                            where HMResourceSchedulingAppointmentStaffMemb.HMResourceSchedulingAppointment == hmResourceSchedulingAppointment.RecId
+                            && HMResourceSchedulingAppointmentStaffMemb.HMClinicStaff == ResourceId;
+    
+                        if (!HMResourceSchedulingAppointmentStaffMemb.RecId)
+                        {
+                            continue;
+                        }
+                    }
+    
+                    hmOPApointmentsHistoryTmpFill.Date              = hmResourceSchedulingAppointment.AppointmentDate;
+    
+                    apptTime    = strDel(time2str(hmResourceSchedulingAppointment.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM),6,8);
+                    format      = subStr(time2str(hmResourceSchedulingAppointment.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM),9,11);
+    
+                    hmOPApointmentsHistoryTmpFill.Time              =  apptTime + format;
+                    hmOPApointmentsHistoryTmpFill.Physician         = hmResourceSchedulingAppointment.getAppointmentPhysician();
+                    hmOPApointmentsHistoryTmpFill.AppointmentStatus = enum2str(hmResourceSchedulingAppointment.AppointmentStatus);
+                    hmOPApointmentsHistoryTmpFill.MRN = hmResourceSchedulingAppointment.getPatientChartNum();
+                    hmOPApointmentsHistoryTmpFill.Name = hmResourceSchedulingAppointment.getPatientName();
+                    hmOPApointmentsHistoryTmpFill.insert();
+                }
+            }
+    
+    
+        }
+    
+    
+            HMOPApointmentsHistoryTmp.setTmpData(hmOPApointmentsHistoryTmpFill);
+            HMOPApointmentsHistoryTmp_ds.executeQuery();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatient</Name>
+				<Source><![CDATA[
+    public void getPatient(Common _record)
+    {
+        patientId   = _record.RecId;
+    
+        Patient.text(HMPatient::find(patientId).PatientName());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+    
+        allStatus = true;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+    
+        FromDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+        element.setToDate(FromDate.dateValue());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setOrganizationUnitID</Name>
+				<Source><![CDATA[
+    public void setOrganizationUnitID(RecId _ouRecId)
+    {
+        clinicId = _ouRecId;
+        Clinic.text(HMOrganizationalUnit::find(clinicId).Description);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setToDate</Name>
+				<Source><![CDATA[
+    public void setToDate(TransDate _date)
+    {
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+    
+        hmResourceSchedulingPlanningObject = element.args().record();
+    
+        if(hmResourceSchedulingPlanningObject)
+            ToDate.dateValue((_date+hmResourceSchedulingPlanningObject.SearchInterval));
+        else
+            ToDate.dateValue((_date));
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeClient</Name>
+				<Source><![CDATA[
+    public void storeClient(RecId   _clientRecId)
+    {
+        clientRecId = _clientRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storePhysician</Name>
+				<Source><![CDATA[
+    public void storePhysician(RecId _clinicStaffRecId)
+    {
+        PhysicianId = _clinicStaffRecId;
+        PhysicianLookup.text(HMClinicStaff::find(PhysicianId).physicianName());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storePhysicianPractitionerNurse</Name>
+				<Source><![CDATA[
+    public void storePhysicianPractitionerNurse(RecId satffRecId)
+    {
+        ResourceId = satffRecId;
+        ResourceLookup.text(HMClinicStaff::find(ResourceId).physicianName());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeSpeciality</Name>
+				<Source><![CDATA[
+    public void storeSpeciality(RecId   _specialityRecId)
+    {
+        SpecialityId = _specialityRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    public boolean validateWrite()
+    {
+        boolean ret = true;
+        if (FromDate.dateValue() == dateNull())
+        {
+            warning(strFmt("@SYS26332","@SYS24050"));
+            //return;
+            ret = false;
+        }
+    
+        if (ToDate.dateValue() == dateNull())
+        {
+            warning(strFmt("@SYS26332","@SYS36680"));
+           // return;
+            ret = false;
+        }
+        //if (ret && FromDate.dateValue() < today())
+        //{
+            //warning("@MAZ3247");
+           //// return;
+            //ret = false;
+        //}
+        if (ret && FromDate.dateValue() > ToDate.dateValue())
+        {
+            warning("@MAZ2029");
+           // return;
+            ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMOPApointmentsHistoryTmp</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+          //  this.query().dataSourceTable(tableNum(HMOPApointmentsHistoryTmp)).addSortField(fieldNum(HMOPApointmentsHistoryTmp,Date),SortOrder::Descending);
+          //  this.query().dataSourceTable(tableNum(HMOPApointmentsHistoryTmp)).addSortField(fieldNum(HMOPApointmentsHistoryTmp,Time),SortOrder::Descending);
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>Search</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            element.applyFilter(true);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Reset</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            HMPatient pat;
+            super();
+            element.getPatient(pat);
+            element.setOrganizationUnitID(0);
+            element.storeClient(0);
+            element.storePhysician(0);
+            element.storePhysicianPractitionerNurse(0);
+            element.storeSpeciality(0);
+            ClientField.text("");
+            HMspeciality.text("");
+            HMOPApointmentsHistoryTmp.clear();
+            element.applyFilter(false);
+            FromDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+            element.setToDate(FromDate.dateValue());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Patient</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMPatientAdvanceLookup));
+            args.caller(element);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMPatient           hmPatientLocal;
+            DirPartyTable       dirPartyTableLocal;
+            CustTable           custTableLocal;
+            ret = super();
+        
+            if(ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    select * from hmPatientLocal
+                        join * from custTableLocal
+                        join * from dirPartyTableLocal
+                        where hmPatientLocal.CustTable == custTableLocal.RecId
+                        && custTableLocal.Party == dirPartyTableLocal.RecId
+                        && dirPartyTableLocal.Name == this.valueStr();
+        
+                    if (hmPatientLocal.RecId)
+                    {
+                        //flag = true;
+                        element.getPatient(hmPatientLocal);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",'patient'));
+                        this.text(HMPatient::find(patientId).PatientName());
+                    }
+                }
+                else
+                {
+                    element.getPatient(hmPatientLocal);
+        
+                }
+        
+        
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>PhysicianLookup</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMPhysicianAdvanceLookup));
+            args.caller(element);
+            args.parmEnum(HMAdvanceStaffLookupParm::Physician);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+        
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if (this.valueStr() == "")
+        
+                {
+                    element.storePhysician(0);
+        
+                }
+        
+        
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMspeciality</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMSpecialityLookup));
+            args.caller(element);
+        
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+        
+            ret = super();
+        
+            if (this.valueStr() == "")
+            {
+                element.storeSpeciality(0);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ResourceLookup</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMPhysicianAdvanceLookup));
+            args.caller(element);
+            args.parmEnum(HMAdvanceStaffLookupParm::Driver);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+        
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if (this.valueStr() == "")
+        
+                {
+                    element.storePhysicianPractitionerNurse(0);
+        
+                }
+        
+        
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ClientField</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMClientLookup));
+            args.caller(element);
+        
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+        
+            ret = super();
+        
+            if (this.valueStr() == "")
+            {
+                element.storeClient(0);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Clinic</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMOrganizationalUnitTreeLookup));
+            args.caller(element);
+            args.parm(this.text());
+            args.parmEnum(HMCaseType::OutPatient);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            HMlookupClass  HMlookupClassObj = new HMlookupClass();
+            HMClinicStaff HMClinicStaff;
+            ret = super();
+        
+            if(ret)
+            {
+                if (this.valueStr() == "")
+                {
+                    element.setOrganizationUnitID(0);
+        
+                }
+        
+        
+            }
+            else
+            {
+                        element.setOrganizationUnitID(0);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>FromDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                element.setToDate(this.dateValue());
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMOPApointmentsHistoryTmp</Name>
+			<Table>HMOPApointmentsHistoryTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AppointmentStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Date</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MRN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Physician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Time</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WaitNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WaitStatus</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ8247</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<StatusBarStyle xmlns="">None</StatusBarStyle>
+		<WidthMode xmlns="">Column</WidthMode>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTab</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPaneTab</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>ButtonGroup1</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ButtonGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>Search</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ6421</HelpText>
+										<Type>Button</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Text>@SYS60181</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>Reset</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ3443</HelpText>
+										<Type>Button</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Text>@PRO1821</Text>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Group1</Name>
+						<ElementPosition>858993458</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Patient</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>858993458</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ9</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PhysicianLookup</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1288490187</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>Doctor</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMspeciality</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1360072974</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>Speciality</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ResourceLookup</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655762</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>Resource</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ClientField</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1574821339</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>Client</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Clinic</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1717986916</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>Clinic</Label>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>CopyOfGroup</Name>
+						<ElementPosition>1288490187</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>FromDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>TransDate</ExtendedDataType>
+								<Label>@SYS24050</Label>
+								<Mandatory>Yes</Mandatory>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>ToDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>TransDate</ExtendedDataType>
+								<Label>@SYS36680</Label>
+								<Mandatory>Yes</Mandatory>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Group_</Name>
+						<ElementPosition>1717986916</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>Grid</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>HMOPApointmentsHistoryTmp_Date</Name>
+										<ElementPosition>485740348</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Date</DataField>
+										<DataSource>HMOPApointmentsHistoryTmp</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMOPApointmentsHistoryTmp_Time</Name>
+										<ElementPosition>728610522</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Time</DataField>
+										<DataSource>HMOPApointmentsHistoryTmp</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMOPApointmentsHistoryTmp_MRN</Name>
+										<ElementPosition>971480696</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>MRN</DataField>
+										<DataSource>HMOPApointmentsHistoryTmp</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMOPApointmentsHistoryTmp_Name</Name>
+										<ElementPosition>1214350870</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Name</DataField>
+										<DataSource>HMOPApointmentsHistoryTmp</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMOPApointmentsHistoryTmp_AppointmentStatus</Name>
+										<ElementPosition>1457221045</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AppointmentStatus</DataField>
+										<DataSource>HMOPApointmentsHistoryTmp</DataSource>
+										<Label>Status</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMOPApointmentsHistoryTmp_AppointmentPhysician</Name>
+										<ElementPosition>1994091957</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Physician</DataField>
+										<DataSource>HMOPApointmentsHistoryTmp</DataSource>
+										<Label>@MAZ65</Label>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMOPApointmentsHistoryTmp</DataSource>
+								<ShowRowLabels>No</ShowRowLabels>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<LeftMargin>1</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>1</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

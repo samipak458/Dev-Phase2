@@ -1,0 +1,739 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPaymentCentreClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPaymentCentreClass
+{
+    boolean isWriteOffDiscountApplied;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>applyPayments</Name>
+				<Source><![CDATA[
+    public void applyPayments(Map _chargeEntryHeaderMap, HMPatientChargeEntryLinesTmp _chargeEntryLinesTmp, HMInsuranceCarrierBatchNumber _batchId, HMCaseTransDetailTransactionType _transactionType = HMCaseTransDetailTransactionType::InsurancePayment)
+    {
+        HMCaseTrans                                 hmCaseTrans;
+        List                                        CaseTranslist;
+        MapEnumerator                               mapEnumerator;
+        hmPatientChargeEntryTable                   hmPatientChargeEntryTable;
+        HMPatientChargeEntryCustInvoiceTable        HMPatientChargeEntryCustInvoiceTable;
+        CustInvoiceTable                            custInvoiceTable;
+        CustInvoiceJour                             custInvoiceJour;
+        CustTrans                                   custTrans;
+        CustTransOpen                               custTransOpen;
+        HMInsuranceCarrier                          hminsuranceCarrier;
+        HMInsuranceCarrierBatchDetails              HMInsuranceCarrierBatchDetails;
+        AccountNum                                  custAccount;
+        CustTable                                   custTable;
+        HMPatientChargeEntryLine                    chargeEntryLine;
+        HMCaseTransDetail                           hmCaseTransDetail;
+        HMInsuranceCarrierBatchPayments             carrierBatchPayments;
+        Set                                         setCaseTrans;
+        SetEnumerator                               setEnumerator;
+    
+        try
+        {
+            ttsBegin;
+            setCaseTrans = new Set(Types::Int64);
+            if(_transactionType == HMCaseTransDetailTransactionType::InsurancePayment)
+            {
+                select CustTable from hminsuranceCarrier
+                join RecId from HMInsuranceCarrierBatchDetails
+                where HMInsuranceCarrierBatchDetails.HMInsuranceCarrier == hminsuranceCarrier.RecId
+                && HMInsuranceCarrierBatchDetails.BatchNumber == _batchId;
+    
+                custTable = custTable::find(hminsuranceCarrier.accountNum());
+                if(!custTable)
+                {
+                    warning("@MAZ13429");
+                    return;
+                }
+            }
+            mapEnumerator = _chargeEntryHeaderMap.getEnumerator();
+            while(mapEnumerator.moveNext())
+            {
+                hmPatientChargeEntryTable = mapEnumerator.currentValue();
+                if(_transactionType == HMCaseTransDetailTransactionType::PatientPayment)
+                {
+                    custTable = custTable::find(hmPatientChargeEntryTable.patientChartNum());
+                }
+    
+                while select * from custTrans
+                    join custTransOpen
+                    join custInvoiceJour
+                    join custInvoiceTable
+                    join HMPatientChargeEntryCustInvoiceTable
+                    where custTransOpen.AccountNum == custTrans.AccountNum
+                    && custTransOpen.RefRecId == custTrans.RecId
+                    && custInvoiceJour.InvoiceId == custTrans.Invoice
+                    && custInvoiceJour.InvoiceAccount == custTrans.AccountNum
+                    && CustinvoiceJour.InvoiceDate == custTrans.TransDate
+                    && CustinvoiceJour.LedgerVoucher == custTrans.Voucher
+                    && custInvoiceTable.invoiceid == custInvoiceJour.InvoiceId
+                    && custInvoiceTable.InvoiceDate == custInvoiceJour.InvoiceDate
+                    && custInvoiceTable.numberSequenceGroup == custInvoiceJour.numberSequenceGroup
+                    && custInvoiceTable.RecId == HMPatientChargeEntryCustInvoiceTable.CustInvoiceTable
+                    && HMPatientChargeEntryCustInvoiceTable.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId
+                {
+                    custTrans.transData().markForSettlement(custTable);
+                }
+    
+    
+                while select * from _chargeEntryLinesTmp
+                where _chargeEntryLinesTmp.Marked == NoYes::Yes
+                    && _chargeEntryLinesTmp.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId
+                {
+                    select chargeEntryLine
+                    join hmCaseTrans
+                    join hmCaseTransDetail
+                    join * from custTrans
+                    join custTransOpen
+                    where chargeEntryLine.recid == _chargeEntryLinesTmp.HMPatientChargeEntryLine
+                    && hmCaseTrans.recid == chargeEntryLine.HMCaseTrans
+                    && custTransOpen.AccountNum == custTrans.AccountNum
+                    && custTransOpen.RefRecId == custTrans.RecId
+                    && hmCaseTransDetail.HMCaseTrans == hmCaseTrans.RecId
+                    && hmCaseTransDetail.TransactionType == _transactionType
+                    && hmCaseTransDetail.Reversed == NoYes::No
+                    && hmCaseTransDetail.RefRecId == custTrans.RecId
+                    && hmCaseTransDetail.RefTableId == tableNum(custTrans);
+                    if(hmCaseTrans)
+                    {
+                        setCaseTrans.add(hmCaseTrans.RecId);
+                        custTrans.transData().markForSettlement(custTable);
+                    }
+    
+                }
+                if(_transactionType == HMCaseTransDetailTransactionType::PatientPayment)
+                {
+                    CustTrans::settleTransact(custTable);
+                }
+            }
+    
+            if(_transactionType == HMCaseTransDetailTransactionType::InsurancePayment)
+            {
+                while select * from custTrans
+                    join carrierBatchPayments
+                    join custTransOpen
+                    where carrierBatchPayments.CustTrans == custTrans.RecId
+                    && carrierBatchPayments.HMInsuranceCarrierBatchDetails == HMInsuranceCarrierBatchDetails.RecId
+                    && custTransOpen.AccountNum == custTrans.AccountNum
+                    && custTransOpen.RefRecId == custTrans.RecId
+                {
+                    custTrans.transData().markForSettlement(custTable);
+                }
+            }
+    
+            if(_transactionType == HMCaseTransDetailTransactionType::InsurancePayment)
+            {
+                CustTrans::settleTransact(custTable);
+            }
+    
+            setEnumerator = setCaseTrans.getEnumerator();
+            while(setEnumerator.moveNext())
+            {
+                hmCaseTrans = hmCaseTrans::find(setEnumerator.current(),true);
+                hmCaseTrans.BillingStatus = HMBillStatus::Settled;
+                hmCaseTrans.update();
+            }
+            ttsCommit;
+        }
+        catch
+        {
+            throw warning("@MAZ13428");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyWriteOffDiscount</Name>
+				<Source><![CDATA[
+    private void applyWriteOffDiscount(Map _chargeEntryHeaderMap, HMPatientChargeEntryLinesTmp _chargeEntryLinesTmp, HMInsuranceCarrierBatchNumber _batchId, HMWriteOffDiscount _writeOffDiscount)
+    {
+        MapEnumerator                               mapEnumerator;
+        HMPatientChargeEntryLine                    HMPatientChargeEntryLine;
+        AmountMST                                   totalAmount;
+        RecId                                       batchRecId;
+        HMInsuranceCarrierBatchWriteOffDiscounts    HMInsuranceCarrierBatchWriteOffDiscounts;
+        HMPatientChargeEntryTable                   chargeEntryTable;
+        real                                        discountWriteOffValue;
+        HMPatientChargeEntryLinesTmp                HMPatientChargeEntryLinesTmp = this.replicateChargeEntryLineTmp(_chargeEntryLinesTmp);
+        batchRecId = HMInsuranceCarrierBatchDetails::findRecIdbByBatchNumber(_batchId);
+        isWriteOffDiscountApplied = false;
+        if(batchRecId)
+        {
+            ttsBegin;
+            while select forUpdate HMInsuranceCarrierBatchWriteOffDiscounts
+                where HMInsuranceCarrierBatchWriteOffDiscounts.HMInsuranceCarrierBatchDetails == batchRecId
+                && HMInsuranceCarrierBatchWriteOffDiscounts.Applied == NoYes::No
+                && HMInsuranceCarrierBatchWriteOffDiscounts.ReverseWriteOffDisc == NoYes::No
+                && HMInsuranceCarrierBatchWriteOffDiscounts.WriteOffOrDiscount == _writeOffDiscount
+            {
+                totalAmount = this.getTotalSumByMap(_chargeEntryHeaderMap,HMPatientChargeEntryLinesTmp, HMInsuranceCarrierBatchWriteOffDiscounts.HMInsuranceCarrierBatchDetails);
+                if(totalAmount > 0)
+                {
+                    if(HMInsuranceCarrierBatchWriteOffDiscounts.AmountOrPercentage == HMCoPayType::Percentage)
+                    {
+                        discountWriteOffValue = totalAmount * (HMInsuranceCarrierBatchWriteOffDiscounts.Value/100);
+                    }
+                    else
+                    {
+                        discountWriteOffValue = HMInsuranceCarrierBatchWriteOffDiscounts.Value;
+                    }
+                    mapEnumerator = _chargeEntryHeaderMap.getEnumerator();
+                    while(mapEnumerator.moveNext())
+                    {
+                        if(!this.updateWriteOffDiscountAmount(totalAmount,discountWriteOffValue,mapEnumerator.currentKey(),_writeOffDiscount,HMPatientChargeEntryLinesTmp,HMInsuranceCarrierBatchWriteOffDiscounts.RecId))
+                        {
+                            ttsAbort;
+                            return;
+                        }
+                    }
+                }
+                else
+                {
+                    warning("@MAZ13430");
+                    ttsAbort;
+                    return;
+                }
+                if(isWriteOffDiscountApplied)
+                {
+                    HMInsuranceCarrierBatchWriteOffDiscounts.Applied = NoYes::Yes;
+                    HMInsuranceCarrierBatchWriteOffDiscounts.update();
+                }
+                else
+                {
+                    warning(strFmt("@MAZ13612",enum2str(HMInsuranceCarrierBatchWriteOffDiscounts.WriteOffOrDiscount)));
+                    ttsAbort;
+                    return;
+                }
+            }
+            info(strFmt("@MAZ13401",enum2str(_writeOffDiscount)));
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createInvoiceAndPost</Name>
+				<Source><![CDATA[
+    public void createInvoiceAndPost(Map _chargeEntryHeaderMap, HMPatientChargeEntryLinesTmp _chargeEntryLinesTmp, HMInsuranceCarrierBatchNumber _batchId, boolean _cashInvoice = false, HMCaseTransDetailTransactionType _transactionType = HMCaseTransDetailTransactionType::InsuranceInvoice)
+    {
+        HMCaseTrans                                 hmCaseTrans;
+        List                                        CaseTranslist;
+        MapEnumerator                               mapEnumerator;
+        AccountNum                                  custAccountNum;
+        HMPatientChargeEntryLine                    chargeEntryLine;
+        CustInvoiceTable                            custInvoiceTable;
+        HMCustInvoiceClass                          hmCustInvoiceClass;
+        RecId                                       custInvoiceTableRecId;
+        HMPatientChargeEntryTable                   hmPatientChargeEntryTable;
+        HMAccrueRevenueJournalClass                 hmAccrueRevenueJournalClass;
+        HMPatientChargeEntryLinesTmp                HMPatientChargeEntryLinesTmp;
+        HMPatientChargeEntryCustInvoiceTable        HMPatientChargeEntryCustInvoiceTable;
+        boolean                                     isFirst = true;
+        real                                        totalAmount;
+        HMCaseTransDetail                           hmCaseTransDetail;
+        RecId                                       custInvoiceLIne;
+    
+    
+        HMPatientChargeEntryLinesTmp = this.replicateChargeEntryLineTmp(_chargeEntryLinesTmp);
+        mapEnumerator = _chargeEntryHeaderMap.getEnumerator();
+        hmCustInvoiceClass = new HMCustInvoiceClass();
+    
+        try
+        {
+            ttsBegin;
+            while(mapEnumerator.moveNext())
+            {
+                hmPatientChargeEntryTable = mapEnumerator.currentValue();
+                if(isFirst)
+                {
+                    hmPatientChargeEntryTable = mapEnumerator.currentValue();
+                    if(_cashInvoice)
+                    {
+                        custAccountNum = hmPatientChargeEntryTable.patientChartNum();
+                    }
+                    else
+                    {
+                        custAccountNum = hmPatientChargeEntryTable.getCaseInsuranceNum();
+                        if(!custAccountNum)
+                        {
+                            custAccountNum =  hmPatientChargeEntryTable.patientChartNum();
+                            if(custAccountNum)
+                            {
+                                _cashInvoice = true;
+                                _transactionType = HMCaseTransDetailTransactionType::PatientInvoice;
+                            }
+                        }
+                    }
+    
+                    custInvoiceTableRecId = hmCustInvoiceClass.createCustInvoiceTable(custAccountNum,_batchId, hmPatientChargeEntryTable.HMCase);
+                    custInvoiceTable = custInvoiceTable::findRecId(custInvoiceTableRecId);
+                    isFirst = false;
+                }
+                HMPatientChargeEntryCustInvoiceTable.HMPatientChargeEntryTable = hmPatientChargeEntryTable.RecId;
+                HMPatientChargeEntryCustInvoiceTable.CustInvoiceTable = custInvoiceTableRecId;
+                HMPatientChargeEntryCustInvoiceTable.insert();
+    
+                CaseTranslist = new List(Types::Record);
+    
+                if(this.linesLeftForInvoicing(_chargeEntryLinesTmp,hmPatientChargeEntryTable.RecId, _transactionType))
+                {
+                    while select HMPatientChargeEntryLinesTmp
+                    {
+                        select forUpdate chargeEntryLine
+                        join forUpdate  hmCaseTrans
+                        where chargeEntryLine.recid == HMPatientChargeEntryLinesTmp.HMPatientChargeEntryLine
+                        && hmCaseTrans.recid == chargeEntryLine.HMCaseTrans
+                        && HMPatientChargeEntryLinesTmp.Marked == NoYes::Yes
+                        && HMPatientChargeEntryLinesTmp.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId;
+    
+                        select RecId from hmCaseTransDetail
+                            where hmCaseTransDetail.HMCaseTrans == hmCaseTrans.RecId
+                            && hmCaseTransDetail.TransactionType == _transactionType;
+    
+                        if(hmCaseTransDetail)
+                        {
+                            continue;
+                        }
+                        CaseTranslist.addEnd(hmCaseTrans);
+                        if(!chargeEntryLine)
+                        {
+                            throw error("@MAZ13431");
+                        }
+    
+                        hmCaseTrans.BillingStatus = HMBillStatus::Posted;
+                        hmCaseTrans.update();
+    
+                        chargeEntryLine.update();
+    
+                        if(_cashInvoice)
+                        {
+                            totalAmount = hmCaseTrans.CashAmount;
+                        }
+                        else
+                        {
+                            totalAmount = hmCaseTrans.InsuranceAmount + hmCaseTrans.DeductibleActual;
+                        }
+                        custInvoiceLIne = hmCustInvoiceClass.createCustInvoiceLine(custInvoiceTable, chargeEntryLine, hmCaseTrans,totalAmount);
+                        HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,_transactionType, custInvoiceLIne, tableNum(CustInvoiceLine), totalAmount);
+    
+                    }
+                }
+                else
+                {
+                    warning("@MAZ13594");
+                    ttsAbort;
+                    return;
+                }
+            }
+            if(!CaseTranslist.empty())
+            {
+                hmCustInvoiceClass.post(custInvoiceTable);
+            }
+            ttsCommit;
+        }
+        catch
+        {
+            ttsAbort;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryTotalAmount</Name>
+				<Source><![CDATA[
+    private AmountMST getChargeEntryTotalAmount(RecId _chargeEntryRecid, HMPatientChargeEntryLinesTmp _chargeEntryLineTmp, RecId _batchRecId)
+    {
+        HMPatientChargeEntryLine    hmPatientChargeEntryLine;
+        HMCaseTrans                 hmCaseTrans;
+    
+        select sum(InsuranceAmount) from hmCaseTrans
+        join hmPatientChargeEntryLine where hmPatientChargeEntryLine.HMCaseTrans == hmCaseTrans.RecId
+        join _chargeEntryLineTmp where _chargeEntryLineTmp.HMPatientChargeEntryLine == hmPatientChargeEntryLine.RecId
+        && _chargeEntryLineTmp.HMPatientChargeEntryTable == _chargeEntryRecid
+        && hmPatientChargeEntryLine.HMInsuranceCarrierBatchDetails == _batchRecId
+        && _chargeEntryLineTmp.Marked == NoYes::Yes
+        && hmCaseTrans.BillingStatus == HMBillStatus::Paid;
+    
+        return hmCaseTrans.InsuranceAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalSumByMap</Name>
+				<Source><![CDATA[
+    private AmountMST getTotalSumByMap(Map _chargeEntryMap, HMPatientChargeEntryLinesTmp _chargeEntryLineTmp,RecId _batchRecId)
+    {
+        AmountMST       totalAmount;
+        MapEnumerator   chargeEntryMapEnumerator = _chargeEntryMap.getEnumerator();
+        RecId           chargeEntryRecId;
+        while(chargeEntryMapEnumerator.moveNext())
+        {
+            chargeEntryRecId = chargeEntryMapEnumerator.currentKey();
+            totalAMount += this.getChargeEntryTotalAmount(chargeEntryRecId,_chargeEntryLineTmp, _batchRecId);
+        }
+        return totalAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>linesLeftForInvoicing</Name>
+				<Source><![CDATA[
+    private boolean linesLeftForInvoicing(HMPatientChargeEntryLinesTmp _HMPatientChargeEntryLinesTmp, RecId _chargeEntryTabeleRecId, HMCaseTransDetailTransactionType _transactionType)
+    {
+        HMPatientChargeEntryLine    chargeEntryLine;
+        HMCaseTrans                 hmCaseTrans;
+        HMCaseTransDetail           hmCaseTransDetail;
+        while select * from _HMPatientChargeEntryLinesTmp
+        {
+            select RecId from hmCaseTransDetail
+            join chargeEntryLine
+            join hmCaseTrans
+            where chargeEntryLine.recid == _HMPatientChargeEntryLinesTmp.HMPatientChargeEntryLine
+            && hmCaseTrans.recid == chargeEntryLine.HMCaseTrans
+            && _HMPatientChargeEntryLinesTmp.Marked == NoYes::Yes
+            && _HMPatientChargeEntryLinesTmp.HMPatientChargeEntryTable == _chargeEntryTabeleRecId
+            && hmCaseTrans.RecId == hmCaseTransDetail.HMCaseTrans
+            && hmCaseTransDetail.TransactionType == _transactionType;
+    
+            if(!hmCaseTransDetail)
+            {
+                return true;
+            }
+        }
+    
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postCashChargeEntry</Name>
+				<Source><![CDATA[
+    public void postCashChargeEntry(Args _args)
+    {
+        HMPatientChargeEntryTable       hmPatientChargeEntryTable;
+        HMCase                          hmCase;
+        HMPatientChargeEntryLine        hmPatientChargeEntryLine;
+        Map                             chargeEntryHeaderMap;
+        HMPatientChargeEntryLinesTmp    HMPatientChargeEntryLinesTmp;
+        HMCaseTrans                     hmcaseTrans;
+        boolean                         hasRecords = false;
+        HMCaseTransDetail               hmCaseTransDetail;
+        chargeEntryHeaderMap = new Map(Types::Int64,Types::Record);
+    
+        while select hmPatientChargeEntryTable
+            where hmPatientChargeEntryTable.RecId == _args.record().RecId
+            join RecId from hmPatientChargeEntryLine
+            join hmCase
+            join hmcaseTrans
+            where hmCase.RecId == hmPatientChargeEntryTable.HMCase
+            && hmPatientChargeEntryLine.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId
+            && hmcaseTrans.RecId == hmPatientChargeEntryLine.HMCaseTrans
+            && hmcaseTrans.CashAmount > 0
+            && hmcaseTrans.BillingStatus == HMBillStatus::Paid
+    
+        {
+            select RecId from hmCaseTransDetail
+            where hmCaseTransDetail.HMCaseTrans == hmCaseTrans.RecId
+            && hmCaseTransDetail.TransactionType == HMCaseTransDetailTransactionType::PatientInvoice;
+    
+            if(!hmCaseTransDetail)
+            {
+                hasRecords = true;
+                if(!chargeEntryHeaderMap.exists(hmPatientChargeEntryTable.RecId))
+                {
+                    chargeEntryHeaderMap.insert(hmPatientChargeEntryTable.RecId, hmPatientChargeEntryTable);
+                }
+                HMPatientChargeEntryLinesTmp.clear();
+                HMPatientChargeEntryLinesTmp.HMPatientChargeEntryLine = hmPatientChargeEntryLine.RecId;
+                HMPatientChargeEntryLinesTmp.HMPatientChargeEntryTable = hmPatientChargeEntryTable.RecId;
+                HMPatientChargeEntryLinesTmp.Marked = NoYes::Yes;
+                HMPatientChargeEntryLinesTmp.insert();
+            }
+        }
+        if(hasRecords)
+        {
+            this.createInvoiceAndPost(chargeEntryHeaderMap,HMPatientChargeEntryLinesTmp,'',true, HMCaseTransDetailTransactionType::PatientInvoice);
+            this.applyPayments(chargeEntryHeaderMap,HMPatientChargeEntryLinesTmp,'',HMCaseTransDetailTransactionType::PatientPayment);
+        }
+        else
+        {
+            warning("No charge entry record found for cash invoice & settle") ;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postCashChargeEntryBatch</Name>
+				<Source><![CDATA[
+    public void postCashChargeEntryBatch()
+    {
+        HMPatientChargeEntryTable       hmPatientChargeEntryTable;
+        HMCase                          hmCase;
+        HMPatientChargeEntryLine        hmPatientChargeEntryLine;
+        Map                             chargeEntryHeaderMap;
+        HMPatientChargeEntryLinesTmp    HMPatientChargeEntryLinesTmp;
+        HMCaseTrans                     hmcasetrans;
+    
+        chargeEntryHeaderMap = new Map(Types::Int64,Types::Record);
+    
+       while select hmPatientChargeEntryTable
+            join RecId from hmPatientChargeEntryLine
+            join hmCase
+            join hmcaseTrans
+            where hmCase.RecId == hmPatientChargeEntryTable.HMCase
+            && hmPatientChargeEntryLine.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId
+            && hmcaseTrans.RecId == hmPatientChargeEntryLine.HMCaseTrans
+            && hmcaseTrans.CashAmount > 0
+            && hmcaseTrans.BillingStatus == HMBillStatus::Paid
+        {
+            if(!chargeEntryHeaderMap.exists(hmPatientChargeEntryTable.RecId))
+            {
+                chargeEntryHeaderMap.insert(hmPatientChargeEntryTable.RecId, hmPatientChargeEntryTable);
+            }
+            HMPatientChargeEntryLinesTmp.clear();
+            HMPatientChargeEntryLinesTmp.HMPatientChargeEntryLine = hmPatientChargeEntryLine.RecId;
+            HMPatientChargeEntryLinesTmp.HMPatientChargeEntryTable = hmPatientChargeEntryTable.RecId;
+            HMPatientChargeEntryLinesTmp.Marked = NoYes::Yes;
+            HMPatientChargeEntryLinesTmp.insert();
+        }
+        this.createInvoiceAndPost(chargeEntryHeaderMap,HMPatientChargeEntryLinesTmp,'', true, HMCaseTransDetailTransactionType::PatientInvoice);
+        this.applyPayments(chargeEntryHeaderMap,HMPatientChargeEntryLinesTmp,'',HMCaseTransDetailTransactionType::PatientPayment);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replicateChargeEntryLineTmp</Name>
+				<Source><![CDATA[
+    public HMPatientChargeEntryLinesTmp replicateChargeEntryLineTmp(HMPatientChargeEntryLinesTmp chargeEntryLineTmp)
+    {
+        HMPatientChargeEntryLinesTmp    HMPatientChargeEntryLinesTmpLocal;
+    
+        while select * from chargeEntryLineTmp
+        {
+            buf2Buf(chargeEntryLineTmp,HMPatientChargeEntryLinesTmpLocal);
+            HMPatientChargeEntryLinesTmpLocal.insert();
+        }
+    
+        return HMPatientChargeEntryLinesTmpLocal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>reverseWriteOffDisc</Name>
+				<Source><![CDATA[
+    private void reverseWriteOffDisc(RecId _writeOffDiscRecId)
+    {
+        HMInsuranceCarrierBatchWriteOffDiscounts    writeOffDiscTable;
+        HMCaseTransDetail                           hmCaseTransDetail;
+        HMCaseTrans                                 hmCaseTrans;
+        real                                        writeOffDiscValue;
+        try
+        {
+            ttsBegin;
+            writeOffDiscTable = HMInsuranceCarrierBatchWriteOffDiscounts::find(_writeOffDiscRecId, true);
+            if(writeOffDiscTable)
+            {
+                while select forupdate hmCaseTrans
+                    join hmCaseTransDetail
+                    where hmCaseTrans.RecId == hmCaseTransDetail.HMCaseTrans
+                    && hmCaseTransDetail.RefRecId == _writeOffDiscRecId
+                    && hmCaseTransDetail.RefTableId == tableNum(HMInsuranceCarrierBatchWriteOffDiscounts)
+                    && (hmCaseTrans.BillingStatus != HMBillStatus::Posted
+                    && hmCaseTrans.BillingStatus != HMBillStatus::Settled)
+                {
+                    if(writeOffDiscTable.WriteOffOrDiscount == HMWriteOffDiscount::Discount)
+                    {
+                        hmCaseTrans.Discount -= hmCaseTransDetail.Value;
+                        hmCaseTrans.InsuranceAmount += hmCaseTransDetail.Value;
+                        hmCaseTrans.Discount = decRound(hmCaseTrans.Discount,2);
+                        hmCaseTrans.InsuranceAmount = decRound(hmCaseTrans.InsuranceAmount,2);
+                    }
+                    else if(writeOffDiscTable.WriteOffOrDiscount == HMWriteOffDiscount::WriteOff)
+                    {
+                        hmCaseTrans.WriteOff -= hmCaseTransDetail.Value;
+                        hmCaseTrans.InsuranceAmount += hmCaseTransDetail.Value;
+                        hmCaseTrans.WriteOff = decRound(hmCaseTrans.WriteOff,2);
+                        hmCaseTrans.InsuranceAmount = decRound(hmCaseTrans.InsuranceAmount,2);
+                    }
+                    hmCaseTransDetail.Reversed = NoYes::Yes;
+                    hmCaseTrans.update();
+                }
+                writeOffDiscTable.ReverseWriteOffDisc = NoYes::Yes;
+                writeOffDiscTable.update();
+            }
+            ttsCommit;
+            info(strFmt("@MAZ13609",enum2str(writeOffDiscTable.WriteOffOrDiscount)));
+        }
+        catch
+        {
+            throw error("@MAZ13610");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateWriteOffDiscountAmount</Name>
+				<Source><![CDATA[
+    public boolean updateWriteOffDiscountAmount(real _totalAmount,
+                                                real _writeOffDiscValue,
+                                                RecId _chargeEntryRecId,
+                                                HMWriteOffDiscount _writeOffDiscount,
+                                                HMPatientChargeEntryLinesTmp _chargeEntryLineTmp,
+                                                RecId _writeOffDiscRecId)
+    {
+        HMPatientChargeEntryLine            chargeEntryLine;
+        real                                proRateValue;
+        HMCaseTrans                         hmCaseTrans;
+        real                                writeOffDiscountAmt;
+        HMCaseTransDetailTransactionType    transType;
+        try
+        {
+            while select _chargeEntryLineTmp
+                join chargeEntryLine
+                join forupdate hmCaseTrans
+                where chargeEntryLine.recid == _chargeEntryLineTmp.HMPatientChargeEntryLine
+                && hmCaseTrans.recid == chargeEntryLine.HMCaseTrans
+                && _chargeEntryLineTmp.Marked == NoYes::Yes
+                && hmCaseTrans.BillingStatus == HMBillStatus::Paid
+                && _chargeEntryLineTmp.HMPatientChargeEntryTable == _chargeEntryRecId
+            {
+                isWriteOffDiscountApplied = true;
+                proRateValue = hmCaseTrans.InsuranceAmount/_totalAmount;
+                //proRateValue = decRound(proRateValue,2);
+                writeOffDiscountAmt = _writeOffDiscValue * proRateValue;
+                if(_writeOffDiscount == HMWriteOffDiscount::Discount)
+                {
+                    hmCaseTrans.Discount += writeOffDiscountAmt;
+                    hmCaseTrans.InsuranceAmount -= writeOffDiscountAmt;
+                    hmCaseTrans.Discount = decRound(hmCaseTrans.Discount,2);
+                    hmCaseTrans.InsuranceAmount = decRound(hmCaseTrans.InsuranceAmount,2);
+                    transType = HMCaseTransDetailTransactionType::Discount;
+                }
+                else
+                {
+                    hmCaseTrans.WriteOff += writeOffDiscountAmt;
+                    hmCaseTrans.InsuranceAmount -= writeOffDiscountAmt;
+                    hmCaseTrans.WriteOff = decRound(hmCaseTrans.WriteOff,2);
+                    hmCaseTrans.InsuranceAmount = decRound(hmCaseTrans.InsuranceAmount,2);
+                    transType = HMCaseTransDetailTransactionType::WriteOff;
+                }
+                HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,transType,_writeOffDiscRecId,tableNum(HMInsuranceCarrierBatchWriteOffDiscounts),writeOffDiscountAmt);
+                hmCaseTrans.update();
+            }
+            return true;
+        }
+        catch
+        {
+            error(strfmt("@MAZ13432",enum2str(_writeOffDiscount)));
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        FormRun                         formRun;
+        HMInsuranceCarrierBatchNumber   batchId;
+        HMPatientChargeEntryLinesTmp    chargeEntryLinesTmp;
+        Map                             chargeEntryHeaderMap;
+        boolean                         cashInvoice = false;
+        HMPaymentCentreClass objClass = new HMPaymentCentreClass();
+    
+        formRun = _args.caller();
+    
+        if(formHasMethod(formRun,identifierStr(getBatchId)))
+        {
+            batchId = _args.caller().getBatchId();
+        }
+    
+        if(formHasMethod(formRun,identifierStr(getChargeEntryLinesTmp)))
+        {
+            chargeEntryLinesTmp = _args.caller().getChargeEntryLinesTmp();
+        }
+    
+        if(formHasMethod(formRun,identifierStr(getChargeEntryHeaderMap)))
+        {
+            chargeEntryHeaderMap = _args.caller().getChargeEntryHeaderMap();
+            if(chargeEntryHeaderMap.empty())
+            {
+                warning("@MAZ13613");
+                return;
+            }
+        }
+    
+        if(_args.menuItemName() == menuitemActionStr(HMPaymentCentreApplyWriteOff))
+        {
+            objClass.applyWriteOffDiscount(chargeEntryHeaderMap,chargeEntryLinesTmp,batchid,HMWriteOffDiscount::WriteOff);
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPaymentCentreApplyDiscount))
+        {
+            objClass.applyWriteOffDiscount(chargeEntryHeaderMap,chargeEntryLinesTmp,batchid,HMWriteOffDiscount::Discount);
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPaymentCentreCreateInvoice))
+        {
+            if(Box::yesNo("@MAZ13631",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+            {
+                formRun = _args.caller();
+                if(formRun.name() == formStr(HMPatientChargeEntry))
+                {
+                    objClass.postCashChargeEntry(_args);
+                    //objClass.postChargeEntry_US(_args);
+                }
+                else
+                {
+                    objClass.createInvoiceAndPost(chargeEntryHeaderMap,chargeEntryLinesTmp,batchid,cashInvoice);
+                }
+            }
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPaymentCentreApplyPayments))
+        {
+            if(Box::yesNo("@MAZ13632",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+            {
+                //objClass.applyPayments(chargeEntryHeaderMap,chargeEntryLinesTmp,batchid);
+                objClass.applyPayments(chargeEntryHeaderMap,chargeEntryLinesTmp,batchid);
+            }
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPaymentCentreReverseWriteOffDiscount))
+        {
+            objClass.reverseWriteOffDisc(_args.record().RecId);
+        }
+        if(formHasMethod(formRun,identifierStr(updateBatchAmountDetailFields)))
+        {
+            _args.caller().updateBatchAmountDetailFields();
+        }
+        if(formHasMethod(formRun,identifierStr(refreshChargeEntryDetails)))
+        {
+            _args.caller().refreshChargeEntryDetails();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

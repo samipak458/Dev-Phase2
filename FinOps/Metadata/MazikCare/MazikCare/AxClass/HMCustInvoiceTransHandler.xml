@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCustInvoiceTransHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCustInvoiceTransHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>CustInvoiceTrans_Post_initFromCustInvoiceLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="args"></param>
+    [PostHandlerFor(tableStr(CustInvoiceTrans), tableMethodStr(CustInvoiceTrans, initFromCustInvoiceLine))]
+    public static void CustInvoiceTrans_Post_initFromCustInvoiceLine(XppPrePostArgs args)
+    {
+        CustInvoiceLine _custInvoiceLine = args.getArg(identifierStr(_custInvoiceLine));
+        CustInvoiceTrans custInvoiceTrans = args.getThis();
+
+        custInvoiceTrans.HMCaseTrans            = _custInvoiceLine.HMCaseTrans;
+        custInvoiceTrans.CoInsuranceAmount      = _custInvoiceLine.CoInsuranceAmount;
+        custInvoiceTrans.CoPayAmount            = _custInvoiceLine.CoPayAmount;
+        custInvoiceTrans.Deductible             = _custInvoiceLine.Deductible;
+        custInvoiceTrans.HMInsuranceCarrierBatchDetails = _custInvoiceLine.HMInsuranceCarrierBatchDetails;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CustInvoiceTrans_Post_numOfLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="args"></param>
+    [PostHandlerFor(tableStr(CustInvoiceTrans), tableStaticMethodStr(CustInvoiceTrans, numOfLines))]
+    public static void CustInvoiceTrans_Post_numOfLines(XppPrePostArgs args)
+    {
+        CustInvoiceTrans    custInvoiceTrans;
+        CustInvoiceTrans    custInvoiceTransLocal;
+        CustInvoiceJour     custInvoiceJour;
+        int invoiceLineCount;
+        InvoiceId invoiceId = args.getArg(identifierStr(_invoiceId));
+        TransDate transDate = args.getArg(identifierStr(_transDate));
+
+        select * from custInvoiceTransLocal
+            where custInvoiceTransLocal.InvoiceId == invoiceId
+            && custInvoiceTransLocal.InvoiceDate == transDate;
+
+        if(custInvoiceTransLocal)
+        {
+            select * from custInvoiceJour
+            where custInvoiceJour.InvoiceAccount == custInvoiceTransLocal.invoiceAccount()
+               && custInvoiceJour.InvoiceId == custInvoiceTransLocal.InvoiceId
+                && custInvoiceJour.InvoiceDate == custInvoiceTransLocal.InvoiceDate;
+
+            invoiceLineCount = any2int((select count(RecId) from custInvoiceTrans
+            where custInvoiceTrans.InvoiceId == invoiceId && custInvoiceTrans.InvoiceDate == transDate).RecId);
+
+            if(custInvoiceJour.HMCase)
+            {
+                if(invoiceLineCount == 1)
+                    args.setReturnValue(invoiceLineCount + 1);
+                else
+                    args.setReturnValue(invoiceLineCount);
+            }
+            else
+                args.setReturnValue(invoiceLineCount);
+  
+        }
+
+        
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

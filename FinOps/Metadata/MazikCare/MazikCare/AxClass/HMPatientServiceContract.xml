@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientServiceContract</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientServiceContract
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createPatient</Name>
+				<Source><![CDATA[
+    [SysEntryPointAttribute(true)]
+    public RecId createPatient(HMPatientDataContract _contract)
+    {
+        DirPersonName dirPersonName;
+        RecId patientRecID;
+        container patientName;
+        HMNumberSequenceHandler patientNumber = new HMNumberSequenceHandler();
+        HMPatientId patientMRN;
+        DocuRef                     docuRef;
+        DocuTypeId                  docuTypeId;
+        HMPatientDocumentContract   docContract;
+        ListEnumerator              listEnmr;
+        //HMDocuActionArchiveServer           docuActionArchive;
+        Filename                    file;
+    
+        try
+        {
+            patientName = DirPerson::splitNameParts(_contract.parmFullName());
+    
+            dirPersonName.FirstName = conPeek(patientName, 1);
+            dirPersonName.MiddleName = conPeek(patientName, 2);
+            dirPersonName.LastName = conPeek(patientName, 3);
+    
+            patientMRN = patientNumber.generateNumberSequenceDataArea(extendedtypenum(HMPatientId));
+            docuTypeId = HMParameters::find().DocuTypeQuickReg;
+    
+            ttsBegin;
+    
+            patientRecID = HMPatientTransition::createHMPatientLogisticsAddress(HMPatientCategory::Cash,dirPersonName, _contract.parmMRN(), _contract.parmDateOfBirth(), _contract.parmGenderValue(), HRMSalutation::None, HRMNameSuffix::None, 0,
+            0, '', '', '', '', '', _contract.parmMobilePhone(), _contract.parmEmail(), '', '', '', '', '', '', '' , '', true, _contract.parmMobilePhone(), conNull(), 0, 0, NoYes::No, NoYes::No, NoYes::No, NoYes::No, 0, 0,
+            0, '',"", 0,  NoYes::No, _contract.parmNationalIdTypeValue(), _contract.parmNationalIdValue());
+    
+            if(patientRecID)
+            {
+                if(_contract.parmDocumentList() && _contract.parmDocumentList().elements() > 0)
+                {
+                    //if(!docuTypeId)
+                    //{
+                    //    checkFailed("@MAZ13257");
+                    //}
+    
+                    listEnmr = _contract.parmDocumentList().getEnumerator();
+    
+                    new InteropPermission(InteropKind::ClrInterop).assert();
+    
+                    //while(listEnmr.moveNext())
+                    //{
+                    //    docContract = listEnmr.current();
+
+                    //    docuRef.initValue();
+
+                    //    docuRef.RefTableId = tableNum(HMPatient); //TableId, for which the attachement should be attached.
+                    //    docuRef.RefRecId = patientRecID; //RecId, for which the attachement should be attached.
+                    //    docuRef.RefCompanyId = curext(); //CompanyId
+                    //    docuRef.TypeId = docuTypeId;// 'File';
+
+                    //    docuRef.insert();
+
+                    //    docuActionArchive = new HMDocuActionArchiveServer();
+                    //    // This action first displays a file selection dialog.
+                    //    // After the file is selected designates a number sequence and stores the file to document archive.
+                    //    docuActionArchive.setDocuType(docuRef.TypeId);
+
+                    //    file = WinAPIServer::getTempPath();
+                    //    file = (strscan(file, '\\',strlen(file),-1)) ? file : file + '\\';
+                    //    file = file + docContract.parmName();
+
+                    //    HMCommonService::saveBase64ToFile(file, docContract.parmDocument());
+
+                    //    docuActionArchive.add(docuRef, file);
+                    //}
+    
+                    CodeAccessPermission::revertAssert();
+                }
+    
+                ttsCommit;
+    
+                patientNumber.commitNewNumSeq();
+                return patientRecID;
+            }
+            else
+            {
+                throw Exception::Error;
+            }
+        }
+        catch
+        {
+            patientNumber.deleteNewNumSeq();
+            warning("@MAZ58");
+            return 0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientBasicDetails</Name>
+				<Source><![CDATA[
+    public HMPatientInfoContract getPatientBasicDetails(str _patientRecId)
+    {
+        HMPatientInfoContract               objDataContract = new HMPatientInfoContract();
+
+        HMPatient                                   hmPatient;
+        DirPartyTable                               dirPartyTable;
+        DirPerson                                   dirPerson;
+        CustTable                                   custTable;
+        DirPersonName                               dirPersonName;
+        LogisticsPostalAddress addr;
+
+        RecId patientRecId = str2int64(_patientRecId);
+
+        select * from hmPatient
+            outer join custTable where hmPatient.CustTable == custTable.RecId
+            join * from dirPartyTable
+            join dirPerson
+            join dirPersonName
+            where  hmPatient.RecId == patientRecId
+                && hmPatient.CustTable == custTable.RecId
+                && custTable.Party == dirPartyTable.RecId
+                && dirPerson.RecId == dirPartyTable.RecId
+                && dirPersonName.Person == dirPerson.RecId;
+
+        objDataContract.parmFirstName(dirPersonName.FirstName);
+        objDataContract.parmMiddleName(dirPersonName.MiddleName);
+        objDataContract.parmLastName(dirPersonName.LastName);
+        objDataContract.parmGender(enum2str(hmPatient.Gender));
+        objDataContract.parmGenderValue(hmPatient.Gender);
+        objDataContract.parmDateOfBirth(dirPerson.birthDate());
+        objDataContract.parmRegistrationDate(hmPatient.RegistrationDate);
+        objDataContract.parmMRN(custTable.AccountNum);
+        objDataContract.parmEmail(dirPartyTable.primaryEmail());
+        objDataContract.parmPhone(dirPartyTable.primaryPhone());
+
+        addr = custTable.postalAddress();
+
+        objDataContract.parmAge(hmPatient.patientAgeNew());
+        objDataContract.parmFullName(hmPatient.patientName());
+
+        return objDataContract;
+    }
+
+    //public HMPatientDataContract getPatientDetails(str _patientRecId)
+    //{
+    //    HMPatientDataContract               objDataContract = new HMPatientDataContract();
+
+    //    HMPatient                                   hmPatient;
+    //    DirPartyTable                               dirPartyTable;
+    //    DirPerson                                   dirPerson;
+    //    CustTable                                   custTable;
+    //    DirPersonName                               dirPersonName;
+    //    LogisticsPostalAddress addr;
+    //    HMLogisticsPostalAddressContract primaryAddress;
+
+    //    List addrList = new List(Types::String);
+    //    DirPartyPostalAddressView               dirPartyPostalAddressView;
+
+    //    DocuRef                     docuRef;
+    //    List documentsList = new List(Types::Class);
+    //    HMPatientDocumentContract   docContract;
+
+    //    DirPartyRelationship            dirPartyRelationship;
+    //    DirRelationshipTypeTable        dirRelationshipTypeTable;
+    //    List relationList = new List(Types::Class);
+    //    HMPatientRelationshipContract   relationContract;
+    //    DirPartyTable                   dirPartyTableRelationShip;
+
+    //    RecId patientRecId = str2int64(_patientRecId);
+
+    //    select * from hmPatient
+    //        outer join custTable where hmPatient.CustTable == custTable.RecId
+    //        join * from dirPartyTable
+    //        join dirPerson
+    //        join dirPersonName
+    //        where  hmPatient.RecId == patientRecId
+    //            && hmPatient.DirPartyTable == dirPartyTable.RecId
+    //            && dirPerson.RecId == dirPartyTable.RecId
+    //            && dirPersonName.Person == dirPerson.RecId;
+
+    //    objDataContract.parmFirstName(dirPersonName.FirstName);
+    //    objDataContract.parmMiddleName(dirPersonName.MiddleName);
+    //    objDataContract.parmLastName(dirPersonName.LastName);
+    //    objDataContract.parmGender(enum2str(hmPatient.Gender));
+    //    objDataContract.parmGenderValue(hmPatient.Gender);
+    //    objDataContract.parmDateOfBirth(dirPerson.birthDate());
+    //    objDataContract.parmAddress(strReplace(dirPartyTable.primaryAddress(),'\n',' '));
+    //    objDataContract.parmMRN(custTable.AccountNum);
+    //    objDataContract.parmPrefix(enum2str(hmPatient.Salutation));
+    //    objDataContract.parmNationality(LogisticsAddressCountryRegion::findRecId(hmPatient.LogisticsAddressCountryRegion).displayName());
+    //    objDataContract.parmLanguage(LanguageTable::languageId2Description(dirPartyTable.LanguageId));
+    //    objDataContract.parmPreferredModeofCommunication(enum2str(hmPatient.PrefModeOfCommunication));
+    //    objDataContract.parmRegistrationDate(DateTimeUtil::date(dirPerson.createdDateTime));
+    //    objDataContract.parmArabicFirstName(dirPersonName.HMArabicFirstName);
+    //    objDataContract.parmArabicLastName(dirPersonName.HMArabicLastName);
+    //    objDataContract.parmArabicMiddleName(dirPersonName.HMArabicMiddleName);
+    //    objDataContract.parmMaritalStatus(enum2str(dirPerson.MaritalStatus));
+    //    objDataContract.parmHijriDateOfBirth(hmPatient.HMHijriDateOfBirth);
+    //    objDataContract.parmIsVip(hmPatient.IsVIP);
+    //    objDataContract.parmNationalIdExpiry(date2strUsr(hmPatient.HMNationalIdExpiryDate));
+    //    objDataContract.parmNationalIdExpiryHijri(hmPatient.HMHijriExpiryDate);
+    //    objDataContract.parmNationalIdType(enum2str(hmPatient.HMNationalIdType));
+    //    objDataContract.parmNationalIdValue(hmPatient.HMIdentificationNumber);
+    //    objDataContract.parmAge(hmPatient.patientAgeNew());
+    //    objDataContract.parmFullName(hmPatient.patientName());
+
+    //    objDataContract.parmEmail(dirPartyTable.primaryEmail());
+    //    objDataContract.parmFax(dirPartyTable.primaryFax());
+    //    objDataContract.parmHomePhone(HMPatientChartClass::getContactPhone(LogisticsLocationRoleType::Home, dirPartyTable.RecId));
+    //    objDataContract.parmMobilePhone(HMPatientChartClass::getContactPhone(LogisticsLocationRoleType::SMS, dirPartyTable.RecId));
+    //    objDataContract.parmWorkPhone(HMPatientChartClass::getContactPhone(LogisticsLocationRoleType::Business, dirPartyTable.RecId));
+
+    //    addr =  DirParty::primaryPostalAddress(dirPartyTable.RecId);
+    //    primaryAddress = new HMLogisticsPostalAddressContract();
+
+    //    primaryAddress.parmCity(addr.City);
+    //    primaryAddress.parmState(addr.State);
+    //    primaryAddress.parmStreet(addr.Street);
+    //    primaryAddress.parmZipCode(addr.ZipCode);
+    //    primaryAddress.parmCountry(addr.CountryRegionId);
+    //    primaryAddress.parmAddressType(DirPartyLocation::findByPartyLocation(dirPartyTable.RecId, addr.Location).locationRoleNames());
+
+    //    objDataContract.parmPrimaryAddress(primaryAddress);
+
+    //    while select Address from dirPartyPostalAddressView
+    //        where dirPartyPostalAddressView.Party == hmPatient.DirPartyTable
+    //    {
+    //        addrList.addEnd(dirPartyPostalAddressView.Address);
+    //    }
+
+    //    objDataContract.parmAddressList(addrList);
+
+    //    while select * from docuRef
+    //        where docuRef.RefRecId == hmPatient.RecId
+    //        && docuRef.RefTableId == hmPatient.TableId
+    //        && docuRef.RefCompanyId == hmPatient.dataAreaId
+    //    {
+    //        docContract = new HMPatientDocumentContract();
+
+    //        docContract.parmDocumentRecId(docuRef.RecId);
+    //        docContract.parmName(docuRef.Name);
+    //        docContract.parmType(docuRef.fileType());
+
+    //        documentsList.addEnd(docContract);
+    //    }
+
+    //    objDataContract.parmDocumentList(documentsList);
+
+    //    while select * from dirPartyRelationship
+    //        where dirPartyRelationship.ParentParty == hmPatient.DirPartyTable
+    //        || dirPartyRelationship.ChildParty == hmPatient.DirPartyTable
+    //        join RecId from dirRelationshipTypeTable where dirPartyRelationship.RelationshipTypeId == dirRelationshipTypeTable.RelationshipTypeId
+    //        && (dirRelationshipTypeTable.SystemType < 29 || dirRelationshipTypeTable.SystemType > 40)
+    //    {
+    //        relationContract = new HMPatientRelationshipContract();
+
+    //        relationContract.parmRelationshipType(dirPartyRelationship.RelationshipTypeId);
+    //        relationContract.parmName(dirPartyRelationship.ParentParty == hmPatient.DirPartyTable ? dirPartyRelationship.childName() : dirPartyRelationship.parentName());
+
+    //        if(dirPartyRelationship.ParentParty == hmPatient.DirPartyTable)
+    //        {
+    //            select RecId from dirPartyTableRelationShip where dirPartyTableRelationShip.RecId == dirPartyRelationship.ChildParty;
+    //        }
+    //        else
+    //        {
+    //            select * from dirPartyTableRelationShip where dirPartyTableRelationShip.RecId == dirPartyRelationship.ParentParty;
+    //        }
+
+    //        relationContract.parmEmail(dirPartyTableRelationShip.primaryEmail());
+    //        relationContract.parmFax(dirPartyTableRelationShip.primaryFax());
+    //        relationContract.parmPhone(dirPartyTableRelationShip.primaryPhone());
+    //        relationContract.parmMobile(HMPatientChartClass::getContactPhone(LogisticsLocationRoleType::SMS, dirPartyTableRelationShip.RecId));
+
+    //        relationList.addEnd(relationContract);
+    //    }
+
+    //    objDataContract.parmRelationshipList(relationList);
+
+    //    return objDataContract;
+    //}
+
+    //public System.Byte[] getPatientImage(str patientRecId)
+    //{
+    //    REcId _patientRecID;
+    //    DocuRef documentRef;
+    //    System.Byte[] byteArray;
+    //    str name;
+    //    _patientRecID = str2int64(patientRecId);
+
+    //    documentRef = DocuRef::findRecId(HMPatient::find(_patientRecId).DocuRef);
+    //    if(documentRef.recid > 0)
+    //    {
+    //        name  = documentRef.completeFilename();
+    //        if(name != '')
+    //        {
+    //            byteArray = System.IO.File::ReadAllBytes(name);
+    //            return byteArray;
+    //        }
+    //    }
+    //    return null;
+    //}
+
+    //[ AifCollectionTypeAttribute('return', Types::Class, classstr(HMPatientInfoContract))]
+    //public List searchPatientDetails(str _searchValue, HMSearchPatientBy _searchBy)
+    //{
+    //    HMPatientInfoContract               objDataContract = new HMPatientInfoContract();
+
+    //    HMPatient                                   hmPatient;
+    //    DirPartyTable                               dirPartyTable;
+    //    CustTable                                   custTable;
+    //    DirPersonName                               dirPersonName;
+
+    //    List patientList = new List(Types::Class);
+    //    Query qry = new Query(queryStr(HMPatient));
+    //    QueryBuildDataSource    qbds;
+    //    QueryRun    qryRun;
+
+    //    switch(_searchBy)
+    //    {
+    //        case HMSearchPatientBy::Id:
+    //            qbds = qry.dataSourceTable(tableNum(HMPatient));
+    //            qbds.addRange(fieldNum(HMPatient, HMIdentificationNumber)).value(SysQuery::valueLike(_searchValue));
+    //            break;
+    //        case HMSearchPatientBy::Name:
+    //            qbds = qry.dataSourceTable(tableNum(DirPartyTable));
+    //            qbds.addRange(fieldNum(DirPartyTable, Name)).value(SysQuery::valueLike(_searchValue));
+    //            break;
+    //        case HMSearchPatientBy::MRN:
+    //            qbds = qry.dataSourceTable(tableNum(CustTable));
+    //            qbds.addRange(fieldNum(CustTable, AccountNum)).value(SysQuery::valueLike(_searchValue));
+    //            break;
+    //    }
+
+    //    qryRun = new QueryRun(qry);
+
+    //    while(qryRun.next())
+    //    {
+    //        objDataContract = new HMPatientInfoContract();
+    //        hmPatient = qryRun.get(tableNum(HMPatient));
+    //        dirPersonName = qryRun.get(tableNum(DirPersonName));
+    //        custTable = qryRun.get(tableNum(CustTable));
+    //        dirPartyTable = qryRun.get(tableNum(DirPartyTable));
+
+    //        objDataContract.parmFirstName(dirPersonName.FirstName);
+    //        objDataContract.parmMiddleName(dirPersonName.MiddleName);
+    //        objDataContract.parmLastName(dirPersonName.LastName);
+    //        objDataContract.parmGender(enum2str(hmPatient.Gender));
+    //        objDataContract.parmPatientRecid(int642str(hmPatient.RecId));
+    //        objDataContract.parmGenderValue(hmPatient.Gender);
+    //        objDataContract.parmDateOfBirth(hmPatient.patientBirthDate());
+    //        objDataContract.parmRegistrationDate(hmPatient.RegistrationDate);
+    //        objDataContract.parmMRN(custTable.AccountNum);
+    //        objDataContract.parmEmail(dirPartyTable.primaryEmail());
+    //        objDataContract.parmNationalIdValue(hmPatient.HMIdentificationNumber);
+    //        objDataContract.parmPhone(dirPartyTable.primaryPhone());
+    //        objDataContract.parmAge(hmPatient.patientAgeNew());
+    //        objDataContract.parmFullName(hmPatient.patientName());
+
+    //        patientList.addEnd(objDataContract);
+    //    }
+
+    //    return patientList;
+    //}
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

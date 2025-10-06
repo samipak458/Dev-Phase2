@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPoolAndPrioritySummaryDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SrsReportParameterAttribute(classStr(HMPoolAndPrioritySummaryContract))]
+internal final class HMPoolAndPrioritySummaryDP extends SRSReportDataProviderBase
+{
+    HMPoolAndPrioritySummaryTmp hmPoolAndPrioritySummaryTmp;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getPurchaseOrderHeaderTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <returns></returns>
+    [SRSReportDataSetAttribute(tableStr(HMPoolAndPrioritySummaryTmp))]
+    public HMPoolAndPrioritySummaryTmp getPurchaseOrderHeaderTmp()
+    {
+        select * from hmPoolAndPrioritySummaryTmp;
+
+        return hmPoolAndPrioritySummaryTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void processReport()
+    {
+        TransDate	                        fromDate, toDate, todayDate;
+        HMClaimJobTypeRpt                   jobType;
+        HMPoolAndPrioritySummaryContract    hmPoolAndPrioritySummaryContract = this.parmDataContract() as HMPoolAndPrioritySummaryContract;
+        container                           jobTypeCon;
+        int                                 numberOfProcessedClaims, numberOfFailedClaims;
+        str                                 startTime = '12:00:00 AM';
+        str                                 endTime = '11:59:59 PM';
+        BatchJobHistory                     batchJobHistory;
+        HMClaimBatchJobsLogs                hmClaimBatchJobsLogs;
+        HMClaimBatchJobLogsHeader           hmClaimBatchJobLogsHeader;
+
+        todayDate = DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(),DateTimeUtil::getCompanyTimeZone()));
+
+        fromDate = hmPoolAndPrioritySummaryContract.parmFromDate() == dateNull() ? todayDate : hmPoolAndPrioritySummaryContract.parmFromDate();
+        toDate   = hmPoolAndPrioritySummaryContract.parmToDate() == dateNull() ? todayDate : hmPoolAndPrioritySummaryContract.parmToDate();
+        jobType  = hmPoolAndPrioritySummaryContract.parmJobType();
+
+        jobTypeCon  = jobType == HMClaimJobTypeRpt::None ? [HMClaimJobType::Pool, HMClaimJobType::Priority, HMClaimJobType::Age, HMClaimJobType::PoolZeroBalance, HMClaimJobType::PriorityZeroBalance, HMClaimJobType::AgeZeroBalance]
+                    : jobType == HMClaimJobTypeRpt::Pool ? [HMClaimJobType::Pool]
+                    : jobType == HMClaimJobTypeRpt::PoolZeroBalance ? [HMClaimJobType::PoolZeroBalance]
+                    : jobType == HMClaimJobTypeRpt::Priority ? [HMClaimJobType::Priority]
+                    : jobType == HMClaimJobTypeRpt::PriorityZeroBalance ? [HMClaimJobType::PriorityZeroBalance]
+                    : jobType == HMClaimJobTypeRpt::Age ? [HMClaimJobType::Age]
+                    : [HMClaimJobType::AgeZeroBalance];
+                    
+        hMPoolAndPrioritySummaryTmp.clear();
+        hMPoolAndPrioritySummaryTmp.delete();
+
+        while select BatchJobId, NumberOfQualifiedClaims, JobType, CreatedDateTime, RecId from hmClaimBatchJobLogsHeader
+            where hmClaimBatchJobLogsHeader.CreatedDateTime >= DateTimeUtil::newDateTime(fromDate, str2Time(startTime))
+                && hmClaimBatchJobLogsHeader.CreatedDateTime <= DateTimeUtil::newDateTime(toDate, str2Time(endTime))
+                && hmClaimBatchJobLogsHeader.JobType in jobTypeCon
+        {
+            hmClaimBatchJobsLogs.clear();
+
+            select count(RecId) from hmClaimBatchJobsLogs
+                where hmClaimBatchJobsLogs.ClaimProcessingStatus == HMClaimProcessingStatus::Successful
+                    && hmClaimBatchJobsLogs.JobType == hmClaimBatchJobLogsHeader.JobType
+                    && hmClaimBatchJobsLogs.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeader.RecId;
+
+            numberOfProcessedClaims = hmClaimBatchJobsLogs.RecId;
+
+            hmClaimBatchJobsLogs.clear();
+
+            select count(RecId) from hmClaimBatchJobsLogs
+                where hmClaimBatchJobsLogs.ClaimProcessingStatus == HMClaimProcessingStatus::Failed
+                    && hmClaimBatchJobsLogs.JobType == hmClaimBatchJobLogsHeader.JobType
+                    && hmClaimBatchJobsLogs.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeader.RecId;
+
+            numberOfFailedClaims = hmClaimBatchJobsLogs.RecId;
+
+            batchJobHistory.clear();
+
+            select firstonly StartDateTime, EndDateTime, Status from batchJobHistory
+                where batchJobHistory.BatchJobId == hmClaimBatchJobLogsHeader.BatchJobId
+                    && batchJobHistory.CreatedDateTime >= DateTimeUtil::newDateTime(DateTimeUtil::date(hmClaimBatchJobLogsHeader.CreatedDateTime), str2Time(startTime))
+                    && batchJobHistory.CreatedDateTime <= DateTimeUtil::newDateTime(DateTimeUtil::date(hmClaimBatchJobLogsHeader.CreatedDateTime), str2Time(endTime));
+
+            hMPoolAndPrioritySummaryTmp.BatchJobId                  = hmClaimBatchJobLogsHeader.BatchJobId;
+            hMPoolAndPrioritySummaryTmp.JobType                     = hmClaimBatchJobLogsHeader.JobType;
+            hMPoolAndPrioritySummaryTmp.NumberOfProcessedClaims     = numberOfProcessedClaims;
+            hMPoolAndPrioritySummaryTmp.NumberOfFailedClaims        = numberOfFailedClaims;
+            hMPoolAndPrioritySummaryTmp.NumberOfQualifiedClaims     = hmClaimBatchJobLogsHeader.NumberOfQualifiedClaims;
+            hMPoolAndPrioritySummaryTmp.BatchStatus                 = batchJobHistory.Status;
+            hMPoolAndPrioritySummaryTmp.BatchStartTime              = batchJobHistory.StartDateTime;
+            hMPoolAndPrioritySummaryTmp.BatchEndTime                = batchJobHistory.EndDateTime;
+            hMPoolAndPrioritySummaryTmp.insert();
+       }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMUserInfoEventHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMUserInfoEventHandler
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>DisableUserWithAgent</Name>
+				<Source><![CDATA[
+    public static void DisableUserWithAgent(FormControl sender)
+    {
+        CustCollectionsAgent        custCollectionsAgent;
+        HMDisablePersonFromUser     disablePersonFromUser, disablePersonFromUserRec;
+        DirPersonUser               personUser;
+        DirPartyRelationship        partyRelationship;
+        UserInfo                    userInfo;
+
+        FormRun         formRun = sender.formRun();
+        FormDataSource  userInfo_ds   = formRun.dataSource(formDataSourceStr(SysUserManagement,UserInfo)) as FormDataSource;
+        
+        userInfo = userInfo_ds.cursor();
+
+        if ((userInfo.orig().enable != userInfo.enable) && (userInfo.enable == NoYes::No))
+        {
+            select firstonly RecId from custCollectionsAgent
+            join partyRelationship
+            where custCollectionsAgent.DirPartyRelationship == partyRelationship.RecId
+            join PersonParty from personUser
+            where partyRelationship.ChildParty == personUser.PersonParty &&
+            personUser.User == userInfo.id;
+
+            if(custCollectionsAgent.RecId != 0)
+            {
+                if (Box::yesNo("@Optum:MAZOPT0109", DialogButton::No) == DialogButton::Yes)
+                {
+                    disablePersonFromUser.UserID = userInfo.id;
+                    disablePersonFromUser.CustCollectionsAgent = custCollectionsAgent.RecId;
+
+
+                    select firstonly disablePersonFromUserRec
+                        where disablePersonFromUserRec.CustCollectionsAgent == custCollectionsAgent.RecId &&
+                        disablePersonFromUserRec.JobFinished == NoYes::No;
+
+                    if(disablePersonFromUserRec.RecId == 0)
+                    {
+                        ttsbegin;
+                        disablePersonFromUser.insert();
+                        ttscommit;
+                    }
+                    else
+                    {
+                        warning("@Optum:MAZOPT0110");
+                    }
+                }
+                else
+                {
+                    userInfo.enable = true;
+                }
+                
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Detail_Enabled_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormControlEventHandler(formControlStr(SysUserManagement, Detail_Enabled), FormControlEventType::Clicked)]
+    public static void Detail_Enabled_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        HMUserInfoEventHandler::DisableUserWithAgent(sender);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Detail_EnabledCopy1_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormControlEventHandler(formControlStr(SysUserManagement, Detail_EnabledCopy1), FormControlEventType::Clicked)]
+    public static void Detail_EnabledCopy1_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        HMUserInfoEventHandler::DisableUserWithAgent(sender);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

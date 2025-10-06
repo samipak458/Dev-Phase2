@@ -1,0 +1,603 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimAdministrationFormDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    SRSReportParameterAttribute(classstr(HMClaimAdministrationFormContract))
+]
+class HMClaimAdministrationFormDP extends SRSReportDataProviderBase
+{
+    HMClaimAdministrationFormHeader     claimHeader;
+    HMClaimAdministrationFormLine       claimLine;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMClaimAdministrationFormLine</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMClaimAdministrationFormLine')]
+    public HMClaimAdministrationFormLine getHMClaimAdministrationFormLine()
+    {
+        select claimLine;
+
+        return claimLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMClaimHeader</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMClaimHeader')]
+    public HMClaimAdministrationFormHeader getHMClaimHeader()
+    {
+        select claimHeader;
+    
+        return claimHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientIdentificationImage</Name>
+				<Source><![CDATA[
+    public Container getPatientIdentificationImage(RefRecId _patientRecId)
+    {
+        Container           image;
+        DocuRef             docuref;
+        HMPatient           patient;
+
+        str fileName;
+        str extention, path, nameOfFile;
+        int _hwnd;
+
+        FilenameFilter  filter;
+        Bindata         binData;
+        boolean         validImageNotFound = true;
+
+        FileIoPermission permission;
+
+        patient  = HMPatient::find(_patientRecId);
+
+        select firstOnly  docuRef
+    order by docuRef.RecId DESC
+    where
+        docuRef.RefRecId     == patient.RecId &&
+        docuRef.RefTableId   == patient.TableId &&
+        docuRef.RefCompanyId == curext() &&
+        docuRef.HMNationalIdType == patient.HMNationalIdType;
+        {
+            if (docuref.isValueAttached())
+            {
+                filename = docuRef.docuValue().fileName();
+
+                permission = new FileIoPermission(filename,'r');
+                permission.assert();
+
+                filter = ['Image Files','*.bmp;*.jpg;*.gif;*.jpeg'];
+                binData = new BinData();
+
+                if (filename)
+                {
+                    [path, nameOfFile, extention] = fileNameSplit(filename);
+                    {
+                        binData.loadFile(filename);
+
+                        image = binData.getData();
+                        validImageNotFound = false;
+                    }
+                }
+            }
+        }
+
+        return Image;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientInsuranceImage</Name>
+				<Source><![CDATA[
+    public Container getPatientInsuranceImage(RefRecId _patientInsuranceRecId)
+    {
+        Container           image;
+        DocuRef             docuref;
+        HMPatientInsurance  patientInsurance;
+
+        str fileName;
+        str extention, path, nameOfFile;
+        int _hwnd;
+
+        FilenameFilter  filter;
+        Bindata         binData;
+        boolean         validImageNotFound = true;
+
+        FileIoPermission permission;
+
+        PatientInsurance  = HMPatientInsurance::find(_patientInsuranceRecId);
+
+        select firstOnly  DocuRef
+    order by docuRef.RecId DESC
+    where
+        DocuRef.RefRecId     == PatientInsurance.RecId &&
+        docuRef.RefTableId   == PatientInsurance.TableId &&
+        docuRef.RefCompanyId == curext() &&
+        validImageNotFound;
+        {
+            if (docuref.isValueAttached())
+            {
+                filename            =   DocuRef.docuValue().fileName();
+
+                permission = new FileIoPermission(filename,'r');
+                permission.assert();
+
+                filter = ['Image Files','*.bmp;*.jpg;*.gif;*.jpeg'];
+                binData = new BinData();
+
+                if (filename)// && WinAPI::fileExists(filename))
+                {
+                    [path, nameOfFile, extention] = fileNameSplit(filename);
+                    /*   if (extention == '.bmp' ||
+                    extention == '.jpg' ||
+                    extention == '.gif' ||
+                    extention == '.jpeg')*/
+                    {
+                        binData.loadFile(filename);
+
+                        image = binData.getData();
+                        validImageNotFound = false;
+                    }
+                }
+            }
+        }
+
+        return Image;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertClaimDiagnosis</Name>
+				<Source><![CDATA[
+    public void insertClaimDiagnosis(RefRecId _appointmentRecId, str _caseId)
+    {
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        str primary;
+
+        container   conResponse, conDiagnosis;
+
+        boolean     ret;
+        int         containerSize, counter = 3, indexValue,indexPrimary;
+        //5637155826
+        ret = appHelper.callPostWebAPI('api/PatientEncounter/getPatientDiagnosis', "{\"AxAppoitnmentRefRecId\":\"" + int642str(_appointmentRecId) +"\",\"currentPage\":\"1\",\"CaseId\":\""+ _caseId+"\"}");
+
+        if(ret)
+        {
+            conResponse = appHelper.parmRecordsCon();
+        }
+
+        containerSize = conLen(conResponse);
+
+        while (containerSize > counter)
+        {
+            counter += 1;
+
+            conDiagnosis    = conPeek(conResponse, counter);
+            indexValue      = conFind(conDiagnosis, "ICDCode");
+            indexPrimary    = conFind(conDiagnosis, "Primary");
+
+            if (indexValue)
+            {
+                switch (counter)
+                {
+                    case 4:
+                        primary = conPeek(conDiagnosis, indexPrimary + 1);
+                        if(primary == "1")
+                        claimHeader.Code1   = conPeek(conDiagnosis, indexValue + 1);
+                        else
+                        claimHeader.Code2   = conPeek(conDiagnosis, indexValue + 1);
+                        break;
+
+                    case 5:
+                    if(claimHeader.Code2 == "")
+                        claimHeader.Code2   = conPeek(conDiagnosis, indexValue + 1);
+                        else
+                        claimHeader.Code3   = conPeek(conDiagnosis, indexValue + 1);
+                        break;
+
+                    case 6:
+                    if(claimHeader.Code3 == "")
+                        claimHeader.Code3   = conPeek(conDiagnosis, indexValue + 1);
+                        else
+                        claimHeader.Code4   = conPeek(conDiagnosis, indexValue + 1);
+                        break;
+
+                    case 7:
+                    if(claimHeader.Code4 == "")
+                      claimHeader.Code4   = conPeek(conDiagnosis, indexValue + 1);
+                        else
+                        claimHeader.Code5   = conPeek(conDiagnosis, indexValue + 1);
+                        break;
+                    case 8:
+                    if(claimHeader.Code5 == "")
+                        claimHeader.Code5   = conPeek(conDiagnosis, indexValue + 1);
+                        else
+                        claimHeader.Code6   = conPeek(conDiagnosis, indexValue + 1);
+                        break;
+
+                    case 9:
+                    if(claimHeader.Code6 == "")
+                        claimHeader.Code6   = conPeek(conDiagnosis, indexValue + 1);
+                        break;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertClaimNarration</Name>
+				<Source><![CDATA[
+    private String10  insertClaimNarration(RefRecId _appointmentRecId, str _caseId,str text, str textType)
+    {
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container   conResponse, conNarrationCommnets;
+        boolean     ret;
+        int         containerSize, counter = 3, indexValue;
+        str         Comments,returnComments;
+
+        HMToken     token = HMParameters::find().AuthorizationToken;
+
+        switch(textType)
+        {
+            case "finding":
+                ret = appHelper.callPostWebAPI('api/PatientEncounter/getFindingClinicalTemplate', "{\"AxAppoitnmentRefRecId\":\"" + int642str(_appointmentRecId) +"\",\"CaseId\":\""+ _caseId +"\",\"searchOrder\":\""+ text +"\"}","Authorization: "+token+"" );
+                break;
+
+            case "section":
+                ret = appHelper.callPostWebAPI('api/PatientEncounter/getFindingClinicalTemplate', "{\"AxAppoitnmentRefRecId\":\"" + int642str(_appointmentRecId) +"\",\"CaseId\":\""+ _caseId +"\",\"templateSection\":\""+ text +"\"}","Authorization: "+token+"" );
+                break;
+
+            case "template":
+                ret = appHelper.callPostWebAPI('api/PatientEncounter/getFindingClinicalTemplate', "{\"AxAppoitnmentRefRecId\":\"" + int642str(_appointmentRecId) +"\",\"CaseId\":\""+ _caseId +"\",\"template\":\""+ text +"\"}","Authorization: "+token+"" );
+                break;
+            case "progressnotes":
+                ret = appHelper.callPostWebAPI('api/PatientCase/getCaseNotes', "{\"CaseId\":\"" + _caseId +"\"}","Authorization: "+token+"" );
+                break;
+        }
+
+
+        if(ret)
+        {
+            conResponse = appHelper.parmRecordsCon();
+        }
+
+        containerSize = conLen(conResponse);
+
+        while (containerSize > counter)
+        {
+            counter += 1;
+
+            conNarrationCommnets    = conPeek(conResponse, counter);
+            if(textType == "progressnotes")
+            {
+                indexValue      = conFind(conNarrationCommnets, "NoteText");
+            }
+            else
+            {
+                indexValue      = conFind(conNarrationCommnets, "Comments");
+            }
+
+            if (indexValue)
+            {
+                Comments =  conPeek(conNarrationCommnets, indexValue + 1) ;
+                if(counter > 4)
+                {
+                    returnComments = returnComments+ "/n" + Comments;
+                }
+                else
+                {
+                    returnComments = Comments;
+                }
+            }
+        }
+
+        return returnComments;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemDescription</Name>
+				<Source><![CDATA[
+    private EcoResDescription itemDescription(ItemId _itemId)
+    {
+        EcoResDescription description;
+        HMInventTable hmInventTable;
+        InventTable inventTable;
+
+        select DIN from hmInventTable
+        join * from inventTable
+            where hmInventTable.InventTable == _itemId
+            && inventTable.ItemId == _itemId;
+
+        description = inventTable.itemDescriptionOrName();
+
+        return description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paymentReference</Name>
+				<Source><![CDATA[
+    private str paymentReference(CustInvoiceJour custInvoiceJour)
+    {
+        CustSettlement  settlement;
+        CustTrans       custTransInvoice;
+        str             paymReference;
+
+        while select Recid from settlement
+        where settlement.OffsetRecid == custInvoiceJour.custTrans().RecId
+        join PaymReference from custTransInvoice
+        where settlement.TransCompany == custTransInvoice.dataAreaId
+        && settlement.TransRecId == custTransInvoice.RecId
+        && settlement.AccountNum == custTransInvoice.AccountNum
+        {
+            paymReference += custTransInvoice.PaymReference + '; ';
+        }
+
+        return paymReference;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        str department,significant;
+
+        HMClaimAdministrationFormContract   dataContract;
+        HMResourceSchedulingAppointment     appointment;
+        HMInsuranceCarrier                  carrier;
+        HMPatientInsurance                  patientInsurance;
+        HMInsuranceContractClassOrPlans     plan;
+        HMTPA                               TPA;
+        HMPatient                           patient;
+        DirPerson                           person;
+        HMCase                              appointmentCase;
+        HMCaseTrans                         caseTrans;
+        HMResourceSchedulingTypeCode        appointmentSchedulingType;
+        HMResourceSchedulingPlanningObject  planningObject;
+        HMResourceMaster                    resourceMaster;
+        HMBookingOrigin                     bookingOrigin;
+        HMResourceSchedulingPlanningObject  planning;
+        HMOrganizationalUnit                organizationalUnit;
+        HMSpecialtyCode                     specialtyCode;
+
+        HMPatientEncounter                  hmPatientEncounter;
+        Map                                 map;
+
+        dataContract                = this.parmDataContract() as HMClaimAdministrationFormContract;
+        appointment                 = hmResourceSchedulingAppointment::find(dataContract.parmAppointmentRecId());
+        appointmentCase             = HMCase::find(dataContract.parmCaseRecId());
+
+        if (appointment)
+        {
+            patientInsurance            = HMPatientInsurance::find(appointment.HMPatientInsurance);
+            appointmentSchedulingType   = HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode);
+            planningObject              = HMResourceSchedulingPlanningObject::find(appointment.HMResourceSchedulingPlanningObject);
+            resourceMaster              = HMResourceMaster::find(planningObject.HMResourceMaster);
+        }
+        else if (appointmentCase)
+        {
+            patientInsurance            = HMPatientInsurance::find(appointmentCase.HMPatientInsurance);
+            resourceMaster              = HMResourceMaster::find(appointmentCase.HMResourceMaster);
+        }
+
+        carrier                     = patientInsurance.getCarrier();
+        TPA                         = patientInsurance.getTPA();
+        patient                     = HMPatient::find(patientInsurance.HMPatient);
+        person                      = DirPerson::find(patient.DirPartyTable);
+        plan                        = HMInsuranceContractClassOrPlans::find(patientInsurance.HMInsuranceContractClassOrPlans);
+
+        try
+        {
+
+            ttsBegin;
+            claimHeader.clear();
+            claimHeader.ProviderName            = "Bupa Clinic";
+            claimHeader.InsuranceCompanyName    = carrier.Name;
+            claimHeader.TPAName                 = TPA.Name;
+            claimHeader.PatientName             = person.Name;
+            claimHeader.MRNNumber               = patient.getMRN();
+            claimHeader.PlanName                = plan.HMContractClassName;
+            claimHeader.PatientInsuranceImage   = this.getPatientInsuranceImage(PatientInsurance.RecId);
+            claimHeader.PatientImage            = this.getPatientIdentificationImage(patient.RecId);
+            claimHeader.OutPatient              = "Yes";
+
+            if (appointment)
+            {
+                claimHeader.DateOfAppointment       = date2str(appointment.AppointmentDate, 123, 2, 1, 2, 1, 4);
+                claimHeader.DateOfVisit             = date2str(appointment.AppointmentDate, 123, 2, 1, 2, 1, 4);
+                appointmentCase = HMCase::find(appointment.HMCase);
+            }
+            else if (appointmentCase)
+            {
+                claimHeader.emergency = NoYes::Yes;
+                claimHeader.DateOfAppointment       = date2str(DateTimeUtil::date(appointmentCase.createdDateTime), 123, 2, 1, 2, 1, 4);
+                claimHeader.DateOfVisit             = date2str(DateTimeUtil::date(appointmentCase.createdDateTime), 123, 2, 1, 2, 1, 4);
+            }
+
+            claimHeader.Department              = enum2str(appointmentCase.HMCaseType);
+
+            if (person.MaritalStatus == DirPersonMaritalStatus::Single)
+            {
+                claimHeader.single = NoYes::Yes;
+            }
+
+            if (person.MaritalStatus == DirPersonMaritalStatus::Married)
+            {
+                claimHeader.Married = NoYes::Yes;
+            }
+
+            if (appointmentSchedulingType.HMScheduleType == HMScheduleType::FollowUp)
+            {
+                claimHeader.FollowUpOrRefill = NoYes::Yes;
+            }
+            if (appointmentSchedulingType.HMScheduleType == HMScheduleType::New)
+            {
+                claimHeader.NewVisit        = NoYes::Yes;
+            }
+            if (appointment.HMBookingOrigin)
+            {
+                bookingOrigin = HMBookingOrigin::find(appointment.HMBookingOrigin);
+
+                if (bookingOrigin.HMAppointmentType == HMAppointmentType::WalkIn)
+                {
+                    claimHeader.WalkIn          = NoYes::Yes;
+                }
+            }
+
+            if (appointment.Referral)
+            {
+                claimHeader.Referral          = NoYes::Yes;
+            }
+
+            if (resourceMaster)
+            {
+                claimHeader.PhysicianName = resourceMaster.Description;
+            }
+
+            if(HMParameters::find().ServiceIntegrateEnable)
+            {
+                hmPatientEncounter = new HMPatientEncounter();
+                map = hmPatientEncounter.getEncounterVitals(appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID), appointment.RecId);
+
+                if (map != null)
+                {
+                    claimHeader.Temp = map.exists(1) ? map.lookup(1) : "";
+                    claimHeader.BP = map.exists(3) ? map.lookup(3) : "";
+                    claimHeader.Pulse = map.exists(2) ? map.lookup(2) : "";
+                }
+
+                claimHeader.CheifComplaint = HMClaimClinicalDataHelper::getCheifComplaintFromCase(appointment.RecId, appointmentCase.CRMCaseRefID);
+                // claimHeader.DurationOfIllness = HMClaimClinicalDataHelper::getDurationOfIllnessFromCase(appointment.RecId, appointmentCase.CRMCaseRefID);
+
+                this.insertClaimDiagnosis(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID));
+
+                if (appointment)
+                {
+                    if (appointment.HMPatientInsurance)
+                    {
+                        planning            = HMResourceSchedulingPlanningObject::find(appointment.HMResourceSchedulingPlanningObject);
+                        organizationalUnit  = HMOrganizationalUnit::find(planning.HMOrganizationalUnit);
+                        if (organizationalUnit)
+                        {
+                            specialtyCode       = HMSpecialtyCode::find(organizationalUnit.HMSpecialtyCode);
+                            if (specialtyCode.HMClaimFormTemplate == HMClaimFormTemplate::DCAF)
+                            {
+                                claimHeader.ProgressNotes =  this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"" , "progressnotes");
+                                claimHeader.MedicalHistory = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Medical History"       , "section");
+                                claimHeader.DurationOfIllness = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Duration of Illness"   , "finding");
+
+                                claimHeader.LowerLeft = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Lower Left"       , "section");
+                                claimHeader.LowerRight = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Lower Right"       , "section");
+                                claimHeader.UpperLeft = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Upper Left"       , "section");
+                                claimHeader.UpperRight = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Upper Right"       , "section");
+
+                            }
+                            else
+                            {
+                                significant =           this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Sign & Symptoms"  , "finding");
+                                significant += "/n"+    this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Medication History"   , "finding");
+
+                                if(significant == "/n")
+                                {
+                                    significant =    this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Progress Note"    , "finding");
+                                }
+
+                                claimHeader.SignificantFindings = significant;
+                            }
+                        }
+                    }
+                }
+                else if (appointmentCase)
+                {
+                    organizationalUnit  = HMOrganizationalUnit::find(appointmentCase.Clinic);
+                    specialtyCode       = HMSpecialtyCode::find(organizationalUnit.HMSpecialtyCode);
+                    if (specialtyCode.HMClaimFormTemplate == HMClaimFormTemplate::DCAF)
+                    {
+                        claimHeader.ProgressNotes =  this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"" , "progressnotes");
+                        claimHeader.MedicalHistory = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Medical History"       , "section");
+                        claimHeader.DurationOfIllness = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Duration of Illness"   , "finding");
+
+                        claimHeader.LowerLeft = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Lower Left"       , "section");
+                        claimHeader.LowerRight = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Lower Right"       , "section");
+                        claimHeader.UpperLeft = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Upper Left"       , "section");
+                        claimHeader.UpperRight = this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Upper Right"       , "section");
+
+                    }
+                    else
+                    {
+                        significant =           this.insertClaimNarration(appointment.RecId,  appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Sign & Symptoms"  , "finding");
+                        significant += "/n"+    this.insertClaimNarration(appointment.RecId,  appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Medication History"   , "finding");
+                        if(significant == "/n")
+                        {
+                            significant =    this.insertClaimNarration(appointment.RecId, appointmentCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(appointmentCase.CRMCaseRefID) ,"Progress Note"    , "finding");
+                        }
+                        claimHeader.SignificantFindings = significant;
+                    }
+                }
+            }
+
+            if (dataContract.parmAppointmentRecId())
+            {
+                while select caseTrans
+                where caseTrans.HMResourceSchedulingAppointment == appointment.RecId
+                    && caseTrans.HMServiceStatus != HMServiceStatus::Cancelled
+                {
+                    claimLine.clear();
+
+                    claimLine.ItemCode          = caseTrans.ItemId;
+                    claimLine.ItemDescription   = this.itemDescription(caseTrans.ItemId);
+                    claimLine.Quantity          = caseTrans.Qty;
+                    claimLine.Type              = InventTable::find(caseTrans.ItemId).itemGroup().Name;
+                    claimLine.insert();
+                }
+            }
+            else if (dataContract.parmCaseRecId())
+            {
+                while select caseTrans
+                where caseTrans.HMCase == dataContract.parmCaseRecId()
+                    && caseTrans.HMServiceStatus != HMServiceStatus::Cancelled
+                {
+                    claimLine.clear();
+
+                    claimLine.ItemCode          = caseTrans.ItemId;
+                    claimLine.ItemDescription   = this.itemDescription(caseTrans.ItemId);
+                    claimLine.Quantity          = caseTrans.Qty;
+                    claimLine.Type              = InventTable::find(caseTrans.ItemId).itemGroup().Name;
+                    claimLine.insert();
+                }
+            }
+            claimHeader.insert();
+
+            ttsCommit;
+        }
+        catch (Exception::Error)
+        {
+            ttsAbort;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

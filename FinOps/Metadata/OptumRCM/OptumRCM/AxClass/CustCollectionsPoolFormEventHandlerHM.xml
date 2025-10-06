@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>CustCollectionsPoolFormEventHandlerHM</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class which implements manager lookup logic.
+/// </summary>
+class CustCollectionsPoolFormEventHandlerHM
+{
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>CustCollectionsPool_HMManager_OnLookup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Implement the lookup logic for for HMManager.
+    /// </summary>
+    /// <param name="sender">FormControl</param>
+    /// <param name="e">FormControlEventArgs</param>
+    [FormControlEventHandler(formControlStr(CustCollectionsPool, CustCollectionsPool_HMManager), FormControlEventType::Lookup)]
+    public static void CustCollectionsPool_HMManager_OnLookup(FormControl sender, FormControlEventArgs e)
+    {
+        SysReferenceTableLookup sysTableLookup;
+        Query                   query = new Query();
+        QueryBuildDataSource    qbdsDirPartyTable, qbdsDirPartyRelationship, qbdsCustCollectionsAgent;
+
+        qbdsDirPartyTable = query.addDataSource(tableNum(DirPartyTable));
+        qbdsDirPartyRelationship = qbdsDirPartyTable.addDataSource(tableNum(DirPartyRelationship));
+        qbdsDirPartyRelationship.joinMode(JoinMode::InnerJoin);
+        qbdsDirPartyRelationship.addLink(fieldNum(DirPartyTable,RecId),fieldNum(DirPartyRelationship,ChildParty));
+        qbdsCustCollectionsAgent = qbdsDirPartyRelationship.addDataSource(tableNum(CustCollectionsAgent));
+        qbdsCustCollectionsAgent.joinMode(JoinMode::InnerJoin);
+        qbdsCustCollectionsAgent.addLink(fieldNum(DirPartyRelationship,RecId),fieldNum(CustCollectionsAgent,DirPartyRelationship));
+        qbdsCustCollectionsAgent.addRange(fieldNum(CustCollectionsAgent, HMIsManager)).value(SysQuery::value(NoYes::Yes));
+
+        sysTableLookup = SysReferenceTableLookup::newParameters(tableNum(DirPartyTable), sender);
+
+        sysTableLookup.parmQuery(query);
+        sysTableLookup.addLookupfield(fieldNum(DirPartyTable, Name));
+
+        sysTableLookup.performFormLookup();
+
+        FormControlCancelableSuperEventArgs cancelableSuperEventArgs = e as FormControlCancelableSuperEventArgs;
+        cancelableSuperEventArgs.CancelSuperCall();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SelectCriteriaCopy1_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormControlEventHandler(formControlStr(CustCollectionsPool, SelectCriteriaCopy1), FormControlEventType::Clicked)]
+    public static void SelectCriteriaCopy1_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun formRun = sender.formRun();
+        FormDataSource custCollectionsPool_ds = formRun.dataSource(formDataSourceStr(CustCollectionsPool, CustCollectionsPool)) as FormDataSource;
+        CustCollectionsPool custCollectionsPool = custCollectionsPool_ds.cursor();
+
+        if (custCollectionsPool.RecId)
+        {
+            custCollectionsPool.HMIsCriteriaChanged = NoYes::Yes;
+            custCollectionsPool.update();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>HMResetCriteria_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormControlEventHandler(formControlStr(CustCollectionsPool, HMResetCriteria), FormControlEventType::Clicked)]
+    public static void HMResetCriteria_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        FormRun             formRun = sender.formRun();
+        FormDataSource      custCollectionsPool_ds = formRun.dataSource(formDataSourceStr(CustCollectionsPool, CustCollectionsPool)) as FormDataSource;
+        CustCollectionsPool custCollectionsPool = custCollectionsPool_ds.cursor();
+        DialogButton        diagBut;
+        str                 strMessage = "@Optum:ResetPoolCriteriaMsg";
+        str                 strTitle = "Title";
+        int                 position = custCollectionsPool_ds.getPosition();
+
+        try
+        {
+            if (custCollectionsPool.RecId)
+            {
+                diagBut = Box::yesNo(strFmt(strMessage, custCollectionsPool.Name), DialogButton::No, strTitle);
+
+                if (diagBut == DialogButton::Yes)
+                {
+                    ttsbegin;
+
+                    custCollectionsPool.ClaimQueryPacked = CustCollectionsPool::defaultClaimQuery().pack();
+                    custCollectionsPool.update();
+
+                    ttscommit;
+
+                    custCollectionsPool_ds.research(true);
+                }
+                else
+                {
+                    return;
+                }
+
+            }
+
+        }
+        catch (Exception::Deadlock)
+        {
+            retry;
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() ==  0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                throw Exception::UpdateConflict;
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,849 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>mzkCustCollectionsWorkspaceHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// <c>mzkCustCollectionsWorkspaceHelper</c> contains static helper mehtods used in the <c>CustomerCollectionsWorkspace</c> form and its form parts
+/// </summary>
+class mzkCustCollectionsWorkspaceHelper
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getFirstNonZeroBalanceAgingPeriod</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the <c>CustAgingLinePostition</c> of the first non zero balance period
+    /// </summary>
+    /// <param name = "_custTable"><c>CustTable</c> buffer</param>
+    /// <param name = "_agingPeriodDefinition">Aging period definition name</param>
+    /// <param name = "_company">The company to lookup the aging line postition in</param>
+    /// <returns>The line postion of the first non-zero aging period</returns>
+    public static CustAgingLinePosition getFirstNonZeroBalanceAgingPeriod(CustTable _custTable, CustVendReportName _agingPeriodDefinition, SelectableDataArea _company = curExt())
+    {
+        mzkCustAging customerAging;
+        CustAgingLinePosition agingPeriodPosition;
+
+        // Get the last column that has a value
+        select firstonly crosscompany FirstNonzeroBalancePeriod
+            from customerAging
+            where customerAging.CustTable == _custTable.AccountNum &&
+                  customerAging.StatRepInterval == _agingPeriodDefinition &&
+                  customerAging.DataAreaId == _company;
+
+        if (customerAging)
+        {
+            agingPeriodPosition = customerAging.FirstNonzeroBalancePeriod;
+        }
+        else
+        {
+            agingPeriodPosition = 0;
+        }
+
+        return agingPeriodPosition;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateAgingIndicators</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Reterives all the aging indicators for an aging period definition in a company
+    /// </summary>
+    /// <param name = "_agingPeriodDefinition">The aging period definition to get the aging indicators from</param>
+    /// <param name = "_company">The aging period is in</param>
+    /// <returns>Array of aging indicators</returns>
+    public static Array populateAgingIndicators(CustVendReportName _agingPeriodDefinition, SelectableDataArea _company = curExt())
+    {
+        StatRepIntervalLine agingPeriod;
+        int lineNumber = 1;
+        
+        Array agingIndicators = new Array(Types::Enum);
+        
+        while select crosscompany AgingIndicator, LineNum, Name
+            from agingPeriod
+            order by agingPeriod.LineNum desc
+            where agingPeriod.Name == _agingPeriodDefinition &&
+                    agingPeriod.DataAreaId == _company
+        {
+            agingIndicators.value(lineNumber, agingPeriod.AgingIndicator);
+            lineNumber++;
+        }
+
+        return agingIndicators;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addSmmActivitiesToOriginalPoolQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds query for smmactivities to the provided query.
+    /// </summary>
+    /// <param name="_listPageHelper">
+    /// The <c>CustCollectionsListPageHelper</c> that contains the pool query
+    /// </param>
+    /// <param name ="__copyListPageHelperDataSource">copy the the query from the pool</param>
+    /// <returns>
+    /// The passed query with the <c>smmActivityParentLinkTable</c>, <c>smmActivities</c> and <c>CustTable</c> tables added on.
+    /// </returns>
+    public static Query addSmmActivitiesToOriginalPoolQuery(CustCollectionsIListPageHelper _listPageHelper, boolean _copyListPageHelperDataSource = true)
+    {
+        Query query = new Query();
+
+        query.allowCrossCompany(_listPageHelper.isCrossCompany());
+        
+        QueryBuildDataSource custTableDs = query.addDataSource(tableNum(CustTable), tableStr(CustTable));
+
+        if (_copyListPageHelperDataSource)
+        {
+            SysQuery::copyDataSource(_listPageHelper.getCurrentPoolQuery().dataSourceTable(tableNum(CustTable)), custTableDs);
+        }
+        else
+        {
+            QueryBuildDataSource dirPartyTableDS = custTableDs.addDataSource(tableNum(DirPartyTable));
+            dirPartyTableDS.addLink(fieldNum(CustTable, Party), fieldNum(DirPartyTable, RecId));
+            dirPartyTableDS.joinMode(JoinMode::InnerJoin);
+        }
+        
+        // Add queries to display additional information pertinent to this list page
+        QueryBuildDataSource dirPartyPostalAddressViewDs = custTableDs.addDataSource(tableNum(DirPartyPostalAddressView), tableStr(DirPartyPostalAddressView));
+        dirPartyPostalAddressViewDs.addLink(fieldNum(CustTable, Party), fieldNum(DirPartyPostalAddressView, Party));
+        dirPartyPostalAddressViewDs.joinMode(JoinMode::OuterJoin);
+
+        CustCollectionsListPageHelper::updateDirPartyPostalAddressView(query);
+        
+        QueryBuildDataSource smmActivityParentLinkTableDs = custTableDs.addDataSource(tableNum(smmActivityParentLinkTable), tableStr(smmActivityParentLinkTable));
+        smmActivityParentLinkTableDs.addLink(fieldNum(CustTable, RecId), fieldNum(smmActivityParentLinkTable, RefRecId));
+        smmActivityParentLinkTableDs.addLink(fieldNum(CustTable,TableId), fieldNum(smmActivityParentLinkTable, RefTableId));
+        smmActivityParentLinkTableDs.joinMode(JoinMode::InnerJoin);
+        smmActivityParentLinkTableDs.fetchMode(QueryFetchMode::One2One);
+
+        QueryBuildRange range = SysQuery::findOrCreateRange(smmActivityParentLinkTableDs, fieldNum(smmActivityParentLinkTable, ParentType));
+        range.value(SysQuery::value(smmActivityParentType::Collections));
+        range.status(RangeStatus::Hidden);
+
+        QueryBuildDataSource smmActivitiesDs = smmActivityParentLinkTableDs.addDataSource(tableNum(smmActivities), tableStr(smmActivities));
+        smmActivitiesDs.addLink(fieldNum(smmActivityParentLinkTable, ActivityNumber), fieldNum(smmActivities, ActivityNumber));
+        smmActivitiesDs.addAllFields(tableStr(smmActivities));
+        smmActivitiesDs.joinMode(JoinMode::InnerJoin);
+        smmActivitiesDs.fetchMode(QueryFetchMode::One2One);
+        
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addOpenPaymentsQueryToOriginalPoolQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds the open payment query to the currently selected pool query
+    /// </summary>
+    /// <param name = "_listPageHelper">The <c>CustcollectionsIListPageHelper</c> to get the query from</param>
+    /// <param name = "_copyListPageHelperDataSource">True if the data sources form the list page helper query</param>
+    /// <returns>The query for open payments</returns>
+    public static Query addOpenPaymentsQueryToOriginalPoolQuery(CustCollectionsIListPageHelper _listPageHelper, boolean _copyListPageHelperDataSource = true)
+    {
+        Query query = new Query();
+
+        query.allowCrossCompany(_listPageHelper.isCrossCompany());
+
+        QueryBuildDataSource custTransOpenDS = query.addDataSource(tableNum(CustTransOpen), tableStr(CustTransOpen));;
+
+        QueryBuildDataSource custTransDS = custTransOpenDS.addDataSource(tableNum(CustTrans));
+        custTransDS.addLink(fieldNum(CustTransOpen, AccountNum), fieldNum(CustTrans, AccountNum));
+        custTransDS.addLink(fieldNum(CustTransOpen, RefRecId), fieldNum(CustTrans, RecId));
+        custTransDS.addRange(fieldNum(CustTrans, TransType)).value(SysQuery::value(LedgerTransType::Payment));
+        custTransDS.joinMode(JoinMode::InnerJoin);
+
+        QueryBuildDataSource custTableDs = custTransDS.addDataSource(tableNum(CustTable), tableStr(CustTable));
+        custTableDs.addLink(fieldNum(CustTrans, AccountNum), fieldNum(CustTable, AccountNum));
+        custTableDs.joinMode(JoinMode::InnerJoin);
+
+        if (_copyListPageHelperDataSource)
+        {
+            SysQuery::copyDataSource(_listPageHelper.getCurrentPoolQuery().dataSourceTable(tableNum(CustTable)), custTableDs);
+        }
+        else
+        {
+            QueryBuildDataSource dirPartyTableDS = custTableDs.addDataSource(tableNum(DirPartyTable));
+            dirPartyTableDS.addLink(fieldNum(CustTable, Party), fieldNum(DirPartyTable, RecId));
+            dirPartyTableDS.joinMode(JoinMode::InnerJoin);
+        }
+        
+        // Add queries to display additional information pertinent to this list page
+        QueryBuildDataSource dirPartyPostalAddressViewDs = custTableDs.addDataSource(tableNum(DirPartyPostalAddressView), tableStr(DirPartyPostalAddressView));
+        dirPartyPostalAddressViewDs.addLink(fieldNum(CustTable, Party), fieldNum(DirPartyPostalAddressView, Party));
+        dirPartyPostalAddressViewDs.joinMode(JoinMode::OuterJoin);
+
+        CustCollectionsListPageHelper::updateDirPartyPostalAddressView(query);
+        
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildCustomerAndContactQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds the query used to retrieve the customer and their contact
+    /// </summary>
+    /// <param name = "_ds">The <c>FormDataSource</c> to apply query to</param>
+    /// <param name = "_dirPartyTableContactDsName">Name for the contact table in the query</param>
+    /// <param name = "_dirPartyTableCustDsName">Name for the custtable in the query</param>
+    /// <param name = "__onlyOnHoldCust">Filter to only customers on hold</param>
+    /// <param name = "_crossCompany">Is a cross company query</param>
+    /// <returns>The updated query</returns>
+    public static Query buildCustomerAndContactQuery(FormDataSource _ds, str _dirPartyTableContactDsName, str _dirPartyTableCustDsName, boolean _onlyOnHoldCust = false, boolean _crossCompany = false)
+    {
+        Debug::assert(_ds.table() == tableNum(CustTable));
+
+        Query query = _ds.query();
+
+        query.allowCrossCompany(_crossCompany);
+
+        QueryBuildDataSource custTableDs = query.dataSourceTable(tableNum(CustTable));
+
+        if (_onlyOnHoldCust)
+        {
+            custTableDs.addRange(fieldNum(CustTable, Blocked)).value(SysQuery::valueNot(enum2int(CustVendorBlocked::No)));
+        }
+        
+        // Add datasources necessary for viewing additional information pertinent to the collections process
+        QueryBuildDataSource dirPartyPostalAddressViewDs = custTableDs.addDataSource(tableNum(DirPartyPostalAddressView), tableStr(DirPartyPostalAddressView));
+        dirPartyPostalAddressViewDs.addLink(fieldNum(CustTable, Party), fieldNum(DirPartyPostalAddressView, Party));
+        dirPartyPostalAddressViewDs.joinMode(JoinMode::OuterJoin);
+        
+        CustCollectionsListPageHelper::updateDirPartyPostalAddressView(query);
+        
+        mzkCustCollectionsWorkspaceHelper::addContactQuery(query.dataSourceTable(tableNum(CustCollectionsContact)), _dirPartyTableContactDsName);
+
+        CustCollectionsListPageHelper::updateDirPartyContactInfoView(query);
+        
+        // Sort by customer name
+        query.dataSourceName(_dirPartyTableCustDsName).addOrderByField(fieldNum(DirPartyTable, Name));
+
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addContactQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds query datasources to provide contact information to the past in data source,  must already have <c>CustTable</c>
+    /// as a data source
+    /// </summary>
+    /// <param name = "_custCollectionsContactDs"><c>QueryBuildDataSource</c> created from <c>CustCollectionsContact</c></param>
+    /// <param name = "_dirPartyTableContactDsName">The name for the <c>DirPartyTable</c> related to <c>CustCollectionsContact</c></param>
+    public static void addContactQuery(QueryBuildDataSource _custCollectionsContactDs, str _dirPartyTableContactDsName)
+    {
+        _custCollectionsContactDs.addLink(fieldNum(CustTable, AccountNum), fieldNum(CustCollectionsContact, AccountNum));
+        _custCollectionsContactDs.joinMode(JoinMode::OuterJoin);
+        // This range is only present to hide the data source from the query form
+        _custCollectionsContactDs.addRange(fieldNum(CustCollectionsContact, RecId)).status(RangeStatus::Hidden);
+
+        QueryBuildDataSource contactPersonDs = _custCollectionsContactDs.addDataSource(tableNum(ContactPerson));
+        contactPersonDs.addLink(fieldNum(CustCollectionsContact, ContactPersonId), fieldNum(ContactPerson, ContactPersonId));
+        contactPersonDs.joinMode(JoinMode::OuterJoin);
+        // This range is only present to hide the data source from the query form
+        contactPersonDs.addRange(fieldNum(ContactPerson, RecId)).status(RangeStatus::Hidden);
+        
+        QueryBuildDataSource dirPartyTableContactDs = contactPersonDs.addDataSource(tableNum(DirPartyTable), _dirPartyTableContactDsName);
+        dirPartyTableContactDs.addLink(fieldNum(ContactPerson, Party), fieldNum(DirPartyTable, RecId));
+        dirPartyTableContactDs.joinMode(JoinMode::OuterJoin);
+        // This range is only present to hide the data source from the query form
+        dirPartyTableContactDs.addRange(fieldNum(DirPartyTable, RecId)).status(RangeStatus::Hidden);
+        
+        QueryBuildDataSource dirPartyContactInfoViewDs = contactPersonDs.addDataSource(tableNum(DirPartyContactInfoView), tableStr(DirPartyContactInfoView));
+        dirPartyContactInfoViewDs.addLink(fieldNum(ContactPerson, Party), fieldNum(DirPartyContactInfoView, Party));
+        dirPartyContactInfoViewDs.joinMode(JoinMode::OuterJoin);
+        // This range is only present to hide the data source from the query form
+        dirPartyContactInfoViewDs.addRange(fieldNum(DirPartyContactInfoView, Party)).status(RangeStatus::Hidden);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAgingBuckets</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the list of the aging buckts for the aging period definition
+    /// </summary>
+    /// <param name = "_listPageHelper"><c>CustCollectionsListPageHelper</c> object</param>
+    /// <param name = "_agingPeriodDefinition">Aging period definition</param>
+    /// <param name = "_company">Company to lookup the aging period buckets</param>
+    /// <returns><c>List</c> containing the aging period buckets in the company</returns>
+    public static List getAgingBuckets(CustCollectionsIListPageHelper _listPageHelper, CustVendReportName _agingPeriodDefinition, SelectableDataArea _company = curExt())
+    {
+        StatRepIntervalLine intervalLines;
+        List columns = new List(Types::Int64);
+
+        if(_listPageHelper.checkAgingPeriodValid(_agingPeriodDefinition))
+        {
+            while select crosscompany RecId from intervalLines
+                order by intervalLines.LineNum desc
+                where intervalLines.Name == _agingPeriodDefinition &&
+                      intervalLines.DataAreaId == _company
+            {
+                columns.addEnd(intervalLines.RecId);
+            }
+        }
+
+        return columns;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addCallerCompanyFilter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds company filter to the <c>FormDataSource</c>
+    /// </summary>
+    /// <param name = "_ds">A <c>FormDataSource</c> to add the company filter to</param>
+    /// <param name = "_company">The company to filter on</param>
+    public static void addCallerCompanyFilter(FormDataSource _ds, SelectableDataArea _company = curExt())
+    {
+        _ds.query().clearCompanyRange();
+        _ds.query().addCompanyRange(_company);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCallerCompanyFilter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retreives the company from the calling form
+    /// </summary>
+    /// <param name = "_callerFormRun">The calling form must implement interface <c>CustCollectionsIWorkspaceForm</c></param>
+    /// <returns>The DataAreaId from the calling object; default the current company</returns>
+    public static SelectableDataArea getCallerCompanyFilter(Object _callerFormRun)
+    {
+        if (_callerFormRun is CustCollectionsIWorkspaceFrom)
+        {
+            CustCollectionsIWorkspaceFrom form = _callerFormRun as CustCollectionsIWorkspaceFrom;
+            return form.parmCompany();
+        }
+
+        return curExt();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCallerSelectedAgingPeriod</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retreives the selected aging period form the calling form
+    /// </summary>
+    /// <param name = "_callerFormRun">The calling form must implement interface <c>CustCollectionsIAgingPeriodForm</c></param>
+    /// <returns>The selected aging period; or empty string if the caller does not implement the interface</returns>
+    public static CustVendReportName getCallerSelectedAgingPeriod(Object _callerFormRun)
+    {
+        if (_callerFormRun is CustCollectionsIWorkspaceFormPart)
+        {
+            CustCollectionsIWorkspaceFormPart form = _callerFormRun as CustCollectionsIWorkspaceFormPart;
+            return form.parmSelectedAgingPeriodDef();
+        }
+        else if (_callerFormRun is CustCollectionsICollectionManagerWorkspace)
+        {
+            CustCollectionsICollectionManagerWorkspace form = _callerFormRun as CustCollectionsICollectionManagerWorkspace;
+            return form.parmSelectedAgingPeriodDef();
+        }
+
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateFormPartFiltersFromCallerWorkspace</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the form parts filters based on the workspace object
+    /// </summary>
+    /// <param name = "_workspace">The workspace the form is being opened form; must inimplement <c>CustCollecstionsICollectionManagerWorkspace</c></param>
+    /// <param name = "_formPart">The form part to update the filters on; must <c>CustCollectionsIWorkspaceFormPart</c></param>
+    /// <returns>True if the company changed false otherwise</returns>
+    public static boolean updateFormPartFiltersFromCallerWorkspace(CustCollectionsICollectionManagerWorkspace _workspace, CustCollectionsIWorkspaceFormPart _formPart)
+    {
+        if (!_workspace)
+        {
+            throw error(strFmt("@AccountsReceivable:CustCollectionsWorkspaceHelperUpdateFilterError", varStr(_workspace), classStr(CustCollectionsICollectionManagerWorkspace)));
+        }
+        
+        if (!_formPart)
+        {
+            throw error(strFmt("@AccountsReceivable:CustCollectionsWorkspaceHelperUpdateFilterError", varStr(_formPart), classStr(CustCollectionsIWorkspaceFormPart)));
+        }
+
+        boolean companyChanged = _formPart.parmCompany() != _workspace.parmCompany();
+
+        _formPart.parmCompany(_workspace.parmCompany());
+        _formPart.parmCustAccountFilter(_workspace.parmCustAccount());
+        if (companyChanged)
+        {
+            _formPart.parmSelectedAgingPeriodDef(_workspace.parmSelectedAgingPeriodDef());
+        }
+
+        return companyChanged;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addOriginalPoolQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds the query from the current pool query from the <c>CustCollectionsListPageHelper</c>
+    /// </summary>
+    /// <param name = "_listPageHelper"><c>CustCollectionsListPageHelper</c> the pool query is built from</param>
+    /// <param name = "_selectedCustAging">The selected custaging definition</param>
+    /// <param name = "_custAgingDSName">Name for the <c>mzkCustAging</c> ds name in the built query</param>
+    /// <param name = "_custAgingLegalEntityName">Name for the <c>mzkCustAgingLegalEntityView</c> in the built query</param>
+    /// <param name = "_dirPartyTableContactDsName">Name for the <c>DirPartyTable</c> used for the contact name ds</param>
+    /// <param name = "_dirPartyTableCustDsName">Name for the <c>DirPartyTable</c> used for the name of the customer</param>
+    /// <returns><c>Query</c> built around the cust aging bool query from <c>CustCollectionsListPageHelper</c></returns>
+    public static Query addOriginalPoolQuery(CustCollectionsIListPageHelper _listPageHelper,
+        CustVendReportName _selectedCustAging,
+        str _custAgingDSName,
+        str _custAgingLegalEntityName,
+        str _dirPartyTableContactDsName,
+        str _dirPartyTableCustDsName)
+    {
+        Query query = _listPageHelper.getCurrentPoolQuery();
+        QueryBuildDataSource qbds;
+
+        query.allowCrossCompany(_listPageHelper.isCrossCompany());
+
+        mzkCustCollectionsWorkspaceHelper::buildCustAgingQuery(query, _selectedCustAging, _custAgingDSName, _custAgingLegalEntityName, _dirPartyTableContactDsName, _dirPartyTableCustDsName);
+
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildCustAgingQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds the query for cust aging
+    /// </summary>
+    /// <param name = "_query">The <c>Query</c> to update</param>
+    /// <param name = "_selectedCustAging">The selected custaging definition</param>
+    /// <param name = "_custAgingDSName">Name for the <c>mzkCustAging</c> ds name in the built query</param>
+    /// <param name = "_custAgingLegalEntityName">Name for the <c>mzkCustAgingLegalEntityView</c> in the built query</param>
+    /// <param name = "_dirPartyTableContactDsName">Name for the <c>DirPartyTable</c> used for the contact name ds</param>
+    /// <param name = "_dirPartyTableCustDsName">Name for the <c>DirPartyTable</c> used for the name of the customer</param>
+    public static void buildCustAgingQuery(Query _query,
+        CustVendReportName _selectedCustAging,
+        str _custAgingDSName,
+        str _custAgingLegalEntityName,
+        str _dirPartyTableContactDsName,
+        str _dirPartyTableCustDsName)
+    {
+        str selectedCustAgingFilter = SysQueryRangeUtil::literalFilterValue(_selectedCustAging);
+        
+        QueryBuildDataSource custTableDs = _query.dataSourceTable(tableNum(CustTable));
+        
+        // At this point we can be sure the mzkCustAging datasource exists on the query since it is part
+        // of the default pool criteria. Even if the datasource is "removed" from the query dialog, it
+        // remains as a disabled datasource.
+        
+        // If the pool does not contain a value for the aging period definition, set it here.
+        QueryBuildDataSource originalCustAgingDs = _query.dataSourceTable(tableNum(mzkCustAging));
+        SysQuery::findOrCreateRange(originalCustAgingDs, fieldNum(mzkCustAging, StatRepInterval)).value(selectedCustAgingFilter);
+        
+        // The pool query is all about filtering data so at this point those datasources should
+        // not be modified in any way; however, to display information on the form we need the
+        // same datasources. Add brand new datasources that match the form's datasource names
+        // in order to display the appropriate data.
+        
+        QueryBuildDataSource custAgingDs = _query.dataSourceName(_custAgingDsName);
+        if (!custAgingDs)
+        {
+            custAgingDs = custTableDs.addDataSource(tableNum(mzkCustAging), _custAgingDsName);
+            custAgingDs.addLink(fieldNum(CustTable, AccountNum), fieldNum(mzkCustAging, CustTable));
+            QueryBuildRange agingRange = SysQuery::findOrCreateRange(custAgingDs, fieldNum(mzkCustAging, StatRepInterval));
+            agingRange.value(selectedCustAgingFilter);
+            agingRange.status(RangeStatus::Hidden);
+            custAgingDs.joinMode(JoinMode::OuterJoin);
+            
+            QueryBuildDataSource custAgingLegalEntityDs = custAgingDs.addDataSource(tableNum(mzkCustAgingLegalEntityView), _custAgingLegalEntityName);
+            custAgingLegalEntityDs.addLink(fieldNum(mzkCustAging, RecId), fieldNum(mzkCustAgingLegalEntityView, CustAging), _custAgingDsName);
+            custAgingLegalEntityDs.joinMode(JoinMode::OuterJoin);
+        }
+        
+        // Add datasources necessary for viewing additional information pertinent to the collections process
+        QueryBuildDataSource dirPartyPostalAddressViewDs = custTableDs.addDataSource(tableNum(DirPartyPostalAddressView), tableStr(DirPartyPostalAddressView));
+        dirPartyPostalAddressViewDs.addLink(fieldNum(CustTable, Party), fieldNum(DirPartyPostalAddressView, Party));
+        dirPartyPostalAddressViewDs.joinMode(JoinMode::OuterJoin);
+        
+        CustCollectionsListPageHelper::updateDirPartyPostalAddressView(_query);
+        
+        mzkCustCollectionsWorkspaceHelper::addContactQuery(custTableDs.addDataSource(tableNum(CustCollectionsContact), tableStr(CustCollectionsContact)), _dirPartyTableContactDsName);
+
+        CustCollectionsListPageHelper::updateDirPartyContactInfoView(_query);
+        
+        // Sort by customer name
+        _query.dataSourceName(_dirPartyTableCustDsName).addOrderByField(fieldNum(DirPartyTable, Name));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runMenuForCompany</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Changes the global company context and then runs the menu item in that company
+    /// </summary>
+    /// <param name = "_args"><c>Args</c> to be passed to the menue item</param>
+    /// <param name = "_menuFunction"><c>xMenuFunction</c> to run</param>
+    /// <param name = "_company">The company to change context into; Default current company</param>
+    public static void runMenuForCompany(Args _args, xMenuFunction _menuFunction, SelectableDataArea _company = curExt())
+    {
+        mzkCustCollectionsWorkspaceHelper::changeCompanyContext(_company);
+
+        _menuFunction.run(_args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkCustomerIsInPool</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Checks to see if a customer is in the selected pool
+    /// </summary>
+    /// <param name = "_listPageHelper">A <c>CustCollectionsIListPageHelper</c> object</param>
+    /// <param name = "_customerFilter">The customer account to check for</param>
+    /// <param name = "_company">The company to check in</param>
+    /// <returns>True if the customer is in the pool; false otherwise</returns>
+    public static boolean checkCustomerIsInPool(CustCollectionsIListPageHelper _listPageHelper, CustAccount _customerFilter, SelectableDataArea _company)
+    {
+        Query q = _listPageHelper.getCurrentPoolQuery();
+
+        if (_listPageHelper.isCrossCompany() && _company != curExt())
+        {
+            q.allowCrossCompany(_listPageHelper.isCrossCompany());
+            q.addCompanyRange(_company);
+        }
+
+        QueryBuildDataSource custDS = q.dataSourceTable(tableNum(CustTable));
+
+        QueryBuildDataSource custTableDS = custDS.addDataSource(tableNum(CustTable));
+        custTableDS.addLink(fieldNum(CustTable, AccountNum), fieldNum(CustTable, AccountNum));
+        custTableDS.joinMode(JoinMode::ExistsJoin);
+        custTableDS.addRange(fieldNum(CustTable, AccountNum)).value(SysQuery::value(_customerFilter));
+
+        QueryRun qr = new QueryRun(q);
+
+        return qr.next();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyCustAccountFilter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Applies the customer account filter to the data source
+    /// </summary>
+    /// <param name = "_listPageHelper"><c>CustCollectionsIListPageHelper</c> to get the pool query from</param>
+    /// <param name = "_ds">The <c>FormDataSource</c> to apply the pool query to</param>
+    /// <param name = "_accountNumField">The field id of the account num field in the data source</param>
+    /// <param name = "_company">The company to perform queryies in</param>
+    /// <param name = "_poolFilterSelected">True if pool filter selected; false if pool filter cleared</param>
+    /// <param name = "_singleAccountFilter">The customer account to filter to if filtering to a single customer; empty if not filtering to single customer</param>
+    public static void applyCustAccountFilter(CustCollectionsIListPageHelper _listPageHelper, 
+        FormDataSource _ds, 
+        FieldId _accountNumField, 
+        SelectableDataArea _company,
+        boolean _poolFilterSelected, 
+        CustAccount _singleAccountFilter)
+    {
+        boolean singleAccountPassedIn = strLen(_singleAccountFilter) != 0;
+
+        if (_poolFilterSelected)
+        {
+            if (singleAccountPassedIn && mzkCustCollectionsWorkspaceHelper::checkCustomerIsInPool(_listPageHelper, _singleAccountFilter, _company))
+            {
+                SysQuery::findOrCreateRange(_ds.queryBuildDataSource(), _accountNumField).value(SysQuery::value(_singleAccountFilter));
+            }
+            else if (singleAccountPassedIn)
+            {
+                SysQuery::findOrCreateRange(_ds.queryBuildDataSource(), _accountNumField).value(SysQuery::valueEmptyString());
+            }
+        }
+        else if (singleAccountPassedIn)
+        {
+            SysQuery::findOrCreateRange(_ds.queryBuildDataSource(), _accountNumField).value(SysQuery::value(_singleAccountFilter));
+        }
+        else
+        {
+            SysQuery::findOrCreateRange(_ds.queryBuildDataSource(), _accountNumField).value(SysQuery::valueNotEmptyString());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>changeCompanyContext</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Changes to the global company context to the company passed in
+    /// </summary>
+    /// <param name = "_company">The company to change the global context to</param>
+    public static void changeCompanyContext(SelectableDataArea _company)
+    {
+        if (_company != curExt())
+        {
+            appl.setDefaultCompany(_company, false);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getContactLocator</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Returns the <c>LogisticsElectronicAddresLocator</c> for the contact person
+    /// </summary>
+    /// <param name = "_contact"><c>ContactPerson</c> Record</param>
+    /// <param name = "_type">Contect method type</param>
+    /// <returns><c>LogisticsElectronicAddressLocator</c> value</returns>
+    public static LogisticsElectronicAddressLocator getContactLocator(ContactPerson _contact, LogisticsElectronicAddressMethodType _type)
+    {
+        DirPartyContactInfoView info;
+
+        // Should be only one primary
+        select firstonly Locator from info
+            where info.Party == _contact.Party &&
+                info.IsPrimary == NoYes::Yes &&
+                info.Type == _type;
+
+        // If no primary, take the first
+        if(!info)
+        {
+            select firstonly Locator from info
+                order by Locator
+                where info.Party == _contact.Party &&
+                    info.Type == _type;
+        }
+
+        return info.Locator;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendEmailWithAttachment</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds the email and attachments to send to the customer
+    /// </summary>
+    /// <param name = "_callerElement">The caller of the menu item</param>
+    /// <param name = "_toAddr">To email address</param>
+    /// <param name = "_type">Email type</param>
+    /// <param name = "_menuItem">Menu item name</param>
+    /// <param name = "_custTable"><c>CustTable</c> record</param>
+    /// <param name = "_selectedCompanies">The selected companies to run report for</param>
+    /// <param name = "_contactPerson">The contact for the customer</param>
+    /// <param name = "_agingPeriodDefinition">The aging period definition</param>
+    /// <param name = "_agedBy">DateTransactionsDuedate enum</param>
+    /// <param name = "_agingDate">The aging date</param>
+    /// <param name = "_includeSettled">Include settled transactions</param>
+    /// <param name = "_settledTransStartDate">The start date for settled transactions</param>
+    public static void sendEmailWithAttachment(
+            Object _callerElement,
+            Email _toAddr,
+            CustCollectionsEmailType _type,
+            str _menuItem,
+            CustTable _custTable,
+            container _selectedCompanies,
+            ContactPersonName _contactPerson = '',
+            CustVendReportName _agingPeriodDefinition = '',
+            DateTransactionDuedate _agedBy = DateTransactionDuedate::DueDate,
+            date _agingDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+            boolean _includeSettled = false,
+            date _settledTransStartDate = dateNull())
+    {
+        var context = new CustCollectionsEmailContext();
+
+        context.parmEmailType(_type);
+        context.parmEmailAddress(_toAddr);
+        context.parmCustTable(_custTable);
+
+        // Required for statements
+        context.parmContactPerson(_contactPerson);
+        context.parmAgingPeriodDefinition(_agingPeriodDefinition);
+        context.parmAgedBy(_agedBy);
+        context.parmAgingDate(_agingDate);
+        context.parmIncludeSettledTransactions(_includeSettled);
+        context.parmClosedTransDateRangeStart(_settledTransStartDate);
+        context.parmSelectedCompanies(_selectedCompanies);
+
+        var args = new Args(_callerElement);
+        args.parmObject(context);
+
+        new MenuFunction(_menuItem, MenuItemType::Action).run(args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>buildCustomerFilterSet</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds a set of customers from the currently selected collection pool query
+    /// </summary>
+    /// <param name = "_listPageHelper">The <c>CustCollectionsIListPageHelper</c> that contains the selected pool query</param>
+    /// <returns>A <c>Set</c> of customer accounts</returns>
+    [SysObsolete('Use populateCustCollectionsCustomerFilterTmp instead', false, 30\6\2020)]
+    public static Set buildCustomerFilterSet(CustCollectionsIListPageHelper _listPageHelper)
+    {
+        QueryRun qr = new QueryRun(_listPageHelper.getCurrentPoolQuery());
+
+        CustTable cust;
+
+        Set customers = new Set(Types::String);
+
+        while (qr.next())
+        {
+            if (qr.changed(tableNum(DirPartyTable)))
+            {
+                cust = qr.get(tableNum(CustTable));
+
+                customers.add(cust.AccountNum);
+            }
+        }
+
+        return customers;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateCustCollectionsCustomerFilterTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates the <c>CustCollectionsCustomerFilterTmp</c> table with customer accounts to filter by.
+    /// </summary>
+    /// <param name = "_listPageHelper">The <c>CustCollectionsIListPageHelper</c> containing the query to populate the table with.</param>
+    /// <param name = "_customerFilterTemp">The temp table to populate with the customer accounts.</param>
+    public static void populateCustCollectionsCustomerFilterTmp(CustCollectionsIListPageHelper _listPageHelper, CustCollectionsCustomerFilterTmp _customerFilterTemp)
+    {
+        Query q = new Query(_listPageHelper.getCurrentPoolQuery());
+
+        QueryBuildDataSource qbds;
+        for (int i = 1; i <= q.dataSourceCount(); i ++)
+        {
+            qbds = q.dataSourceNo(i);
+            qbds.fields().dynamic(NoYes::No);
+            qbds.fields().clearFieldList();
+                    
+            if (qbds.joinMode() == JoinMode::InnerJoin && qbds.embedded())
+            {
+                qbds.joinMode(JoinMode::ExistsJoin);
+            }
+            else if (qbds.joinMode() == JoinMode::OuterJoin)
+            {
+                qbds.enabled(false);
+            }
+        }
+
+        QueryBuildDataSource qbdsCust = q.dataSourceTable(tableNum(CustTable));
+
+        qbdsCust.addGroupByField(fieldNum(CustTable, AccountNum));
+
+        qbdsCust.addSelectionField(fieldNum(CustTable, AccountNum));
+
+        Map fieldMap = new Map(Types::String, Types::Container);
+        fieldMap.insert(fieldStr(CustCollectionsCustomerFilterTmp, AccountNum), [qbdsCust.uniqueId(), fieldStr(CustTable, AccountNum)]);
+
+        delete_from _customerFilterTemp;
+
+        Query::insert_recordset(_customerFilterTemp, fieldMap, q);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>togglePoolFilterForCustomerFilter</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Enables or disables the pool filter when a customer filter is selected
+    /// </summary>
+    /// <param name = "_formPart">A <c>CustcollectionsIWorksapceFormPart</c> that is the form the pool filter is on</param>
+    /// <param name = "_listPageHelper"><c>CustCollectionsIListPageHelper</c> instance</param>
+    /// <param name = "_poolFilter">A <c>FomStringControl</c> that is the pool filter</param>
+    public static void togglePoolFilterForCustomerFilter(CustCollectionsIWorkspaceFormPart _formPart, CustCollectionsIListPageHelper _listPageHelper, FormStringControl _poolFilter)
+    {
+        boolean canBeEnabled = (_listPageHelper.getCurrentAgent().RecId != 0);
+
+        if (_formPart.parmCustAccountFilter())
+        {
+            _poolFilter.text('');
+            _poolFilter.enabled(false);
+        }
+        else if (canBeEnabled)
+        {
+            _poolFilter.enabled(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>LedgerJournalFormTable_applyQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This delegate is used to update query on the <c>LedgerJournalTable</c> form to filter the customer payment journals
+    /// to only the payment journals that have at least one line with the customer account. Is used when the form was opend from
+    /// the <c>CustomerCollectionManagerWorkspace</c>
+    /// </summary>
+    /// <param name="_formElement">The <c>FormRun</c> of the <c>LedgerJournalTable</c></param>
+    /// <param name="_query">The forms query</param>
+    [SubscribesTo(classStr(LedgerJournalFormTable), delegateStr(LedgerJournalFormTable, applyQuery))]
+    public static void LedgerJournalFormTable_applyQuery(FormRun _formElement, Query _query)
+    {
+        if (_formElement.args().menuItemName() == menuItemDisplayStr(LedgerJournalTable_CustPaym))
+        {
+            if (_formElement.args().callerName() == formStr(CustomerCollectionManagerWorkspace))
+            {
+                Object caller = _formElement.args().caller();
+                if (formHasMethod(caller, identifierStr(parmCustAccount)) && caller.parmCustAccount() != '')
+                {
+                    // Adding <c>LedgerJournalTrans</c> and <c>DimensionAttributeValueCombination</c> tables as exist joins to <c>LedgerJournalTrans</c>
+                    // to filter <c>LedgerJournalTable</c> to cust payment journals that have the customer on one of their lines
+                    QueryBuildDataSource ledgerJournalTableDS = _query.dataSourceTable(tableNum(LedgerJournalTable));
+
+                    QueryBuildDataSource ledgerJournalTransDS = ledgerJournalTableDS.addDataSource(tableNum(LedgerJournalTrans));
+                    ledgerJournalTransDS.addLink(fieldNum(LedgerJournalTable, JournalNum), fieldNum(LedgerJournalTrans, JournalNum));
+                    ledgerJournalTransDS.addRange(fieldNum(LedgerJournalTrans, AccountType)).value(SysQuery::value(LedgerJournalACType::Cust));
+                    ledgerJournalTransDS.joinMode(JoinMode::ExistsJoin);
+
+                    QueryBuildDataSource dimensionAttributeValueCombinationDS = ledgerJournalTransDS.addDataSource(tableNum(DimensionAttributeValueCombination));
+                    dimensionAttributeValueCombinationDS.addLink(fieldNum(LedgerJournalTrans, LedgerDimension), fieldNum(DimensionAttributeValueCombination, RecId));
+                    dimensionAttributeValueCombinationDS.addRange(fieldNum(DimensionAttributeValueCombination, DisplayValue)).value(SysQuery::value(caller.parmCustAccount()));
+                    dimensionAttributeValueCombinationDS.joinMode(JoinMode::ExistsJoin);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

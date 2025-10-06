@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMExcelWorkSheetHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.IO;
+
+using OfficeOpenXml;
+using OfficeOpenXml.Style;
+using OfficeOpenXml.Table;
+class HMExcelWorkSheetHelper
+{
+    protected static const str MonetaryFormatString = '#,##0.00'; // OXML NumFmtID = 4
+    protected static const str DateFormatString = 'mm-dd-yy'; // OXML NumFmtID = 14
+    protected static const str GenericFormatString = '@'; // OXML NumFmtID = 49
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>setColumnFromTableField</Name>
+				<Source><![CDATA[
+    public void setColumnFromTableField(OfficeOpenXml.ExcelRange _headerCell, tableId _tableNum, fieldId _fieldId)
+    {
+        DictField field = new DictField(_tableNum, _fieldId);
+        this.setColumn(_headerCell, field.label(), field.baseType());
+    //todo:
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setColumn</Name>
+				<Source><![CDATA[
+    public void setColumn(OfficeOpenXml.ExcelRange _headerCell, str _columnDisplayName, Types _columnType)
+    {
+        var column = _headerCell.get_Worksheet().Column(_headerCell.get_Start().get_Column());
+
+        var columnStyle = column.get_Style();
+        var columnNumberFormat = columnStyle.get_Numberformat();
+
+        switch (_columnType)
+        {
+            case Types::Real:
+                columnNumberFormat.set_Format(MonetaryFormatString);
+                columnStyle.set_HorizontalAlignment(ExcelHorizontalAlignment::Right);
+                break;
+
+            case Types::Integer:
+            case Types::Int64:
+                columnStyle.set_HorizontalAlignment(ExcelHorizontalAlignment::Right);
+                break;
+
+            case Types::Date:
+                columnNumberFormat.set_Format(DateFormatString);
+                columnStyle.set_HorizontalAlignment(ExcelHorizontalAlignment::Right);
+                break;
+
+            default:
+                columnNumberFormat.set_Format(GenericFormatString);
+                columnStyle.set_HorizontalAlignment(ExcelHorizontalAlignment::Left);
+                break;
+        }
+
+        this.setCellLabel(_headerCell, _columnDisplayName, false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCellLabel</Name>
+				<Source><![CDATA[
+    public void setCellLabel(OfficeOpenXml.ExcelRange _cell, str _label, boolean _includeTrailingColon = true,
+                                OfficeOpenXml.Style.ExcelHorizontalAlignment _horizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment::Left)
+    {
+        var cellStyle = _cell.get_Style();
+        cellStyle.set_HorizontalAlignment(_horizontalAlignment);
+        cellStyle.get_Font().set_Bold(true);
+        this.setCellValue(_cell, strfmt('%1%2', _label, _includeTrailingColon ? ':' : ''));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setCellValue</Name>
+				<Source><![CDATA[
+    public void setCellValue(OfficeOpenXml.ExcelRange _cell, anytype _value, str _numberFormat = '')
+    {
+        var type = typeOf(_value);
+
+        if (!prmIsDefault(_numberFormat))
+        {
+            _cell.get_Style().get_Numberformat().set_Format(_numberFormat);
+        }
+
+        switch (type)
+        {
+            case Types::Real:
+            case Types::Int64:
+            case Types::Integer:
+                _cell.set_Value(_value);
+                break;
+
+            case Types::Date:
+                // we explictly use a DateTime cast here so that the EPPlus library can
+                // infer it and convert it to an OA date number for Excel
+                System.DateTime dateTime = _value;
+                _cell.set_Value(dateTime);
+                break;
+
+            default:
+                _cell.set_Value(any2Str(_value));
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>autoFitWorksheet</Name>
+				<Source><![CDATA[
+    public void autoFitWorksheet(OfficeOpenXml.ExcelWorksheet _worksheet, container _skipColumns = conNull())
+    {
+        var lastColumn = _worksheet.get_Dimension().get_End().get_Column();
+        for (var i = 1; i <= lastColumn; i++)
+        {
+            if (conFind(_skipColumns, i) == 0)
+            {
+                _worksheet.Column(i).AutoFit();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

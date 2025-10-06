@@ -1,0 +1,3105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPriceDisc</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPriceDisc
+{
+    SalesParameters         salesParameters;
+    PriceParameters         priceParameters;
+    PriceDiscTable          actualPriceTable;
+    PriceDiscTable          actualDiscTable;
+
+    ModuleInventPurchSales  moduleType;
+    TradeModuleType         tradeModuleType;
+    TransDate               discDate;
+    Qty                     qty;
+    ItemId                  itemId;
+    InventDim               inventDim;
+    UnitOfMeasureSymbol     unitID;
+    CustVendAC              accountId;
+    CurrencyCode            currency;
+    // <GEERU>
+    CustVendAC              agreementPartnerCode;
+    AgreementHeaderExtRecId_RU agreementHeaderExtRecId;
+    NoYes                   ruAgreementExists;
+    // </GEERU>
+    CurrencyCode            genericCurrency;
+
+    PriceCur                price;
+    PriceUnit               priceUnit;
+    PriceMarkup             markup;
+    // <GEERU>
+    PriceSecCur_RU          priceSecCur;
+    PriceSecCur_RU          markupSecCur;
+    // </GEERU>
+    Days                    deliveryDays;
+    CalendarDays            calendarDays;
+    // <GEERU>
+    InventBaileeFreeDays_RU inventBaileeFreeDays;
+    // </GEERU>
+    DiscAmount              lineDiscAmount;
+    DiscPct                 lineDiscPct;
+
+    NoYes                   searchAgain;
+    DiscAmount              discAmount;
+    DiscAmount              roughEndDiscAmount;
+    DiscPct                 percent1;
+    DiscPct                 percent2;
+    NoYes                   discAgreementExist;
+
+    PriceGroupId            usedPriceGroupId;
+
+    // <GIN>
+    PriceCur                maxRetailPrice;
+    // </GIN>
+    #define.cacheScope_FindDisc('PriceDisc:FindDisc')
+    #define.cacheScope_FindPrice('PriceDisc:FindPrice')
+    CurrencyExchangeHelper  curExch;
+
+    PDSCalculationId        pdsCalculationId;
+
+    // <GEERU>
+    #ISOCountryRegionCodes
+    boolean countryRegion_RU;
+    // </GEERU>
+
+    AmountQty                   quantityAmount;
+
+    SysRecordSortedList         recordSortedListPriceDiscTable;
+    boolean                     mcrPriceHistoryPotentialCalc;
+    boolean                     mcrPriceHistoryEnabled;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>accountRelation</Name>
+				<Source><![CDATA[
+    private CustVendAC  accountRelation(PriceDiscPartyCodeType   _accountCode,
+                                        PriceGroupId    _groupId)
+    {
+        return _accountCode == PriceDiscPartyCodeType::Table     ? accountId
+            : (_accountCode == PriceDiscPartyCodeType::GroupId   ? _groupId
+            : '');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>agreementExists_RU</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Indicates whether an agreement exists for an item or account combination.
+    /// </summary>
+    /// <returns>
+    ///    A <c>NoYes::Yes</c> enumeration value of Yes if a discount agreement exists; otherwise, a
+    ///    <c>NoYes::No</c> enumeration value.
+    /// </returns>
+    public NoYes agreementExists_RU()
+    {
+        return ruAgreementExists;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcCur2CurPriceAmount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Converts an amount from a trade agreement currency to a trade line currency.
+    /// </summary>
+    /// <param name="_amount">
+    ///    An amount in a trade agreement currency.
+    /// </param>
+    /// <param name="_priceDiscTable">
+    ///    A record buffer of the <c>PriceDiscTable</c> table.
+    /// </param>
+    /// <returns>
+    ///    An amount in a trade line currency.
+    /// </returns>
+    AmountCur  calcCur2CurPriceAmount(
+        Amount                 _amount,
+        PriceDiscTable         _priceDiscTable)
+    {
+        if (_priceDiscTable.GenericCurrency
+         && _priceDiscTable.Currency != currency)
+        {
+            if (!curExch)
+            {
+                curExch = CurrencyExchangeHelper::construct();
+                curExch.parmExchangeRateTypeRecId(ExchangeRateType::find(SalesParameters::find().ExchangeRateType).RecId);
+            }
+            curExch.parmExchangeDate(discDate);
+            if (this.applyRoundingRulesForExchange())
+            {
+                curExch.parmRoundingRuleType(CurrencyRoundingRuleType::SalesOrder);
+            }
+            return curExch.calculateCurrencyToCurrency(_priceDiscTable.Currency, currency, _amount, true);
+        }
+        else
+        {
+            return _amount;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyRoundingRulesForExchange</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Determines whether rounding rules are applied for the currency exchange
+    /// </summary>
+    /// <returns>true, if rounding should apply; otherwise, false.</returns>
+    protected boolean applyRoundingRulesForExchange()
+    {
+        return moduleType == ModuleInventPurchSales::Sales && Currency::roundOffSales(currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcPriceAmount</Name>
+				<Source><![CDATA[
+    private AmountCur  calcPriceAmount(Qty  _absQty)
+    {
+        PriceCur localPrice = _absQty ? _absQty * this.price() : this.price();
+        return CurrencyExchangeHelper::amount(localPrice / this.priceUnit() + abs(this.markup()), currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calendarDays</Name>
+				<Source><![CDATA[
+    public CalendarDays  calendarDays()
+    {
+        return calendarDays;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deliveryDays</Name>
+				<Source><![CDATA[
+    public Days  deliveryDays()
+    {
+        return deliveryDays;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>discTable</Name>
+				<Source><![CDATA[
+    public PriceDiscTable  discTable()
+    {
+        return actualDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findDisc</Name>
+				<Source><![CDATA[
+    //Zain
+    //private boolean  findDisc(PriceType             _relation,
+    //                          InventDimId           _inventDimId,
+    //                          TableGroupAll         _itemCode       =  0,
+    //                          ItemId                _itemRel        = '',
+    //                          TableGroupAll         _accountCode    =  0,
+    //                          CustVendAC            _accountRel     = '',
+    //                          UnitOfMeasureSymbol   _unitID         = '',
+    //                          Qty                   _quantityAmount =  0,
+    //                          CurrencyCode          _currency       = CompanyInfoHelper::standardCurrency(),
+    //                          AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+    //                          CustVendAC                 _agreementPartnerCode = '')
+    private boolean  findDisc(PriceType             _relation,
+                              InventDimId           _inventDimId,
+                              PriceDiscProductCodeType         _itemCode       =  0,
+                              ItemId                _itemRel        = '',
+                              //TableGroupAll         _accountCode    =  0,
+                              PriceDiscPartyCodeType _accountCode = 0,
+                              CustVendAC            _accountRel     = '',
+                              UnitOfMeasureSymbol   _unitID         = '',
+                              Qty                   _quantityAmount =  0,
+                              CurrencyCode          _currency       = CompanyInfoHelper::standardCurrency(),
+                              //Zain
+                              RecId                 _hmInsuranceContract = 0,
+                              RecId                 _hmContractClassOrPlanId = 0,
+                              RecId                 _hmNetworkLevel = 0,
+                              HMCaseType            _hmCaseType = HMCaseType::All,
+                              RecId                 _revenueCode = 0,
+                              RecId                 _CPTCode = 0,
+                              RecId                 _modifier1 = 0,
+                              RecId                 _modifier2 = 0,
+                              RecId                 _modifier3 = 0,
+                              RecId                 _modifier4 = 0,
+                              //Zain
+                              AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+                              CustVendAC                 _agreementPartnerCode = '',
+                              NoYes                 _isInsurance = NoYes::No)
+    //Zain
+    {
+        PriceDiscTable      priceDiscTable;
+        //Zain
+        PriceDiscAdmTrans   priceDiscAdmTrans;
+        HMProcedureCodeMaster  CPTCode = HMProcedureCodeMaster::find(_CPTCode);
+        HMProcedureCodeMaster  revenueCode = HMProcedureCodeMaster::find(_revenueCode);
+        //Zain
+        boolean             discExist;
+        container           key;
+        container           cacheValue;
+        int                 i;
+        FromDate            localFromDate;
+        ToDate              localToDate;
+        AmountQty           localQuantityAmountFrom;
+        AmountQuantityTo    localQuantityAmountTo;
+        RecId               localRecid;
+        boolean             cacheMode;
+        // <GEERU>
+        CustVendAC      accountRelation = _accountRel;
+        // </GEERU>
+        void reselectBuffer()
+        {
+            if (cacheMode)
+            {
+                priceDiscTable = PriceDiscTable::findRecId(localRecid);
+            }
+        }
+
+        void findDisc()
+        {
+            if ((discDate >= localFromDate  || ! localFromDate)
+                && (discDate <= localToDate || ! localToDate))
+            {
+                if (_relation == PriceType::EndDiscPurch ||
+                    _relation == PriceType::EndDiscSales )
+                {
+                    // for end discounts, the QuantiyAmountField field contains order total amounts, not quantities
+                    if (this.calcCur2CurPriceAmount(localQuantityAmountFrom, priceDiscTable) <= qty &&
+                        ((qty < this.calcCur2CurPriceAmount(localQuantityAmountTo, priceDiscTable)) || !localQuantityAmountTo))
+                    {
+                        reselectBuffer();
+
+                        discExist               = true;
+                        discAmount             += this.calcCur2CurPriceAmount(priceDiscTable.Amount, priceDiscTable)/ this.priceUnit();
+                        percent1               += priceDiscTable.Percent1;
+                        percent2               += priceDiscTable.Percent2;
+                        actualDiscTable        = priceDiscTable.data();
+                        quantityAmount         += priceDiscTable.QuantityAmountFrom;
+                    }
+                }
+                else
+                {
+                    if (localQuantityAmountFrom <= qty
+                        && (qty < localQuantityAmountTo || !localQuantityAmountTo))
+                    {
+                        reselectBuffer();
+
+                        discExist               = true;
+                        discAmount             += this.calcCur2CurPriceAmount(priceDiscTable.Amount, priceDiscTable)/ this.priceUnit();
+                        percent1               += priceDiscTable.Percent1;
+                        percent2               += priceDiscTable.Percent2;
+                        actualDiscTable        =  priceDiscTable.data();
+                        quantityAmount         += priceDiscTable.QuantityAmountFrom;
+
+                        this.mcrPriceDiscTableFound(priceDiscTable);
+                    }
+                    else
+                    {
+                        // If quantity does not qualify, but calculation potential then add as found
+                        if (this.parmMCRPriceHistoryPotentialCalc())
+                        {
+                            reselectBuffer();
+
+                            this.mcrPriceDiscTableFound(priceDiscTable);
+                        }
+                    }
+                }
+            }
+        }
+
+        // <GEERU>
+        if (countryRegion_RU)
+        {
+            if (_accountCode == PriceDiscPartyCodeType::Table &&
+                _agreementHeaderExtRecId &&
+                _agreementPartnerCode)
+            {
+                accountRelation = _agreementPartnerCode;
+            }
+        }
+        // </GEERU>
+
+        if (!_inventDimId)
+        {
+            return false;
+        }
+
+        // To avoid flooding the cache the most granualated setup isn't cached.
+        cacheMode = (_itemCode       != PriceDiscProductCodeType::Table
+                     || _accountCode != PriceDiscPartyCodeType::Table)
+            && !this.parmMCRPriceHistoryPotentialCalc(NoYes::No);
+
+        cacheValue = conNull();
+
+        if (cacheMode)
+        {
+            key = this.makeKey(_relation,
+                               _itemCode,
+                               _itemRel,
+                               _accountCode,
+                               // <GEERU>
+                               accountRelation,
+                               // </GEERU>
+                               _unitID,
+                               _currency,
+                               _inventDimId
+                               // <GEERU>
+                               ,_agreementHeaderExtRecId
+                               // </GEERU>
+                               );
+
+            cacheValue = HMPriceDisc::getPriceDiscCacheValue(#cacheScope_FindDisc, key);
+        }
+        qty        = abs(_quantityAmount);
+
+        cacheValue = conNull();
+        if (cacheValue == conNull())
+        {
+            if (_itemCode != PriceDiscProductCodeType::Table)
+            {
+                _unitID     = '';
+            }
+
+            //Zain
+            //while select priceDiscTable
+            //    order by QuantityAmountFrom, FromDate
+            //    where priceDiscTable.Relation            == _relation
+            //        && priceDiscTable.ItemCode           == _itemCode
+            //        && priceDiscTable.ItemRelation       == _itemRel
+            //        && priceDiscTable.AccountCode        == _accountCode
+            //        // <GEERU>
+            //        && priceDiscTable.AccountRelation    == accountRelation
+            //        // </GEERU>
+            //        && priceDiscTable.UnitId             == _unitID
+            //        && (priceDiscTable.Currency          == _currency
+            //        || (priceDiscTable.GenericCurrency
+            //        &&  priceDiscTable.Currency          == genericCurrency))
+            //        // <GEERU>
+            //        && (!countryRegion_RU || priceDiscTable.AgreementHeaderExt_RU == _agreementHeaderExtRecId)
+            //        // </GEERU>
+            //        && (priceDiscTable.InventDimId       == _inventDimId || this.parmMCRPriceHistoryPotentialCalc())
+            PriceDiscProductCodeType productCodeType;
+            PriceDiscPartyCodeType partyCodeType;
+
+            if (_itemCode == PriceDiscProductCodeType::Table)
+            {
+                productCodeType = PriceDiscProductCodeType::Table;
+            }
+            else if (_itemCode == PriceDiscProductCodeType::GroupId)
+            {
+                productCodeType = PriceDiscProductCodeType::GroupId;
+            }
+            else if (_itemCode == PriceDiscProductCodeType::All)
+            {
+                productCodeType = PriceDiscProductCodeType::All;
+            }
+
+            if (_accountCode == PriceDiscPartyCodeType::Table)
+            {
+                partyCodeType = PriceDiscPartyCodeType::Table;
+            }
+            else if (_accountCode == PriceDiscPartyCodeType::GroupId)
+            {
+                partyCodeType = PriceDiscPartyCodeType::GroupId;
+            }
+            else if (_accountCode == PriceDiscPartyCodeType::All)
+            {
+                partyCodeType = PriceDiscPartyCodeType::All;
+            }
+
+            while select priceDiscTable
+                order by QuantityAmountFrom, FromDate
+                join priceDiscAdmTrans
+                where priceDiscTable.Relation            == _relation
+                    && priceDiscTable.ItemCode           == productCodeType
+                    && priceDiscTable.ItemRelation       == _itemRel
+                    && priceDiscTable.AccountCode        == partyCodeType
+                    // <GEERU>
+                    && priceDiscTable.AccountRelation    == accountRelation
+                    // </GEERU>
+                    && priceDiscTable.UnitId             == _unitID
+                    && (priceDiscTable.Currency          == _currency
+                    || (priceDiscTable.GenericCurrency
+                    &&  priceDiscTable.Currency          == genericCurrency))
+                    //Zain -- new parameter conditions
+                    && priceDiscAdmTrans.HMInsuranceContract == _hmInsuranceContract
+                    && priceDiscAdmTrans.HMInsuranceContractClassOrPlans == _hmContractClassOrPlanId
+                    && priceDiscAdmTrans.HMInsuranceNetwork == _hmNetworkLevel
+                    && priceDiscAdmTrans.HMCaseType == _hmCaseType
+                    && priceDiscAdmTrans.HMCPTHCPCCode == CPTCode.Code
+                    && priceDiscAdmTrans.HMRevenueCode == revenueCode.Code
+                    && priceDiscAdmTrans.Modifier1 == _modifier1
+                    && priceDiscAdmTrans.Modifier2 == _modifier2
+                    && priceDiscAdmTrans.Modifier3 == _modifier3
+                    && priceDiscAdmTrans.Modifier4 == _modifier4
+                    //Zain
+                    // <GEERU>
+                    && (!countryRegion_RU || priceDiscTable.AgreementHeaderExt_RU == _agreementHeaderExtRecId)
+                    // </GEERU>
+                    && (priceDiscTable.InventDimId       == _inventDimId || this.parmMCRPriceHistoryPotentialCalc())
+            //Zain
+            {
+                if (cacheMode)
+                {
+                    cacheValue += [[priceDiscTable.FromDate, priceDiscTable.ToDate, priceDiscTable.QuantityAmountFrom, priceDiscTable.QuantityAmountTo, priceDiscTable.RecId]];
+                }
+                else
+                {
+                    localFromDate            = priceDiscTable.FromDate;
+                    localToDate              = priceDiscTable.ToDate;
+                    localQuantityAmountFrom  = priceDiscTable.QuantityAmountFrom;
+                    localQuantityAmountTo    = priceDiscTable.QuantityAmountTo;
+                    localRecid               = priceDiscTable.RecId;
+
+                    findDisc();
+
+                    if (discExist
+                        && !priceDiscTable.SearchAgain)
+                    {
+                        searchAgain = false;
+                        break;
+                    }
+                }
+                //Zain -- break once found the discount
+                break;
+            }
+            if (cacheMode)
+            {
+                //We also want to cache the absence of discounts.
+                if (cacheValue == conNull())
+                {
+                    cacheValue = [[0]];
+                }
+
+                HMPriceDisc::insertPriceDiscCache(#cacheScope_FindDisc, key, cacheValue);
+            }
+        }
+
+        if (cacheMode
+            && cacheValue)
+        {
+            discExist = false;
+            for (i=1;i<=conLen(cacheValue);i++)
+            {
+                [localFromDate, localToDate, localQuantityAmountFrom, localQuantityAmountTo, localRecid] = conPeek(cacheValue, i);
+
+                if (localRecid)
+                {
+                    findDisc();
+
+                    if (discExist
+                        && !priceDiscTable.SearchAgain
+                        && !this.parmMCRPriceHistoryPotentialCalc())
+                    {
+                        searchAgain = false;
+                        break;
+                    }
+                }
+            }
+        }
+        return discExist;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findDiscAgreement</Name>
+				<Source><![CDATA[
+    //Zain
+    //NoYes  findDiscAgreement(PriceType              _relation,
+    //                         DiscCode               _itemDisc,
+    //                         DiscCode               _accountDisc,
+    //                         UnitOfMeasureSymbol    _unitID,
+    //                         InventDimId            _inventDimIdAllActivated,
+    //                         InventDimId            _inventDimIdItemDim
+    //                         ,AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0
+    //                         ,CustVendAC                 _agreementPartnerCode = ''
+    //                         )
+    NoYes  findDiscAgreement(PriceType              _relation,
+                             DiscCode               _itemDisc,
+                             DiscCode               _accountDisc,
+                             UnitOfMeasureSymbol    _unitID,
+                             InventDimId            _inventDimIdAllActivated,
+                             InventDimId            _inventDimIdItemDim,
+                             //Zain
+                             RecId                  _hmInsuranceContract,
+                             RecId                  _hmContractClassOrPlanId,
+                             RecId                  _hmNetworkLevel,
+                             HMCaseType             _hmCaseType,
+                             RecId                  _revenueCode = 0,
+                             RecId                  _CPTCode = 0,
+                             RecId                  _modifier1 = 0,
+                             RecId                  _modifier2 = 0,
+                             RecId                  _modifier3 = 0,
+                             RecId                  _modifier4 = 0,
+                             //Zain
+                             AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0
+                             ,CustVendAC                 _agreementPartnerCode = '',
+                             NoYes                  _isInsurance = NoYes::No
+                             )
+    //Zain
+    {
+        //TableGroupAll           itemCode;
+        PriceDiscProductCodeType itemCode;
+        PriceDiscPartyCodeType  accountCode;
+        //TableGroupAll           accountCode;
+        ItemRelation            itemRelation;
+        CustVendRel             accountRelation;
+        Integer                 idx = 0;
+
+        while (idx < 9)
+        {
+            itemCode        = idx mod 3;
+            accountCode     = idx div 3;
+
+            if (_accountDisc != '' && _isInsurance == NoYes::No)
+                accountCode = PriceDiscPartyCodeType::GroupId;
+            else if (_accountDisc != '' && _isInsurance == NoYes::Yes)
+                accountCode = PriceDiscPartyCodeType::Table;
+
+            itemRelation    = this.itemRelation     (itemCode,    _itemDisc);
+            accountRelation = this.accountRelation  (accountCode, _accountDisc);
+
+            if (PriceDiscTable::isPartyCodeProductCodeActivated(_relation, accountCode, itemCode, priceParameters))
+            {
+                if (HMPriceDisc::validateRelation(accountCode, accountRelation)  &&
+                    HMPriceDisc::validateRelationItem(itemCode,    itemRelation   ))
+                {
+                    if (itemCode == PriceDiscProductCodeType::Table)
+                    {
+                        // <GEERU>
+                        if (countryRegion_RU)
+                        {
+                            if (this.findDisc(_relation,_inventDimIdAllActivated,itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency,
+                                              _hmInsuranceContract,
+                                              _hmContractClassOrPlanId,
+                                              _hmNetworkLevel,
+                                              _hmCaseType,
+                                              _revenueCode,
+                                              _CPTCode,
+                                              _modifier1,
+                                              _modifier2,
+                                              _modifier3,
+                                              _modifier4,
+                                              _agreementHeaderExtRecId,_agreementPartnerCode))
+                            {
+                                discAgreementExist = true;
+                            }
+                            else
+                            {
+                                if (this.findDisc(_relation,_inventDimIdItemDim,itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency,
+                                                  _hmInsuranceContract,
+                                                  _hmContractClassOrPlanId,
+                                                  _hmNetworkLevel,
+                                                  _hmCaseType,
+                                                  _revenueCode,
+                                                  _CPTCode,
+                                                  _modifier1,
+                                                  _modifier2,
+                                                  _modifier3,
+                                                  _modifier4,
+                                                  _agreementHeaderExtRecId,_agreementPartnerCode,
+                                                  _isInsurance))
+                                {
+                                    discAgreementExist = true;
+                                }
+                                else
+                                {
+                                    if (this.findDisc(_relation,InventDim::inventDimIdBlank(),itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency,
+                                                      _hmInsuranceContract,
+                                                      _hmContractClassOrPlanId,
+                                                      _hmNetworkLevel,
+                                                      _hmCaseType,
+                                                      _revenueCode,
+                                                      _CPTCode,
+                                                      _modifier1,
+                                                      _modifier2,
+                                                      _modifier3,
+                                                      _modifier4,
+                                                      _agreementHeaderExtRecId,_agreementPartnerCode,
+                                                      _isInsurance))
+                                    {
+                                        discAgreementExist = true;
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // </GEERU>
+                            if (this.findDisc(_relation,_inventDimIdAllActivated,itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency,
+                                              _hmInsuranceContract,
+                                              _hmContractClassOrPlanId,
+                                              _hmNetworkLevel,
+                                              _hmCaseType,
+                                              _revenueCode,
+                                              _CPTCode,
+                                              _modifier1,
+                                              _modifier2,
+                                              _modifier3,
+                                              _modifier4,
+                                              0,
+                                              '',
+                                              _isInsurance
+                                              ))
+                                discAgreementExist = true;
+                            //Zain -- not in use anymore
+                            //else
+                            //    if (this.findDisc(_relation,_inventDimIdItemDim,itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency,
+                            //                      _hmInsuranceContract,
+                            //                      _hmContractClassOrPlanId,
+                            //                      _hmNetworkLevel,
+                            //                      _hmCaseType,
+                            //                      _revenueCode,
+                            //                      _CPTCode,
+                            //                      _modifier1,
+                            //                      _modifier2,
+                            //                      _modifier3,
+                            //                      _modifier4
+                            //                      ))
+                            //        discAgreementExist = true;
+                            //else
+                            //        if (this.findDisc(_relation,InventDim::inventDimIdBlank(),itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency,
+                            //                          _hmInsuranceContract,
+                            //                          _hmContractClassOrPlanId,
+                            //                          _hmNetworkLevel,
+                            //                          _hmCaseType,
+                            //                          _revenueCode,
+                            //                          _CPTCode,
+                            //                          _modifier1,
+                            //                          _modifier2,
+                            //                          _modifier3,
+                            //                          _modifier4
+                            //                          ))
+                            //            discAgreementExist = true;
+                            // <GEERU>
+                        }
+                        // </GEERU>
+                    }
+                    else
+                    {
+                        // <GEERU>
+                        if (countryRegion_RU)
+                        {
+                            //Zain
+                            //if (this.findDisc(_relation,InventDim::inventDimIdBlank(),itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency,_agreementHeaderExtRecId,_agreementPartnerCode))
+                            //{
+                            //    discAgreementExist = true;
+                            //}
+                            //Zain
+                        }
+                        else
+                        {
+                            // </GEERU>
+                            //if (this.findDisc(_relation,InventDim::inventDimIdBlank(),itemCode,itemRelation,accountCode,accountRelation,_unitID,qty,currency))
+                                discAgreementExist = true;
+                            // <GEERU>
+                        }
+                        // </GEERU>
+                    }
+                }
+            }
+            searchAgain = NoYes::No;
+            if (searchAgain
+                || this.parmMCRPriceHistoryPotentialCalc())
+            {
+                idx += 1;
+            }
+            else
+            {
+                idx  = 9;
+            }
+        }
+
+        // <GEERU>
+        if (countryRegion_RU)
+        {
+            ruAgreementExists = _agreementHeaderExtRecId && discAgreementExist;
+        }
+        // </GEERU>
+
+        return discAgreementExist;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findEndDisc</Name>
+				<Source><![CDATA[
+    public NoYes  findEndDisc(EndDiscCode        _endDisc,
+                              AmountCur          _balanceEndDisc,
+                              AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+                              CustVendAC                 _agreementPartnerCode = '',
+                              AmountCur                 _totalSalesBalance = 0
+                              )
+    {
+        PriceType relation = tradeModuleType.priceDiscType(PriceGroupType::EndDiscGroup);
+
+        PriceDiscPartyCodeType   accountCode;
+        CustVendRel     accountRelation;
+        AmountCur       newBalanceEndDisc;
+
+        this.resetDisc();
+
+        while (enum2int(accountCode) < 3)
+        {
+            accountRelation = this.accountRelation(accountCode, _endDisc);
+
+            if (PriceDiscTable::isPartyCodeProductCodeActivated(relation, accountCode, PriceDiscProductCodeType::All, priceParameters))
+            {
+                if (HMPriceDisc::validateRelation(accountCode, accountRelation))
+                {
+                    if (_totalSalesBalance != 0)
+                    {
+                        newBalanceEndDisc = _totalSalesBalance;
+                    }
+                    else
+                    {
+                        newBalanceEndDisc = _balanceEndDisc;
+                    }
+
+                    if (countryRegion_RU)
+                    {
+                        //Zain -- not in use
+                        //if (this.findDisc(relation,
+                        //                InventDim::inventDimIdBlank(),
+                        //                TableGroupAll::All,
+                        //                '',           // no item relation
+                        //                accountCode,
+                        //                accountRelation,
+                        //                '',           // no unit
+                        //                newBalanceEndDisc,
+                        //                currency,
+                        //                _agreementHeaderExtRecId,
+                        //                _agreementPartnerCode))
+                        //{
+                            discAgreementExist = true;
+                        //}
+                    }
+                    //else if (this.findDisc(relation,
+                    //                    InventDim::inventDimIdBlank(),
+                    //                    TableGroupAll::All,
+                    //                    '',           // no item relation
+                    //                    accountCode,
+                    //                    accountRelation,
+                    //                    '',           // no unit
+                    //                    newBalanceEndDisc,
+                    //                    currency))
+                    //{
+                    //    discAgreementExist = true;
+                    //}
+                    else 
+                        discAgreementExist = true;
+                    //Zain
+                }
+            }
+
+            if (searchAgain)
+            {
+                accountCode+= 1;
+            }
+            else
+            {
+                accountCode= 3;
+            }
+        }
+
+        // Store all vallues of agreements Amount fields participated into calculation of end discount
+        // (this value is used by Total Discount List service when Total Discount List is produced.
+        roughEndDiscAmount = discAmount;
+
+        // Update discAmount
+        discAmount += _balanceEndDisc * (1- (1 - percent1 / 100) * (1 - percent2 / 100));
+
+        return discAgreementExist;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findItemPrice</Name>
+				<Source><![CDATA[
+    public boolean  findItemPrice()
+    {
+        PriceConvertFactory     priceConvertFactory;
+        PriceConvert            priceConvert;
+
+        boolean                 taxesMarked = TaxParameters::checkTaxParameters_IN();
+        boolean                 countryRegion_IN = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoIN]);
+
+        InventItemOrderSetupMap inventItemOrderSetupMap = InventItemOrderSetupMap::find(itemId, InventItemOrderSetupMap::module2SetupType(moduleType), inventDim.InventDimId);
+
+        InventTableModule inventTableModule = InventTableModule::find(itemId, moduleType);
+
+        if (countryRegion_IN
+            && taxesMarked)
+        {
+            maxRetailPrice = inventTableModule.maxRetailPrice_IN();
+        }
+
+        this.updateLeadTime(inventItemOrderSetupMap);
+
+        priceConvertFactory = PriceConvertFactory::newItemPrice(itemId,
+                                                                inventTableModule.UnitId,
+                                                                inventTableModule.price(),
+                                                                inventTableModule.priceUnit(),
+                                                                inventTableModule.markup(),
+                                                                inventTableModule.priceQty(),
+                                                                '',
+                                                                countryRegion_RU ? inventTableModule.priceSecCur_RU() : 0,
+                                                                countryRegion_RU ? inventTableModule.markupSecCur_RU() : 0);
+
+        priceConvertFactory.parmNewCurrencyCode(currency);
+        priceConvertFactory.parmTransDate(discDate);
+        priceConvertFactory.parmNewUnitId(unitID);
+
+        if (countryRegion_IN
+            && taxesMarked)
+        {
+            maxRetailPrice = UnitOfMeasureConverter::convert(maxRetailPrice,
+                                                             UnitOfMeasure::unitOfMeasureIdBySymbol(unitID),
+                                                             UnitOfMeasure::unitOfMeasureIdBySymbol(inventTableModule.UnitId),
+                                                             NoYes::Yes,
+                                                             InventTable::itemProduct(itemId));
+        }
+
+        priceConvert = priceConvertFactory.priceConvert();
+
+        price       = priceConvert.parmPrice();
+        priceUnit   = priceConvert.parmPriceUnit();
+        markup      = priceConvert.parmMarkup();
+
+        if (countryRegion_RU)
+        {
+            priceSecCur  = priceConvert.parmPriceSecCur_RU();
+            markupSecCur = priceConvert.parmMarkupSecCur_RU();
+        }
+
+        if (countryRegion_IN
+            && taxesMarked
+            && currency)
+        {
+            maxRetailPrice = ExchangeRateHelper::curPrice(maxRetailPrice, currency, discDate);
+        }
+
+        return (price != 0);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findLineDisc</Name>
+				<Source><![CDATA[
+    //Zain
+    //public NoYes  findLineDisc(LineDiscCode    _itemLineDisc,
+    //                           LineDiscCode    _accountLineDisc)
+    public NoYes  findLineDisc(LineDiscCode    _itemLineDisc,
+                               LineDiscCode    _accountLineDisc,
+                               //Zain
+                               RecId           _hmInsuranceContract,
+                               RecId           _hmContractClassOrPlanId,
+                               RecId           _hmNetworkLevel,
+                               HMCaseType      _hmCaseType,
+                               RecId           _revenueCode = 0,
+                               RecId           _CPTCode = 0,
+                               RecId           _modifier1 = 0,
+                               RecId           _modifier2 = 0,
+                               RecId           _modifier3 = 0,
+                               RecId           _modifier4 = 0,
+                               NoYes           _IsInsurance = NoYes::No
+                               //Zain
+                               )
+    //Zain
+    {
+        this.mcrRemovePriceDiscTableList(MCRPriceHistoryType::LineDisc);
+
+        this.resetDisc();
+
+        InventDim inventDimAllActivated;
+        InventDim inventDimProductDimActivated;
+        InventDim inventDimNoneActivated;
+        
+        if (itemId)
+        {
+            inventDimAllActivated.initFromInventDim(inventDim, tradeModuleType.activePriceFields(ItemId));
+
+            EcoResProductDimGroupSetup::copyProductDimensionsForItem(itemId, inventDimAllActivated, inventDimProductDimActivated);
+
+            boolean findAll         = !InventDim::isInventDimEqual(inventDimAllActivated, inventDimProductDimActivated);
+            boolean findProductDim  = !InventDim::isInventDimEqual(inventDimProductDimActivated, inventDimNoneActivated);
+
+            inventDimAllActivated           = findAll           ? InventDim::findDim(inventDimAllActivated)         : inventDimAllActivated;
+            inventDimProductDimActivated    = findProductDim    ? InventDim::findDim(inventDimProductDimActivated)  : inventDimProductDimActivated;
+        }
+
+        PriceType relation = tradeModuleType.priceDiscType(PriceGroupType::LineDiscGroup);
+
+        if (countryRegion_RU)
+        {
+            if ((this.searchbyAgreement_RU() &&
+                this.findDiscAgreement(relation, _itemLineDisc, _accountLineDisc, unitID, inventDimAllActivated.InventDimId, inventDimProductDimActivated.InventDimId,
+                                      _hmInsuranceContract,
+                                      _hmContractClassOrPlanId,
+                                      _hmNetworkLevel,
+                                      _hmCaseType,
+                                      _revenueCode,
+                                      _CPTCode,
+                                      _modifier1,
+                                      _modifier2,
+                                      _modifier3,
+                                      _modifier4,
+                                      agreementHeaderExtRecId, agreementPartnerCode,
+                                      _IsInsurance)
+                )
+                ||
+                this.findDiscAgreement(relation, _itemLineDisc, _accountLineDisc, unitID, inventDimAllActivated.InventDimId, inventDimProductDimActivated.InventDimId,
+                                       _hmInsuranceContract,
+                                       _hmContractClassOrPlanId,
+                                       _hmNetworkLevel,
+                                       _hmCaseType,
+                                       _revenueCode,
+                                       _CPTCode,
+                                       _modifier1,
+                                       _modifier2,
+                                       _modifier3,
+                                       _modifier4,
+                                       0,
+                                       '',
+                                       _IsInsurance
+                                       )
+            )
+            {
+                lineDiscPct         = this.getDiscPercent();
+                lineDiscAmount      = this.getDiscAmount();
+            }
+        }
+        else
+        {
+            if (this.findDiscAgreement(relation, _itemLineDisc, _accountLineDisc, unitID, inventDimAllActivated.InventDimId, inventDimProductDimActivated.InventDimId,
+                                       _hmInsuranceContract,
+                                       _hmContractClassOrPlanId,
+                                       _hmNetworkLevel,
+                                       _hmCaseType,
+                                       _revenueCode,
+                                       _CPTCode,
+                                       _modifier1,
+                                       _modifier2,
+                                       _modifier3,
+                                       _modifier4,
+                                       0,
+                                       '',
+                                       _IsInsurance
+                                       ))
+            {
+                lineDiscPct         = this.getDiscPercent();
+                lineDiscAmount      = this.getDiscAmount();
+            }
+        }
+
+        return discAgreementExist;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findMultiLineDisc</Name>
+				<Source><![CDATA[
+    //Zain not in use
+    public NoYes findMultiLineDisc(MultiLnDiscCode      _itemMultiLnDisc,
+                                   MultiLnDiscCode      _accountMultiLnDisc,
+                                   Qty                  _multiLnQty)
+    {
+        PriceType relation = tradeModuleType.priceDiscType(PriceGroupType::MultiLineDiscGroup);
+
+        this.resetDisc();
+
+        if (countryRegion_RU)
+        {
+            return NoYes::No;
+            //return (this.searchbyAgreement_RU() &&
+            //        this.findDiscAgreement(relation, _itemMultiLnDisc, _accountMultiLnDisc, '', '', '',agreementHeaderExtRecId, agreementPartnerCode)
+            //    ) ||
+            //    this.findDiscAgreement(relation, _itemMultiLnDisc, _accountMultiLnDisc, '', '', '');
+        }
+
+        return NoYes::No;//this.findDiscAgreement(relation, _itemMultiLnDisc, _accountMultiLnDisc, '', '', '');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findPrice</Name>
+				<Source><![CDATA[
+    //Zain
+
+    public boolean  findPrice(PriceGroupId _priceGroupId,
+                              RecId        _hmInsuranceContract,
+                              RecId        _hmContractClassOrPlanId,
+                              RecId        _hmNetworkLevel,
+                              HMCaseType   _hmCaseType,
+                              RecId        _revenueCode = 0,
+                              RecId        _CPTCode = 0,
+                              RecId               _modifier1 = 0,
+                              RecId               _modifier2 = 0,
+                              RecId               _modifier3 = 0,
+                              RecId               _modifier4 = 0,
+                              boolean      _useItemPrice = true)
+    {
+        boolean     findAll;
+        boolean     findProductDim;
+
+        InventDim   inventDimAllActivated;
+        InventDim   inventDimProductDimActivated;
+        InventDim   inventDimNoneActivated;
+
+        boolean     checkAgreement;
+
+        usedPriceGroupId = _priceGroupId;
+
+        // Remove previously found price agreements
+        this.mcrRemovePriceDiscTableList(MCRPriceHistoryType::TradePrice);
+
+        if (itemId)
+        {
+            inventDimAllActivated.initFromInventDim(inventDim, tradeModuleType.activePriceFields(itemId));
+            EcoResProductDimGroupSetup::copyProductDimensionsForItem(itemId, inventDimAllActivated, inventDimProductDimActivated);
+
+            checkAgreement = tradeModuleType.isPriceDiscPerAgreementApplicable();
+
+            findAll         = !InventDim::isInventDimEqual(inventDimAllActivated, inventDimProductDimActivated);
+            findProductDim  = !InventDim::isInventDimEqual(inventDimProductDimActivated,inventDimNoneActivated);
+
+            inventDimAllActivated           = findAll           ? InventDim::findDim(inventDimAllActivated)         : inventDimAllActivated;
+            inventDimProductDimActivated    = findProductDim    ? InventDim::findDim(inventDimProductDimActivated)  : inventDimProductDimActivated;
+        }
+
+        if (countryRegion_RU)
+        {
+            //Zain -- commented because this piece of code is for Russia
+            //boolean ret =   (!checkAgreement || this.searchbyAgreement_RU()) &&
+            //        (findAll        && inventDimAllActivated.RecId         && this.findPriceAgreement(_priceGroupId, inventDimAllActivated.InventDimId,        agreementHeaderExtRecId, agreementPartnerCode)) ||
+            //        (findProductDim && inventDimProductDimActivated.RecId  && this.findPriceAgreement(_priceGroupId, inventDimProductDimActivated.InventDimId, agreementHeaderExtRecId, agreementPartnerCode)) ||
+            //                                                                  this.findPriceAgreement(_priceGroupId, InventDim::inventDimIdBlank(),            agreementHeaderExtRecId, agreementPartnerCode);
+            boolean ret = false;
+            //Zain
+            if (ret)
+            {
+                return ret;
+            }
+        }
+
+        return ((findAll        && inventDimAllActivated.RecId         && this.findPriceAgreement(_priceGroupId, inventDimAllActivated.InventDimId,
+                                                                           _hmInsuranceContract,
+                                                                           _hmContractClassOrPlanId,
+                                                                            _hmNetworkLevel,
+                                                                            _hmCaseType,
+                                                                            _revenueCode,
+                                                                            _CPTCode,
+                                                                            _modifier1,
+                                                                            _modifier2,
+                                                                            _modifier3,
+                                                                            _modifier4))       ||
+                (findProductDim && inventDimProductDimActivated.RecId  && this.findPriceAgreement(_priceGroupId, inventDimProductDimActivated.InventDimId,
+                                                                        _hmInsuranceContract,
+                                                                        _hmContractClassOrPlanId,
+                                                                        _hmNetworkLevel,
+                                                                        _hmCaseType,
+                                                                        _revenueCode,
+                                                                        _CPTCode,
+                                                                        _modifier1,
+                                                                        _modifier2,
+                                                                        _modifier3,
+                                                                        _modifier4))   ||
+                                                                         this.findPriceAgreement(_priceGroupId, InventDim::inventDimIdBlank(),
+                                                                        _hmInsuranceContract,
+                                                                        _hmContractClassOrPlanId,
+                                                                        _hmNetworkLevel,
+                                                                        _hmCaseType,
+                                                                        _revenueCode,
+                                                                        _CPTCode,
+                                                                        _modifier1,
+                                                                        _modifier2,
+                                                                        _modifier3,
+                                                                        _modifier4)            ||
+                    (_useItemPrice && this.findItemPrice()));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findPriceAgreement</Name>
+				<Source><![CDATA[
+    public boolean  findPriceAgreement(PriceGroupId        _priceGroupId,
+                                       InventDimId         _inventDimId,
+                                       RecId               _hmInsuranceContract,
+                                       RecId               _hmContractClassOrPlanId,
+                                       RecId               _hmNetworkLevel,
+                                       HMCaseType          _hmCaseType,
+                                       RecId               _revenueCode = 0,
+                                       RecId               _CPTCode = 0,
+                                       RecId               _modifier1 = 0,
+                                       RecId               _modifier2 = 0,
+                                       RecId               _modifier3 = 0,
+                                       RecId               _modifier4 = 0,
+                                       AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+                                       CustVendAC                 _agreementPartnerCode = ''
+                                       )
+    {
+        PriceDiscTable      priceDiscTable;
+        //Zain
+        PriceDiscAdmTrans   priceDiscAdmTrans;
+        HMProcedureCodeMaster  CPTCode = HMProcedureCodeMaster::find(_CPTCode);
+        HMProcedureCodeMaster  revenueCode = HMProcedureCodeMaster::find(_revenueCode);
+        //Zain
+        PriceType           relation        = tradeModuleType.priceDiscType(PriceGroupType::PriceGroup);
+        boolean             priceExist      = false;
+        PriceDiscProductCodeType    itemCode;
+        PriceDiscPartyCodeType      accountCode;
+        //TableGroupAll       itemCode;
+        //TableGroupAll       accountCode;
+        ItemRelation        itemRelation;
+        CustVendRel         accountRelation;
+        Integer             idx;
+        Qty                 absQty          = abs(qty);
+        container           key;
+        container           cacheValue;
+        int                 i;
+        FromDate            localFromDate;
+        ToDate              localToDate;
+        AmountQty           localQuantityAmountFrom;
+        AmountQuantityTo    localQuantityAmountTo;
+        RecId               localRecid;
+        boolean             cacheMode,priceAgreementMatchedDateQtyCondition;
+        NoYes               localSearchAgain;
+
+        boolean             countryRegion_IN = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoIN]);
+
+        boolean findPrice()
+        {
+            boolean dateQualifies       = false;
+            boolean quantityQualifies   = false;
+
+            if (((discDate >= localFromDate || ! localFromDate)
+                &&(discDate <= localToDate  || ! localToDate)))
+            {
+                dateQualifies = true;
+            }
+
+            if (localQuantityAmountFrom <= absQty
+                &&(localQuantityAmountTo > absQty || !localQuantityAmountTo))
+            {
+                quantityQualifies = true;
+            }
+            else if (this.parmMCRPriceHistoryPotentialCalc(NoYes::No))
+            {
+                // Quantity not checked for potential calculation
+                quantityQualifies = true;
+            }
+
+            if (dateQualifies && quantityQualifies)
+            {
+                if (cacheMode)
+                {
+                    priceDiscTable = PriceDiscTable::findRecId(localRecid);
+                }
+
+                if (this.calcCur2CurPriceAmount(priceDiscTable.calcPriceAmount(absQty),  priceDiscTable) < this.calcPriceAmount(absQty)
+                    || ! priceExist
+                    || this.parmMCRPriceHistoryPotentialCalc(NoYes::No)
+                    )
+                {
+                    priceUnit               = priceDiscTable.priceUnit();
+                    price                   = this.calcCur2CurPriceAmount(priceDiscTable.price(),  priceDiscTable);
+
+                    if (salesParameters.ApplySmartRoundingAfterConversion && (priceDiscTable.Currency != currency) &&
+                        relation == PriceType::PriceSales)
+                    {
+                        price = PriceDiscSmartRounding::smartRound(price,Currency::find(currency));
+                    }
+
+                    markup                  = this.calcCur2CurPriceAmount(priceDiscTable.markup(),  priceDiscTable);
+
+                    pdsCalculationId        = priceDiscTable.pdsCalculationId;
+
+                    if (priceDiscTable.DisregardLeadTime)
+                    {
+                        this.updateLeadTime();
+                    }
+                    else
+                    {
+                        deliveryDays        = priceDiscTable.DeliveryTime;
+                        calendarDays        = priceDiscTable.CalendarDays;
+                    }
+
+                    // <GEERU>
+                    inventBaileeFreeDays    = priceDiscTable.InventBaileeFreeDays_RU;
+                    // </GEERU>
+                    actualPriceTable        = priceDiscTable.data();
+                    priceExist              = true;
+
+                    this.mcrPriceDiscTableFound(priceDiscTable);
+
+                    // <GIN>
+                    if (countryRegion_IN)
+                    {
+                        // Firstly, retrieve the MRP from the trade agreement. If there is no MRP defined in
+                        // the trade agreement, the MRP should be retrieved from the item master.
+                        maxRetailPrice = this.calcCur2CurPriceAmount(
+                            priceDiscTable.MaximumRetailPrice_IN ?
+                                priceDiscTable.MaximumRetailPrice_IN :
+                                InventTableModule::find(itemId, moduleType).maxRetailPrice_IN(),
+                            priceDiscTable);
+                    }
+                    // </GIN>
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if (! itemId)
+        {
+            return priceExist;
+        }
+
+        this.resetPrice();
+
+        idx = 0;
+
+        while (idx < 9)
+        {
+            itemCode        = idx mod 3;
+            accountCode     = idx div 3;
+
+            itemRelation    = itemCode == 0 ? itemId : '';
+            accountRelation = this.accountRelation(accountCode, _priceGroupId);
+            // <GEERU>
+            if (countryRegion_RU)
+            {
+                if (accountCode == PriceDiscPartyCodeType::Table &&
+                    _agreementHeaderExtRecId &&
+                    _agreementPartnerCode)
+                {
+                    accountRelation = _agreementPartnerCode;
+                }
+            }
+            // </GEERU>
+            
+            if (PriceDiscTable::isPartyCodeProductCodeActivated(relation, accountCode, itemCode, priceParameters))
+            //if (PriceDiscTable::activation(relation, accountCode, itemCode, priceParameters))
+            {
+                if (HMPriceDisc::validateRelation(accountCode, accountRelation)  &&
+                    HMPriceDisc::validateRelationItem(itemCode,    itemRelation   ))
+                {
+                    // To avoid flooding the cache the most granualated setup isn't cached.
+                    cacheMode = (itemCode       != PriceDiscProductCodeType::Table
+                                 || accountCode != PriceDiscPartyCodeType::Table)
+                        && !this.parmMCRPriceHistoryPotentialCalc(NoYes::Yes);
+
+                    cacheValue = conNull();
+
+                    if (cacheMode)
+                    {
+                        key = this.makeKey(relation,
+                                            itemCode,
+                                            itemRelation,
+                                            accountCode,
+                                            accountRelation,
+                                            unitID,
+                                            currency,
+                                            _inventDimId
+                                            // <GEERU>
+                                            ,_agreementHeaderExtRecId
+                                            // </GEERU>
+                                            );
+
+                        cacheValue = HMPriceDisc::getPriceDiscCacheValue(#cacheScope_FindPrice, key);
+                    }
+
+                    if (cacheValue == conNull())
+                    {
+                        //Original query
+                        //while select priceDiscTable
+                        //    order by QuantityAmountFrom, FromDate
+                        //    where priceDiscTable.Relation            == relation
+                        //        && priceDiscTable.ItemCode           == itemCode
+                        //        && priceDiscTable.ItemRelation       == itemRelation
+                        //        && priceDiscTable.AccountCode        == accountCode
+                        //        && priceDiscTable.AccountRelation    == accountRelation
+                        //        && priceDiscTable.UnitId             == unitID
+                        //        && (priceDiscTable.Currency          == currency
+                        //        ||  (priceDiscTable.GenericCurrency
+                        //        &&   priceDiscTable.Currency         == genericCurrency))
+                        //        // <GEERU>
+                        //        && (!countryRegion_RU || priceDiscTable.AgreementHeaderExt_RU == _agreementHeaderExtRecId)
+                        //        // </GEERU>
+                        //        && (priceDiscTable.InventDimId       == _inventDimId || this.parmMCRPriceHistoryPotentialCalc())
+                        accountCode = (_priceGroupId != "") ? PriceDiscPartyCodeType::GroupId : PriceDiscPartyCodeType::Table;
+                        while select priceDiscTable
+                            order by QuantityAmountFrom, FromDate
+                            join priceDiscAdmTrans
+                            where  priceDiscTable.OriginalPriceDiscAdmTransRecId == priceDiscAdmTrans.RecId
+                                && priceDiscTable.Relation == relation
+                                && priceDiscTable.ItemCode == itemCode
+                                && priceDiscTable.ItemRelation == itemRelation
+                                && priceDiscTable.AccountCode == accountCode
+                                && priceDiscTable.AccountRelation == accountRelation
+                                && priceDiscTable.UnitId == unitID
+                                && (priceDiscTable.Currency          == currency
+                                ||  (priceDiscTable.GenericCurrency
+                                &&   priceDiscTable.Currency         == genericCurrency))
+                                && (priceDiscTable.InventDimId       == _inventDimId) //|| this.parmMCRPriceHistoryPotentialCalc())
+                                && priceDiscAdmTrans.AccountCode == accountCode//TableGroupAll::Table
+                                && priceDiscAdmTrans.AccountRelation == accountRelation
+                                && priceDiscAdmTrans.HMInsuranceContract == _hmInsuranceContract
+                                && priceDiscAdmTrans.HMInsuranceContractClassOrPlans == _hmContractClassOrPlanId
+                                && priceDiscAdmTrans.HMInsuranceNetwork == _hmNetworkLevel
+                                && priceDiscAdmTrans.HMCaseType == _hmCaseType
+                                && priceDiscAdmTrans.HMCPTHCPCCode == CPTCode.Code
+                                && priceDiscAdmTrans.HMRevenueCode == revenueCode.Code
+                                && priceDiscAdmTrans.Modifier1 == _modifier1
+                                && priceDiscAdmTrans.Modifier2 == _modifier2
+                                && priceDiscAdmTrans.Modifier3 == _modifier3
+                                && priceDiscAdmTrans.Modifier4 == _modifier4
+                        {
+                            if (cacheMode)
+                            {
+                                cacheValue += [[priceDiscTable.FromDate,
+                                                priceDiscTable.ToDate,
+                                                priceDiscTable.QuantityAmountFrom,
+                                                priceDiscTable.QuantityAmountTo,
+                                                priceDiscTable.RecId,
+                                                priceDiscTable.SearchAgain]];
+                            }
+                            else
+                            {
+                                localFromDate              = priceDiscTable.FromDate;
+                                localToDate                = priceDiscTable.ToDate;
+                                localQuantityAmountFrom    = priceDiscTable.QuantityAmountFrom;
+                                localQuantityAmountTo      = priceDiscTable.QuantityAmountTo;
+                                localRecid                 = priceDiscTable.RecId;
+
+                                priceAgreementMatchedDateQtyCondition =  findPrice();
+                                if (priceExist
+                                    && !priceDiscTable.SearchAgain
+                                    && ! this.parmMCRPriceHistoryPotentialCalc()
+                                    )
+                                {
+                                    idx = 9;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (cacheMode)
+                        {
+                            //We also want to cache the absence of prices.
+                            if (cacheValue == conNull())
+                            {
+                                cacheValue = [[0]];
+                            }
+
+                            HMPriceDisc::insertPriceDiscCache(#cacheScope_FindPrice, key, cacheValue);
+                        }
+                    }
+
+                    if (cacheMode
+                        && cacheValue)
+                    {
+                        for (i=1;i<=conLen(cacheValue);i++)
+                        {
+                            [localFromDate, localToDate, localQuantityAmountFrom, localQuantityAmountTo, localRecid, localSearchAgain]  = conPeek(cacheValue, i);
+                            if (localRecid)
+                            {
+                                priceAgreementMatchedDateQtyCondition =  findPrice();
+                                if (priceExist
+                                    && !localSearchAgain
+                                    && priceAgreementMatchedDateQtyCondition
+                                    && ! this.parmMCRPriceHistoryPotentialCalc())
+                                {
+                                    idx = 9;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            idx += 1;
+        }
+
+        // <GEERU>
+        if (countryRegion_RU)
+        {
+            ruAgreementExists = _agreementHeaderExtRecId && priceExist;
+        }
+        // </GEERU>
+        return priceExist;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDiscAmount</Name>
+				<Source><![CDATA[
+    public DiscAmount  getDiscAmount()
+    {
+        return discAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDiscPercent</Name>
+				<Source><![CDATA[
+    public DiscPct  getDiscPercent()
+    {
+        return (100 * (1 - (1 - this.getDiscPercent1() / 100) * (1 - this.getDiscPercent2() / 100)));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDiscPercent1</Name>
+				<Source><![CDATA[
+    public DiscPct  getDiscPercent1()
+    {
+        return percent1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDiscPercent2</Name>
+				<Source><![CDATA[
+    public DiscPct  getDiscPercent2()
+    {
+        return percent2;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRoughEndDiscAmount</Name>
+				<Source><![CDATA[
+    public DiscAmount getRoughEndDiscAmount()
+    {
+        return roughEndDiscAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventBaileeFreeDays_RU</Name>
+				<Source><![CDATA[
+    public InventBaileeFreeDays_RU inventBaileeFreeDays_RU()
+    {
+        return inventBaileeFreeDays;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isEqual</Name>
+				<Source><![CDATA[
+    public boolean isEqual(HMPriceDisc _priceDisc)
+    {
+        return (_priceDisc.parmModuleType() == moduleType           &&
+                _priceDisc.parmItemId()     == itemId               &&
+                _priceDisc.parmUnitID()     == unitID               &&
+                _priceDisc.parmDiscDate()   == discDate             &&
+                _priceDisc.parmQty()        == qty                  &&
+                _priceDisc.parmAccountId()  == accountId            &&
+                _priceDisc.parmCurrency()   == currency             &&
+                InventDim::isInventDimEqual(_priceDisc.parmInventDim(), inventDim));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemRelation</Name>
+				<Source><![CDATA[
+    private ItemId  itemRelation(PriceDiscProductCodeType      _itemCode,
+                                 PriceGroupId       _groupId)
+    {
+        return _itemCode == PriceDiscProductCodeType::Table    ? itemId
+            : (_itemCode == PriceDiscProductCodeType::GroupId  ? _groupId
+            : '');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lineDiscAmount</Name>
+				<Source><![CDATA[
+    public DiscAmount  lineDiscAmount()
+    {
+        return CurrencyExchangeHelper::amount(lineDiscAmount * this.priceUnit(), currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lineDiscPct</Name>
+				<Source><![CDATA[
+    public DiscPct  lineDiscPct()
+    {
+        return lineDiscPct;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>makeKey</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Composes a key based of the passed values and the current data area id.
+    /// </summary>
+    /// <param name="_relation">
+    ///     A PriceType enumeration type.
+    /// </param>
+    /// <param name="_itemCode">
+    ///     A TableGroupAll enumeration type.
+    /// </param>
+    /// <param name="_itemRel">
+    ///     An ItemId data type.
+    /// </param>
+    /// <param name="_accountCode">
+    ///     A TableGroupAll enumeration type.
+    /// </param>
+    /// <param name="_accountRel">
+    ///     A CustVendAC data type.
+    /// </param>
+    /// <param name="_unitID">
+    ///     A UnitOfMeasureSymbol data type.
+    /// </param>
+    /// <param name="_currency">
+    ///     A CurrencyCode data type;
+    /// </param>
+    /// <param name="_inventDimId">
+    ///     A InventDimId data type.
+    /// </param>
+    /// <param name="_agreementHeaderExtRecId">
+    ///     An AgreementHeaderExtRecId_RU data type.
+    /// </param>
+    /// <returns>
+    ///     A container type.
+    /// </returns>
+    [Hookable]
+    protected container makeKey(PriceType             _relation,
+                             PriceDiscProductCodeType         _itemCode,
+                             ItemId                _itemRel,
+                             PriceDiscPartyCodeType         _accountCode,
+                             CustVendAC            _accountRel,
+                             UnitOfMeasureSymbol   _unitID,
+                             CurrencyCode          _currency,
+                             InventDimId           _inventDimId,
+                             AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0
+                             )
+
+    {
+        str key;
+        //Do not use strfmt as it is faster to perform string concat when executing in IL.
+        key = curext();
+        key += ' ';
+        key += int2str(enum2int(_relation));
+        key += ' ';
+        key += int2str(_itemCode);
+        key += ' ';
+        key += _itemRel;
+        key += ' ';
+        key += int2str(_accountCode);
+        key += ' ';
+        key += _accountRel;
+        key += ' ';
+        key += _unitID;
+        key += ' ';
+        key += _currency;
+        key += ' ';
+        key += _inventDimId;
+
+        // <GEERU>
+        if (countryRegion_RU)
+        {
+            key += ' ';
+            key += int642str(_agreementHeaderExtRecId);
+        }
+        // </GEERU>
+
+        return [key];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markup</Name>
+				<Source><![CDATA[
+    public PriceMarkup  markup()
+    {
+        return CurrencyExchangeHelper::amount(markup, currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markupSecCur_RU</Name>
+				<Source><![CDATA[
+    public PriceMarkup  markupSecCur_RU()
+    {
+        return CurrencyExchangeHelper::amount(markupSecCur, CompanyInfoHelper::secondaryCurrency_RU());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>maxRetailPrice_IN</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets max retail price amount.
+    /// </summary>
+    /// <returns>
+    /// The instance of the <c>PriceCur</c> class.
+    /// </returns>
+    public PriceCur maxRetailPrice_IN()
+    {
+        return CurrencyExchangeHelper::price(maxRetailPrice, currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mcrCalcPostageDisc</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the postage discount.
+    /// </summary>
+    /// <param name="_acctGroup">
+    /// The account group on the that must be verified before the postage
+    /// can be calculated.
+    /// </param>
+    /// <returns>
+    /// A <c>Container</c> containing the postage discount amount and the
+    /// postage discount percent.
+    /// </returns>
+    private container mcrCalcPostageDisc(SysGroup _acctGroup)
+    {
+        PriceDiscPartyCodeType           accountCode;
+        CustVendRel             accountRelation;
+
+        this.resetDisc();
+
+        while (enum2int(accountCode) < 3)
+        {
+            accountRelation = this.accountRelation(accountCode, _acctGroup);
+
+            if (PriceDiscTable::isPartyCodeProductCodeActivated(PriceType::MCRPostageDisc, accountCode, PriceDiscProductCodeType::All, priceParameters))
+            {
+                if (HMPriceDisc::validateRelation(accountCode, accountRelation))
+                {
+                    this.findDisc(PriceType::MCRPostageDisc, InventDim::inventDimIdBlank(),
+                          PriceDiscProductCodeType::All, '', // no item relation
+                          accountCode, accountRelation, '', // no unit
+                    qty, currency, 0, 0, 0, HMCaseType::All, 0,0,0,0,0,0,0,"",NoYes::No);
+                }
+            }
+
+            if (searchAgain)
+            {
+                accountCode += 1;
+            }
+            else
+            {
+                accountCode = 3;
+            }
+        }
+
+        return [this.getDiscAmount(), this.getDiscPercent()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mcrPriceDiscTableFound</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Adds a trade agreement to the list.
+    /// </summary>
+    /// <param name="_priceDiscTable">
+    /// The <c>PriceDiscTableRecord</c> to add to the list.
+    /// </param>
+    private void mcrPriceDiscTableFound(PriceDiscTable _priceDiscTable)
+    {
+        RecordSortedList recordSortedList;
+
+        if (mcrPriceHistoryEnabled)
+        {
+            recordSortedList = this.parmMCRPriceDiscTableList();
+            recordSortedList.ins(_priceDiscTable);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mcrRemovePriceDiscTableList</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Removes <c>PriceDiscTable</c> records that are of the same type as the passed <c>MCRriceHistoryType</c>.
+    /// </summary>
+    /// <param name="_priceHistoryType">
+    /// The <c>MCRriceHistoryType</c> value to check for in the <c>PriceDiscTable</c> records.
+    /// </param>
+    private void mcrRemovePriceDiscTableList(MCRPriceHistoryType _priceHistoryType)
+    {
+        PriceDiscTable      priceDiscTableLocal;
+        RecordSortedList    recordSortedList;
+        MCRPriceHistoryType priceHistoryType;
+        boolean             loop;
+
+        if (mcrPriceHistoryEnabled)
+        {
+            recordSortedList = this.parmMCRPriceDiscTableList();
+
+            if (recordSortedList.len() != 0)
+            {
+                loop = recordSortedList.first(priceDiscTableLocal);
+
+                while (loop)
+                {
+                    priceHistoryType = MCRPriceHistory::priceType2MCRPriceHistoryType(priceDiscTableLocal.Relation);
+                    if (priceHistoryType == _priceHistoryType)
+                    {
+                        recordSortedList.del(priceDiscTableLocal);
+                    }
+                    loop = recordSortedList.next(priceDiscTableLocal);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    void  new(ModuleInventPurchSales    _moduleType,
+              ItemId                    _itemId,
+              InventDim                 _inventDim,
+              UnitOfMeasureSymbol       _unitID,
+              TransDate                 _discDate,
+              Qty                       _qty,
+              CustVendAC                _accountId,
+              CurrencyCode              _currency = CompanyInfoHelper::standardCurrency(),
+              AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+              CustVendAC                 _agreementPartnerCode    = ''
+              )
+    {
+        RecordSortedList    recordSortedList;
+
+        moduleType          = _moduleType;
+        itemId              = _itemId;
+        unitID              = _unitID;
+        inventDim           = _inventDim;
+        discDate            = _discDate;
+        qty                 = _qty;
+        accountId           = _accountId;
+        currency            = _currency;
+
+        tradeModuleType     = TradeModuleType::newFromModule(moduleType);
+
+        salesParameters     = SalesParameters::find();
+        priceParameters     = PriceParameters::find();
+        genericCurrency     = salesParameters.GenericCurrency;
+
+        countryRegion_RU    = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoRU]);
+
+        if (tradeModuleType.isPriceDiscPerAgreementApplicable())
+        {
+            agreementHeaderExtRecId = _agreementHeaderExtRecId;
+            agreementPartnerCode = _agreementPartnerCode;
+        }
+
+        mcrPriceHistoryEnabled = tradeModuleType.isMCRPriceHistoryUpdateEnabled();
+
+        recordSortedList = new SysRecordSortedList(tableNum(PriceDiscTable));
+        recordSortedList.sortOrder(fieldNum(PriceDiscTable, RecId));
+        this.parmMCRPriceDiscTableList(recordSortedList);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAccountId</Name>
+				<Source><![CDATA[
+    public CustVendAC parmAccountId(CustVendAC _accountId = accountId)
+    {
+        accountId = _accountId;
+        return accountId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAgreementHeaderExt_RU</Name>
+				<Source><![CDATA[
+    public AgreementHeaderExtRecId_RU parmAgreementHeaderExt_RU(AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = agreementHeaderExtRecId)
+    {
+        agreementHeaderExtRecId = _agreementHeaderExtRecId;
+        return agreementHeaderExtRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAgreementPartnerCode_RU</Name>
+				<Source><![CDATA[
+    public CustVendAC parmAgreementPartnerCode_RU(CustVendAC _agreementPartnerCode = agreementPartnerCode)
+    {
+        agreementPartnerCode = _agreementPartnerCode;
+        return agreementPartnerCode;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCurrency</Name>
+				<Source><![CDATA[
+    public CurrencyCode parmCurrency(CurrencyCode _currency = currency)
+    {
+        currency = _currency;
+        return currency;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDiscDate</Name>
+				<Source><![CDATA[
+    public TransDate parmDiscDate(TransDate _discDate = discDate)
+    {
+        discDate = _discDate;
+        return discDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInventDim</Name>
+				<Source><![CDATA[
+    public InventDim parmInventDim(InventDim _inventDim = inventDim)
+    {
+        inventDim = _inventDim;
+        return inventDim;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmItemId</Name>
+				<Source><![CDATA[
+    public ItemId parmItemId(ItemId _itemId = itemId)
+    {
+        itemId = _itemId;
+        return itemId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMCRPriceDiscTableList</Name>
+				<Source><![CDATA[
+    public SysRecordSortedList parmMCRPriceDiscTableList(
+        SysRecordSortedList _recordSortedList = recordSortedListPriceDiscTable)
+    {
+        recordSortedListPriceDiscTable = _recordSortedList;
+        return recordSortedListPriceDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMCRPriceHistoryPotentialCalc</Name>
+				<Source><![CDATA[
+    public boolean parmMCRPriceHistoryPotentialCalc(boolean _mcrPriceHistoryPotentialCalc = mcrPriceHistoryPotentialCalc)
+    {
+        mcrPriceHistoryPotentialCalc = _mcrPriceHistoryPotentialCalc;
+
+        return mcrPriceHistoryPotentialCalc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmModuleType</Name>
+				<Source><![CDATA[
+    public ModuleInventPurchSales parmModuleType(ModuleInventPurchSales _moduleType = moduleType)
+    {
+        if (!prmIsDefault(_moduleType))
+        {
+            moduleType = _moduleType;
+            tradeModuleType = TradeModuleType::newFromModule(moduleType);
+        }
+        return moduleType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPDSCalculationId</Name>
+				<Source><![CDATA[
+    public PDSCalculationId parmPDSCalculationId(PDSCalculationId _pdsCalculationId = pdsCalculationId)
+    {
+        pdsCalculationId = _pdsCalculationId;
+
+        return pdsCalculationId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQty</Name>
+				<Source><![CDATA[
+    public Qty parmQty(Qty _qty = qty)
+    {
+        qty = _qty;
+        return qty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmUnitID</Name>
+				<Source><![CDATA[
+    public UnitOfMeasureSymbol parmUnitID(UnitOfMeasureSymbol _unitID = unitID)
+    {
+        unitID = _unitID;
+        return unitID;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>percent1</Name>
+				<Source><![CDATA[
+    public DiscPct percent1()
+    {
+        return percent1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>percent2</Name>
+				<Source><![CDATA[
+    public DiscPct percent2()
+    {
+        return percent2;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>price</Name>
+				<Source><![CDATA[
+    public PriceCur  price()
+    {
+        return CurrencyExchangeHelper::price(price, currency);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>priceSecCur_RU</Name>
+				<Source><![CDATA[
+    public PriceSecCur_RU priceSecCur_RU()
+    {
+        return CurrencyExchangeHelper::price(priceSecCur, CompanyInfoHelper::secondaryCurrency_RU());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>priceTable</Name>
+				<Source><![CDATA[
+    public PriceDiscTable  priceTable()
+    {
+        return actualPriceTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>priceUnit</Name>
+				<Source><![CDATA[
+    public PriceUnit  priceUnit()
+    {
+        return priceUnit ? priceUnit : 1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resetDisc</Name>
+				<Source><![CDATA[
+    private void  resetDisc()
+    {
+        lineDiscAmount          = 0;
+        lineDiscPct             = 0;
+        searchAgain             = NoYes::Yes;
+        discAgreementExist      = NoYes::No;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resetPrice</Name>
+				<Source><![CDATA[
+    private void  resetPrice()
+    {
+        price               = 0;
+        priceUnit           = 1;
+        markup              = 0;
+        deliveryDays        = 0;
+        calendarDays        = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchbyAgreement_RU</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Indicates whether an agreement exists for an account combination.
+    /// </summary>
+    /// <returns>
+    ///    A true if agreement exists; otherwise, false.
+    /// </returns>
+    public boolean searchbyAgreement_RU()
+    {
+        return agreementHeaderExtRecId != 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateLeadTime</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Updates both delivery days and calendar days from the values set up in the item form.
+    /// </summary>
+    /// <param name="_inventItemOrderSetupMap">
+    ///     The corresponding <c>InventItemOrderSetupMap</c> of the given <c>ItemId</c>, <c>ModuleInventPurchSales</c> and <c>IventDimId</c>.
+    /// </param>
+    protected void updateLeadTime(InventItemOrderSetupMap _inventItemOrderSetupMap = InventItemOrderSetupMap::find(itemId,InventItemOrderSetupMap::module2SetupType(moduleType),inventDim.InventDimId))
+    {
+        ReqItemTable reqItemTable;
+
+        deliveryDays = _inventItemOrderSetupMap.leadTime();
+        calendarDays = _inventItemOrderSetupMap.calendarDays();
+
+        if ( moduleType == ModuleInventPurchSales::Purch )
+        {
+            reqItemTable = ReqItemTable::find(itemId,InventDim::dimId2ReqCovDimId(inventDim.InventDimId, InventDimGroupSetup::newItemId(itemId)));
+            if ( reqItemTable.RecId && reqItemTable.LeadTimePurchaseActive )
+            {
+                deliveryDays = reqItemTable.LeadTimePurchase;
+                calendarDays = reqItemTable.CalendarDaysPurchase;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>usedPriceGroupId</Name>
+				<Source><![CDATA[
+    public PriceGroupId usedPriceGroupId()
+    {
+        return usedPriceGroupId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>actualSalesPriceDisc</Name>
+				<Source><![CDATA[
+    public static container  actualSalesPriceDisc(CustTable    _custTable,
+                                                  InventTable  _inventTable,
+                                                  Qty          _qty         = realMin(),
+                                                  TransDate    _searchDate  = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                                                  InventDim    _inventDimCriteria = null)
+    {
+        HMPriceDisc  priceDisc;
+
+        if (_qty == realMin())
+        {
+            _qty = _inventTable.salesStandardQty(_inventDimCriteria.inventDimId);
+        }
+
+        priceDisc = new HMPriceDisc(ModuleInventPurchSales::Sales,
+                                  _inventTable.ItemId,
+                                  _inventDimCriteria,
+                                  _inventTable.salesUnitId(),
+                                  _searchDate,
+                                  _qty,
+                                  _custTable.AccountNum,
+                                  _custTable.Currency);
+        //Zain -- commented for now
+        //priceDisc.findPrice(_custTable.PriceGroup);
+
+        //priceDisc.findLineDisc(_inventTable.salesLineDisc(), _custTable.LineDisc);
+
+        return [priceDisc.price(),
+                priceDisc.markup(),
+                priceDisc.priceUnit(),
+                priceDisc.lineDiscAmount(),
+                priceDisc.lineDiscPct(),
+                priceDisc.percent1(),
+                priceDisc.percent2(),
+                priceDisc.priceTable(),
+                priceDisc.discTable()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>amount2Price</Name>
+				<Source><![CDATA[
+    public client server static PriceCur  amount2Price(Amount        _amount,
+                                                       DiscPct       _discPercent,
+                                                       MarkupAmount  _markup,
+                                                       Qty           _qty,
+                                                       DiscAmount    _discAmount,
+                                                       PriceUnit     _priceUnit,
+                                                       CurrencyCode  _currencyCode,
+                                                       Price         _price)
+    {
+        Price  returnPrice;
+
+        if (! _priceUnit)
+        {
+            _priceUnit = 1;
+        }
+
+        if (_discPercent     != 100 &&
+            _qty             != 0  )
+        {
+            returnPrice = ( (100 * _amount/ (100 - _discPercent) - (_qty   >= 0 ? _markup : -_markup) + _qty   * _discAmount / _priceUnit) * _priceUnit) / _qty;
+
+            returnPrice = CurrencyExchangeHelper::price(returnPrice, _currencyCode);
+        }
+        else
+        {
+            returnPrice = _price;
+        }
+
+        return returnPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calcGrossAmount</Name>
+				<Source><![CDATA[
+    public static AmountCur calcGrossAmount(PriceCur       _price,
+                                            PriceUnit      _priceUnit,
+                                            Qty            _calcQty,
+                                            Qty            _totalQty,
+                                            MarkupAmount   _markup,
+                                            CurrencyCode   _currencyCode,
+                                            AmountCur      _lineAmount)
+    {
+        AmountCur grossAmount = 0;
+        if (_calcQty)
+        {
+            grossAmount = HMPriceDisc::price2Amount(_price,
+                                                  _priceUnit,
+                                                  0.0,
+                                                  _calcQty,  // sales deliver now
+                                                  _totalQty,
+                                                  _markup,
+                                                  0.0,
+                                                  _currencyCode,
+                                                  _lineAmount);
+        }
+
+        return grossAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>discAmount</Name>
+				<Source><![CDATA[
+    public client server static DiscAmount discAmount(LineMultiLn  _lineMultiLn,
+                                                      DiscAmount   _lineDisc,
+                                                      DiscAmount   _multiLnDisc)
+    {
+        DiscAmount discAmount;
+
+        switch (_lineMultiLn)
+        {
+            case LineMultiLn::Linie             :   discAmount = _lineDisc;
+                break;
+
+            case LineMultiLn::MultiLn           :   discAmount = _multiLnDisc;
+                break;
+
+            case LineMultiLn::MaxLineMultiLine  :   discAmount = max(_lineDisc, _multiLnDisc);
+                break;
+
+            case LineMultiLn::MinLineMultiLine  :   discAmount = min(_lineDisc, _multiLnDisc);
+                break;
+
+            case LineMultiLn::LinePlusMultiLn   :   discAmount = _lineDisc + _multiLnDisc;
+                break;
+
+            case LineMultiLn::LineTimesMultiLn  :   discAmount = _lineDisc + _multiLnDisc;
+                break;
+
+            default                             :   throw error(strFmt("@SYS19306",funcName()));
+        }
+
+        return discAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>discPercent</Name>
+				<Source><![CDATA[
+    public client server static DiscPct discPercent(LineMultiLn  _lineMultiLn,
+                                                    DiscPct      _linePercent,
+                                                    DiscPct      _multiLnPercent)
+    {
+        DiscPct discPct;
+
+        switch (_lineMultiLn)
+        {
+            case LineMultiLn::Linie             :   discPct = _linePercent;
+                break;
+
+            case LineMultiLn::MultiLn           :   discPct = _multiLnPercent;
+                break;
+
+            case LineMultiLn::MaxLineMultiLine  :   discPct = max(_linePercent , _multiLnPercent);
+                break;
+
+            case LineMultiLn::MinLineMultiLine  :   discPct = min(_linePercent , _multiLnPercent);
+                break;
+
+            case LineMultiLn::LinePlusMultiLn   :   discPct = _linePercent + _multiLnPercent;
+                break;
+
+            case LineMultiLn::LineTimesMultiLn  :   discPct = (((1- (100 - _linePercent) / 100 * (100 - _multiLnPercent) / 100)) * 100);
+                break;
+
+            default                             :   throw error(strFmt("@SYS19306",funcName()));
+        }
+
+        return discPct;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findItemLineDiscAgreement</Name>
+				<Source><![CDATA[
+    //Zain
+    //public static container findItemLineDiscAgreement(ModuleInventPurchSales   _moduleType,
+    //                                                  ItemId                   _itemId,
+    //                                                  InventDim                _inventDim,
+    //                                                  UnitOfMeasureSymbol      _unitID,
+    //                                                  TransDate                _discDate,
+    //                                                  Qty                      _qty,
+    //                                                  CustVendAC               _accountId,
+    //                                                  CurrencyCode             _currency,
+    //                                                  LineDiscCode             _accountLineDiscCode,
+    //                                                  InventLineDiscCode       _itemLineDiscCode,
+    //                                                  AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+    //                                                  CustVendAC                 _agreementPartnerCode = ''
+    //                                                  )
+    public static container findItemLineDiscAgreement(ModuleInventPurchSales   _moduleType,
+                                                      ItemId                   _itemId,
+                                                      InventDim                _inventDim,
+                                                      UnitOfMeasureSymbol      _unitID,
+                                                      TransDate                _discDate,
+                                                      Qty                      _qty,
+                                                      CustVendAC               _accountId,
+                                                      CurrencyCode             _currency,
+                                                      LineDiscCode             _accountLineDiscCode,
+                                                      InventLineDiscCode       _itemLineDiscCode,
+                                                      //Zain
+                                                      RecId                    _insuranceContract,
+                                                      RecId                    _hmContractClassOrPlanId,
+                                                      RecId                    _hmNetworkLevel,
+                                                      HMCaseType               _hmCaseType,
+                                                      RecId                    _revenueCode = 0,
+                                                      RecId                    _CPTCode = 0,
+                                                      RecId                    _modifier1 = 0,
+                                                      RecId                    _modifier2 = 0,
+                                                      RecId                    _modifier3 = 0,
+                                                      RecId                    _modifier4 = 0,
+                                                      //Zain
+                                                      AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+                                                      CustVendAC                 _agreementPartnerCode = '',
+                                                      NoYes                     isInsurance = NoYes::No
+                                                      )
+    //Zain
+    {
+        HMPriceDisc       priceDisc;
+        NoYes           discAgreementExist;
+
+        // <GEERU>
+        #isoCountryRegionCodes
+        boolean countryRegion_RU = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoRU]);
+
+        if (countryRegion_RU)
+        {
+            priceDisc = new HMPriceDisc(_moduleType,
+                                    _itemId,
+                                    _inventDim,
+                                    _unitID,
+                                    _discDate,
+                                    _qty,
+                                    _accountId,
+                                    _currency,
+                                    _agreementHeaderExtRecId,
+                                    _agreementPartnerCode
+                                    );
+        }
+        else
+        {
+            // </GEERU>
+            priceDisc = new HMPriceDisc(_moduleType,
+                                      _itemId,
+                                      _inventDim,
+                                      _unitID,
+                                      _discDate,
+                                      _qty,
+                                      _accountId,
+                                      _currency
+                                      ,0  //_agreementHeaderExtRecId
+                                      ,'' //_agreementPartnerCode
+                                      );
+            // <GEERU>
+        }
+        // </GEERU>
+
+        discAgreementExist = priceDisc.findLineDisc(_itemLineDiscCode, _accountLineDiscCode,
+                                                    _insuranceContract,
+                                                    _hmContractClassOrPlanId,
+                                                    _hmNetworkLevel,
+                                                    _hmCaseType,
+                                                    _revenueCode,
+                                                    _CPTCode,
+                                                    _modifier1,
+                                                    _modifier2,
+                                                    _modifier3,
+                                                    _modifier4,
+                                                    isInsurance);
+
+        // <GEERU>
+        if (countryRegion_RU)
+        {
+            return [ priceDisc.lineDiscAmount(),
+                    priceDisc.lineDiscPct(),
+                    priceDisc.percent1(),
+                    priceDisc.percent2(),
+                    discAgreementExist,
+                    priceDisc.agreementExists_RU()
+                    ,priceDisc.parmMCRPriceDiscTableList().pack()
+                    ];
+        }
+        else
+        {
+            // </GEERU>
+            return [ priceDisc.lineDiscAmount(),
+                    priceDisc.lineDiscPct(),
+                    priceDisc.percent1(),
+                    priceDisc.percent2(),
+                    discAgreementExist
+                    ,priceDisc.parmMCRPriceDiscTableList().pack()
+                    ];
+            // <GEERU>
+        }
+        // </GEERU>
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findItemPriceAgreement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the price agreement for a given item.
+    /// </summary>
+    /// <param name="_moduleType">
+    /// The inventory/purchase/sales module for the price agreement.
+    /// </param>
+    /// <param name="_itemId">
+    /// The item ID to locate an agreement for.
+    /// </param>
+    /// <param name="_inventDim">
+    /// The set of inventory dimensions to match.
+    /// </param>
+    /// <param name="_unitID">
+    /// The quantity unit to match.
+    /// </param>
+    /// <param name="_priceDate">
+    /// The date to use to for the effectivity of the price agreement.
+    /// </param>
+    /// <param name="_qty">
+    /// The quantity to match.
+    /// </param>
+    /// <param name="_accountId">
+    /// The currency account ID to match.
+    /// </param>
+    /// <param name="_currency">
+    /// The current ID to match.
+    /// </param>
+    /// <param name="_priceGroupId">
+    /// The price group to match.
+    /// </param>
+    /// <param name="_agreementHeaderExtRecId">
+    /// The ID of the related agreement header record.
+    /// </param>
+    /// <param name="_agreementPartnerCode">
+    /// The ID of the related agreement partner code.
+    /// </param>
+    /// <returns>
+    /// A container with the following: price, markup, price unit, delivery days, calendar days.
+    /// PDS feature adds one additional value - the advanced pricing calculation ID.
+    /// </returns>
+    public static container findItemPriceAgreement(ModuleInventPurchSales  _moduleType,
+                                                   ItemId                  _itemId,
+                                                   InventDim               _inventDim,
+                                                   UnitOfMeasureSymbol     _unitID,
+                                                   TransDate               _priceDate,
+                                                   Qty                     _qty,
+                                                   CustVendAC              _accountId,
+                                                   CurrencyCode            _currency,
+                                                   PriceGroupId            _priceGroupId,
+                                                   RecId                   _hmInsuranceContract,
+                                                   RecId                   _hmContractClassOrPlanId,
+                                                   RecId                   _hmNetworkLevel,
+                                                   HMCaseType              _hmCaseType,
+                                                   RecId                   _revenueCode = 0,
+                                                   RecId                   _CPTCode = 0,
+                                                   RecId                   _modifier1 = 0,
+                                                   RecId                   _modifier2 = 0,
+                                                   RecId                   _modifier3 = 0,
+                                                   RecId                   _modifier4 = 0,
+                                                   AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+                                                   CustVendAC                 _agreementPartnerCode = ''
+                                                   )
+    {
+        HMPriceDisc       priceDisc;
+        NoYes           priceAgreementExist;
+        // <GEERU><GIN>
+        #isoCountryRegionCodes
+        boolean                   countryRegion_RU = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoRU]);
+        boolean                   countryRegion_IN = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoIN]);
+        // </GIN></GEERU>
+        // <GEERU>
+        if (countryRegion_RU)
+        {
+            priceDisc = new HMPriceDisc(_moduleType,
+                                    _itemId,
+                                    _inventDim,
+                                    _unitID,
+                                    _priceDate,
+                                    _qty,
+                                    _accountId,
+                                    _currency,
+                                    _agreementHeaderExtRecId,
+                                    _agreementPartnerCode
+                                    );
+        }
+        else
+        {
+            // </GEERU>
+            priceDisc = new HMPriceDisc(_moduleType,
+                                    _itemId,
+                                    _inventDim,
+                                    _unitID,
+                                    _priceDate,
+                                    _qty,
+                                    _accountId,
+                                    _currency
+                                    ,0  //_agreementHeaderExtRecId
+                                    ,'' //_agreementPartnerCode
+                                    );
+            // <GEERU>
+        }
+        // </GEERU>
+
+        priceAgreementExist =
+        priceDisc.findPrice(_priceGroupId, 
+                           _hmInsuranceContract,
+                           _hmContractClassOrPlanId,
+                           _hmNetworkLevel,
+                           _hmCaseType,
+                           _revenueCode,
+                           _CPTCode,
+                           _modifier1,
+                           _modifier2,
+                           _modifier3,
+                           _modifier4);
+
+        // <GEERU>
+        if (countryRegion_RU)
+        {
+            return [ priceDisc.price(),
+                    priceDisc.markup(),
+                    priceDisc.priceUnit(),
+                    priceDisc.deliveryDays(),
+                    priceDisc.calendarDays(),
+                    priceDisc.agreementExists_RU(),
+                    priceDisc.inventBaileeFreeDays_RU()
+                    // </GEERU>
+                    , priceAgreementExist
+                    // <GEERU>
+                    , priceDisc.parmPDSCalculationId()
+                    , priceDisc.parmMCRPriceDiscTableList().pack()
+                    ];
+        }
+        else
+        {
+            // </GEERU>
+            // <GIN>
+            if (countryRegion_IN)
+            {
+                return [priceDisc.price(),
+                    priceDisc.markup(),
+                    priceDisc.priceUnit(),
+                    priceDisc.deliveryDays(),
+                    priceDisc.calendarDays(),
+                    priceDisc.maxRetailPrice_IN()
+                    // </GIN>
+                    , priceAgreementExist
+                    // <GIN>
+                    , priceDisc.parmPDSCalculationId()
+                    , priceDisc.parmMCRPriceDiscTableList().pack()
+                    ];
+            }
+            else
+            {
+                // </GIN>
+                return [ priceDisc.price(),
+                    priceDisc.markup(),
+                    priceDisc.priceUnit(),
+                    priceDisc.deliveryDays(),
+                    priceDisc.calendarDays()
+                    , priceAgreementExist
+                    , priceDisc.parmPDSCalculationId()
+                    , priceDisc.parmMCRPriceDiscTableList().pack()
+                    ];
+                // <GIN>
+            }
+            // </GIN>
+            // <GEERU>
+        }
+        // </GEERU>
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findMultiLineDiscServer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retrieves the multiline discounts values.
+    /// </summary>
+    /// <param name="_moduleType">
+    /// A <c>ModuleInventPurchSales</c> type.
+    /// </param>
+    /// <param name="_itemId">
+    /// An item ID.
+    /// </param>
+    /// <param name="_inventDim">
+    /// A <c>InventDim</c> record.
+    /// </param>
+    /// <param name="_unitID">
+    /// A <c>UnitOfMeasureSymbol</c> value.
+    /// </param>
+    /// <param name="_discDate">
+    /// A <c>TransDate</c> value.
+    /// </param>
+    /// <param name="_qty">
+    /// A <c>Qty</c> value.
+    /// </param>
+    /// <param name="_accountId">
+    /// A <c>CustVendAC</c> value.
+    /// </param>
+    /// <param name="_currency">
+    /// A <c>CurrencyCode</c> value.
+    /// </param>
+    /// <param name="_itemMultiLnDisc">
+    /// A <c>MultiLnDiscCode</c> value that specifies the item related multiline discount.
+    /// </param>
+    /// <param name="_accountMultiLnDisc">
+    /// A <c>MultiLnDiscCode</c> value that specifies the customer or vendor account related multiline
+    /// discount.
+    /// </param>
+    /// <param name="_agreementHeaderExtRecId">
+    /// An agreement ID.
+    /// </param>
+    /// <param name="_agreementPartnerCode">
+    /// An agreement vendor or customer account.
+    /// </param>
+    /// <param name = "_mcrPriceHistoryUpdate">
+    /// An <c>MCRPriceHistoryUpdate</c> table buffer that should be updated; optional.
+    /// </param>
+    /// <returns>
+    /// A container that contains multiline discount amounts and percentages.
+    /// </returns>
+    /// <remarks>
+    /// This method initializes a server-side <c>PriceDisc</c> object that is used to calculate the values.
+    /// </remarks>
+    public server static container findMultiLineDiscServer(
+        ModuleInventPurchSales    _moduleType,
+        ItemId                    _itemId,
+        InventDim                 _inventDim,
+        UnitOfMeasureSymbol       _unitID,
+        TransDate                 _discDate,
+        Qty                       _qty,
+        CustVendAC                _accountId,
+        CurrencyCode              _currency,
+        MultiLnDiscCode           _itemMultiLnDisc,
+        MultiLnDiscCode           _accountMultiLnDisc,
+        AgreementHeaderExtRecId_RU _agreementHeaderExtRecId = 0,
+        CustVendAC                 _agreementPartnerCode = '',
+        MCRPriceHistoryUpdate     _mcrPriceHistoryUpdate = null
+        )
+    {
+        // <GEERU>
+        #isoCountryRegionCodes
+        boolean                   countryRegion_RU = SysCountryRegionCode::isLegalEntityInCountryRegion([#isoRU]);
+
+        // </GEERU>
+
+        HMPriceDisc priceDisc = new HMPriceDisc(_moduleType,
+                                            _itemId,
+                                            _inventDim,
+                                            _unitID,
+                                            _discDate,
+                                            _qty,
+                                            _accountId,
+                                            // <GEERU>
+                                            _currency,
+                                            countryRegion_RU ? _agreementHeaderExtRecId : 0,
+                                            countryRegion_RU ? _agreementPartnerCode : '');
+        // </GEERU>
+
+        priceDisc.findMultiLineDisc(_itemMultiLnDisc, _accountMultiLnDisc, _qty);
+
+        //Zain -- todo need to fix
+        //if (_mcrPriceHistoryUpdate
+        //    && MCRPriceHistoryUpdate::isPriceHistoryUpdateEnabled(_moduleType))
+        //{
+        //    _mcrPriceHistoryUpdate.updateMultiline(priceDisc);
+        //}
+        //Zain
+
+        return [priceDisc.getDiscAmount(), priceDisc.getDiscPercent()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>flushPriceDiscCache</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Flushes the server and client-side of the cached prices and discounts.
+    /// </summary>
+    public client server static void flushPriceDiscCache()
+    {
+        HMPriceDisc::flushPriceDiscCacheServer();
+        SalesPurchLine::flushPriceDiscCache();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>flushPriceDiscCacheServer</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Flushes the server side of the cached prices and discounts.
+    /// </summary>
+    public server static void flushPriceDiscCacheServer()
+    {
+        SysGlobalObjectCache sysGlobalObjectCache = new SysGlobalObjectCache();
+        sysGlobalObjectCache.clear(#cacheScope_FindDisc);
+        sysGlobalObjectCache.clear(#cacheScope_FindPrice);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPriceDiscCacheValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Retrieves an object from the <c>SysGlobalObjectCache</c> object.
+    /// </summary>
+    /// <param name="_scope">
+    ///    A string type that specifies the scope or the owner of the cached object.
+    /// </param>
+    /// <param name="_key">
+    ///    A container type that specifies the key to the cached object.
+    /// </param>
+    /// <returns>
+    ///    A container type that specifies the retrieved object.
+    /// </returns>
+    public client server static container getPriceDiscCacheValue(str _scope, container _key)
+    {
+        SysGlobalObjectCache sysGlobalObjectCache = new SysGlobalObjectCache();
+        return sysGlobalObjectCache.find(_scope, _key);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertPriceDiscCache</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Inserts an object to the <c>SysGlobalObjectCache</c> object.
+    /// </summary>
+    /// <param name="_scope">
+    ///    A string type that specifies the scope or the owner of the cached object.
+    /// </param>
+    /// <param name="_key">
+    ///    A container type that specifies the key to the cached object.
+    /// </param>
+    /// <param name="_value">
+    ///    A container type that has the object to cache.
+    /// </param>
+    public static client server void insertPriceDiscCache(str _scope, container _key, container _value)
+    {
+        SysGlobalObjectCache sysGlobalObjectCache = new SysGlobalObjectCache();
+        sysGlobalObjectCache.insert(_scope, _key, _value);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mcrPriceDiscTableRecordListDefinition</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds and calculates the amount and percent to discount postage.
+    /// </summary>
+    /// <param name="_salesTable">
+    /// The sales order buffer in which discounting postage.
+    /// </param>
+    /// <param name="_postageAmount">
+    /// The current postage amount.
+    /// </param>
+    /// <returns>
+    /// A container that holds the amount to discount postage and the percentage to discount postage.
+    /// </returns>
+    //public static container mcrFindPostageDisc(SalesTable _salesTable,
+    //                                            AmountCur _postageAmount)
+    //{
+    //    container discAmountPercent;
+    //    InventDim inventDim;
+    //    PriceDisc priceDisc = new PriceDisc(ModuleInventPurchSales::Sales, '',
+    //                                        inventDim,
+    //                                        '',
+    //                                        DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+    //                                        _postageAmount,
+    //                                        _salesTable.CustAccount,
+    //                                        _salesTable.CurrencyCode,
+    //                                        0,
+    //                                        '');
+
+    //    discAmountPercent = priceDisc.mcrCalcPostageDisc(_salesTable.mcrSalesTable().PostageGroupID);
+
+    //    return discAmountPercent;
+    //}
+
+    /// <summary>
+    /// Constructs the containers for the <c>PriceDiscTable</c> record.
+    /// </summary>
+    /// <returns>
+    /// A container made up of the record ID and table ID of the <c>PriceDiscTable</c> record.
+    /// </returns>
+    public static container mcrPriceDiscTableRecordListDefinition()
+    {
+        container sortOrder;
+        container result;
+        sortOrder = [fieldNum(PriceDiscTable, RecId)];
+        result = [tableNum(PriceDiscTable)] + sortOrder;
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newFromPriceDiscHeading</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Constructs a new <c>PriceDisc</c> object for the specified line.
+    /// </summary>
+    /// <param name="_moduleType">
+    ///    A <c>ModuleInventPurchSales</c> enumeration value.
+    /// </param>
+    /// <param name="_priceDate">
+    ///    A <c>date</c> value.
+    /// </param>
+    /// <param name="_accountNum">
+    ///    A <c>CustVendAc</c> extend date type value.
+    /// </param>
+    /// <param name="_currency">
+    ///    A <c>CurrnecyCodeId</c> value.
+    /// </param>
+    /// <returns>
+    ///    The <c>PriceDisc</c> object constructed by using the specified parameters.
+    /// </returns>
+    public static HMPriceDisc newFromPriceDiscHeading(
+        ModuleInventPurchSales _moduleType,
+        PriceDate              _priceDate,
+        CustVendAC             _accountNum,
+        CurrencyCode           _currency
+        )
+    {
+        return new HMPriceDisc(_moduleType,
+                             '',
+                             null,
+                             '',
+                             _priceDate,
+                             0,
+                             _accountNum,
+                             _currency
+                             ,0  //_agreementHeaderExtRecId
+                             ,'' //_agreementPartnerCode
+                             );
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newFromSalesPurchLine</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Constructs a new <c>PriceDisc</c> object for specified line object.
+    /// </summary>
+    /// <param name="_salesPurchLine">
+    ///    The line for which to construct the <c>PriceDisc</c> object.
+    /// </param>
+    /// <param name="_inventDim">
+    ///    The inventory dimension for which to construct the <c>PriceDisc</c> object.
+    /// </param>
+    /// <param name="_discDate">
+    ///    The date for which to construct the <c>PriceDisc</c> object.
+    /// </param>
+    /// <returns>
+    ///    The <c>PriceDisc</c> object constructed for specified parameters.
+    /// </returns>
+    public static HMPriceDisc newFromSalesPurchLine(SalesPurchLine  _salesPurchLine,
+                                                  InventDim       _inventDim = _salesPurchLine.inventDim(),
+                                                  TransDate       _discDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        // <GEERU>
+        #isoCountryRegionCodes
+
+        if (SysCountryRegionCode::isLegalEntityInCountryRegion([#isoRU]))
+        {
+            return new HMPriceDisc(_salesPurchLine.moduleType(),
+                                _salesPurchLine.ItemId,
+                                _inventDim,
+                                _salesPurchLine.PurchSalesUnit,
+                                _discDate,
+                                _salesPurchLine.SalesPurchQty,
+                                _salesPurchLine.orderAccount(),
+                                _salesPurchLine.CurrencyCode,
+                                _salesPurchLine.salesPurchLineInterface().agreementHeaderExt_RU(),
+                                _salesPurchLine.salesPurchLineInterface().agreementPartnerCode_RU());
+            
+        }
+        else
+        {
+            // </GEERU>
+            return new HMPriceDisc(_salesPurchLine.moduleType(),
+                                 _salesPurchLine.ItemId,
+                                 _inventDim,
+                                 _salesPurchLine.SalesPurchLine::unitOfMeasureSymbol(),
+                                 _discDate,
+                                 _salesPurchLine.SalesPurchQty,
+                                 _salesPurchLine.orderAccount(),
+                                 _salesPurchLine.CurrencyCode);
+            // <GEERU>
+        }
+        // </GEERU>
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newFromTmpProjAdjustmentCreate</Name>
+				<Source><![CDATA[
+    public static HMPriceDisc newFromTmpProjAdjustmentCreate(TmpProjAdjustmentCreate _tmpProjAdjustmentCreate)
+    {
+        return new HMPriceDisc(ModuleInventPurchSales::Sales,
+                              _tmpProjAdjustmentCreate.ItemId,
+                              _tmpProjAdjustmentCreate.inventDim(),
+                              _tmpProjAdjustmentCreate.SalesUnit,
+                              _tmpProjAdjustmentCreate.Transdate,
+                              _tmpProjAdjustmentCreate.Qty,
+                              _tmpProjAdjustmentCreate.custAccount(),
+                              _tmpProjAdjustmentCreate.CurrencyId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newFromTmpSalesItemReq</Name>
+				<Source><![CDATA[
+    public static HMPriceDisc newFromTmpSalesItemReq(TmpSalesItemReq _tmpSalesItemReq)
+    {
+        return new HMPriceDisc(ModuleInventPurchSales::Sales,
+                             _tmpSalesItemReq.ItemId,
+                             _tmpSalesItemReq.inventDim(),
+                             _tmpSalesItemReq.SalesUnit,
+                              DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()),
+                             _tmpSalesItemReq.SalesQty,
+                             _tmpSalesItemReq.custAccount(),
+                             _tmpSalesItemReq.CurrencyCode);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>price2Amount</Name>
+				<Source><![CDATA[
+    public client server static AmountCur  price2Amount(PriceCur         _price,
+                                                        PriceUnit        _priceUnit,
+                                                        DiscAmount       _discAmount,
+                                                        Qty              _qtyNow,
+                                                        Qty              _qty,
+                                                        MarkupAmount     _markup,
+                                                        DiscPct          _discPercent,
+                                                        CurrencyCode     _currencyCode,
+                                                        Amount           _amount,
+                                                        boolean          _forceAmountCalculation = false)
+    {
+        Amount returnAmount;
+        // <GEEPL>
+        #ISOCountryRegionCodes
+        // </GEEPL>
+
+        if (!_price && !_discAmount && !_discPercent && !_markup && !_forceAmountCalculation)
+        {
+            if (_qtyNow == _qty)
+            {
+                return _amount;
+            }
+            else
+            {
+                _price = HMPriceDisc::amount2Price(_amount,
+                                                 _discPercent,
+                                                 _markup,
+                                                 _qty,
+                                                 _discAmount,
+                                                 _priceUnit,
+                                                 _currencyCode,
+                                                 _price);
+            }
+        }
+
+        if (_price  || _discAmount || _discPercent || _markup || _forceAmountCalculation)
+        {
+            if (!_priceUnit)
+            {
+                _priceUnit = 1;
+            }
+            // <GEEPL>
+            if (SysCountryRegionCode::isLegalEntityInCountryRegion([#isoPL]) &&
+                SalesParameters::find().LineDiscCalculation_PL == PlLineDiscCalcType::PcsPrice &&
+                (_discAmount || _markup || _discPercent))
+            {
+                returnAmount = (_qtyNow / _priceUnit) * CurrencyExchangeHelper::amount((_price - _discAmount + _markup) * (100 - _discPercent) / 100, _currencyCode);
+            }
+            else
+            {
+                // </GEEPL>
+                returnAmount = (_qtyNow * ((_price - _discAmount) / _priceUnit) + (_qtyNow >= 0 ? _markup : -_markup) ) * (100 - _discPercent) / 100;
+                // <GEEPL>
+            }
+
+            // </GEEPL>
+            returnAmount = CurrencyExchangeHelper::amount(returnAmount, _currencyCode);
+        }
+        else
+        {
+            returnAmount = _amount;
+        }
+
+        return returnAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateRelation</Name>
+				<Source><![CDATA[
+    public static boolean  validateRelation(PriceDiscPartyCodeType  _code,
+                                            str            _relation)
+    {
+        boolean  ok = true;
+
+        if ( _relation  &&  _code == PriceDiscPartyCodeType::All)
+        {
+            ok = false;
+        }
+
+        if (!_relation  &&  _code != PriceDiscPartyCodeType::All)
+        {
+            ok = false;
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateRelationItem</Name>
+				<Source><![CDATA[
+    public static boolean  validateRelationItem(PriceDiscProductCodeType  _code,
+                                            str            _relation)
+    {
+        boolean  ok = true;
+
+        if ( _relation  &&  _code == PriceDiscProductCodeType::All)
+        {
+            ok = false;
+        }
+
+        if (!_relation  &&  _code != PriceDiscProductCodeType::All)
+        {
+            ok = false;
+        }
+
+        return ok;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,1652 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPaperClaimBatchProcess</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPaperClaimBatchProcess
+{
+    #define.outputFileName("ClaimGenerated")
+
+    HMClaimTableDetailTmp               hmClaimTableDetailTmp;
+    HMClaimChargeLineTmp                hmClaimChargeLineTmp;
+    HmClaimConditionCodeTmp             hmConditionCodeTmp;
+    HMClaimPIEProcedureInfoTmp          hmPIEProcedureInfoTmp;
+    HmClaimCodesDetailTmp               hmClaimCodesDetailTmp;
+    TransDate                           fromDate, toDate;
+    container                           patientIds, carrierIds, batchNumbers;
+    RefRecId                            physicianId;
+    HMClaimTemplate                     hmClaimTemplate;
+    RecId                               claimRecId;
+    str                                 inputFile;
+    str                                 TPACode;
+    RecId                               patientRecId;
+    RecId                               physicianRecId;
+    RecId                               insuranceRecId;
+    RecId                               chargeEntryRecId;
+    map                                 diagnosisMap;
+    HMPatientChargeEntryTable           hmPatientChargeEntryTableMain;
+
+    iTextSharp.text.pdf.PdfReader       pdfReader;
+    iTextSharp.text.pdf.PdfStamper      pdfStamper;
+    iTextSharp.text.Document            pdfDocument;
+    iTextSharp.text.pdf.PdfSmartCopy    pdfCopy;
+    System.IO.MemoryStream              pdfStream;
+    str                                 outputFile;
+    int                                 pageNo, totalPages, totalLinesCount;
+    int                                 totalLinesLocal, lastValue;
+    HMResourceSchedulingAppointment     appointment;
+    boolean                             isFirst, isStarted;
+    RecId                               previousCarrier;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>closePDFWriter</Name>
+				<Source><![CDATA[
+    public void closePDFWriter()
+    {
+        if(pdfDocument && pdfDocument.IsOpen())
+        {
+            pdfDocument.Close();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dateFormatCMS1450</Name>
+				<Source><![CDATA[
+    public str dateFormatCMS1450(date _date, boolean _fullYear)
+    {
+        str dayOfDate, monthOfDate, yearOfDate;
+    
+        dayOfDate = dayOfMth(_date) > 9 ? int2str(dayOfMth(_date)) : strFmt('0%1', dayOfMth(_date));
+        monthOfDate = mthOfYr(_date) > 9 ?  int2str(mthOfYr(_date)) : strFmt('0%1', mthOfYr(_date));
+    
+        if (_fullYear)
+        {
+            yearOfDate = int2str(year(_date));
+        }
+        else
+        {
+            yearOfDate = subStr(int2str(year(_date)), 3, 2);
+        }
+    
+        return strFmt('%1%2%3', monthOfDate, dayOfDate, yearOfDate);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generatePaperClaim</Name>
+				<Source><![CDATA[
+    public boolean generatePaperClaim(RecId _claimRecid, Recid _templateRecId, RecId _carrier)
+    {
+        boolean ret;
+    
+        try
+        {
+            claimRecId = _claimRecid;
+    
+            if(hmClaimTemplate)
+            {
+                if(true)
+                {
+                    this.generatePdf();
+    
+                    ret = true;
+                }
+                else
+                {
+    
+                    ret = false;
+                }
+            }
+            else //template not found
+            {
+                if(!HMClaimTable::find(claimRecId).HMInsuranceCarrier)
+                {
+                    info("@MAZ7548");
+                }
+                else
+                {
+                    info("@MAZ7549");
+                }
+                ret = false;
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>generatePdf</Name>
+				<Source><![CDATA[
+    private void generatePdf()
+    {
+        iTextSharp.text.pdf.AcroFields  acroFields;
+    
+        FieldId             fieldid;
+        str value;
+        HMClaimTemplateFieldMapping     hmClaimTemplateFieldMapping;
+        HMClaimTemplateField            hmClaimTemplateField;
+        int                             fieldCounter;
+    
+    
+        pageNo++;
+        this.getTotalNumberofPages();
+    
+        if (totalLinesLocal == 0)
+        {
+            this.insertCMS1450TmpTable(totalPages);
+            totalLinesLocal = totalLinesCount;
+        }
+    
+        if(!isFirst)
+        {
+            pdfCopy = new iTextSharp.text.pdf.PdfSmartCopy(pdfDocument, new System.IO.FileStream(
+                            outputFile,System.IO.FileMode::Create));
+    
+            pdfDocument.Open();
+    
+            isFirst = true;
+        }
+    
+        pdfReader = new iTextSharp.text.pdf.PdfReader(inputFile);
+        pdfStream = new System.IO.MemoryStream();
+        pdfStamper = new iTextSharp.text.pdf.PdfStamper(pdfReader, pdfStream);
+    
+        acroFields = pdfStamper.get_AcroFields();
+    
+        // Pinncale:Start
+        select forUpdate hmClaimTableDetailTmp
+            where hmClaimTableDetailTmp.HMClaimTable == claimRecId;
+    
+        hmClaimTableDetailTmp.PDFCurrentPageNo = pageNo;
+        ttsBegin;
+        hmClaimTableDetailTmp.doUpdate();
+        ttsCommit;
+    
+        while select * from hmClaimTemplateFieldMapping
+            where hmClaimTemplateFieldMapping.HMClaimTemplate == hmClaimTemplate.RecId
+            && hmClaimTemplateFieldMapping.HMClaimTemplateField != 0
+            && (hmClaimTemplateFieldMapping.Entity == HMClaimEntity::Patient ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::Physician ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::ProcedureLineTotal ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::Case)
+            join * from hmClaimTemplateField
+            where hmClaimTemplateField.RecId == hmClaimTemplateFieldMapping.HMClaimTemplateField
+        {
+            fieldid = fieldName2id(tableNum(HmClaimTableDetailTmp) ,hmClaimTemplateFieldMapping.ClaimTemplateFieldName);
+            value = hmClaimTableDetailTmp.(fieldid);
+            acroFields.SetField(hmClaimTemplateField.FieldName,value);
+        }
+        // Pinncale:End
+        // ModifiedBy: Waqas Anwer
+    
+     //Noman
+    
+        select hmClaimCodesDetailTmp
+            where hmClaimCodesDetailTmp.HMClaimTable == claimRecId;
+    
+        while select * from hmClaimTemplateFieldMapping
+            where hmClaimTemplateFieldMapping.HMClaimTemplate == hmClaimTemplate.RecId
+            && hmClaimTemplateFieldMapping.HMClaimTemplateField != 0
+            && (hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CaseOccurrence ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CaseOccurrenceSpan ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CaseValue ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::Diagnosis ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CaseProcedure ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CCQualifier ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CaseCondition)
+            join * from hmClaimTemplateField
+            where hmClaimTemplateField.RecId == hmClaimTemplateFieldMapping.HMClaimTemplateField
+        {
+            fieldid = fieldName2id(tableNum(hmClaimCodesDetailTmp) ,hmClaimTemplateFieldMapping.ClaimTemplateFieldName);
+            value = hmClaimCodesDetailTmp.(fieldid);
+            acroFields.SetField(hmClaimTemplateField.FieldName,value);
+        }
+    
+        select hmPIEProcedureInfoTmp where hmPIEProcedureInfoTmp.HMClaimTable == claimRecId;
+    
+        while select * from hmClaimTemplateFieldMapping
+            where hmClaimTemplateFieldMapping.HMClaimTemplate == hmClaimTemplate.RecId
+            && hmClaimTemplateFieldMapping.HMClaimTemplateField != 0
+            && (hmClaimTemplateFieldMapping.Entity == HMClaimEntity::Carrier ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CaseDiagnosis ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CasePayer ||
+            hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CasePPS)
+            join * from hmClaimTemplateField
+            where hmClaimTemplateField.RecId == hmClaimTemplateFieldMapping.HMClaimTemplateField
+        {
+            fieldid = fieldName2id(tableNum(HMClaimPIEProcedureInfoTmp) ,hmClaimTemplateFieldMapping.ClaimTemplateFieldName);
+    
+            value = hmPIEProcedureInfoTmp.(fieldid);
+            acroFields.SetField(hmClaimTemplateField.FieldName,value);
+        }
+    
+        // Pinncale:Start
+        while select * from hmClaimTemplateFieldMapping
+            order by hmClaimTemplateFieldMapping.Number
+            where hmClaimTemplateFieldMapping.HMClaimTemplate == hmClaimTemplate.RecId
+            && hmClaimTemplateFieldMapping.HMClaimTemplateField != 0
+            && hmClaimTemplateFieldMapping.Entity == HMClaimEntity::Procedure
+            join * from hmClaimTemplateField
+            where hmClaimTemplateField.RecId == hmClaimTemplateFieldMapping.HMClaimTemplateField
+        {
+            select firstOnly forUpdate hmClaimChargeLineTmp
+                order by hmClaimChargeLineTmp.RecId
+                where hmClaimChargeLineTmp.HMClaimTable == claimRecId
+                    && hmClaimChargeLineTmp.Priority == hmClaimTemplateFieldMapping.Number
+                    && HMClaimChargeLinetmp.isClaimGenerated == 0
+                    ;
+    
+            if(hmClaimChargeLineTmp)
+            {
+                fieldid = fieldName2id(tableNum(HmClaimChargeLineTmp), hmClaimTemplateFieldMapping.ClaimTemplateFieldName);
+                value = hmClaimChargeLineTmp.(fieldid);
+                acroFields.SetField(hmClaimTemplateField.FieldName,value);
+    
+    
+                fieldcounter ++;
+    
+                if (lastValue != hmClaimTemplateFieldMapping.Number)
+                {
+                    lastvalue = hmClaimTemplateFieldMapping.Number;
+                }
+    
+                if (fieldCounter == 7)
+                {
+                    hmClaimChargeLineTmp.isClaimGenerated = 1;
+                    ttsBegin;
+                    hmClaimChargeLineTmp.doUpdate();
+                    totalLinesLocal = totalLinesLocal - 1;
+                    ttsCommit;
+                    fieldcounter =0;
+                }
+            }
+        }
+    
+        while select * from hmClaimTemplateFieldMapping
+            order by hmClaimTemplateFieldMapping.Number
+            where hmClaimTemplateFieldMapping.HMClaimTemplate == hmClaimTemplate.RecId
+            && hmClaimTemplateFieldMapping.HMClaimTemplateField != 0
+            && hmClaimTemplateFieldMapping.Entity == HMClaimEntity::CaseCondition
+            join * from hmClaimTemplateField
+            where hmClaimTemplateField.RecId == hmClaimTemplateFieldMapping.HMClaimTemplateField
+        {
+            select hmConditionCodeTmp where hmConditionCodeTmp.HMClaimTable == claimRecId
+                    && hmConditionCodeTmp.Priority == hmClaimTemplateFieldMapping.Number;
+    
+            if(hmConditionCodeTmp)
+            {
+                fieldid = fieldName2id(tableNum(HmClaimConditionCodeTmp) ,hmClaimTemplateFieldMapping.ClaimTemplateFieldName);
+                value = hmConditionCodeTmp.(fieldid);
+                acroFields.SetField(hmClaimTemplateField.FieldName,value);
+            }
+        }
+    
+        pdfStamper.set_FormFlattening(true);
+    
+        pdfStamper.Close();
+    
+        pdfReader = new iTextSharp.text.pdf.PdfReader(pdfStream.ToArray());
+        pdfCopy.AddPage(pdfCopy.GetImportedPage(pdfReader, 1));
+    
+        if (totalLinesLocal > 0)
+        {
+            this.generatePdf();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPostalAddressByType</Name>
+				<Source><![CDATA[
+    public LogisticsPostalAddress getPostalAddressByType(DirPartyRecId _party, LogisticsLocationRoleType _type)
+    {
+        DirPartyLocation partyLocation;
+        DirPartyLocationRole partyLocationRole;
+        LogisticsLocation location;
+        LogisticsLocationRole locationRole;
+        LogisticsPostalAddress postalAddress;
+    
+        select firstonly postalAddress
+            exists join location
+                where location.RecId == postalAddress.Location
+            exists join locationRole
+                where locationRole.Type == _type
+            exists join partyLocation
+                where partyLocation.Location == location.RecId
+                    && partyLocation.Party == _party
+            exists join partyLocationRole
+                where partyLocationRole.PartyLocation == partyLocation.RecId
+                    && partyLocationRole.LocationRole == locationRole.RecId;
+    
+        return postalAddress;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalNumberofPages</Name>
+				<Source><![CDATA[
+    public void getTotalNumberofPages()
+    {
+        HMPatientChargeEntryLine    HMPatientChargeEntryLine;
+        hmPatientChargeEntryTable   hmChargeEntryTable;
+        HMClaimTable                hmClaimTable;
+        int                         totalRecords;
+    
+        select firstOnly hmClaimTable
+            where hmClaimTable.RecId == claimRecId
+        join hmChargeEntryTable
+            where hmChargeEntryTable.RecId == hmClaimTable.HMPatientChargeEntryTable;
+    
+    
+        while select hmPatientChargeEntryLine
+            group by hmPatientChargeEntryLine.RevenueCode, hmPatientChargeEntryLine.FromDate, CPTCodes
+                where hmPatientChargeEntryLine.HMPatientChargeEntryTable == hmChargeEntryTable.RecId
+        {
+            totalRecords = totalRecords + 1;
+        }
+        //intentionaly used integer type
+        if (totalRecords < 22)
+        {
+            totalPages = 1;
+        }
+        else
+        {
+            totalPages =  totalRecords/22 + 1;
+        }
+    
+        totalLinesCount = totalRecords;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializePDFWriter</Name>
+				<Source><![CDATA[
+    public void initializePDFWriter(HMClaimTemplate _hmClaimTemplateLocal = hmClaimTemplate)
+    {
+        // todo: ax7 to be fixed later
+        /*
+        DocuRef docuRefLocal;
+        //Zain
+        //HMDocuAction action = new HMDocuAction();
+    
+        select * from docuRefLocal
+            where docuRefLocal.RefRecId == _hmClaimTemplateLocal.RecId
+            && docuRefLocal.RefTableId == _hmClaimTemplateLocal.TableId
+            && docuRefLocal.RefCompanyId == _hmClaimTemplateLocal.dataAreaId;
+    
+        if(DocuType::find(docuRefLocal.TypeId).FilePlace == DocuFilePlace::Database)
+        {
+            //inputFile = action.getDBFileTempPath(docuRefLocal);
+        }
+        else
+        {
+            //TODO: docureflocal.completeFilename is not present
+            inputFile = "";//docuRefLocal.completeFilename();
+        }
+    
+        pdfDocument = new iTextSharp.text.Document();
+    */
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCMS1450PatientData</Name>
+				<Source><![CDATA[
+    private void insertCMS1450PatientData()
+    {
+        HMPatient         hmPatient;
+        CustTable         custTable;
+        DirPartyTable     dirPartyTable;
+        DirPerson         dirPerson;
+        HMClaimTableSetup hmClaimSetup;
+    
+        LogisticsPostalAddress logisticsPostalAddress;
+        LogisticsElectronicAddress logisticsElectronicAddress;
+    
+        select firstOnly * from hmPatient where hmPatient.RecId == this.parmPatientRecId()
+            join * from custTable where custTable.RecId == hmPatient.CustTable
+            join * from dirPartyTable where dirPartyTable.RecId == custTable.Party
+            join * from dirPerson where dirPerson.RecId == dirPartyTable.RecId;
+    
+        logisticsPostalAddress = DirParty::primaryPostalAddress(dirPartyTable.RecId);
+        logisticsElectronicAddress = DirParty::primaryElectronicAddress(dirPartyTable.RecId,LogisticsElectronicAddressMethodType::Phone);
+    
+        hmClaimTableDetailTmp.PatientName = hmPatient.patientLastFirstMiddleName();
+    
+        hmClaimTableDetailTmp.PatientBirthDate =  this.dateFormatCMS1450(dirPerson.birthDate(), True);
+    
+        hmClaimTableDetailTmp.PatientControlNumber = custTable.AccountNum;
+        hmClaimTableDetailTmp.MedicalRecordNumber = custTable.AccountNum;
+    
+        switch(hmPatient.Gender)
+        {
+            case HcmPersonGender::Male:
+    
+                select Code
+                    from hmClaimSetup
+                        where  hmClaimSetup.Description == 'MALE'
+                            && hmClaimSetup.HMClaimEnumList == HMClaimEnumList::Gender;
+    
+                hmClaimTableDetailTmp.PatientSex = hmClaimSetup.Code;
+                break;
+            case HcmPersonGender::Female:
+                select Code
+                    from hmClaimSetup
+                        where  hmClaimSetup.Description == 'FEMALE'
+                            && hmClaimSetup.HMClaimEnumList == HMClaimEnumList::Gender;
+    
+                hmClaimTableDetailTmp.PatientSex = hmClaimSetup.Code;
+                break;
+            default:
+                hmClaimTableDetailTmp.PatientSex = 'U';
+                break;
+        }
+    
+        hmClaimTableDetailTmp.PatientStreet = logisticsPostalAddress.Street;
+        hmClaimTableDetailTmp.PatientCity = logisticsPostalAddress.City;
+        hmClaimTableDetailTmp.PatientState = logisticsPostalAddress.State;
+        hmClaimTableDetailTmp.PatientZipCode = logisticsPostalAddress.ZipCode;
+        hmClaimTableDetailTmp.CountryCode = logisticsPostalAddress.CountryRegionId;//InCorrect should be CountryCode.
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCMS1450TmpTable</Name>
+				<Source><![CDATA[
+    public boolean insertCMS1450TmpTable(int _totalPages)
+    {
+        HMClaimTable                            hmClaimTable;
+        HMClaimTableSetup                       hmSetup;
+        HMPatientChargeEntryTable               hmChargeEntryTable;
+        HMProcedureCodeMaster                   hmProcedureMaster;
+        HMDiagnosisDictionary                   hmDiagnosisDic;
+        HcmWorker                               hcmWorker;
+        DirPersonName                           personName;
+        HMPatient                               hmPatient;
+        HMCaseInsurance                         hmCaseInsurance;
+        HMCaseInsurance                         HMCaseInsurancePry, HMCaseInsuranceScd, HMCaseInsuranceTrt;
+        HMPatientInsurance                      hmPatientInsurance;
+        HMPatientInsurance                      hmPatientInsurancePry, hmPatientInsuranceScd, hmPatientInsuranceTrt;
+        HMInsuranceCarrier                      hmInsuranceCarrierPry, hmInsuranceCarrierScd, hmInsuranceCarrierTrt;
+        RecId                                   HMCaseRecId;
+        RecId                                   patientInsuranceRecId;
+        DirPartyTable                           dirPartyTableGurantor;
+        DirPartyTable                           dirPartyTableProvider;
+        LogisticsPostalAddress                  postalAddressProviderDetails;
+        DirPartyPostalAddressView               dirPartyPostalAddressView;
+        HMInsuranceCarrier                      hmInsuranceCarrier;
+        HMInsuranceContract                     hmInsuranceContract;
+        HMInsuranceContractCarrierCombination   hmInsuranceCombination;
+        HMInsuranceContractClassOrPlans         hmInsurancePlan;
+        HMTPA                                   hmTPA;
+        HMCaseTrans                             hmCaseTrans;
+        HMCase                                  hmCase;
+        HMParameters                            hmParameters;
+    
+        HMPatientChargeEntryLine                hmPatientChargeEntryLine;
+        HMResourceSchedulingPlanningObject      planning;
+    
+        boolean ret;
+        int     counter = 0;
+        real    sumOfTotalCharges = 0;
+        real    sumOfUncoveredCharges = 0;
+    
+        HMResourceMaster        hmResourceMaster;
+    
+        select firstOnly hmClaimTable
+            where hmClaimTable.RecId == claimRecId
+        join hmChargeEntryTable
+            where hmChargeEntryTable.RecId == hmClaimTable.HMPatientChargeEntryTable;
+    
+        Appointment = HMResourceSchedulingAppointment::find(hmChargeEntryTable.HMResourceSchedulingAppointment);
+        patientInsuranceRecId = Appointment.HMPatientInsurance;
+    
+        HMCaseRecId = appointment.HMCase;
+    
+        if (!HMCaseRecId)
+        {
+            HMCaseRecId = hmChargeEntryTable.HMCase;
+        }
+    
+        hmCase = hmCase::find(HMCaseRecId);
+    
+        if (!patientInsuranceRecId)
+        {
+            select firstonly hmCaseInsurance
+                where  hmCaseInsurance.IsActive == NoYes::Yes
+                    && HMCaseInsurance.HMCase == hmCase.RecId;
+    
+            patientInsuranceRecId = hmCaseInsurance.HMPatientInsurance;
+        }
+    
+        if (patientInsuranceRecId)
+        {
+            hmPatientInsurance  = HMPatientInsurance::find(patientInsuranceRecId);
+    
+            if (hmPatientInsurance)
+            {
+                HMInsuranceCarrier  = hmPatientInsurance.getCarrier();
+    
+                if (HMInsuranceCarrier)
+                {
+                    hmInsurancePlan = HMInsuranceContractClassOrPlans::find(hmPatientInsurance.HMInsuranceContractClassOrPlans);
+    
+                    if (hmInsurancePlan)
+                    {
+                        hmInsuranceContract = HMInsuranceContract::find(hmInsurancePlan.HMInsuranceContract);
+    
+                        if (hmInsuranceContract)
+                        {
+                            hmInsuranceCombination = HMInsuranceContractCarrierCombination::find(hmInsuranceContract.HMInsuranceContractCarrierCombination);
+    
+                            hmTPA = hmTPA::find(hmInsuranceCombination.HMInsuranceTPA);
+                        }
+                    }
+                }
+            }
+        }
+    
+        this.parmChargeEntryRecId(hmClaimTable.HMPatientChargeEntryTable);
+        this.parmInsuranceRecId(HMInsuranceCarrier.RecId);
+        this.parmPatientRecId(hmClaimTable.HMPatient);
+        this.parmPhysicianRecId(hmClaimTable.HMResourceMaster);
+    
+        try
+        {
+            ttsBegin;
+    
+            hmClaimTableDetailTmp.clear();
+    
+            hmClaimTableDetailTmp.initValue();
+    
+            hmClaimTableDetailTmp.HMClaimTable = hmClaimTable.RecId;
+    
+            HMPatient = HMPatient::find(hmClaimTable.HMPatient);
+    
+            hmResourceMaster = hmResourceMaster::find(hmClaimTable.HMResourceMaster);
+    
+            hmPatientChargeEntryTableMain = hmPatientChargeEntryTable::find(hmClaimTable.HMPatientChargeEntryTable);
+    
+            hmClaimTableDetailTmp.PatientID = hmPatientInsurance.HMPatientInsuranceMembershipId;
+    
+            this.insertCMS1450PatientData();
+    
+            //Pinncale_Work:Start
+            dirPartyTableProvider                             = DirPartyTable::findRec(CompanyInfo::current());
+            postalAddressProviderDetails                      = LogisticsPostalAddress::findByLocation(dirPartyTableProvider.PrimaryAddressLocation);
+            hmClaimTableDetailTmp.NameOfProvider              = dirPartyTableProvider.Name + '\n' + postalAddressProviderDetails.Street + ' ' + postalAddressProviderDetails.PostBox + '\n' + LogisticsAddressCity::find(postalAddressProviderDetails.City).Description + ' ' + postalAddressProviderDetails.State + ' ' + postalAddressProviderDetails.ZipCode + '\n' + postalAddressProviderDetails.CountryRegionId;
+            postalAddressProviderDetails                      = this.getPostalAddressByType(DirPartyTable::findRec(CompanyInfo::current()).RecId,LogisticsLocationRoleType::Invoice);
+            hmClaimTableDetailTmp.PayToName                   =  DirPartyPostalAddressView::find(dirPartyTableProvider.RecId,postalAddressProviderDetails.Location).LocationName + '\n' + postalAddressProviderDetails.Street + ' ' + postalAddressProviderDetails.PostBox + '\n' + LogisticsAddressCity::find(postalAddressProviderDetails.City).Description + ' ' + postalAddressProviderDetails.State + ' ' + postalAddressProviderDetails.ZipCode + '\n' + postalAddressProviderDetails.CountryRegionId;
+            hmClaimTableDetailTmp.AddmissionStartDate         = this.dateFormatCMS1450(DateTimeUtil::date(hmCase.AddmisionDate), false);
+            hmClaimTableDetailTmp.AddmissionHour              = int2str(DateTimeUtil::hour(hmCase.AddmisionDate));
+            hmClaimTableDetailTmp.DischargeHour               = int2str(DateTimeUtil::hour(hmCase.DischargeDate));
+            hmClaimTableDetailTmp.StatementCoveragePeriodFrom = this.dateFormatCMS1450(DateTimeUtil::date(hmCase.AddmisionDate), false);
+            hmClaimTableDetailTmp.StatementCoveragePeriodTo   = this.dateFormatCMS1450(DateTimeUtil::date(hmCase.DischargeDate), false);
+    
+            select firstOnly1 hmPatientInsurancePry
+                where  hmPatientInsurancePry.HMPatient == hmPatient.RecId
+                    && hmPatientInsurancePry.HMPayerType == HMPayerType::Gurantor;
+    
+    
+            dirPartyTableGurantor = DirPartyTable::findRec(CustTable::find(hmPatientInsurancePry.InsuranceCarrier).Party);
+    
+            if (hmPatientInsurancePry)
+            {
+                hmClaimTableDetailTmp.ResponsiblePartyNameAddress = dirPartyTableGurantor.Name + '\n' + LogisticsPostalAddress::findByLocation(dirPartyTableGurantor.PrimaryAddressLocation).Address;
+            }
+    
+            select firstOnly hmSetup
+              where  hmSetup.RecId == hmCase.TypeOfAdmission
+                    && hmSetup.HMClaimEnumList == HMClaimEnumList::TypeOfAdmission;
+    
+            hmClaimTableDetailTmp.TypeOfAddmission            = hmSetup.Code;
+            hmClaimTableDetailTmp.FederalTaxIdNumber          = CompanyInfo::findRecId(CompanyInfo::current()).CoRegNum;//CompanyInfo::findRecId(CompanyInfo::current()).Tax1099RegNum;
+    
+            select firstOnly hmSetup
+                where  hmSetup.RecId == hmCase.DischargeStatus
+                    && hmSetup.HMClaimEnumList == HMClaimEnumList::DischargeStatus;
+    
+            hmClaimTableDetailTmp.PatientDischargeStatus       = hmSetup.Code;
+            hmClaimTableDetailTmp.AccidentState                = hmCase.StateId;
+    
+            select firstOnly hmSetup
+                where  hmSetup.RecId == hmCase.PointOfOrigin
+                    && hmSetup.HMClaimEnumList == HMClaimEnumList::PointOfOriginAdult;
+    
+            hmClaimTableDetailTmp.PointOfOrigin                = hmSetup.Code;
+            hmClaimTableDetailTmp.PDFCurrentPageNo             = pageNo;
+            hmClaimTableDetailTmp.PDFTotalPages                = _totalPages;
+            hmClaimTableDetailTmp.PDFCreationDate              = DateTimeUtil::date(DateTimeUtil::utcNow());
+    
+            hmResourceMaster = HMResourceMaster::find(hmCase.HMResourceMaster);
+    
+            if (hmResourceMaster.Type == HMResourceType::Employee)
+            {
+                hcmWorker = HcmWorker::find(hmResourceMaster.RefRecId);
+    
+                hmClaimTableDetailTmp.AttendingPhysicianNPI = hcmWorker.NPI;
+                hmClaimTableDetailTmp.AttendingPhysicianQUAL = enum2str(hcmWorker.HMQaul);
+                select firstOnly personName
+                    where personName.Person == DirPerson::find(hcmWorker.Person).RecId;
+    
+                hmClaimTableDetailTmp.AttendingPhysicianFirst = personName.FirstName;
+                hmClaimTableDetailTmp.AttendingPhysicianLast = personName.LastName;
+            }
+    
+             hmResourceMaster = HMResourceMaster::find(hmCase.OperatingPhysician);
+    
+            if (hmResourceMaster.Type == HMResourceType::Employee)
+            {
+                hcmWorker = HcmWorker::find(hmResourceMaster.RefRecId);
+    
+                hmClaimTableDetailTmp.OperatingPhysicianNPI = hcmWorker.NPI;
+                hmClaimTableDetailTmp.OperatingPhysicianQUAL = enum2str(hcmWorker.HMQaul);
+                select firstOnly personName
+                    where personName.Person == DirPerson::find(hcmWorker.Person).RecId;
+    
+                hmClaimTableDetailTmp.OperatingPhysicianFirst = personName.FirstName;
+                hmClaimTableDetailTmp.OperatingPhysicianLast = personName.LastName;
+            }
+              hmResourceMaster = HMResourceMaster::find(hmCase.OtherPhysician);
+    
+            if (hmResourceMaster.Type == HMResourceType::Employee)
+            {
+                hcmWorker = HcmWorker::find(hmResourceMaster.RefRecId);
+    
+                hmClaimTableDetailTmp.OtherPhysician1NPI = hcmWorker.NPI;
+                hmClaimTableDetailTmp.OtherPhysician1QUAL = enum2str(hcmWorker.HMQaul);
+                select firstOnly personName
+                    where personName.Person == DirPerson::find(hcmWorker.Person).RecId;
+    
+                hmClaimTableDetailTmp.OtherPhysician1First = personName.FirstName;
+                hmClaimTableDetailTmp.OtherPhysician1Last = personName.LastName;
+            }
+    
+            hmResourceMaster = HMResourceMaster::find(hmCase.OtherPhysician1);
+    
+            if (hmResourceMaster.Type == HMResourceType::Employee)
+            {
+                hcmWorker = HcmWorker::find(hmResourceMaster.RefRecId);
+    
+                hmClaimTableDetailTmp.OtherPhysician2NPI = hcmWorker.NPI;
+                hmClaimTableDetailTmp.OtherPhysician2QUAL = enum2str(hcmWorker.HMQaul);
+                select firstOnly personName
+                    where personName.Person == DirPerson::find(hcmWorker.Person).RecId;
+    
+                hmClaimTableDetailTmp.OtherPhysician2First = personName.FirstName;
+                hmClaimTableDetailTmp.OtherPhysician2Last = personName.LastName;
+            }
+    
+            counter = 0;
+    
+            while select RevenueCode, FromDate, CPTCodes,RecId
+                    from hmPatientChargeEntryLine
+                           order by hmPatientChargeEntryLine.RecId
+                        group by hmPatientChargeEntryLine.RevenueCode, hmPatientChargeEntryLine.FromDate, CPTCodes, hmPatientChargeEntryLine.RecId
+                            where hmPatientChargeEntryLine.HMPatientChargeEntryTable == hmChargeEntryTable.RecId
+                    join sum(TotalAmount), sum(Qty)
+                    //join TotalAmount, Qty
+                        from hmCaseTrans
+                            where hmCaseTrans.RecId == hmPatientChargeEntryLine.HMCaseTrans
+            {
+                ++counter;
+    
+                select firstOnly hmProcedureMaster
+                    where  hmProcedureMaster.RecId == hmPatientChargeEntryLine.RevenueCode
+                        && hmProcedureMaster.Type == HMProcCodeSearchType::Revenue;
+    
+    
+                hmClaimChargeLineTmp.clear();
+    
+                hmClaimChargeLineTmp.initValue();
+                hmClaimChargeLineTmp.HMClaimTable = hmClaimTable.RecId;
+    
+                if (counter > 22)
+                {
+                    counter = 1  ;
+                }
+    
+                hmClaimChargeLineTmp.Priority = counter;
+                hmClaimChargeLineTmp.RevenueCode = hmProcedureMaster.Code;//hmSetup.Code;
+    
+    
+                hmClaimChargeLineTmp.Description = hmProcedureMaster.Description;//hmSetup.Description;
+                hmClaimChargeLineTmp.ServiceDate = this.dateFormatCMS1450(hmPatientChargeEntryLine.FromDate, false);
+                hmClaimChargeLineTmp.ServiceUnit = int2str(real2int(hmCaseTrans.Qty));
+                hmClaimChargeLineTmp.TotalCharges = hmCaseTrans.TotalAmount;
+    
+                select firstOnly hmProcedureMaster
+                    where  hmProcedureMaster.RecId == hmPatientChargeEntryLine.CPTCodes
+                        && hmProcedureMaster.Type == HMProcCodeSearchType::CPT_HCPS;
+    
+                hmClaimChargeLineTmp.HCPCSCode =hmProcedureMaster.Code;
+    
+                sumOfTotalCharges += hmCaseTrans.TotalAmount;
+    
+                hmClaimChargeLineTmp.insert();
+            }
+    
+            hmClaimTableDetailTmp.SumTotalCharges = sumOfTotalCharges;
+            hmClaimTableDetailTmp.SumUncoveredCharges = sumOfUncoveredCharges;
+    
+            select firstOnly hmSetup
+                where  hmSetup.RecId == hmCase.BillType
+                    && hmSetup.HMClaimEnumList == HMClaimEnumList::BillType;
+    
+            hmClaimTableDetailTmp.TypeOfBill=HMClaimTableSetup::findByRecEnum(hmCase.BillType,HMClaimEnumList::BillType).Code;
+            hmClaimTableDetailTmp.Remarks=hmCase.Remarks;
+            //Field Group : Carrier
+            hmInsuranceCarrier = HMInsuranceCarrier::find(hmClaimTable.HMInsuranceCarrier);
+    
+            select firstOnly HMCaseInsurancePry
+                where  HMCaseInsurancePry.Priority == 1
+                    && HMCaseInsurancePry.HMCase == hmCase.RecId;
+    
+            hmPatientInsurancePry = HMPatientInsurance::find(HMCaseInsurancePry.HMPatientInsurance);
+            hmInsuranceCarrierPry = HMInsuranceCarrier::findByCode(hmPatientInsurancePry.InsuranceCarrier);
+    
+            select firstOnly HMCaseInsuranceScd
+                where  HMCaseInsuranceScd.Priority == 2
+                    && HMCaseInsuranceScd.HMCase == hmCase.RecId;
+    
+            hmPatientInsuranceScd = HMPatientInsurance::find(HMCaseInsuranceScd.HMPatientInsurance);
+            hmInsuranceCarrierScd = HMInsuranceCarrier::findByCode(hmPatientInsuranceScd.InsuranceCarrier);
+    
+            select firstOnly HMCaseInsuranceTrt
+                    where  HMCaseInsuranceTrt.Priority == 3
+                        && HMCaseInsuranceTrt.HMCase == hmCase.RecId;
+    
+            hmPatientInsuranceTrt = HMPatientInsurance::find(HMCaseInsuranceTrt.HMPatientInsurance);
+            hmInsuranceCarrierTrt = HMInsuranceCarrier::findByCode(hmPatientInsuranceTrt.InsuranceCarrier);
+    
+            hmPIEProcedureInfoTmp.clear();
+    
+            hmPIEProcedureInfoTmp.initValue();
+    
+            hmPIEProcedureInfoTmp.HMClaimTable = hmClaimTable.RecId;
+    
+            if (hmInsuranceCarrier.ClaimType == HMClaimType::Paper)
+            {
+                hmPIEProcedureInfoTmp.PayerIdentificationPrimaryPayer = hmInsuranceCarrierPry.Code + ' ' + hmInsuranceCarrierPry.Name;
+                hmPIEProcedureInfoTmp.PayerIdentificationSecondaryPayer = hmInsuranceCarrierScd.Code + ' ' + hmInsuranceCarrierScd.Name;
+                hmPIEProcedureInfoTmp.PayerIdentificationTertiaryPayer = hmInsuranceCarrierTrt.Code + ' ' + hmInsuranceCarrierTrt.Name;
+            }
+            else if (hmInsuranceCarrier.ClaimType == HMClaimType::Electronic)
+            {
+                hmPIEProcedureInfoTmp.PayerIdentificationPrimaryPayer = hmInsuranceCarrierPry.PayorID + ' ' + hmInsuranceCarrierPry.Name;
+                hmPIEProcedureInfoTmp.PayerIdentificationSecondaryPayer = hmInsuranceCarrierScd.PayorID + ' ' + hmInsuranceCarrierScd.Name;
+                hmPIEProcedureInfoTmp.PayerIdentificationTertiaryPayer = hmInsuranceCarrierTrt.PayorID + ' ' + hmInsuranceCarrierTrt.Name;
+            }
+    
+            hmPIEProcedureInfoTmp.HealthPlanIdPrimaryPayer  = hmPatientInsurancePry.HealthPlanId;
+            hmPIEProcedureInfoTmp.HealthPlanIdSeconaryPayer = hmPatientInsuranceScd.HealthPlanId;
+            hmPIEProcedureInfoTmp.HealthPlanIdTertiaryPayer = hmPatientInsuranceTrt.HealthPlanId;
+            hmPIEProcedureInfoTmp.RICPrimary                = HMClaimTableSetup::findByRecEnum(hmPatientInsurancePry.ReleaseofInformationCertificationIndicat, HMClaimEnumList::ReleaseOfInformationCerficationIndicator).Code;
+            hmPIEProcedureInfoTmp.RICSecondary              = HMClaimTableSetup::findByRecEnum(hmPatientInsuranceScd.ReleaseofInformationCertificationIndicat, HMClaimEnumList::ReleaseOfInformationCerficationIndicator).Code;
+            hmPIEProcedureInfoTmp.RICTertiary               = HMClaimTableSetup::findByRecEnum(hmPatientInsuranceTrt.ReleaseofInformationCertificationIndicat, HMClaimEnumList::ReleaseOfInformationCerficationIndicator).Code;
+            hmPIEProcedureInfoTmp.ABIPrimary                = HMClaimTableSetup::findByRecEnum(hmPatientInsurancePry.AssignmentOfBenefitsIndicator, HMClaimEnumList::AssignmentOfBenefit).Code;
+            hmPIEProcedureInfoTmp.ABISecondary              = HMClaimTableSetup::findByRecEnum(hmPatientInsuranceScd.AssignmentOfBenefitsIndicator, HMClaimEnumList::AssignmentOfBenefit).Code;
+            hmPIEProcedureInfoTmp.ABITertiary               = HMClaimTableSetup::findByRecEnum(hmPatientInsuranceTrt.AssignmentOfBenefitsIndicator, HMClaimEnumList::AssignmentOfBenefit).Code;
+            hmPIEProcedureInfoTmp.NPINumber                 = hmInsuranceCarrier.HMProviderID;
+            hmPIEProcedureInfoTmp.OPIPrimary                = hmInsuranceCarrierPry.OtherProviderIdentifier;
+            hmPIEProcedureInfoTmp.OPISecondary              = hmInsuranceCarrierScd.OtherProviderIdentifier;
+            hmPIEProcedureInfoTmp.OPITertiary               = hmInsuranceCarrierTrt.OtherProviderIdentifier;
+    
+            //HMPatientInsurance > SubscriberName "Not Exist"
+            select hmPatient
+                where hmPatient.RecId == hmPatientInsuranceTrt.HMPatientSubscriber;
+    
+            hmPIEProcedureInfoTmp.InsuredNameTertiary = hmPatient.patientLastFirstMiddleName();
+    
+            select hmPatient
+                where hmPatient.RecId == hmPatientInsuranceScd.HMPatientSubscriber;
+    
+            hmPIEProcedureInfoTmp.InsuredNameSecondary = hmPatient.patientLastFirstMiddleName();
+    
+            select hmPatient
+                where hmPatient.RecId == hmPatientInsurancePry.HMPatientSubscriber;
+    
+            hmPIEProcedureInfoTmp.InsuredNamePrimary = hmPatient.patientLastFirstMiddleName();
+            hmPIEProcedureInfoTmp.EmployerNameOfInsured=hmPatientInsurance.EmployerNameofTheInsured;
+            hmPIEProcedureInfoTmp.PatientRelationShipPrimary = enum2str(hmPatientInsurancePry.SubscriberRelation);
+            hmPIEProcedureInfoTmp.PatientRelationShipSecondary = enum2str(hmPatientInsuranceScd.SubscriberRelation);
+            hmPIEProcedureInfoTmp.PatientRelationShipTertiary = enum2str(hmPatientInsuranceTrt.SubscriberRelation);
+    
+            hmPIEProcedureInfoTmp.InsuredUniqueIdPrimary = hmPatientInsurancePry.SubscriberID;
+            hmPIEProcedureInfoTmp.InsuredUniqueIdSecondary = hmPatientInsuranceScd.SubscriberID;
+            hmPIEProcedureInfoTmp.InsuredUniqueIdTertiary = hmPatientInsuranceTrt.SubscriberID;
+    
+            hmPIEProcedureInfoTmp.InsuredGroupNameTertiary = hmPatientInsuranceTrt.GroupName;
+            hmPIEProcedureInfoTmp.InsuredGroupNameSecondary = hmPatientInsuranceScd.GroupName;
+            hmPIEProcedureInfoTmp.InsuredGroupNamePrimary = hmPatientInsurancePry.GroupName;
+    
+            hmPIEProcedureInfoTmp.InsuredGroupNoPrimary = hmPatientInsurancePry.GroupNumber;
+            hmPIEProcedureInfoTmp.InsuredGroupNoSecondary = hmPatientInsuranceScd.GroupNumber;
+            hmPIEProcedureInfoTmp.InsuredGroupNoTertiary = hmPatientInsuranceTrt.GroupNumber;
+    
+            //hmPIEProcedureInfoTmp.PPSCode                = hmCase.PPSCode;
+            hmPIEProcedureInfoTmp.DocumentControlNumber  = hmCase.Documentcontrolnumber;
+            hmPIEProcedureInfoTmp.TreatmentAuthorizationCode=hmCaseInsurance.TreatmentAuthorizationCode;
+    
+            select hmParameters;
+    
+    
+            select hmSetup
+                where  hmSetup.RecId == hmParameters.Diagnosisandprocedurecodequalifier
+                    && hmSetup.HMClaimEnumList == HMClaimEnumList::DiagnosisAndProcedureCodeQualifier;
+    
+            hmPIEProcedureInfoTmp.DiagnosisAndProceduresCodeQualifier = hmSetup.Code;
+    
+            select hmDiagnosisDic
+                where hmDiagnosisDic.RecId == hmCase.PrincipalDiagnosisCode;
+    
+            //hmPIEProcedureInfoTmp.PrincipalDiagnosisCode = hmDiagnosisDic.Code;
+    
+            select hmDiagnosisDic
+                where hmDiagnosisDic.RecId == hmCase.AdmittingDiagnosisCode;
+    
+            hmPIEProcedureInfoTmp.AdmittingDiagnosisCode = hmDiagnosisDic.Code;
+    
+            select hmDiagnosisDic
+                where hmDiagnosisDic.RecId == hmCase.PatientReasonA;
+    
+            hmPIEProcedureInfoTmp.PatientReasonForVisit1=hmDiagnosisDic.Code;
+    
+            select hmDiagnosisDic
+                where hmDiagnosisDic.RecId == hmCase.PatientReasonB;
+    
+            hmPIEProcedureInfoTmp.PatientReasonForVisit2=hmDiagnosisDic.Code;
+    
+            select hmDiagnosisDic
+                where hmDiagnosisDic.RecId == hmCase.PatientReasonC;
+    
+            hmPIEProcedureInfoTmp.PatientReasonForVisit3=hmDiagnosisDic.Code;
+            hmPIEProcedureInfoTmp.Ecia=hmCase.Ecia;
+            hmPIEProcedureInfoTmp.Ecib=hmCase.Ecib;
+            hmPIEProcedureInfoTmp.Ecic=hmCase.Ecic;
+            hmClaimTableDetailTmp.insert();
+    
+            hmPIEProcedureInfoTmp.insert();
+    
+            //Pinncale_Work:End
+            //Modified By: Waqas Anwer
+    
+            this.loadDiagnosisCodesTmpData(hmCase);
+            this.loadOccurenceCodesTmpData(hmCase);
+            this.loadOccurenceSpanCodesTmpData(hmCase);
+            this.loadProcedureCodesTmpData(hmCase);
+            this.loadValueCodesTmpData(hmCase);
+            this.loadCodesCodesTmpData(hmCase);
+            this.loadConditionCodesTmpData(hmCase);
+            hmClaimCodesDetailTmp.HMClaimTable =  hmClaimTable.RecId;
+            hmClaimCodesDetailTmp.insert();
+    
+            ttsCommit;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadCodesCodesTmpData</Name>
+				<Source><![CDATA[
+    public void loadCodesCodesTmpData(HMCase _case)
+    {
+        HMCaseCCQualifier1450           caseCodesCodes;
+    
+        #localmacro.HMCaseCCQualifiera
+        '81CC(a)'
+        #endmacro
+    
+        #localmacro.HMCaseCCQualifierb
+        '81CC(b)'
+        #endmacro
+    
+        #localmacro.HMCaseCCQualifierc
+        '81CC(c)'
+        #endmacro
+    
+        #localmacro.HMCaseCCQualifierd
+        '81CC(d)'
+        #endmacro
+    
+    
+        while select caseCodesCodes
+            where caseCodesCodes.Case == _case.RecId
+        {
+            switch(caseCodesCodes.FieldLocator)
+            {
+                case #HMCaseCCQualifiera:
+    
+                hmClaimCodesDetailTmp.OccuranceCode81a = HMClaimTableSetup::findByRecEnum(caseCodesCodes.Code, HMClaimEnumList::CodeCode).Code;
+                hmClaimCodesDetailTmp.OccuranceCodeQualifier81a = caseCodesCodes.Occurrencecodequalifier;
+                hmClaimCodesDetailTmp.OccuranceCodeValue81a = this.dateFormatCMS1450(caseCodesCodes.Ocurrencecodevalue, false);
+                break;
+    
+                case #HMCaseCCQualifierb:
+    
+                hmClaimCodesDetailTmp.OccuranceCode81b = HMClaimTableSetup::findByRecEnum(caseCodesCodes.Code, HMClaimEnumList::CodeCode).Code;
+                hmClaimCodesDetailTmp.OccuranceCodeQualifier81b = caseCodesCodes.Occurrencecodequalifier;
+                hmClaimCodesDetailTmp.OccuranceCodeValue81b = this.dateFormatCMS1450(caseCodesCodes.Ocurrencecodevalue, false);
+                break;
+    
+    
+                case #HMCaseCCQualifierc:
+    
+                hmClaimCodesDetailTmp.OccuranceCode81c = HMClaimTableSetup::findByRecEnum(caseCodesCodes.Code, HMClaimEnumList::CodeCode).Code;
+                hmClaimCodesDetailTmp.OccuranceCodeQualifier81c = caseCodesCodes.Occurrencecodequalifier;
+                hmClaimCodesDetailTmp.OccuranceCodeValue81c = this.dateFormatCMS1450(caseCodesCodes.Ocurrencecodevalue, false);
+                break;
+    
+                case #HMCaseCCQualifierd:
+    
+                hmClaimCodesDetailTmp.OccuranceCode81d = HMClaimTableSetup::findByRecEnum(caseCodesCodes.Code, HMClaimEnumList::CodeCode).Code;
+                hmClaimCodesDetailTmp.OccuranceCodeQualifier81d = caseCodesCodes.Occurrencecodequalifier;
+                hmClaimCodesDetailTmp.OccuranceCodeValue81d = this.dateFormatCMS1450(caseCodesCodes.Ocurrencecodevalue, false);
+                break;
+    
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadConditionCodesTmpData</Name>
+				<Source><![CDATA[
+    public void loadConditionCodesTmpData(HMCase _case)
+    {
+        HMClaimConditionCode1450    caseConditionCodes;
+    
+        #define.HMcondition18('18')
+        #define.HMcondition19('19')
+        #define.HMcondition20('20')
+        #define.HMcondition21('21')
+        #define.HMcondition22('22')
+        #define.HMcondition23('23')
+        #define.HMcondition24('24')
+        #define.HMcondition25('25')
+        #define.HMcondition26('26')
+        #define.HMcondition27('27')
+        #define.HMcondition28('28')
+    
+        while select caseConditionCodes
+            where caseConditionCodes.HMCase == _case.RecId
+        {
+            switch(caseConditionCodes.FieldLocator)
+            {
+                case #HMcondition18:
+                hmClaimCodesDetailTmp.Conditioncode18 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition19:
+                hmClaimCodesDetailTmp.Conditioncode19 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition20:
+                hmClaimCodesDetailTmp.Conditioncode20 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition21:
+                hmClaimCodesDetailTmp.Conditioncode21 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition22:
+                hmClaimCodesDetailTmp.Conditioncode22 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition23:
+                hmClaimCodesDetailTmp.Conditioncode23 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition24:
+                hmClaimCodesDetailTmp.Conditioncode24 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition25:
+                hmClaimCodesDetailTmp.Conditioncode25 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition26:
+                hmClaimCodesDetailTmp.Conditioncode26 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition27:
+                hmClaimCodesDetailTmp.Conditioncode27 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+                case #HMcondition28:
+                hmClaimCodesDetailTmp.Conditioncode28 = HMClaimTableSetup::findByRecEnum(caseConditionCodes.Code, HMClaimEnumList::ConditionCodes).Code;
+                break;
+    
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadDiagnosisCodesTmpData</Name>
+				<Source><![CDATA[
+    public void loadDiagnosisCodesTmpData(HMCase _case)
+    {
+        HMCaseOtherDiagnosisCode1450    caseDiagnosisCodes;
+    
+        #define.HMCaseOtherDiagnosisCode67("67")
+        #define.HMCaseOtherDiagnosisCodea("A")
+        #define.HMCaseOtherDiagnosisCodeb("B")
+        #define.HMCaseOtherDiagnosisCodec("C")
+        #define.HMCaseOtherDiagnosisCoded("D")
+        #define.HMCaseOtherDiagnosisCodee("E")
+        #define.HMCaseOtherDiagnosisCodef("F")
+        #define.HMCaseOtherDiagnosisCodeg("G")
+        #define.HMCaseOtherDiagnosisCodeh("H")
+        #define.HMCaseOtherDiagnosisCodei("I")
+        #define.HMCaseOtherDiagnosisCodej("J")
+        #define.HMCaseOtherDiagnosisCodek("K")
+        #define.HMCaseOtherDiagnosisCodel("L")
+        #define.HMCaseOtherDiagnosisCodem("M")
+        #define.HMCaseOtherDiagnosisCoden("N")
+        #define.HMCaseOtherDiagnosisCodeo("O")
+        #define.HMCaseOtherDiagnosisCodep("P")
+        #define.HMCaseOtherDiagnosisCodeq("Q")
+    
+        while select caseDiagnosisCodes
+            where caseDiagnosisCodes.Case == _case.RecId
+        {
+            switch(caseDiagnosisCodes.FieldLocator)
+            {
+                case #HMCaseOtherDiagnosisCode67:
+                hmClaimCodesDetailTmp.PrincipalDiagnosisCode = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodea:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeA = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodeb:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeB = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodec:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeC = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCoded:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeD = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodee:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeE = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodef:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeF = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodeg:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeG = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodeh:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeH = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodei:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeI = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodej:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeJ = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodek:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeK = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodel:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeL = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodem:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeM = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCoden:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeN = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodeo:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeO = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodep:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeP = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+                case #HMCaseOtherDiagnosisCodeq:
+                hmClaimCodesDetailTmp.OtherDagnosisCodeQ = HMDiagnosisDictionary::find(caseDiagnosisCodes.Code).Code;
+                break;
+    
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadOccurenceCodesTmpData</Name>
+				<Source><![CDATA[
+    public void loadOccurenceCodesTmpData(HMCase _case)
+    {
+        HMCaseOccurrenceCode1450    caseOccurrence;
+    
+        #localmacro.HMCaseOccurrenceCode31a
+        "31(a)"
+        #endmacro
+         #localmacro.HMCaseOccurrenceCode31b
+        "31(b)"
+        #endmacro
+         #localmacro.HMCaseOccurrenceCode32a
+        "32(a)"
+        #endmacro
+         #localmacro.HMCaseOccurrenceCode32b
+        "32(b)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode33a
+        "33(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode33b
+        "33(b)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode34a
+        "34(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceCode34b
+        "34(b)"
+        #endmacro
+    
+        while select caseOccurrence
+            where caseOccurrence.Case == _case.RecId
+        {
+            switch(caseOccurrence.FieldLocator)
+            {
+                case #HMCaseOccurrenceCode31a:
+                hmClaimCodesDetailTmp.OccurrenceCode1a = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate1a = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+    
+                case #HMCaseOccurrenceCode31b:
+                hmClaimCodesDetailTmp.OccurrenceCode1b = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate1b = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+    
+                case #HMCaseOccurrenceCode32a:
+                hmClaimCodesDetailTmp.OccurrenceCode2a = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate2a = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+    
+                case #HMCaseOccurrenceCode32b:
+                hmClaimCodesDetailTmp.OccurrenceCode2b = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate2b = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+    
+                case #HMCaseOccurrenceCode33a:
+                hmClaimCodesDetailTmp.OccurrenceCode3a = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate3a = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+    
+                case #HMCaseOccurrenceCode33b:
+                hmClaimCodesDetailTmp.OccurrenceCode3b = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate3b = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+    
+                case #HMCaseOccurrenceCode34a:
+                hmClaimCodesDetailTmp.OccurrenceCode4a = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate4a = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+    
+                case #HMCaseOccurrenceCode34b:
+                hmClaimCodesDetailTmp.OccurrenceCode4b = HMClaimTableSetup::findByRecEnum(caseOccurrence.Code, HMClaimEnumList::OccurenceCode).Code;
+                hmClaimCodesDetailTmp.OccurrenceDate4b = this.dateFormatCMS1450(caseOccurrence.Date, false);
+                break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadOccurenceSpanCodesTmpData</Name>
+				<Source><![CDATA[
+    public void loadOccurenceSpanCodesTmpData(HMCase _case)
+    {
+        HMCaseOccurrenceSpanCode1450    caseOccurrenceSpan;
+    
+        #localmacro.HMCaseOccurrenceSpanCode35a
+        "35(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceSpanCode35b
+        "35(b)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceSpanCode36a
+        "36(a)"
+        #endmacro
+        #localmacro.HMCaseOccurrenceSpanCode36b
+        "36(b)"
+        #endmacro
+    
+        while select caseOccurrenceSpan
+            where caseOccurrenceSpan.Case == _case.RecId
+        {
+            switch(caseOccurrenceSpan.FieldLocator)
+            {
+                case #HMCaseOccurrenceSpanCode35a:
+                hmClaimCodesDetailTmp.OccurrenceSpanCode1a = HMClaimTableSetup::findByRecEnum(caseOccurrenceSpan.Code, HMClaimEnumList::OccurenceSpanCodes).Code;
+                hmClaimCodesDetailTmp.OccurrenceSpanFrom1a = this.dateFormatCMS1450(caseOccurrenceSpan.From, false);
+                hmClaimCodesDetailTmp.OccurrenceSpanTo1a = this.dateFormatCMS1450(caseOccurrenceSpan.Through, false);
+                break;
+    
+                case #HMCaseOccurrenceSpanCode35b:
+                hmClaimCodesDetailTmp.OccurrenceSpanCode1b = HMClaimTableSetup::findByRecEnum(caseOccurrenceSpan.Code, HMClaimEnumList::OccurenceSpanCodes).Code;
+                hmClaimCodesDetailTmp.OccurrenceSpanFrom1b = this.dateFormatCMS1450(caseOccurrenceSpan.From, false);
+                hmClaimCodesDetailTmp.OccurrenceSpanTo1b = this.dateFormatCMS1450(caseOccurrenceSpan.Through, false);
+                break;
+    
+                case #HMCaseOccurrenceSpanCode36a:
+                hmClaimCodesDetailTmp.OccurrenceSpanCode2a = HMClaimTableSetup::findByRecEnum(caseOccurrenceSpan.Code, HMClaimEnumList::OccurenceSpanCodes).Code;
+                hmClaimCodesDetailTmp.OccurrenceSpanFrom2a = this.dateFormatCMS1450(caseOccurrenceSpan.From, false);
+                hmClaimCodesDetailTmp.OccurrenceSpanTo2a = this.dateFormatCMS1450(caseOccurrenceSpan.Through, false);
+                break;
+    
+                case #HMCaseOccurrenceSpanCode36b:
+                hmClaimCodesDetailTmp.OccurrenceSpanCode2b = HMClaimTableSetup::findByRecEnum(caseOccurrenceSpan.Code, HMClaimEnumList::OccurenceSpanCodes).Code;
+                hmClaimCodesDetailTmp.OccurrenceSpanFrom2b = this.dateFormatCMS1450(caseOccurrenceSpan.From, false);
+                hmClaimCodesDetailTmp.OccurrenceSpanTo2b = this.dateFormatCMS1450(caseOccurrenceSpan.Through, false);
+                break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadProcedureCodesTmpData</Name>
+				<Source><![CDATA[
+    public void loadProcedureCodesTmpData(HMCase _case)
+    {
+        HMCaseOtherProcedureCode1450    caseProcedureCodes;
+    
+        #localmacro.HMCaseOtherProcedureCodea
+        "74(a)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCodeb
+        "74(b)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCodec
+        "74(c)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCoded
+        "74(d)"
+        #endmacro
+        #localmacro.HMCaseOtherProcedureCodee
+        "74(e)"
+        #endmacro
+    
+        while select caseProcedureCodes
+            where caseProcedureCodes.Case == _case.RecId
+        {
+            switch(caseProcedureCodes.FieldLocator)
+            {
+                case #HMCaseOtherProcedureCodea:
+                hmClaimCodesDetailTmp.OtherProcedureCodeA = HMProcedureCodeMaster::find(caseProcedureCodes.Code).Code;
+                hmClaimCodesDetailTmp.OtherProcedureDateA = this.dateFormatCMS1450(caseProcedureCodes.Date, false);
+                break;
+    
+                case #HMCaseOtherProcedureCodeb:
+                hmClaimCodesDetailTmp.OtherProcedureCodeB = HMProcedureCodeMaster::find(caseProcedureCodes.Code).Code;
+                hmClaimCodesDetailTmp.OtherProcedureDateB = this.dateFormatCMS1450(caseProcedureCodes.Date, false);
+                break;
+    
+                case #HMCaseOtherProcedureCodec:
+                hmClaimCodesDetailTmp.OtherProcedureCodeC = HMProcedureCodeMaster::find(caseProcedureCodes.Code).Code;
+                hmClaimCodesDetailTmp.OtherProcedureDateC = this.dateFormatCMS1450(caseProcedureCodes.Date, false);
+                break;
+    
+                case #HMCaseOtherProcedureCoded:
+                hmClaimCodesDetailTmp.OtherProcedureCodeD = HMProcedureCodeMaster::find(caseProcedureCodes.Code).Code;
+                hmClaimCodesDetailTmp.OtherProcedureDateD = this.dateFormatCMS1450(caseProcedureCodes.Date, false);
+                break;
+    
+                case #HMCaseOtherProcedureCodee:
+                hmClaimCodesDetailTmp.OtherProcedureCodeE = HMProcedureCodeMaster::find(caseProcedureCodes.Code).Code;
+                hmClaimCodesDetailTmp.OtherProcedureDateE = this.dateFormatCMS1450(caseProcedureCodes.Date, false);
+                break;
+            }
+        }
+            hmClaimCodesDetailTmp.PrincipalProcedureCode = HMProcedureCodeMaster::find(_case.PrincipalProcedureCode).Code;
+            hmClaimCodesDetailTmp.PrincipalProcedureDate = this.dateFormatCMS1450(_case.PrincipalProcedureDate, false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadValueCodesTmpData</Name>
+				<Source><![CDATA[
+    public void loadValueCodesTmpData(HMCase _case)
+    {
+        HMCaseValueCode1450     caseValueCodes;
+    
+        #localmacro.HMCaseValueCode39a
+        "39(a)"
+        #endmacro
+        #localmacro.HMCaseValueCode39b
+        "39(b)"
+        #endmacro
+        #localmacro.HMCaseValueCode39c
+        "39(c)"
+        #endmacro
+        #localmacro.HMCaseValueCode39d
+        "39(d)"
+        #endmacro
+        #localmacro.HMCaseValueCode40a
+        "40(a)"
+        #endmacro
+        #localmacro.HMCaseValueCode40b
+        "40(b)"
+        #endmacro
+        #localmacro.HMCaseValueCode40c
+        "40(c)"
+        #endmacro
+        #localmacro.HMCaseValueCode40d
+        "40(d)"
+        #endmacro
+        #localmacro.HMCaseValueCode41a
+        "41(a)"
+        #endmacro
+        #localmacro.HMCaseValueCode41b
+        "41(b)"
+        #endmacro
+        #localmacro.HMCaseValueCode41c
+        "41(c)"
+        #endmacro
+        #localmacro.HMCaseValueCode41d
+        "41(d)"
+        #endmacro
+    
+        while select caseValueCodes
+            where caseValueCodes.Case == _case.RecId
+        {
+            switch(caseValueCodes.FieldLocator)
+            {
+                case #HMCaseValueCode39a:
+                hmClaimCodesDetailTmp.ValueCode1a = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount1a = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode39b:
+                hmClaimCodesDetailTmp.ValueCode1b = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount1b = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode39c:
+                hmClaimCodesDetailTmp.ValueCode1c = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount1c = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode39d:
+                hmClaimCodesDetailTmp.ValueCode1d = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount1d = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode40a:
+                hmClaimCodesDetailTmp.ValueCode2a = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount2a = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode40b:
+                hmClaimCodesDetailTmp.ValueCode2b = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount2b = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode40c:
+                hmClaimCodesDetailTmp.ValueCode2c = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount2c = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode40d:
+                hmClaimCodesDetailTmp.ValueCode2d = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount2d = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode41a:
+                hmClaimCodesDetailTmp.ValueCode3a = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount3a = caseValueCodes.Amount;
+                break;
+    
+    
+                case #HMCaseValueCode41b:
+                hmClaimCodesDetailTmp.ValueCode3b = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount3b = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode41c:
+                hmClaimCodesDetailTmp.ValueCode3c = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount3c = caseValueCodes.Amount;
+                break;
+    
+                case #HMCaseValueCode41d:
+                hmClaimCodesDetailTmp.ValueCode3d = HMClaimTableSetup::findByRecEnum(caseValueCodes.Code, HMClaimEnumList::ValueCodes).Code;
+                hmClaimCodesDetailTmp.Amount3d = caseValueCodes.Amount;
+                break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>openClaimPDF</Name>
+				<Source><![CDATA[
+    private void openClaimPDF()
+    {
+        ;
+        System.Diagnostics.Process::Start(outputFile);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmBatchNumbers</Name>
+				<Source><![CDATA[
+    public container parmBatchNumbers(container _batchNumbers = BatchNumbers)
+    {
+        BatchNumbers = _batchNumbers;
+    
+        return BatchNumbers;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCarrierIds</Name>
+				<Source><![CDATA[
+    public container parmCarrierIds(container _carrierIds = carrierIds)
+    {
+        carrierIds = _carrierIds;
+    
+        return carrierIds;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmChargeEntryRecId</Name>
+				<Source><![CDATA[
+    public RefRecid parmChargeEntryRecId(RefRecid _chargeEntryRecId = chargeEntryRecId)
+    {
+        chargeEntryRecId = _chargeEntryRecId;
+    
+        return chargeEntryRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmClaimTemplate</Name>
+				<Source><![CDATA[
+    public HMClaimTemplate parmClaimTemplate(HMClaimTemplate _hmClaimTemplate = hmClaimTemplate)
+    {
+        hmClaimTemplate = _hmClaimTemplate;
+    
+        return hmClaimTemplate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFromDate</Name>
+				<Source><![CDATA[
+    public TransDate parmFromDate(TransDate _fromDate = fromDate)
+    {
+        fromDate = _fromDate;
+    
+        return fromDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInsuranceRecId</Name>
+				<Source><![CDATA[
+    public RefRecid parmInsuranceRecId(RefRecid _insuranceRecId = insuranceRecId)
+    {
+        insuranceRecId = _insuranceRecId;
+    
+        return insuranceRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmIsFirst</Name>
+				<Source><![CDATA[
+    public boolean parmIsFirst(boolean _isFirst = isFirst)
+    {
+        isFirst = _isFirst;
+    
+        return isFirst;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmOutputFile</Name>
+				<Source><![CDATA[
+    public str parmOutputFile(str _outputFile = outputFile)
+    {
+        outputFile = _outputFile;
+    
+        return outputFile;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPatientIds</Name>
+				<Source><![CDATA[
+    public container parmPatientIds(container _patientIds = patientIds)
+    {
+        patientIds = _patientIds;
+    
+        return patientIds;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPatientRecId</Name>
+				<Source><![CDATA[
+    public Refrecid parmPatientRecId(Refrecid _patientRecId = patientRecId)
+    {
+        patientRecId = _patientRecId;
+    
+        return patientRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPhysicianId</Name>
+				<Source><![CDATA[
+    public RefRecId parmPhysicianId(RefRecId _physicianId = physicianId)
+    {
+        physicianId = _physicianId;
+    
+        return physicianId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPhysicianRecId</Name>
+				<Source><![CDATA[
+    public RefRecid parmPhysicianRecId(RefRecid _physicianRecId = physicianRecId)
+    {
+        physicianRecId = _physicianRecId;
+    
+        return physicianRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmToDate</Name>
+				<Source><![CDATA[
+    public TransDate parmToDate(TransDate _toDate = toDate)
+    {
+        toDate = _toDate;
+    
+        return toDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTPAName</Name>
+				<Source><![CDATA[
+    public str parmTPAName(str _TPACode = TPACode)
+    {
+        TPACode = _TPACode;
+    
+        return TPACode;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

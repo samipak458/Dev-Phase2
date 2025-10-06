@@ -1,0 +1,802 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientInsuraceDropDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPatientInsuraceDropDialog extends FormRun
+{
+    HMCase      caseHeader;
+}
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMPatientInsurance</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            caseHeader = HMCase::find(element.args().record().RecId);
+            this.query().dataSourceTable(tableNum(HMPatientInsurance)).clearDynalinks();
+            this.query().dataSourceTable(tableNum(HMPatientInsurance)).addRange(fieldNum(HMPatientInsurance,HMPatient)).value(SysQuery::value(caseHeader.HMPatient));
+            this.query().dataSourceTable(tableNum(HMPatientInsurance)).addSortField(fieldNum(HMPatientInsurance, Priority));
+        
+           //info(strFmt('%1', this.query().toString()));
+        //   info(this.query().toString());
+        //   this.queryBuildDataSource().addRange(fieldNum(HMPatientInsurance,InsuranceStatus)).value(SysQuery::value(HMInsuranceStatus::Active));
+        
+        //   this.queryBuildDataSource().addRange(fieldNum(HMPatientInsurance,EffectiveDate)).value(strFmt('((EffectiveDate <= %1) && (EndDate >= %1))',date2StrXpp(today())));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>HMPatientInsurance_HMInsuranceContractId</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void jumpRef()
+        {
+            FormRun formRun;
+            Args args = new Args();
+            super();
+            args.lookupTable(tableNum(HMInsuranceContractCarrierCombination)); //<Master form table which needs to be opened>
+                //args.lookupTable(tableNum(ObjectsTable));
+                args.lookupField(fieldNum(HMInsuranceContractCarrierCombination,HMInsuranceCarrier));
+            //args.lookupField(fieldNum(ObjectsTable,ObjectId));
+
+            args.lookupValue(int2Str(HMPatientInsurance.HMInsuranceCarrier)); //<Current form table field which is related with master form table>
+                //args.lookupValue(LeaseTable.UnitId);
+            args.lookupRecord(HMInsuranceContractCarrierCombination::findByInsCarrier(HMPatientInsurance.HMInsuranceCarrier));
+            //args.lookupRecord(ObjectsTable::fin(LeaseTable.UnitTable));
+        args.name(formStr(HMInsuranceContractCarrierCombination)); //<Form which needs to be opened>
+                //args.name(formStr(ObjectsTable));
+            formRun = ClassFactory.formRunClass(args);
+            formRun.init();
+            formRun.run();
+            formRun.wait();
+            formRun.detach();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            FormRun                             formRun;
+            Object                              formObj;
+            HMCaseInsurance                     hmCaseInsurance;
+            HMCase                              hmCaseLocal;
+            HMPatientInsurance                  hmPatientInsuranceLocal;
+            boolean                             alreadyExist = false;
+            boolean                             guranatorExist = false;
+            boolean                             patientExist = false;
+            boolean                             insurerExist = false;
+            boolean                             containInsurer = false;
+            boolean                             containGurantor = false;
+            boolean                             containPatient = false;
+        
+            //it checks buffer contain gurantor OR insurer
+            hmPatientInsuranceLocal = HMPatientInsurance_DS.getFirst(1);
+            while(hmPatientInsuranceLocal)
+            {
+                if(hmPatientInsuranceLocal.HMPayerType == HMPayerType::InsuranceCarrier)
+                {
+                    containInsurer = true;
+                }
+                else if(hmPatientInsuranceLocal.HMPayerType == HMPayerType::Gurantor)
+                {
+                    containGurantor = true;
+                }
+                else if(hmPatientInsuranceLocal.HMPayerType == HMPayerType::Patient)
+                {
+                    containPatient = true;
+                }
+                hmPatientInsuranceLocal = HMPatientInsurance_DS.getNext();
+            }
+        
+            //checks whether the selected records already exist in the table
+            hmPatientInsuranceLocal = HMPatientInsurance_DS.getFirst(1);
+            while(hmPatientInsuranceLocal)
+            {
+                select count(RecId) from hmCaseInsurance
+                    where hmCaseInsurance.HMPatientEncounter == element.args().record().RecId
+                    && hmCaseInsurance.HMPatientInsurance == hmPatientInsuranceLocal.RecId;
+                if(hmCaseInsurance.RecId >0)
+                {
+                    alreadyExist = true;
+                    break;
+                }
+                hmPatientInsuranceLocal = HMPatientInsurance_DS.getNext();
+            }
+        
+            //check whether any gurantor already exist
+            if(!alreadyExist)
+            {
+                hmPatientInsuranceLocal = HMPatientInsurance_DS.getFirst(1);
+        
+                select count(RecId) from hmCaseInsurance
+                    where hmCaseInsurance.HMPatientEncounter == element.args().record().RecId
+                    && hmCaseInsurance.HMPayerType == HMPayerType::Gurantor;
+                if(hmCaseInsurance.RecId >0)
+                {
+                    guranatorExist= true;
+                }
+        
+            }
+        
+            //checks whether patient id with the selected record id if it already exist return true;
+            if(!alreadyExist && !guranatorExist)
+            {
+        
+                hmPatientInsuranceLocal = HMPatientInsurance_DS.getFirst(1);
+                while(hmPatientInsuranceLocal)
+                {
+                    if(hmPatientInsuranceLocal.HMPayerType == HMPayerType::Patient)
+                    {
+                        select count(RecId) from hmCaseInsurance
+                            where hmCaseInsurance.HMPatientEncounter == element.args().record().RecId
+                            && hmCaseInsurance.HMPayerType == HMPayerType::Patient;
+                        if(hmCaseInsurance.RecId >0)
+                        {
+                            patientExist  = true;
+                            break;
+                        }
+                    }
+                    hmPatientInsuranceLocal = HMPatientInsurance_DS.getNext();
+                }
+            }
+            if(!alreadyExist && !guranatorExist && !patientExist)
+            {
+                //if the selected record/records contains both insurer and gurantor
+                if(containInsurer && containGurantor )
+                {
+                    warning('Insurer and guarantor cannot be added together in a case');
+                    return;
+                }
+                //if the selected record/records contains both insurer and gurantor
+                if(containPatient && containGurantor)
+                {
+                    warning('Patient and guarantor cannot be added together in a case');
+                    return;
+                }
+                //if the selected record contain insurer it will check on the table if any gurantor exist it will prompt warning, insurance & gurantor cannot be added together
+                if(containInsurer)
+                {
+                    select count(RecId) from hmCaseInsurance
+                        where hmCaseInsurance.HMPatientEncounter == element.args().record().RecId
+                        && hmCaseInsurance.HMPayerType == HMPayerType::Gurantor;
+        
+                    if(hmCaseInsurance.RecId>0)
+                    {
+                        warning('Insurer and guarantor cannot be added together in a case');
+                        return;
+                    }
+                }
+        
+                //if the selected record contain gurantor it will check on the table if any gurantor exist it will prompt warning, insurance & gurantor cannot be added together
+                //naveed
+                //if(containGurantor)
+                //{
+                    //select count(RecId) from hmCaseInsurance
+                        //where hmCaseInsurance.HMPatientEncounter == element.args().record().RecId
+                        //&& hmCaseInsurance.HMPayerType == HMPayerType::InsuranceCarrier;
+        //
+                    //if(hmCaseInsurance.RecId>0)
+                    //{
+                        //warning('Insurer and gurantor cannot be added together in a case');
+                        //return;
+                    //}
+        //
+                    //select count(RecId) from hmCaseInsurance
+                        //where hmCaseInsurance.HMPatientEncounter == element.args().record().RecId;
+                    //if(hmCaseInsurance.RecId>0)
+                    //{
+                        //warning('Items already exist, insurer cannot be added');
+                        //return;
+                    //}
+        //
+                //}
+        
+                //if no warning occurs it will continue
+                hmPatientInsuranceLocal = HMPatientInsurance_DS.getFirst(1);
+                while(hmPatientInsuranceLocal)
+                {
+                    hmCaseInsurance.clear();
+                    hmCaseInsurance.HMPatientInsurance       = hmPatientInsuranceLocal.RecId;
+                    hmCaseInsurance.HMCase                   = caseHeader.RecId;
+                    hmCaseInsurance.CoPayAmount              = hmPatientInsuranceLocal.CoPayAmount;
+                    hmCaseInsurance.HMInsuranceCoveragePlan  = hmPatientInsuranceLocal.HMInsuranceCoveragePlan;
+                    hmCaseInsurance.PolicyGroup              = hmPatientInsuranceLocal.PolicyGroup;
+                    hmCaseInsurance.PolicyNumber             = hmPatientInsuranceLocal.PolicyNumber;
+                    hmCaseInsurance.PolicyType               = hmPatientInsuranceLocal.PolicyType;
+                    hmCaseInsurance.HMPatientEncounter       = element.args().record().RecId;
+                    hmCaseInsurance.InsuranceCarrier         = hmPatientInsuranceLocal.InsuranceCarrier;
+                    hmCaseInsurance.HMPayerType              = hmPatientInsuranceLocal.HMPayerType;
+                    hmCaseInsurance.CoInsurance              = hmPatientInsuranceLocal.CoInsurance;
+                    hmCaseInsurance.DeductibleAmount         = hmPatientInsuranceLocal.DeductibleAmount;
+                    hmCaseInsurance.CurrentDeductibleAmount  = hmPatientInsuranceLocal.CurrentDeductibleAmount;
+                    hmCaseInsurance.DeductibleUpdateDate     = hmPatientInsuranceLocal.DeductibleUpdateDate;
+                    hmCaseInsurance.EffectiveDate            = hmPatientInsuranceLocal.EffectiveDate;
+                    hmCaseInsurance.RelationShip             = hmPatientInsuranceLocal.RelationShip;
+                    hmCaseInsurance.SubscriberID             = hmPatientInsuranceLocal.SubscriberID;
+                    hmCaseInsurance.PriorAuthorizationNumber = hmPatientInsuranceLocal.PriorAuthorizationNumber;
+        
+                    hmCaseInsurance.GroupNumber              = hmPatientInsuranceLocal.GroupNumber;
+                    hmCaseInsurance.GroupName                = hmPatientInsuranceLocal.GroupName;
+                    hmCaseInsurance.SubscriberName           = hmPatientInsuranceLocal.SubscriberName;
+                    hmCaseInsurance.SubscriberEmployer       = hmPatientInsuranceLocal.SubscriberEmployer;
+                    hmCaseInsurance.SubscriberRelation       = hmPatientInsuranceLocal.SubscriberRelation;
+        
+                    if(hmPatientInsuranceLocal.HMPayerType == HMPayerType::InsuranceCarrier)
+                    {
+                        hmCaseInsurance.HMBillingValidationStatus = HMBillingValidationStatus::Pending;
+                    }
+        
+                    hmCaseInsurance.write();
+        
+                    hmPatientInsuranceLocal = HMPatientInsurance_DS.getNext();
+                }
+        
+                formRun = element.args().caller().owner();
+                formObj = formRun;
+                if (formHasMethod(formObj, identifierstr(refreshHMCaseInsurance)))
+                {
+                    formObj.refreshHMCaseInsurance();
+                }
+        
+            }
+            else if(alreadyExist)
+            {
+                warning("@MAZ3363");
+            }
+            else if(guranatorExist)
+            {
+                warning('No more items can be added if guarantor exist');
+            }
+            else if(patientExist)
+            {
+                warning("@MAZ3365");
+            }
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientInsurance</Name>
+			<Table>HMPatientInsurance</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AssignmentOfBenefitsIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationLimit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationRequest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BalanceAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CoInsurance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CoPayAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrentDeductibleAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleIncInOutOfPocket</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleMet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleUpdateDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EffectiveDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EligibilityAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EligibilityComments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EligibilityLastChecked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeGrade</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployerNameofTheInsured</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GroupName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GroupNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmTitle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HealthPlanId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCardIssueNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimFileIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimTableSetup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClassOrPlanId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClassOrPlanId1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCorporatePlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMEligibleClass</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceContract</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceContractClassOrPlans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCoveragePlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceEligibilityStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientInsuranceMembershipId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientSubscriber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPayerType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceEligibilityStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OutOfPocket</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OutOfPocketMet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientRelationshipToInsured</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyPlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreauthorizationReqd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriorAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Priority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RelationShip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReleaseofInformationCertificationIndicat</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SelfPolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberDateOfBirth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberEmployer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberRelation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ1253</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStaticTextControl">
+						<Name>MainInstruction</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>StaticText</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Style>MainInstruction</Style>
+						<Text>@MAZ3385</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStaticTextControl">
+						<Name>SupplementalInstruction</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>StaticText</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DisplayLength>80</DisplayLength>
+						<DisplayLengthMode>Fixed</DisplayLengthMode>
+						<Text>@MAZ3318</Text>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogCommit</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>HMPatientInsuranceGrid</Name>
+						<ElementPosition>858993458</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientInsurance_InsuranceCarrier</Name>
+								<ElementPosition>715827882</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>InsuranceCarrier</DataField>
+								<DataSource>HMPatientInsurance</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CarrierName</Name>
+								<ElementPosition>1073741823</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>CarrierName</DataMethod>
+								<DataSource>HMPatientInsurance</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientInsurance_HMPatientInsuranceMembershipId</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>HMPatientInsuranceMembershipId</DataField>
+								<DataSource>HMPatientInsurance</DataSource>
+								<Label>@MAZ12985</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>HMPatientInsurance_EffectiveDate</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>EffectiveDate</DataField>
+								<DataSource>HMPatientInsurance</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>HMPatientInsurance_EndDate</Name>
+								<ElementPosition>1789569705</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>EndDate</DataField>
+								<DataSource>HMPatientInsurance</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>InsuranceGroup</Name>
+								<AllowEdit>No</AllowEdit>
+								<Type>Group</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientInsurance_HMInsuranceContractId</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientInsurance</DataSource>
+										<Label>@SYS4081436</Label>
+										<ReferenceField>HMInsuranceContract</ReferenceField>
+										<ReplacementFieldGroup>ContractIdGroup</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientInsurance_HMInsuranceContractName</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientInsurance</DataSource>
+										<Label>@SYS300250</Label>
+										<ReferenceField>HMInsuranceContract</ReferenceField>
+										<ReplacementFieldGroup>ContractNameGroup</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientInsurance_HMInsuranceContractClassOrPlansId</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientInsurance</DataSource>
+										<Label>@MAZ16289</Label>
+										<ReferenceField>HMInsuranceContractClassOrPlans</ReferenceField>
+										<ReplacementFieldGroup>ClassOrPlanId</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientInsurance_HMInsuranceContractClassOrPlansName</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientInsurance</DataSource>
+										<Label>@SYS314196</Label>
+										<ReferenceField>HMInsuranceContractClassOrPlans</ReferenceField>
+										<ReplacementFieldGroup>ClassOrPlanName</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientInsurance_HMInsuranceContractClassOrPlansNetworkId</Name>
+										<Type>ReferenceGroup</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientInsurance</DataSource>
+										<Label>Network Id</Label>
+										<ReferenceField>HMInsuranceContractClassOrPlans</ReferenceField>
+										<ReplacementFieldGroup>ClassNetworkId</ReplacementFieldGroup>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+						</Controls>
+						<DataSource>HMPatientInsurance</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1288490187</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormCommandButtonControl">
+								<Name>OKButton</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>CommandButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Command>OK</Command>
+								<DefaultButton>Yes</DefaultButton>
+								<Text>@SYS60080</Text>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Footnote</Name>
+						<ElementPosition>1717986916</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls />
+						<TopMargin>10</TopMargin>
+						<TopMarginMode>Fixed</TopMarginMode>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<Style>DialogCommit</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMInsuranceCarrierTable_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Class which extends HMinsuranceCarrier table to implement calculated fields.
+/// </summary>
+[ExtensionOf(tableStr(HMInsuranceCarrier))]
+final class HMInsuranceCarrierTable_Extension
+{
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>totalNoOfClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Display method to implement the total number of claims calculated field.
+    /// </summary>
+    /// <returns>HMOpenClaims</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display HMOpenClaims totalNoOfClaims()
+    {
+        HMClaimTable        hmclaimTable;
+        HMClaimTableDetails hmClaimTableDetails;
+        HMClaimVersion      hmClaimVersion;
+
+        select count(RecId) from hmClaimTableDetails
+            join hmclaimTable
+                where hmClaimTableDetails.HMClaimTable == hmclaimTable.RecId
+                    && hmclaimTable.HMInsuranceCarrier == this.RecId
+                    && hmClaimTableDetails.HMBalanceAmount > 0
+            join hmClaimVersion
+                where hmClaimVersion.HMClaimTable == hmclaimTable.RecId;
+        
+        return hmClaimTableDetails.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>totalAmountOfClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Display method to implement the total amount of claims calculated field.
+    /// </summary>
+    /// <returns>HMAmount</returns>
+    [SysClientCacheDataMethodAttribute(true)]
+    public display HMAmount totalAmountOfClaims()
+    {
+        HMClaimTable        hmclaimTable;
+        HMClaimTableDetails hmClaimTableDetails;
+        HMClaimVersion      hmClaimVersion;
+
+        select sum(HMBalanceAmount) from hmClaimTableDetails
+            join hmclaimTable
+                where hmClaimTableDetails.HMClaimTable == hmclaimTable.RecId
+                    && hmclaimTable.HMInsuranceCarrier == this.RecId
+                    && hmClaimTableDetails.HMBalanceAmount > 0
+            join hmClaimVersion
+                where hmClaimVersion.HMClaimTable == hmclaimTable.RecId;
+        
+        return hmClaimTableDetails.HMBalanceAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        HMInsuranceCarrier  oldPayer = this.orig();
+        HMClaimTable        claim;
+
+        next update();
+
+        if(this.HMIsRestricted != oldPayer.HMIsRestricted 
+            || this.Name != oldPayer.Name 
+            || this.HMNetworkID != oldPayer.HMNetworkID 
+            || this.HMPayerType != oldPayer.HMPayerType 
+            || this.Code != oldPayer.Code)
+        {
+            try
+            {
+                ttsbegin;
+
+                update_recordset claim
+                    setting IsClaimModified = NoYes::Yes
+                        where claim.HMInsuranceCarrier == this.RecId;
+
+                ttscommit;
+            }
+            catch (Exception::Deadlock)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ96"));
+                }
+                else
+                {
+                    retry;
+                }
+
+            }
+            catch
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ96"));
+                }
+                else
+                {
+                    retry;
+                }
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

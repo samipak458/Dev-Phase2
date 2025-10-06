@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPaymentReceiptController</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPaymentReceiptController extends SrsReportRunController
+{
+    String30    responsibilityType, source;
+    List        refundTransactions;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmRefundTransactions</Name>
+				<Source><![CDATA[
+    public List parmRefundTransactions(List _refundTransactions = refundTransactions)
+    {
+        refundTransactions = _refundTransactions;
+    
+        return refundTransactions;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prePromptModifyContract</Name>
+				<Source><![CDATA[
+    protected void prePromptModifyContract()
+    {
+        HMResourceSchedulingAppointment appointment;
+        HMPaymentReceiptContract        contract;
+        HMCase                          hmCase;
+        List                            emptyList = new List(Types::Int64);
+    
+        if (this.parmArgs() && this.parmArgs().record())
+        {
+            contract    = this.parmReportContract().parmRdpContract() as HMPaymentReceiptContract;
+    
+            if (this.parmArgs().record().TableId == tableNum(HMResourceSchedulingAppointment))
+            {
+                appointment  = this.parmArgs().record();
+                contract.parmAppointmentRecId(appointment.RecId);
+                contract.parmCaseRecId(0);
+            }
+            else if (this.parmArgs().record().TableId == tableNum(hmCase))
+            {
+                hmCase  = this.parmArgs().record();
+                contract.parmCaseRecId(hmCase.RecId);
+                contract.parmAppointmentRecId(0);
+            }
+    
+            contract.parmOutputSelection(args.parm());
+    
+            if (this.responsibilityType() == 'Self')
+            {
+                contract.parmResponsibility('Self');
+            }
+    
+            if (this.responsibilityType() == 'Insurance')
+            {
+                contract.parmResponsibility('Insurance');
+            }
+    
+            contract.parmSource(this.source());
+    
+            if (args.parm() == "Refund")
+            {
+                contract.parmRefundTransactions(this.parmRefundTransactions());
+            }
+            else
+            {
+                emptyList.addEnd(333);
+                contract.parmRefundTransactions(emptyList);
+            }
+    
+            this.parmReportContract().parmRdpContract(contract);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>responsibilityType</Name>
+				<Source><![CDATA[
+    public String30 responsibilityType(String30 _responsibilityType = responsibilityType)
+    {
+        responsibilityType = _responsibilityType;
+    
+        return responsibilityType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>source</Name>
+				<Source><![CDATA[
+    public String30 source(String30 _source = source)
+    {
+        source = _source;
+    
+        return source;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args, boolean _isCalledFromPharmacy = false, List _refundTransactions = null)
+    {
+        HMPaymentReceiptController      controller = new HMPaymentReceiptController();
+        HMResourceSchedulingAppointment appointment;
+        HMCaseTrans                     caseTrans;
+        HMCaseTransDetail               caseTransDetails;
+        HMCase                          hmCase;
+    
+        if (_args.record().TableId == tableNum(HMResourceSchedulingAppointment))
+        {
+            appointment = _args.record() as HMResourceSchedulingAppointment;
+    
+            select caseTrans
+                join caseTransDetails
+                where caseTrans.RecId == caseTransDetails.hmcaseTrans
+                 && caseTrans.HMResourceSchedulingAppointment == appointment.RecId
+                 && ( caseTransDetails.TransactionType  == HMCaseTransDetailTransactionType::PatientPayment     ||
+                    caseTransDetails.TransactionType    == HMCaseTransDetailTransactionType::PatientRefund      ||
+                    caseTransDetails.TransactionType    == HMCaseTransDetailTransactionType::InsurancePayment);
+        }
+    
+        if (_args.record().TableId == tableNum(HMCase))
+        {
+            hmCase      = _args.record() as HMCase;
+    
+            select caseTrans
+                join caseTransDetails
+                where caseTrans.RecId == caseTransDetails.hmcaseTrans
+                 && caseTrans.HMCase == hmCase.RecId
+                 && (   caseTransDetails.TransactionType  == HMCaseTransDetailTransactionType::PatientPayment     ||
+                        caseTransDetails.TransactionType  == HMCaseTransDetailTransactionType::PatientRefund      ||
+                        caseTransDetails.TransactionType  == HMCaseTransDetailTransactionType::InsurancePayment);
+        }
+    
+        if (caseTrans)
+        {
+            if (appointment.HMPatientInsurance 
+				// Musab
+				// Payment receipt issue
+				|| HMCaseInsurance::findByCase(hmCase.RecId).HMPatientInsurance)
+            {
+                controller.parmArgs(_args);
+                controller.parmReportName(ssrsReportStr(HMPaymentReceipt, PatientShare));
+                controller.parmShowDialog(false);
+                controller.responsibilityType('Self');
+    
+                if (_isCalledFromPharmacy)
+                {
+                    controller.source("Pharmacy");
+                }
+                else
+                {
+                    controller.source("NotPharmacy");
+                }
+    
+    
+                if (_args.parm() == "Refund")
+                {
+                    controller.parmRefundTransactions(_refundTransactions);
+                    controller.startOperation();
+                }
+                else
+                {
+                    controller.startOperation();
+    
+                    controller = new HMPaymentReceiptController();
+                    controller.parmArgs(_args);
+                    controller.parmReportName(ssrsReportStr(HMPaymentReceipt, InsuranceShare));
+                    controller.parmShowDialog(false);
+                    controller.responsibilityType('Insurance');
+    
+                    if (_isCalledFromPharmacy)
+                    {
+                        controller.source("Pharmacy");
+                    }
+                    else
+                    {
+                        controller.source("NotPharmacy");
+                    }
+                    controller.startOperation();
+                }
+            }
+            else
+            {
+                controller.parmArgs(_args);
+                controller.parmReportName(ssrsReportStr(HMPaymentReceipt, Cash));
+                controller.parmShowDialog(false);
+                controller.responsibilityType('Self');
+    
+                if (_isCalledFromPharmacy)
+                {
+                    controller.source("Pharmacy");
+                }
+                else
+                {
+                    controller.source("NotPharmacy");
+                }
+                controller.startOperation();
+            }
+        }
+        else
+        {
+            error("@MAZ13478");
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

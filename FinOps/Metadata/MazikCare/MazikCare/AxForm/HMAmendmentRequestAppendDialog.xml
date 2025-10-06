@@ -1,0 +1,1219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMAmendmentRequestAppendDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMAmendmentRequestAppendDialog extends FormRun
+{
+    HMAmendmentRequest                  hmAmendmentRequestParm;
+    HMAmendmentRequestLine              hmAmendmentRequestLineParm;
+    HMFieldNamesTmp                     hmFieldNamesTmpBuffer;
+    LogisticsAddressCountryRegionId     countryRegionId;
+    LogisticsAddressStateId             stateId;
+    LogisticsAddressCountyId            countyId;
+    LogisticsAddressCityName            cityName;
+    LogisticsAddressDistrictName        districtName;
+    RecId                               logisticsElectronicAddressRecId;
+    RecId                               patientId;
+    container                           con;
+    int64                               recordCount;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createRequestLines</Name>
+				<Source><![CDATA[
+    public boolean createRequestLines(container  _conRecords)
+    {
+        HMAmendmentRequestLine  hmAmendmentRequestLineLocal,hmAmendmentRequestLineFetch;
+        //RecordInsertList recordList = new RecordInsertList(tableNum(HMAmendmentRequestLine));
+        boolean                 ret;
+        int                     counter;
+    
+        try
+        {
+            ttsBegin;
+    
+            for (counter = 1 ;counter <= conLen(_conRecords);counter++)
+            {
+                hmAmendmentRequestLineFetch = conPeek(_conRecords,counter);
+    
+                hmAmendmentRequestLineLocal.HMAmendmentRequest  = hmAmendmentRequestParm.RecId;
+                hmAmendmentRequestLineLocal.AppendDate          = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                hmAmendmentRequestLineLocal.AppendTime          = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+                hmAmendmentRequestLineLocal.HMAmendment         = hmAmendmentRequestLineFetch.HMAmendment;
+                hmAmendmentRequestLineLocal.AmendedValue        = hmAmendmentRequestLineFetch.AmendedValue;
+                hmAmendmentRequestLineLocal.ReferenceData       = hmAmendmentRequestLineFetch.ReferenceData;
+                hmAmendmentRequestLineLocal.ReferenceRecId      = hmAmendmentRequestLineFetch.ReferenceRecId;
+                hmAmendmentRequestLineLocal.HMAmendmentSource   = hmAmendmentRequestLineFetch.HMAmendmentSource;
+                hmAmendmentRequestLineLocal.insert();
+                //recordList.add(hmAmendmentRequestLineLocal);
+            }
+        
+            //recordList.insertDatabase();
+            ret = true;
+    
+            if (ret)
+            {
+                ttsCommit;
+            }
+            else
+            {
+                ttsAbort;
+            }
+        }
+    
+        catch
+        {
+            ret = false;
+            ttsAbort;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillAmendments</Name>
+				<Source><![CDATA[
+    public void fillAmendments()
+    {
+        HMAmendment             hmMAmendment;
+        HMAmendmentRequestLine  hmAmendmentRequestLineLocal;
+    
+        con = conNull();
+    
+        if (element.args().menuItemName() == menuitemDisplayStr(HMAmendmentRequestAppend))
+        {
+            insert_recordset HMAmendmentRequestLine (HMAmendment)
+            select RecId from hmMAmendment;
+        }
+        else
+        {
+            insert_recordset HMAmendmentRequestLine (HMAmendment, AmendedValue, HMAmendmentRequest, ReferenceData, ReferenceRecId,HMAmendmentSource, AppendDate, AppendTime)
+            select HMAmendment, AmendedValue, HMAmendmentRequest, ReferenceData, ReferenceRecId, HMAmendmentSource, AppendDate, AppendTime from hmAmendmentRequestLineLocal
+                where hmAmendmentRequestLineLocal.HMAmendmentRequest == hmAmendmentRequestParm.RecId;
+    
+            while select * from HMAmendmentRequestLine
+                where HMAmendmentRequestLine.HMAmendmentRequest == hmAmendmentRequestParm.RecId
+            {
+                con += [HMAmendmentRequestLine];
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillAmendmentValues</Name>
+				<Source><![CDATA[
+    public void fillAmendmentValues(str _tableName)
+    {
+        DictTable           dictTable;
+        DictField           dictField;
+        FieldId             fieldId;
+        int                 fieldcounter;
+    
+        hmFieldNamesTmpBuffer   = null;
+        dictTable               = new DictTable(tableName2Id(_tableName));
+    
+        if (dictTable != null)
+        {
+            for (fieldcounter = 1; fieldcounter <= dictTable.fieldCnt(); fieldCounter++)
+            {
+                fieldId     = dictTable.fieldCnt2Id(fieldcounter);
+                dictField   = dictTable.fieldObject(fieldId);
+                if (!dictField.isSystem())  // don't show system fields
+                {
+                    hmFieldNamesTmpBuffer.FieldName = dictfield.name();
+                    hmFieldNamesTmpBuffer.insert();
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+        this.updateControls();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showLookup</Name>
+				<Source><![CDATA[
+    public void showLookup(TableId _tableId, FieldId  _fieldId1, FieldId  _fieldId2, FormControl  _callingcontrol)
+    {
+        Query           query           = new Query();
+        SysTableLookup  sysTableLookup  = SysTableLookup::newParameters(_tableId, _callingcontrol);
+    
+        query.addDataSource(_tableId);
+        sysTableLookup.addLookupfield(_fieldId1);
+        sysTableLookup.addLookupfield(_fieldId2);
+        // BP deviation documented
+        sysTableLookup.parmQuery(query);
+        sysTableLookup.performFormLookup();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeConsultingPhysician</Name>
+				<Source><![CDATA[
+    public void storeConsultingPhysician(recId _RecId)
+    {
+        HMAmendmentRequestLine.ReferenceRecId = _RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeContactRecId</Name>
+				<Source><![CDATA[
+    public void storeContactRecId(RecId  _contactRecId)
+    {
+        logisticsElectronicAddressRecId = _contactRecId;
+        HMAmendmentRequestLine.ReferenceRecId = logisticsElectronicAddressRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeFamilyDoctor</Name>
+				<Source><![CDATA[
+    public void storeFamilyDoctor(recId _RecId)
+    {
+        HMAmendmentRequestLine.ReferenceRecId = _RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeNextToKin</Name>
+				<Source><![CDATA[
+    public void storeNextToKin(Common _record)
+    {
+        DirPartyRelationship  dirPartyRelationship = _record;
+    
+        HMAmendmentRequestLine.ReferenceRecId   = dirPartyRelationship.RecId;
+        AmendedValueLookup.text(dirPartyRelationship.parentName());
+        HMAmendmentRequestLine.AmendedValue     = dirPartyRelationship.parentName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storePhysician</Name>
+				<Source><![CDATA[
+    public void storePhysician(recId _RecId)
+    {
+        HMAmendmentRequestLine.ReferenceRecId = _RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateControls</Name>
+				<Source><![CDATA[
+    public void updateControls()
+    {
+        if (element.args().menuItemName() == menuitemDisplayStr(HMAmendmentRequestAppend))
+        {
+            patientId = HMAmendmentRequest.HMPatient;
+            Patient.text(HMPatient::find(HMAmendmentRequest.HMPatient).PatientName());
+            MainInstruction.text("@MAZ10433");
+            element.design().caption("@MAZ10433");
+            RequestHeader.visible(true);
+            Grid.showRowLabels(true);
+           // Grid.allowEdit(true);
+            HMAmendmentRequestLine_ds.allowEdit(true);
+            GroupDateTime.visible(false);
+        }
+        else
+        {
+            MainInstruction.text("@MAZ10434");
+            element.design().caption("@MAZ10434");
+            RequestHeader.visible(false);
+            Grid.showRowLabels(false);
+           // Grid.allowEdit(false);
+            HMAmendmentRequestLine_ds.allowEdit(false);
+            GroupDateTime.visible(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMAmendmentRequest</Name>
+				<Methods>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            //super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            hmAmendmentRequestParm = element.args().record();
+            this.queryBuildDataSource().addRange(fieldNum(HMAmendmentRequest,RecId)).value(SysQuery::value(hmAmendmentRequestParm.RecId));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMAmendmentRequestLine</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int             ret;
+            HMAmendment     hmAmendmentLocal    = HMAmendment::find(HMAmendmentRequestLine.HMAmendment);
+            DictTable       dictTable           = new DictTable(tableName2Id(hmAmendmentLocal.TableName));
+            FieldId         fieldId             = dictTable.fieldName2Id(hmAmendmentLocal.FieldName);
+            DictField       dictField           = dictTable.fieldObject(fieldId);
+            DictRelation    dictRelation        = new DictRelation(dictTable.id());
+            TableId         relatedTableId      = dictRelation.loadFieldRelation(fieldId);
+        
+            ret = super();
+        
+        
+            if (relatedTableId)  // if relation field
+            {
+                AmendedValueLookup.lookupButton(2);
+            }
+            else
+            {
+                if (dictField.baseType() == Types::Enum)
+                {
+                    AmendedValueLookup.lookupButton(2);
+                }
+                else
+                {
+                    AmendedValueLookup.lookupButton(3);
+                }
+        
+            }
+        
+        
+            if (dictTable.id() == tableNum(LogisticsElectronicAddress))
+            {
+                ReferenceData.enabled(true);
+            }
+            else
+            {
+                ReferenceData.enabled(false);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            int i;
+        
+            super();
+        
+            if (element.args().menuItemName() == menuitemDisplayStr(HMAmendmentRequestEdit))
+            {
+                for (i = 1;i<= conLen(con);i++)
+                {
+                    HMAmendmentRequestLine_ds.positionToRecord(conPeek(con, i));
+                    HMAmendmentRequestLine_ds.mark(true);
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.queryBuildDataSource().clearDynalinks();
+        
+            // BP deviatiion documented
+            HMAmendmentRequestLine.setTmp();
+            element.fillAmendments();
+            recordCount = HMAmendmentRequestLine.RowCount();
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>AmendedValueLookup</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            //super();
+            Args                        args;
+            FormRun                     itemLookUp;
+            SysTableLookup              sysTableLookup;
+            int                         i;
+            DictEnum                    dictEnum;
+            Query                       query               = new Query();
+            QueryBuildDataSource        qbds;
+            LogisticsPostalAddressMap   logisticsAddressMap;
+            HMAmendment                 hmAmendmentLocal    = HMAmendment::find(HMAmendmentRequestLine.HMAmendment);
+            DictTable                   dictTable           = new DictTable(tableName2Id(hmAmendmentLocal.TableName));
+            FieldId                     fieldId             = dictTable.fieldName2Id(hmAmendmentLocal.FieldName);
+            DictField                   dictField           = dictTable.fieldObject(fieldId);
+            DictRelation                dictRelation        = new DictRelation(dictTable.id());
+            TableId                     relatedTableId      = dictRelation.loadFieldRelation(fieldId);
+        
+            hmFieldNamesTmpBuffer = null;
+        
+            if (relatedTableId)  // if relation field
+            {
+                switch (relatedTableId)
+                {
+                    case tableNum(HcmLanguageCode):
+                       element.showLookup(tablenum(HcmLanguageCode),fieldNum(HcmLanguageCode, LanguageCodeId),fieldNum(HcmLanguageCode, Description),this);
+                        break;
+        
+                    case tableNum(HcmEthnicOrigin):
+                        element.showLookup(tablenum(HcmEthnicOrigin),fieldNum(HcmEthnicOrigin, EthnicOriginId),fieldNum(HcmEthnicOrigin, Description),this);
+                        break;
+        
+                    case tableNum(HMRaceCode):
+                        element.showLookup(tablenum(HMRaceCode),fieldNum(HMRaceCode, RaceCodeId),fieldNum(HMRaceCode, Description),this);
+                        break;
+        
+                    case tableNum(HMProfession):
+                        element.showLookup(tablenum(HMProfession),fieldNum(HMProfession, Name),fieldNum(HMProfession, Description),this);
+                        break;
+                    case tableNum(HMPharmacy):
+                        element.showLookup(tablenum(HMPharmacy),fieldNum(HMPharmacy, Code),fieldNum(HMPharmacy, Name),this);
+                        break;
+   
+                    case tableNum(DirPartyRelationship):
+                        args = new Args();
+                        args.name(formstr(HMPatientAdvanceLookup));
+                        args.caller(element);
+                        args.parm('FormOpenedFromNextToKin');
+                        args.record(DirPartyTable::findRec(CustTable::findRecId(HMPatient::find(HMAmendmentRequest.HMPatient).CustTable).Party));
+                        itemLookUp = ClassFactory.formRunClass(args);
+                        itemLookUp.init();
+                        this.performFormLookup(itemLookUp);
+                        break;
+        
+                    case tableNum(HMClinicStaff):
+                        args = new Args();
+                        if (FieldId == fieldNum(HMPatient,HMClinicStaffFamilyDoctor))
+                        {
+                            args.parm('FamilyDoctor');
+                        }
+                        args.name(formstr(HMPhysicianAdvanceLookup));
+                        args.caller(element);
+                        args.parmEnumType(enumNum(HMAdvanceStaffLookupParm));
+                        args.parmEnum(HMAdvanceStaffLookupParm::Physician);
+                        itemLookUp = ClassFactory.formRunClass(args);
+                        itemLookUp.init();
+                        this.performFormLookup(itemLookUp);
+                        break;
+        
+                    case tableNum(HMReferringPhysician):
+                        args = new Args();
+                        args.name(formstr(HMReferringPhysicianLookup));
+                        args.caller(element);
+                        itemLookUp = ClassFactory.formRunClass(args);
+                        itemLookUp.init();
+                        this.performFormLookup(itemLookUp);
+                        break;
+        
+                    case tableNum(LogisticsAddressCountryRegion):
+                        LogisticsAddressCountryRegion::lookup(this,"");
+                        break;
+        
+                    case tableNum(LogisticsAddressState):
+                        LogisticsAddressState::lookupStateId(this,countryRegionId);
+                        break;
+        
+                    case tableNum(LogisticsAddressCounty):
+                        LogisticsAddressCounty::lookupCountyId(this,countryRegionId,stateId);
+                        break;
+        
+                    case tableNum(LogisticsAddressCity):
+                        LogisticsAddressCity::lookupCityId(this, countryRegionId, stateId, countyId);
+                        break;
+        
+                    case tableNum(LogisticsAddressDistrict):
+                        logisticsAddressMap.CountryRegionId = countryRegionId;
+                        logisticsAddressMap.State           = stateId;
+                        logisticsAddressMap.county          = countyId;
+                        logisticsAddressMap.City            = cityName;
+                        sysTableLookup                      = SysTableLookup::newParameters(tableNum(LogisticsAddressDistrict), this);
+                        qbds                                = query.addDataSource(tableNum(LogisticsAddressDistrict));
+        
+                        if (cityName != "")
+                        qbds.addRange(fieldNum(LogisticsAddressDistrict, City)).value(queryValue(LogisticsAddressCity::findLogisticsAddressMap(logisticsAddressMap).RecId));
+        
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressDistrict, Name));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressDistrict, Description));
+                        // BP deviation documented
+                        sysTableLookup.parmQuery(query);
+                        sysTableLookup.performFormLookup();
+        
+                        break;
+        
+                    case tableNum(LogisticsAddressZipCode):
+                        sysTableLookup  = SysTableLookup::newParameters(tableNum(LogisticsAddressZipCode), this);
+                        qbds            = query.addDataSource(tableNum(LogisticsAddressZipCode));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, ZipCode));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, City));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, CityAlias));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, DistrictName));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, StreetName));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, FromNum));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, ToNum));
+                        sysTableLookup.addLookupfield(fieldNum(LogisticsAddressZipCode, EvenOdd));
+        
+                        // BP deviation documented
+                        sysTableLookup.parmQuery(query);
+                        sysTableLookup.performFormLookup();
+        
+                        break;
+        
+                }
+        
+            }
+            else
+            {
+                if (dictField.baseType() == Types::Enum)
+                {
+                    sysTableLookup = SysTableLookup::newParameters(tableNum(HMFieldNamesTmp), this);
+                    dictEnum = new DictEnum(dictField.enumId());
+        
+                    for (i = 0; i < dictEnum.values(); i++)
+                    {
+                        hmFieldNamesTmpBuffer.FieldName = dictEnum.index2Name(i);
+                        hmFieldNamesTmpBuffer.insert();
+                    }
+        
+                    sysTableLookup.addLookupfield(fieldNum(HMFieldNamesTmp, FieldName));
+                    // BP deviation documented
+                    sysTableLookup.parmTmpBuffer(hmFieldNamesTmpBuffer);
+        
+                    sysTableLookup.setLabel( "@SYS71961");
+                    sysTableLookup.performFormLookup();
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMAmendment     hmAmendmentLocal    = HMAmendment::find(HMAmendmentRequestLine.HMAmendment);
+            ret = super();
+        
+            if (ret)
+            {
+                if (hmAmendmentLocal.TableName == tableId2name(tableNum(LogisticsPostalAddress)))
+                {
+                    switch (hmAmendmentLocal.FieldName)
+                    {
+                        case fieldId2name(tableNum(LogisticsPostalAddress),fieldNum(LogisticsPostalAddress,CountryRegionId)):
+                            countryRegionId = HMAmendmentRequestLine.AmendedValue;
+                            break;
+        
+                        case fieldId2name(tableNum(LogisticsPostalAddress),fieldNum(LogisticsPostalAddress,State)):
+                            stateId = HMAmendmentRequestLine.AmendedValue;
+                            break;
+        
+                        case fieldId2name(tableNum(LogisticsPostalAddress),fieldNum(LogisticsPostalAddress,County)):
+                            countyId = HMAmendmentRequestLine.AmendedValue;
+                            break;
+        
+                        case fieldId2name(tableNum(LogisticsPostalAddress),fieldNum(LogisticsPostalAddress,City)):
+                            cityName = HMAmendmentRequestLine.AmendedValue;
+                            break;
+        
+                        case fieldId2name(tableNum(LogisticsPostalAddress),fieldNum(LogisticsPostalAddress,DistrictName)):
+                            districtName = HMAmendmentRequestLine.AmendedValue;
+                            break;
+                    }
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ReferenceData</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            //super();
+        
+            Args            args;
+            FormRun         itemLookUp;
+        
+            args = new Args();
+            args.name(formstr(HMContactsLookup));
+            args.caller(element);
+            args.record(HMPatient::find(patientId));
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            boolean                 ret;
+            FormRun                 formRun;
+            Object                  formRunObject;
+            Args                    args;
+            container               conRecords;
+            int                     emptyRecords = 0;
+            HMAmendmentRequestLine  HMAmendmentRequestLineLocal;
+            HMAmendmentRequestClass HMAmendmentRequestClassObj;
+        
+            HMAmendmentRequestLineLocal =  HMAmendmentRequestLine_ds.getFirst();
+        
+            while (HMAmendmentRequestLineLocal)
+            {
+                if (HMAmendmentRequestLineLocal.AmendedValue == "")
+                {
+                    emptyRecords++;
+                }
+                else
+                {
+                    conRecords += [HMAmendmentRequestLineLocal];
+                }
+        
+                HMAmendmentRequestLineLocal =  HMAmendmentRequestLine_ds.getNext();
+            }
+        
+            if (recordCount == emptyRecords)
+            {
+                warning("@MAZ10422");
+            }
+            else
+            {
+                if (element.args().menuItemName() == menuitemDisplayStr(HMAmendmentRequestAppend) &&
+                    hmAmendmentRequestParm.Status == HMAmendmentRequestStatus::Accepted)
+                {
+                    if (Box::yesNo("@MAZ10425",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+                    {
+                        try
+                        {
+                            ttsBegin;
+                            ret = element.createRequestLines(conRecords);
+                            if (ret)
+                            {
+                                args = new Args();
+                                HMAmendmentRequestClassObj = new HMAmendmentRequestClass();
+                                args.record(HMAmendmentRequest);
+                                HMAmendmentRequestClassObj.parmArgs(args);
+                                HMAmendmentRequestClassObj.appendAmendments();
+                                formRun = element.args().caller();
+                                formRunObject = formRun;
+                                if (formHasMethod(formRun, identifierstr(refreshPatient)))
+                                {
+                                    formRunObject.refreshPatient();
+                                }
+                                ttsCommit;
+                            }
+                            else
+                            {
+                                ttsAbort;
+                            }
+                        }
+                        catch
+                        {
+                            ttsAbort;
+                            warning("@MAZ10452");
+                        }
+                    }
+                    else
+                    {
+                        ret = element.createRequestLines(conRecords);
+                    }
+                }
+        
+                if (element.args().menuItemName() == menuitemDisplayStr(HMAmendmentRequestAppend) &&
+                    hmAmendmentRequestParm.Status == HMAmendmentRequestStatus::Denied)
+                {
+                    ret = element.createRequestLines(conRecords);
+                }
+        
+                super();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMAmendmentRequest</Name>
+			<Table>HMAmendmentRequest</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ActionTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Comments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DenialReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Reason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMAmendmentRequestLine</Name>
+			<Table>HMAmendmentRequestLine</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AmendedValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppendDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppendTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAmendment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAmendmentRequest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAmendmentSource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReferenceData</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReferenceRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ10433</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<TitleDataSource xmlns="">HMAmendmentRequest</TitleDataSource>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStaticTextControl">
+						<Name>MainInstruction</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>858993458</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>StaticText</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<FontSize>13</FontSize>
+						<ForegroundColor>ScrollBar</ForegroundColor>
+						<Style>MainInstruction</Style>
+						<Text></Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RequestHeader</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1288490187</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>RequestNumber</Name>
+								<ElementPosition>516986802</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>RequestNumber</DataField>
+								<DataSource>HMAmendmentRequest</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>DateTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>775480205</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>HMAmendmentRequest_RequestDate</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>RequestDate</DataField>
+										<DataSource>HMAmendmentRequest</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTimeControl">
+										<Name>HMAmendmentRequest_RequestTime</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Time</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>RequestTime</DataField>
+										<DataSource>HMAmendmentRequest</DataSource>
+										<Label>@SYS8827</Label>
+									</AxFormControl>
+								</Controls>
+								<Columns>2</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Patient</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1103567984</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ9</Label>
+								<Mandatory>Yes</Mandatory>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMAmendmentRequest_Reason</Name>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Reason</DataField>
+								<DataSource>HMAmendmentRequest</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Comments</Name>
+								<ElementPosition>1789569705</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Comments</DataField>
+								<DataSource>HMAmendmentRequest</DataSource>
+								<MultiLine>Yes</MultiLine>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>HMAmendmentRequest_Status</Name>
+								<ElementPosition>1968526675</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ComboBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Status</DataField>
+								<DataSource>HMAmendmentRequest</DataSource>
+								<Items />
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RequestLine</Name>
+						<ElementPosition>1717986916</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>Grid</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupDateTime</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>572662304</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormDateControl">
+												<Name>AppendDate</Name>
+												<ElementPosition>536870911</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Date</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>AppendDate</DataField>
+												<DataSource>HMAmendmentRequestLine</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormTimeControl">
+												<Name>AppendTime</Name>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Time</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>AppendTime</DataField>
+												<DataSource>HMAmendmentRequestLine</DataSource>
+											</AxFormControl>
+										</Controls>
+										<BackgroundColor>WindowBackground</BackgroundColor>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>AmendmentField</Name>
+										<ElementPosition>858993458</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>getFieldDescription</DataMethod>
+										<DataSource>HMAmendmentRequestLine</DataSource>
+										<Label>@SYS8498</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>AmendedValueLookup</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1574821340</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AmendedValue</DataField>
+										<DataSource>HMAmendmentRequestLine</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ReferenceData</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1861152493</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ReferenceData</DataField>
+										<DataSource>HMAmendmentRequestLine</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>Source</Name>
+										<ElementPosition>2004318069</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMAmendmentRequestLine</DataSource>
+										<ReferenceField>HMAmendmentSource</ReferenceField>
+										<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMAmendmentRequestLine</DataSource>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CancelButton</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

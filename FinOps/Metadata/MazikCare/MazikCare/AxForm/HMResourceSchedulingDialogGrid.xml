@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMResourceSchedulingDialogGrid</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMResourceSchedulingDialogGrid extends FormRun
+{
+    recId       hmResourceSchedulingAppointmentrecId;
+    RecId       encounterId;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+        MainInstruction.text("@MAZ6799");
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>undoAppointmentStatus</Name>
+				<Source><![CDATA[
+    public void undoAppointmentStatus(HMAppoinmentLog _HMAppoinmentLogBuffer)
+    {
+        HMAppoinmentLog                     HMAppoinmentLogs;
+    
+        if (_HMAppoinmentLogBuffer.RecId > 0)
+        {
+            ttsBegin;
+            Select forUpdate HMAppoinmentLogs where HMAppoinmentLogs.RecId == _HMAppoinmentLogBuffer.RecId;
+            if (HMAppoinmentLogs.RecId > 0)
+            {
+                if (HMAppoinmentLogs.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::Examined)
+                {
+                   this.updateUndoAppointmentStatus(_HMAppoinmentLogBuffer,HMResourceSchedulingAppointmentStatus::CheckedIn);// change status to resource scheduling
+                   HMAppoinmentLogs.delete();
+                }
+                else if (HMAppoinmentLogs.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedIn)
+                {
+                   this.updateUndoAppointmentStatus(_HMAppoinmentLogBuffer,HMResourceSchedulingAppointmentStatus::Open);
+                   HMAppoinmentLogs.delete();
+                }
+                else if (HMAppoinmentLogs.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+                {
+                   this.updateUndoAppointmentStatus(_HMAppoinmentLogBuffer,HMResourceSchedulingAppointmentStatus::Examined);
+                   HMAppoinmentLogs.delete();
+                }
+            }
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateUndoAppointmentStatus</Name>
+				<Source><![CDATA[
+    private void updateUndoAppointmentStatus(HMAppoinmentLog hmAppoinmentLogBuffer,HMResourceSchedulingAppointmentStatus hmResourceSchedulingAppointmentStatus)
+    {
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        ttsBegin;
+            select forUpdate hmResourceSchedulingAppointment where hmResourceSchedulingAppointment.RecId == hmAppoinmentLogBuffer.HMResScheduleAppointment;
+            hmResourceSchedulingAppointment.AppointmentStatus = hmResourceSchedulingAppointmentStatus;
+            hmResourceSchedulingAppointment.update();
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMAppoinmentLog</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+            HMAppoinmentLog hmAppoinmentLogs;
+            HMAppoinmentLog hmAppointmentNew;
+        
+            ret = super();
+            if (ret)
+            {
+                hmAppoinmentLogs = HMAppoinmentLog_ds.getFirst(1);
+                if (hmAppoinmentLogs.RecId > 0)
+                {
+                    if (hmAppoinmentLogs.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedIn)
+                    {
+                        while select * from hmAppointmentNew where hmAppointmentNew.HMResScheduleAppointment == hmAppoinmentLogs.HMResScheduleAppointment
+                        {
+                            if (hmAppointmentNew.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::Examined)
+                            {
+                                Undo.enabled(false);
+                                break;
+                            }
+                        }
+                    }
+                    else if (hmAppoinmentLogs.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+                    {
+                        while select * from hmAppointmentNew where hmAppointmentNew.HMResScheduleAppointment == hmAppoinmentLogs.HMResScheduleAppointment
+                        {
+                            if (hmAppointmentNew.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedIn)
+                            {
+                                Undo.enabled(false);
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Undo.enabled(true);
+                    }
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            HMAppoinmentLog_ds.query().dataSourceNo(1).addSortField(fieldNum(HMAppoinmentLog,HMAppointLogTime), SortOrder::Descending); //sort grid by time
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>Undo</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            HMAppoinmentLog                     hmAppoinmentLogs;
+            Object                              formRunObject;
+            FormRun                             formRun;
+        
+            super();
+            hmAppoinmentLogs = HMAppoinmentLog_ds.getFirst(1);
+            element.undoAppointmentStatus(hmAppoinmentLogs);    // undo appointment status
+            HMAppoinmentLog_ds.executeQuery();
+          //  element.close();
+        
+            formRun = element.args().caller();
+        
+                if (formHasMethod(formRun, identifierstr(refreshGrid)))
+                {
+                     formRunObject = formRun;
+                     formRunObject.refreshGrid();
+                }
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMAppoinmentLog</Name>
+			<Table>HMAppoinmentLog</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AppointmentReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogNote</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointLogTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResScheduleAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ1701</Caption>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane_ButtonGroup1</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroup1</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>Undo</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6255</HelpText>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Big>Yes</Big>
+								<Text>@SYS63232</Text>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>TopGroup</Name>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>DetailGroup</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>MainInstruction</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>StaticText</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<BackgroundColorRGB>
+									<Red>15</Red>
+									<Green>0</Green>
+									<Blue>0</Blue>
+								</BackgroundColorRGB>
+								<ColorScheme>RGB</ColorScheme>
+								<FontSize>13</FontSize>
+								<ForegroundColorRGB>
+									<Red>0</Red>
+									<Green>51</Green>
+									<Blue>153</Blue>
+								</ForegroundColorRGB>
+								<Style>MainInstruction</Style>
+								<Text></Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>Grid</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMAppoinmentLog_HMAppointLogStatus</Name>
+										<ElementPosition>715827882</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMAppointLogStatus</DataField>
+										<DataSource>HMAppoinmentLog</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>HMAppoinmentLog_HMAppointLogDate</Name>
+										<ElementPosition>1073741823</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMAppointLogDate</DataField>
+										<DataSource>HMAppoinmentLog</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTimeControl">
+										<Name>HMAppoinmentLog_HMAppointLogTime</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Time</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMAppointLogTime</DataField>
+										<DataSource>HMAppoinmentLog</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMAppoinmentLog_HMAppointLogNote</Name>
+										<ElementPosition>1789569705</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMAppointLogNote</DataField>
+										<DataSource>HMAppoinmentLog</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMAppoinmentLog</DataSource>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls />
+						<LeftMargin>5</LeftMargin>
+						<LeftMarginMode>Fixed</LeftMarginMode>
+						<RightMargin>5</RightMargin>
+						<RightMarginMode>Fixed</RightMarginMode>
+						<TopMargin>5</TopMargin>
+						<TopMarginMode>Fixed</TopMarginMode>
+						<BackStyle>Opaque</BackStyle>
+						<Style>DialogCommit</Style>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

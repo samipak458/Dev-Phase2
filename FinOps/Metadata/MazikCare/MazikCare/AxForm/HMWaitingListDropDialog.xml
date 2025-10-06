@@ -1,0 +1,1038 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMWaitingListDropDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Removed unused footnote group. */
+/* TODO: (Code Upgrade) Duplicate captions or extra secondary instruction were detected for this form, but the control MainInstruction is potentially referenced in code. The control is deleted and replaced with a string control which has the same name as the original static text control. You need to delete this replacement string control and ensure no code referencing it remains. Logic should instead be performed on formDesign.Caption or the secondary instruction control if you need to programmatically modify it. */
+[Form]
+public class HMWaitingListDropDialog extends FormRun
+{
+    NumberSeqFormHandler        numberSeqFormHandler;
+    boolean                     isRequestUpdated;
+    RecId                       patientIdOP;
+    RecId                       departmentalOURecid;
+    SysLookupMultiSelectCtrl    msCtrl;
+    container                   chiefComplaintsRecId,v;
+    RecId                       apptOrderRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    public void close()
+    {
+        if (numberSeqFormHandler)
+        {
+            numberSeqFormHandler.formMethodClose();
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    public void closeOk()
+    {
+        #task
+        FormRun                          formRunRefresh;
+        Object                           formRunObjectRefresh;
+    
+        if(HMWaitingList_ds.validateWrite())
+        {
+            HMWaitingList_ds.write();
+            super();
+    
+            switch(HMWaitingList.WaitType)
+            {
+                case HMWaitType::Admission:
+                case HMWaitType::OP:
+                    formRunRefresh = element.args().caller();
+                    formRunRefresh.task(#taskRefresh);
+                    info("@MAZ8101");
+                    break;
+                case HMWaitType::Transfer:
+                    formRunRefresh = element.args().caller();
+    
+                    if(formHasMethod(formRunRefresh,identifierstr(refreshTransferOrdersGrid)))
+                    {
+                        formRunObjectRefresh = formRunRefresh;
+                        formRunObjectRefresh.refreshTransferOrdersGrid();
+                    }
+    
+                    if(formHasMethod(formRunRefresh,identifierstr(refreshAdmissionOrdersGrid)))
+                    {
+                        formRunObjectRefresh = formRunRefresh;
+                        formRunObjectRefresh.refreshAdmissionOrdersGrid();
+                    }
+                    info("@MAZ8101");
+                    break;
+            }
+    
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createChiefComplaintsLookup</Name>
+				<Source><![CDATA[
+    public void createChiefComplaintsLookup()
+    {
+        Query                   q = new Query();
+        QueryBuildDataSource    qbds;
+    
+        qbds = q.addDataSource(tableNum(HMClinicalObservation));
+        qbds.fields().addField(fieldNum(HMClinicalObservation,Code));
+        qbds.fields().addField(fieldNum(HMClinicalObservation,Description));
+    
+        msCtrl  =  SysLookupMultiSelectCtrl::constructWithQuery(element, ChiefComplaint, q,false,[tableNum(HMClinicalObservation), fieldNum(HMClinicalObservation, Description)]);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatient</Name>
+				<Source><![CDATA[
+    public void getPatient(Common _record)
+    {
+        patientIdOP             = _record.RecId;
+        HMWaitingList.HMPatient = patientIdOP;
+    
+        OPPatient.text(HMPatient::find(patientIdOP).PatientName());
+    
+        if (patientIdOP)
+        {
+            UnregPatient.allowEdit(false);
+            UnregPatient.text('');
+            PatientContact.allowEdit(false);
+            PatientContact.text('');
+        }
+        else
+        {
+            UnregPatient.allowEdit(true);
+            PatientContact.allowEdit(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+    
+        if(element.args().parmEnum() == HMWaitType::OP)
+        {
+            OPGroup.visible(true);
+            OPPatient.mandatory(true);
+            PlanningObject.mandatory(true);
+            MainInstruction.text("@MAZ8252");
+            HMWaitingList_WaitTime.visible(false);
+            Patient.visible(false);
+            Patient.mandatory(false);
+            Diagnosis.visible(false);
+            //element.createChiefComplaintsLookup();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>numberSeqFormHandler</Name>
+				<Source><![CDATA[
+    NumberSeqFormHandler numberSeqFormHandler()
+    {
+        if (!numberSeqFormHandler)
+        {
+            numberSeqFormHandler = NumberSeqFormHandler::newForm(HMParameters::numRefWaitNumberId(HMOrganizationalUnit::getOperatingUnitRecid(departmentalOURecid)).NumberSequenceId, element,HMWaitingList_DS,fieldnum(HMWaitingList,WaitNumber));
+    
+            if(!numberSeqFormHandler.parmNumberSequenceId() && departmentalOURecid)
+            {
+                error(strFmt("@MAZ8513","@MAZ8176",HMOrganizationalUnit::find(departmentalOURecid).Description));
+            }
+        }
+        return numberSeqFormHandler;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateNumberSeqFormHandler</Name>
+				<Source><![CDATA[
+    public void updateNumberSeqFormHandler()
+    {
+        if(element.numberSeqFormHandler().parmNumberSequenceId())
+        {
+            element.numberSeqFormHandler().formMethodClose();
+        }
+    
+        numberSeqFormHandler = NumberSeqFormHandler::newForm(HMParameters::numRefWaitNumberId(HMOrganizationalUnit::getOperatingUnitRecid(departmentalOURecid)).NumberSequenceId, element,HMWaitingList_DS,fieldnum(HMWaitingList,WaitNumber));
+    
+        if(element.numberSeqFormHandler().parmNumberSequenceId())
+        {
+            element.numberSeqFormHandler().formMethodDataSourceCreatePre();
+            element.numberSeqFormHandler().formMethodDataSourceCreate(true);
+        }
+        else
+        {
+            HMWaitingList.WaitNumber = '';
+            if(departmentalOURecid)
+            {
+                error(strFmt("@MAZ8513","@MAZ8176",HMOrganizationalUnit::find(departmentalOURecid).Description));
+            }
+        }
+    
+        HMWaitingList_WaitNumber.update();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMWaitingList</Name>
+				<Methods>
+					<Method>
+						<Name>initValue</Name>
+						<Source><![CDATA[
+        public void initValue()
+        {
+        
+            HMWaitingList.OrderDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            HMWaitingList.WaitType = element.args().parmEnum();
+            HMWaitingList.ExpectedTime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        
+            departmentalOURecid = HMWaitingList.departmentRecId();
+        
+            element.numberSeqFormHandler().formMethodDataSourceCreatePre();
+        
+            element.numberSeqFormHandler().formMethodDataSourceCreate(true);
+        
+            super();
+        
+            element.updateNumberSeqFormHandler();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>linkActive</Name>
+						<Source><![CDATA[
+        public void linkActive()
+        {
+            element.numberSeqFormHandler().formMethodDataSourceLinkActive();
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            if (HMWaitingList.WaitType == HMWaitType::OP)
+            {
+                HMWaitingList.ChiefComplaint =  chiefComplaintsRecId;
+            }
+        
+            super();
+        
+            element.numberSeqFormHandler().formMethodDataSourceWrite();
+        
+            if(!isRequestUpdated)
+            {
+                isRequestUpdated = true;
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            ret = element.numberSeqFormHandler().formMethodDataSourceValidateWrite(ret) && ret;
+        
+            if(departmentalOURecid && !HMWaitingList.WaitNumber)
+            {
+                error(strFmt("@MAZ8513","@MAZ8176",HMOrganizationalUnit::find(departmentalOURecid).Description));
+                ret = false;
+            }
+        
+            // wait time only mandatory for IP appointment
+            if ((HMWaitingList.WaitType == HMWaitType::Admission || HMWaitingList.WaitType == HMWaitType::Transfer))
+            {
+                if(HMWaitingList.WaitTime == 0 && HMWaitingList.WaitHours == 0)
+                {
+                    warning(strFmt("@MAZ8666","@MAZ8665","@MAZ8661"));
+                    ret = false;
+                }
+            }
+        
+            if (HMWaitingList.WaitType == HMWaitType::OP || HMWaitingList.WaitType == HMWaitType::Emergency || HMWaitingList.WaitType == HMWaitType::Physiotherapy)
+            {
+                if (HMWaitingList.HMPatient == 0)
+                {
+                    warning("@MAZ1654");
+                    ret = false;
+                }
+            }
+        
+            if (ret)
+            {
+                //if (HMWaitingList.WaitType == HMWaitType::Admission && HMEncounterStatus::findByCode('ES008').RecId == 0)
+                //{
+                    //warning("@MAZ8151");
+                    //ret = false;
+                //}
+        
+                if (HMWaitingList.ExpectedDate < HMWaitingList.OrderDate)
+                {
+                    warning("@MAZ8103");
+                    ret = false;
+                }
+        
+        
+                if (HMWaitingList.ExpectedDate == DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && str2time(time2StrHM(HMWaitingList.ExpectedTime)) < str2time(time2StrHM(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))))
+                {
+                    warning("@MAZ8664");
+                    ret = false;
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>delete</Name>
+						<Source><![CDATA[
+        public void delete()
+        {
+            element.numberSeqFormHandler().formMethodDataSourceDelete();
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>ExpectedDate</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+            
+                HMWaitingList.WaitTime = HMWaitingList.ExpectedDate - HMWaitingList.OrderDate;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>ExpectedTime</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+                HMWaitingList.WaitHours = (HMWaitingList.ExpectedTime - DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))/3600;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>HMResourceSchedulingPlanningObject</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+            
+                departmentalOURecid = HMWaitingList.departmentRecId();
+                element.updateNumberSeqFormHandler();
+            }
+
+]]></Source>
+							</Method>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                Common ret;
+            
+                Query               query  = new Query();
+                QueryBuildDataSource  qbds;
+            
+                SysReferenceTableLookup sysReferenceTableLookup =  SysReferenceTableLookup::newParameters(tableNum(HMResourceSchedulingPlanningObject), _formReferenceControl, true);
+            
+                // For filtering data in lookup
+                qbds = query.addDataSource(tableNum(HMResourceSchedulingPlanningObject));
+                qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,CaseType)).value(SysQuery::value(HMCaseType::OutPatient));
+                qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,PlanningObjectStatus)).value(SysQuery::value(AllowanceStatus::Active));
+                qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,StartDate)).value(SysQuery::value('<'+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None)));
+                qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,StartDate)).value(SysQuery::value('='+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None)));
+                qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,EndDate)).value(SysQuery::value('>'+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None)));
+                qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,EndDate)).value(SysQuery::value('='+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None)));
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMResourceSchedulingPlanningObject, Code));
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMResourceSchedulingPlanningObject, Description));
+            
+                sysReferenceTableLookup.parmQuery(query);
+            
+                ret = sysReferenceTableLookup.performFormLookup();
+            
+                return ret;
+                // ret = super(_formReferenceControl);
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>WaitHours</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+            
+                HMWaitingList.ExpectedTime = (HMWaitingList.WaitHours * 3600) + DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>WaitTime</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+            
+                HMWaitingList.ExpectedDate = HMWaitingList.WaitTime + HMWaitingList.OrderDate;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>OPPatient</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMPatientAdvanceLookup));
+            args.caller(element);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMPatient           hmPatientLocal;
+            DirPartyTable       dirPartyTableLocal;
+            CustTable           custTableLocal;
+            ret = super();
+        
+            if(ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    select * from hmPatientLocal
+                        join * from custTableLocal
+                        join * from dirPartyTableLocal
+                        where hmPatientLocal.CustTable == custTableLocal.RecId
+                        && custTableLocal.Party == dirPartyTableLocal.RecId
+                        && dirPartyTableLocal.Name == this.valueStr();
+        
+                    if (hmPatientLocal.RecId)
+                    {
+                        //flag = true;
+                        element.getPatient(hmPatientLocal);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",'patient'));
+                        this.text(HMPatient::find(patientIdOP).PatientName());
+                        if (patientIdOP == 0)
+                        {
+                            UnregPatient.allowEdit(true);
+                            PatientContact.allowEdit(true);
+                        }
+                    }
+                }
+                else
+                {
+                    element.getPatient(hmPatientLocal);
+        
+                }
+        
+        
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ChiefComplaint</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            //super();
+        
+            new MenuFunction(menuitemdisplaystr(HMClinicalObservation),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                chiefComplaintsRecId = msCtrl.get();  // get RecIds of the selected rows
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMWaitingList</Name>
+			<Table>HMWaitingList</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CancelDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChiefComplaint</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExpectedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExpectedTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMDiagnosisDictionary</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientContact</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Priority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefTableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnregPatientName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WaitHours</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WaitNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WaitTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WaitType</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowDelete>No</AllowDelete>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ8183</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>MainInstruction</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<HelpText>Replacement for extra main instruction static text control</HelpText>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ8183</Label>
+						<Text>@MAZ8183</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>HMWaitingList_OrderDate</Name>
+						<AllowEdit>No</AllowEdit>
+						<ElementPosition>495573147</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Date</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>OrderDate</DataField>
+						<DataSource>HMWaitingList</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMWaitingList_WaitNumber</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>660764196</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>WaitNumber</DataField>
+						<DataSource>HMWaitingList</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Patient</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>825955245</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ8181</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>patientName</DataMethod>
+						<DataSource>HMWaitingList</DataSource>
+						<Label>@MAZ9</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>OPGroup</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741818</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>OPPatient</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>864958690</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ9</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>UnregPatient</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1297438035</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>UnregPatientName</DataField>
+								<DataSource>HMWaitingList</DataSource>
+								<Label>@MAZ7338</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PatientContact</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1521134248</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>PatientContact</DataField>
+								<DataSource>HMWaitingList</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>ChiefComplaint</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1744830461</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ1076</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>PlanningObject</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1968526675</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMWaitingList</DataSource>
+								<ReferenceField>HMResourceSchedulingPlanningObject</ReferenceField>
+								<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>HMWaitingList_HMResourceSchedulingTypeCode</Name>
+								<ElementPosition>2058005160</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMWaitingList</DataSource>
+								<ReferenceField>HMResourceSchedulingTypeCode</ReferenceField>
+								<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>HMWaitingList_WaitType</Name>
+						<AllowEdit>No</AllowEdit>
+						<ElementPosition>1321528392</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ComboBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>WaitType</DataField>
+						<DataSource>HMWaitingList</DataSource>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>HMWaitingList_Priority</Name>
+						<ElementPosition>1486719441</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ComboBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Priority</DataField>
+						<DataSource>HMWaitingList</DataSource>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormReferenceGroupControl">
+						<Name>Diagnosis</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1651910490</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ReferenceGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls />
+						<DataSource>HMWaitingList</DataSource>
+						<ReferenceField>HMDiagnosisDictionary</ReferenceField>
+						<ReplacementFieldGroup>DescriptionGroup</ReplacementFieldGroup>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>WaitTime</Name>
+						<ElementPosition>1817101539</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormIntegerControl">
+								<Name>HMWaitingList_WaitTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Integer</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>WaitTime</DataField>
+								<DataSource>HMWaitingList</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormIntegerControl">
+								<Name>HMWaitingList_WaitHours</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Integer</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>WaitHours</DataField>
+								<DataSource>HMWaitingList</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+						<FrameType>None</FrameType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Expected</Name>
+						<ElementPosition>1982292588</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>HMWaitingList_ExpectedDate</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>ExpectedDate</DataField>
+								<DataSource>HMWaitingList</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTimeControl">
+								<Name>HMWaitingList_ExpectedTime</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Time</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>ExpectedTime</DataField>
+								<DataSource>HMWaitingList</DataSource>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+						<FrameType>None</FrameType>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@SYS60080</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<DataSource>HMWaitingList</DataSource>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

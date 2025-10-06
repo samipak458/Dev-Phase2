@@ -1,0 +1,722 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMLogisticsPostalAddressLookup</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMLogisticsPostalAddressLookup extends FormRun
+{
+    Common entity;
+    container roleRecIds;
+    boolean returnLocation;
+    container inUseAddresses;
+
+    #define.LogisticsLocationMain('LogisticsLocationMain')
+    #define.LogisticsPostalAddressMain('LogisticsPostalAddressMain')
+
+    #define.PartyAddressesTab(1)
+    #define.TransactionAddressesTab(2)
+
+    str         callerMethod;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeSelect</Name>
+				<Source><![CDATA[
+    public void closeSelect(str _selectString)
+    {
+        //LogisticsPostalAddressView  LogisticsPostalAddressView;
+    
+        if(callerMethod == 'storeLogisticPostalAddress')
+        {
+            element.args().caller().storeLogisticPostalAddress(LogisticsPostalAddressMain.RecId);
+        }
+        else if(callerMethod == 'storeReportPostalAddress')
+        {
+            element.args().caller().storeReportPostalAddress(LogisticsPostalAddressMain.RecId);
+        }
+        //select Address from LogisticsPostalAddressView
+        //where LogisticsPostalAddressView._RecId_LogisticsPostalAddress == LogisticsPostalAddressMain.RecId;
+        super(HMResourceSchedulingHelper::getAddressDescription(LogisticsPostalAddressMain.RecId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>entityRecId</Name>
+				<Source><![CDATA[
+    public RecId entityRecId()
+    {
+        DirParty party;
+    
+        if (entity.TableId == tableNum(InventLocation) || entity.TableId == tableNum(InventSite))
+        {
+            return entity.RecId;
+        }
+        else
+        {
+            // Entity is a party
+            party = new DirParty(entity);
+            return party.getPartyRecId();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>executeQuery</Name>
+				<Source><![CDATA[
+    public void executeQuery()
+    {
+        if (returnLocation)
+        {
+            logisticsLocationMain_ds.executeQuery();
+        }
+        else
+        {
+            logisticsPostalAddressMain_ds.executeQuery();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFormBuildDataSource</Name>
+				<Source><![CDATA[
+    private FormBuildDataSource getFormBuildDataSource(str _datasourceName)
+    {
+        FormBuildDataSource fbds;
+        int i;
+    
+        for (i = 1; i <= this.form().dataSourceCount(); i++)
+        {
+            fbds = this.form().dataSource(i);
+    
+            if (fbds.name() == _datasourceName)
+            {
+                return fbds;
+            }
+        }
+    
+        return null;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    #Define.TrueStr('true')
+    public void init()
+    {
+        str roleTypesLocal;
+        str inUseAddressLocal;
+        str returnLocationLocal;
+        str parm = element.args().parm();
+        container roleTypes;
+        FormBuildDataSource fbds;
+        int i;
+    
+        // Get setup data
+        entity = element.args().record();
+        [roleTypesLocal, returnLocationLocal, inUseAddressLocal, callerMethod] = str2con(parm, ";");
+        roleTypes = str2con(roleTypesLocal);
+        if (inUseAddressLocal != '')
+        {
+            inUseAddresses = str2con(inUseAddressLocal);
+        }
+        else
+        {
+            inUseAddresses = conNull();
+        }
+        returnLocation = returnLocationLocal == #TrueStr ? true : false;
+    
+        // Convert roleTypes to RecIds
+        roleRecIds = conNull();
+        for (i = 1; i <= conLen(roleTypes); i++)
+        {
+            roleRecIds += LogisticsLocationRole::findBytype(conPeek(roleTypes, i)).RecId;
+        }
+    
+        if (returnLocation)
+        {
+            fbds = this.getFormBuildDataSource(#LogisticsPostalAddressMain);
+            fbds.joinSource(this.getFormBuildDataSource(#LogisticsLocationMain).id());
+            fbds.linkType(FormLinkType::InnerJoin);
+        }
+        else
+        {
+            fbds = this.getFormBuildDataSource(#LogisticsLocationMain);
+            fbds.joinSource(this.getFormBuildDataSource(#LogisticsPostalAddressMain).id());
+            fbds.linkType(FormLinkType::InnerJoin);
+        }
+    
+        super();
+    
+        if (conLen(inUseAddresses) <= 0)
+        {
+            // Hide extra tab
+            tab.showTabs(false);
+        }
+    
+        if (returnLocation)
+        {
+            gridEntity.dataSource(logisticsLocationMain_ds.name());
+            gridInUse.dataSource(logisticsLocationMain_ds.name());
+        }
+        else
+        {
+            gridEntity.dataSource(logisticsPostalAddressMain_ds.name());
+            gridInUse.dataSource(logisticsPostalAddressMain_ds.name());
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateQuery</Name>
+				<Source><![CDATA[
+    public void updateQuery()
+    {
+        QueryBuildDataSource qbds;
+        QueryBuildRange qbr;
+        
+        TableId entityLocationTableId;
+        TableId viewTableId;
+    
+        FieldId viewEntityFieldId ;
+        FieldId viewLocationFieldId;
+        FieldId viewLocationRoleFieldId;
+
+        //todo: ax7 method not exsits ... after resolving issue deleter above tableid and field id
+        /*
+        TableId entityLocationTableId = LogisticsEntityLocationMap::getEntityLocationTableId();
+        TableId viewTableId = LogisticsEntityLocationMap::getEntityPrimaryAndRoleViewTableId(entityLocationTableId);
+    
+        FieldId viewEntityFieldId = LogisticsEntityLocationMap::getEntityPrimaryAndRoleViewEntityFieldId(viewTableId);
+        FieldId viewLocationFieldId = LogisticsEntityLocationMap::getEntityPrimaryAndRoleViLocationFieldId(viewTableId);
+        FieldId viewLocationRoleFieldId = LogisticsEntityLocationMap::getEntityPrimaryViewLocationRoleFieldId(viewTableId);
+        */
+        // Use DirPartyLocationPrimaryAndRolesView (or similar for InventSite/InventLocation) to filter on primary and roles
+        qbds = SysQuery::findOrCreateDataSource(logisticsLocationMain_ds.query(), viewTableId, tableNum(LogisticsLocation));
+        qbds.joinMode(JoinMode::ExistsJoin);
+        qbds.clearLinks();
+        qbds.addLink(fieldNum(LogisticsLocation, RecId), viewLocationFieldId);
+    
+    
+        if (tab.tab() == #TransactionAddressesTab)
+        {
+            qbds.enabled(false);
+    
+            qbr = SysQuery::findOrCreateRange(logisticsPostalAddressMain_ds.queryBuildDataSource(),
+                fieldNum(LogisticsPostalAddress, RecId));
+            qbr.value(con2StrUnlimited(inUseAddresses));
+        }
+        else
+        {
+            // Clear the filter
+            logisticsPostalAddressMain_ds.queryBuildDataSource().clearRanges();
+            LogisticsLocationMain_ds.queryBuildDataSource().clearDynalinks();
+            qbds.enabled(true);
+        }
+    
+        if (tab.tab() == #PartyAddressesTab)
+        {
+            // Add range on party
+            qbr = SysQuery::findOrCreateRange(qbds, viewEntityFieldId);
+            qbr.value(SysQuery::value(element.entityRecId()));
+    
+            // Add range for primary or roles
+            // In DirPartyLocationPrimaryAndRolesView, locationRole = 0 indicates a primary address
+            qbr = SysQuery::findOrCreateRange(qbds, viewLocationRoleFieldId);
+            if (conLen(roleRecIds) > 0)
+            {
+                qbr.value(strFmt("%1", con2StrUnlimited(roleRecIds)));
+            }
+            else
+            {
+                qbr.value(SysQuery::value(0));
+            }
+        }
+        else
+        {
+            // Clear ranges
+            qbds.clearRanges();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>LogisticsLocationMain</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            element.updateQuery();
+        
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>LogisticsPostalAddressMain</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.queryBuildDataSource().clearDynalinks();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            element.updateQuery();
+        
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>Tab</Name>
+				<Type>Tab</Type>
+				<Methods>
+					<Method>
+						<Name>tabChanged</Name>
+						<Source><![CDATA[
+        public void tabChanged(int _fromTab, int _toTab)
+        {
+            super(_fromTab, _toTab);
+        
+            element.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>LogisticsLocationMain</Name>
+			<Table>LogisticsLocation</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DunsNumberRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>LogisticsPostalAddressMain</Name>
+			<Table>LogisticsPostalAddress</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Address</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Apartment_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Building_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BuildingCompliment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>City</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CityKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CityRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CountryRegionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>County</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>District</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DistrictName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FlatId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HouseId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPrivate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Latitude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Location</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Longitude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostBox</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrivateForParty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>State</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Street</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StreetId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StreetKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StreetNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TimeZone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValidFrom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValidTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ZipCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ZipCodeRecId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<SetCompany xmlns="">No</SetCompany>
+		<Style xmlns="">Lookup</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>Tab</Name>
+				<AlignControl>No</AlignControl>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Tab</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>EntityAddresses</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>GridEntity</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsLocation_Description</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>613566756</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Description</DataField>
+										<DataSource>LogisticsLocationMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddress_Street</Name>
+										<ElementPosition>920350134</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Street</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddress_City</Name>
+										<ElementPosition>1227133512</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>City</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddress_State</Name>
+										<ElementPosition>1533916890</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>State</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddress_ZipCode</Name>
+										<ElementPosition>1840700268</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ZipCode</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+								</Controls>
+								<MultiSelect>No</MultiSelect>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS7566</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>InUseAddresses</Name>
+						<ElementPosition>1610612734</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>GridInUse</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsLocationInUse_Description</Name>
+										<ElementPosition>613566756</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Description</DataField>
+										<DataSource>LogisticsLocationMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddressInUse_Street</Name>
+										<ElementPosition>920350134</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Street</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddressInUse_City</Name>
+										<ElementPosition>1227133512</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>City</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddressInUse_State</Name>
+										<ElementPosition>1533916890</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>State</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>LogisticsPostalAddressInUse_ZipCode</Name>
+										<ElementPosition>1840700268</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ZipCode</DataField>
+										<DataSource>LogisticsPostalAddressMain</DataSource>
+									</AxFormControl>
+								</Controls>
+								<MultiSelect>No</MultiSelect>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS10653</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+				<Style>Auto</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

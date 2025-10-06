@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMWriteOffJournalClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMWriteOffJournalClass
+{
+    LedgerJournalTable ledgerJournalTable;
+    LedgerJournalName                       LedgerJournalName;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createGeneralJournal</Name>
+				<Source><![CDATA[
+    private JournalNameId createGeneralJournal()
+    {
+    
+        //Zain  -- Deprecated in AX7
+        //AxLedgerJournalTable                    header = new AxLedgerJournalTable();
+        LedgerJournalTable                 ledgerJournalTableLocal;
+        LedgerJournalName = LedgerJournalName::find(CustParameters::find().CollectionsWriteOffLedgerJournalName);
+        if (LedgerJournalName.RecId)
+        {
+            //Zain
+            //header.parmJournalName(LedgerJournalName.JournalName);
+            //header.parmJournalType(LedgerJournalType::Daily);
+            //header.save();
+            ledgerJournalTableLocal.JournalName = LedgerJournalName.JournalName;
+            ledgerJournalTableLocal.JournalType = LedgerJournalType::Daily;
+            ledgerJournalTableLocal.insert();
+            ledgerJournalTable = ledgerJournalTableLocal;//header.ledgerJournalTable();
+            return ledgerJournalTableLocal.JournalNum;//header.parmJournalNum();
+        }
+        else
+        {
+            checkfailed("@MAZ13252");
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createLines</Name>
+				<Source><![CDATA[
+    public journalId createLines(CustAccount _custAccount, real _writeOffAmount)
+    {
+        ListEnumerator              listEnumerator;
+        boolean                     isFirst = true;
+        HMCaseTrans                 hmCaseTrans;
+        JournalNameId               journalId;
+        //Zain  -- Deprecated in AX7
+        //AxLedgerJournalTrans        journalTrans;
+        HMCaseTransDetail           hmCaseTransDetail;
+        LedgerJournalCheckPost      LedgerJournalCheckPost;
+        LedgerJournalTrans          ledgerJournalTrans;
+        HMFinancialDimensionHelper  dimensionHelper = new HMFinancialDimensionHelper();
+        HMDimensionClass            HMDimensionClass =new HMDimensionClass();
+        MainAccountNum              mainAccountId;
+        AmountMst                   reverseAmount,insuranceAmount;
+        //Zain
+        CustLedgerAccounts          custLedgerAccount;
+        //Zain
+    
+    
+    
+    
+    
+        if(isFirst)
+        {
+            isFirst = false;
+            journalId = this.createGeneralJournal();
+        }
+        if(ledgerJournalTable)
+        {
+            //Zain   
+            //journalTrans = new AxLedgerJournalTrans();
+            //journalTrans.parmJournalNum(ledgerJournalTable.JournalNum);
+            //journalTrans.parmAccountType(LedgerJournalACType::Ledger);
+            //journalTrans.parmDefaultDimension(dimensionHelper.GetDefaultDimensionForAccrueJournal(hmCaseTrans));
+            ledgerJournalTrans.JournalNum = ledgerJournalTable.JournalNum;
+            ledgerJournalTrans.AccountType = LedgerJournalACType::Ledger;
+            ledgerJournalTrans.DefaultDimension = dimensionHelper.GetDefaultDimensionForAccrueJournal(hmCaseTrans);
+
+            //Zain
+            select * from custLedgerAccount
+                where custLedgerAccount.Num == _custAccount
+                && custLedgerAccount.AccountCode == TableGroupAll::All;
+            //Zain
+
+            mainAccountId = MainAccount::findByLedgerDimension(CustLedgerAccounts_Extension::writeOffLedgerDimension(custLedgerAccount, '',
+                //Zain -- missing parameter added
+                ''
+                //Zain
+                )).MainAccountId;//CustLedgerAccounts::writeOffLedgerDimension(_custAccount,'')).MainAccountId;
+            //journalTrans.parmLedgerDimension(journalTrans.parmLedgerDimension(HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, journalTrans.parmDefaultDimension())));
+            ledgerJournalTrans.LedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, ledgerJournalTrans.DefaultDimension);
+    
+            //journalTrans.parmOffsetAccountType(LedgerJournalACType::Cust);
+            ledgerJournalTrans.OffsetAccountType = LedgerJournalACType::Cust;
+    
+            //ledgerJournalTrans = journalTrans.ledgerJournalTrans();
+    
+            //mainAccountId = MainAccount::findByLedgerDimension(LedgerJournalName.OffsetLedgerDimension).MainAccountId;
+            ledgerJournalTrans.OffsetLedgerDimension = LedgerDynamicAccountHelper::getDynamicAccountFromAccountNumber(_custAccount,LedgerJournalACType::Cust);
+    
+            //journalTrans.parmTransDate(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+            ledgerJournalTrans.TransDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            //if(!journalTrans.parmLedgerDimension() ||!journalTrans.parmOffsetLedgerDimension())
+            if(!ledgerJournalTrans.LedgerDimension || !ledgerJournalTrans.OffsetLedgerDimension)
+            {
+                ttsAbort;
+                return '';
+            }
+    
+            //journalTrans.parmAmountCurDebit(_writeOffAmount);
+            ledgerJournalTrans.AmountCurDebit = _writeOffAmount;
+    
+    
+            //journalTrans.save();
+            ledgerJournalTrans.insert();
+    
+    
+    
+    
+        }
+        if(!isFirst)
+        {
+            LedgerjournalCheckPost = LedgerjournalCheckPost::newLedgerJournalTable(ledgerJournalTable,NoYes::Yes);
+            LedgerjournalCheckPost.run();
+        }
+        return journalId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPostingAccountByItemAndAcctType</Name>
+				<Source><![CDATA[
+    private DimensionDynamicAccount getPostingAccountByItemAndAcctType(ItemId _itemId, InventAccountType _accountType)
+    {
+        InventPosting   inventPOsting;
+        InventTable     inventTable;
+        ItemGroupId     itemGroupId;
+        //get by item
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::Table
+            && inventPOsting.ItemRelation == _itemId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        itemGroupId = InventItemGroupItem::findByItemIdLegalEntity(_itemId, curext()).ItemGroupId;
+    
+        //get by item group
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::GroupId
+            && inventPOsting.ItemRelation == itemGroupId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+    
+        //get by all
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::All;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        return checkFailed(strFmt("Could not find ledger dimension in posting profile for packing slip revenue against %1",_itemId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createJournalLines</Name>
+				<Source><![CDATA[
+    public static JournalId createJournalLines(CustAccount _custAccount, real _writeOffAmount)
+    {
+        HMWriteOffJournalClass objClass = new HMWriteOffJournalClass();
+        return objClass.createLines(_custAccount,_writeOffAmount);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

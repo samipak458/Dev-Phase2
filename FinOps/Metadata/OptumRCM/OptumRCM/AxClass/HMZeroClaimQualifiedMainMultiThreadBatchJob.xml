@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMZeroClaimQualifiedMainMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used as the main batch job class for finding qualified $0 denied claims
+/// </summary>
+class HMZeroClaimQualifiedMainMultiThreadBatchJob extends RunBaseBatch implements BatchRetryable
+{
+    QueryRun                 gQueryRun;
+    BatchHeader              batchHeader;
+    HMNumberOfThreads        numberOfThreads;
+    HMLastPostingCodes       lastPostedCodes;
+    HMDaysSinceDenialPosting daysSinceDenialPosting;
+    RecId                    hmClaimBatchJobLogsHeaderDataPrep;
+    HMClaimJobType           jobType, jobTypeDataPrep;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        numberOfThreads
+    #endmacro
+    #localmacro.LastPostedCodes
+        lastPostedCodes
+    #endmacro
+    #localmacro.DaysSinceDenialPosting
+        daysSinceDenialPosting
+    #endmacro
+    #localmacro.HMClaimBatchJobLogsHeaderDataPrep
+        hmClaimBatchJobLogsHeaderDataPrep
+    #endmacro
+    #localmacro.JobType
+        jobType
+    #endmacro
+    #localmacro.JobTypeDataPrep
+        jobTypeDataPrep
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMZeroClaimQualifiedMainMultiThreadBatchJob construct()
+    {
+        return new HMZeroClaimQualifiedMainMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of the task
+    /// </summary>
+    /// <returns>Return description of the task</returns>
+    static ClassDescription description()
+    {
+        return "@Optum:BatchJobForQualifyZeroDeniedClaims";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method initiated the task for finding qualified $0 denied claims
+    /// </summary>
+    public void run()
+    {
+        HMDataPrepForZeroQualifiedMultiThreadBatchJob    hmDataPrepForZeroQualifiedMultiThreadBatchJob;
+        HMUpdateZeroClaimBatchJobLogsHeaderCount         hmUpdateZeroClaimBatchJobLogsHeaderCount;
+        int                                              recordsToProcess, perThreadRecordsRound, additionalRecordsRound;
+        HMOneDecimal                                     additionalRecords;
+        real                                             perThreadRecords, diffPerThread;
+        RecId                                            batchJobId;     
+        
+        try
+        {
+            
+            if (this.isInBatch())
+            {
+                numberOfThreads = numberOfThreads == 0 ? 1 : numberOfThreads < 0 ? numberOfThreads * -1 : numberOfThreads;
+
+                recordsToProcess = SysQuery::countTotal(gQueryRun);
+                
+                Info(strFmt("@MAZ:NoOfRecordsPicked", recordsToProcess));
+
+                if (recordsToProcess <= numberOfThreads)
+                {
+                    numberOfThreads = 1;
+
+                    Info("@MAZ:RecordsLesserThanNumberOfThreads");
+                }
+
+                perThreadRecords        = recordsToProcess / numberOfThreads;
+                perThreadRecordsRound   = perThreadRecords;
+                diffPerThread           = perThreadRecords - perThreadRecordsRound;
+                additionalRecords       = diffPerThread * numberOfThreads;
+                additionalRecords       = roundUp(additionalRecords, 1);
+                additionalRecordsRound  = additionalRecords;
+
+                if (perThreadRecordsRound + additionalRecordsRound > 0)
+                {
+                    if (!batchHeader)
+                    {
+                        batchJobId = this.parmCurrentBatch().BatchJobId;
+
+                        batchHeader = BatchHeader::construct(batchJobId);
+
+                        batchHeader.parmRetriesOnFailure(5);
+                    }
+
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob = HMDataPrepForZeroQualifiedMultiThreadBatchJob::construct();
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmQueryRun(gQueryRun);
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmLastPostedCodes(lastPostedCodes);
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmDaysSinceDenialPosting(daysSinceDenialPosting);
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmPerThreadRecordsRound(perThreadRecordsRound);
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmAdditionalRecords(additionalRecordsRound);
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmTaskDescription("@Optum:DataPreparationForZeroQualification");
+
+                    hmClaimBatchJobLogsHeaderDataPrep = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::ZeroQualificationDataPrep
+                                                                                            , batchJobId
+                                                                                            , recordsToProcess
+                                                                                            , numberOfThreads);
+
+                    hmDataPrepForZeroQualifiedMultiThreadBatchJob.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeaderDataPrep);
+
+                    jobType = HMClaimJobType::ZeroQualificationDataPrep;
+
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount = HMUpdateZeroClaimBatchJobLogsHeaderCount::construct();
+
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmJobType(jobType);
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmHMClaimBatchJobLogsHeaderDataPrep(hmClaimBatchJobLogsHeaderDataPrep);
+
+                    batchHeader.addRuntimeTask(hmDataPrepForZeroQualifiedMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmUpdateZeroClaimBatchJobLogsHeaderCount, this.parmCurrentBatch().RecId);
+
+                    batchHeader.addDependency(hmUpdateZeroClaimBatchJobLogsHeaderCount, hmDataPrepForZeroQualifiedMultiThreadBatchJob);
+                }
+                else
+                {
+                    Info("@MAZ:NoRecordsFoundForProcessing");
+                }
+
+            }
+
+            if (batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();
+            }
+
+        }
+        catch
+        {
+            throw error(strFmt("@MAZ:BatchJobInitiationFailed",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+
+        return [#CurrentVersion] + [pack] + [#CurrentList] + [#LastPostedCodes] + [#DaysSinceDenialPosting] + [#HMClaimBatchJobLogsHeaderDataPrep] + [#JobType] + [#JobTypeDataPrep];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #CurrentList, #LastPostedCodes, #DaysSinceDenialPosting, #HMClaimBatchJobLogsHeaderDataPrep, #JobType, #JobTypeDataPrep] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+
+            default:
+                ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQueryRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the gQueryRun object
+    /// </summary>
+    /// <param name="_qr"><c>QueryRun</c> object</param>
+    public void parmQueryRun(QueryRun _qr)
+    {
+        gQueryRun = _qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNumberOfThreads</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the numberOfThreads value
+    /// </summary>
+    /// <param name="_numberOfThreads"><c>HMNumberOfThreads</c> value</param>
+    public void parmNumberOfThreads(HMNumberOfThreads _numberOfThreads)
+    {
+        numberOfThreads = _numberOfThreads;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmLastPostedCodes</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the lastPostedCodes value
+    /// </summary>
+    /// <param name="_lastPostedCodes"><c>HMLastPostingCodes</c> value</param>
+    public void parmLastPostedCodes(HMLastPostingCodes _lastPostedCodes)
+    {
+        lastPostedCodes = _lastPostedCodes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDaysSinceDenialPosting</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the daysSinceDenialPosting value
+    /// </summary>
+    /// <param name="_daysSinceDenialPosting"><c>HMDaysSinceDenialPosting</c> value</param>
+    public void parmDaysSinceDenialPosting(HMDaysSinceDenialPosting _daysSinceDenialPosting)
+    {
+        daysSinceDenialPosting = _daysSinceDenialPosting;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRetryable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Specifies if the batch task is retryable for transient exceptions or not.
+    /// </summary>
+    /// <returns>
+    /// If true is returned, the batch task is retryable, otherwise it is not.
+    /// </returns>
+    [Wrappable(true), Replaceable(true)]
+    public boolean isRetryable()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

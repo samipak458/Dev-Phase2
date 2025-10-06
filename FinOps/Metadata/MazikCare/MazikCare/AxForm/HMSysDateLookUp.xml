@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMSysDateLookUp</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMSysDateLookUp extends FormRun
+{
+    #Task
+
+    date    initialDate;
+    date    monthShown;
+    date    selectedValue;
+    date    systemDate;
+
+    boolean todayPressed;
+    boolean monthPressed;
+    boolean maxDatePressed;
+    boolean minDatePressed;
+    boolean hideMaxDateButton;
+    
+    #define.maxDate('31-12-2153')
+    #define.minDate('01-01-1901')
+    #define.Date2StrSequence(-1)    //the only str2date / date2str sequence supported value
+    #define.str2DateSequence(321)
+
+    boolean           preNexMonth;
+    boolean           runOK;
+
+  
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeSelect</Name>
+				<Source><![CDATA[
+    public void closeSelect(str _selectedValue)
+    {
+        FormRun fr;
+        FormDateControl currentControl;
+        FormDateTimeControl currentDateTimeControl;
+        DateFormat dateFormat;
+        int i = -1;
+        FormControl fc;
+        int timeValue;
+        utcdatetime dateTimeValue;
+        utcDateTime maxDateTimeValue;
+        Timezone currentTimezone;
+        ;
+
+        if (!SysDateLookUpNavigationParameters::forceSelectionOfTableDates)
+        {
+            if (todayPressed)
+            {
+                selectedValue = systemDate;
+            }
+            if(maxDatePressed)
+            {
+                selectedValue = maxdate();
+            }
+            else if (minDatePressed)
+            {
+                selectedValue = dateNull();
+            }
+        }
+
+        // get selected control from the parent form
+        fr = element.args().caller();
+
+        if (fr)
+        {
+            fc = fr.selectedControl();
+
+            // check for correct Form Control
+            if (classnum(FormDateControl) == fc.handle())
+            {
+                currentControl = fc;
+                // get date format specified on the control
+                dateFormat = currentControl.dateFormat();
+                i = dateFormat;
+
+                // now we will convert dateFormat value to apropriate date2str value
+                switch (i)
+                {
+                    case 1:
+                        i = 321;
+                        break;
+                    case 2:
+                        i = 312;
+                        break;
+                    case 3:
+                        i = 231;
+                        break;
+                    case 4:
+                        i = 132;
+                        break;
+                    case 5:
+                        i = 213;
+                        break;
+                    case 6:
+                        i = 123;
+                        break;
+                    default:
+                    // already initialized from the beginning
+                    //                  i = -1;
+                }
+
+                super(date2str(selectedValue,i,-1,-1,-1,-1,-1,DateFlags::None));
+            }
+            else if (classnum(FormDateTimeControl) == fc.handle())
+            {
+                currentDateTimeControl = fc;
+                if(maxDatePressed)
+                {
+                    currentTimezone = currentDateTimeControl.timeZone();
+                    maxDateTimeValue = DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::maxValue(), currentTimezone);
+                    timeValue = DateTimeUtil::time(maxDateTimeValue);
+                    selectedValue = DateTimeUtil::date(maxDateTimeValue);
+                    dateTimeValue = maxDateTimeValue;
+                }
+                else
+                {
+                    // Retrieve time value from control
+                    timeValue = DateTimeUtil::time(currentDateTimeControl.dateTimeValue());
+                    // UTC string (YYYY-MM-DDTHH:MM:SS) required by DateTime control
+                    dateTimeValue = DateTimeUtil::newDateTime(selectedValue,timeValue);
+                }
+                super(DateTimeUtil::toStr(dateTimeValue));
+            }
+            else if (classnum(FormStringControl) == fc.handle())
+            {
+                i = #Date2StrSequence;
+                super(date2str(selectedValue,i,-1,-1,-1,-1,-1,false));
+            }
+            //<MazikCare>
+            else if (classnum(FormIntControl) == fc.handle())
+            {
+                super(num2str(wkOfYr(selectedValue),0,0,0,0));
+            }
+            //</MazikCare>
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    void init()
+    {
+        FormRun formRun;
+        
+        preNexMonth = false;
+        runOK       = false;
+
+        //Set the text of the buttons.
+        super();
+
+        systemDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+
+        if (element.args() &&
+            element.args().caller()  &&
+            SysDictClass::isEqualOrSuperclass(classidget(element.args().caller()), classnum(FormRun)))
+        {
+            formRun = element.args().caller();
+            element.SetMaxDateLabelFromControl(formRun.selectedControl());
+        
+            if (formRun.name() == formstr(SystemDate))
+            {
+                systemDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    void run()
+    {
+        FormDateTimeControl hostDatetimeControl = element.selectTarget() as FormDateTimeControl;
+        FormDateControl     hostDateControl = element.selectTarget() as FormDateControl;
+        FormStringControl   hostStringcontrol = element.selectTarget() as FormStringControl;
+        int             d;
+        int             dayNo;
+        str 1           dayLetter;
+        FormButtonControl buttonControl;
+        //<MazikCare>
+        FormRun fr;
+        FormControl fc;
+        //</MazikCare>
+        
+        if (hostDateControl &&
+            classnum(FormDateControl) == classidget(hostDateControl) &&
+            hostDateControl.dateValue())
+        {
+            initialDate = hostDateControl.dateValue();
+        }
+        else if (hostDatetimeControl &&
+            classnum(FormDateTimeControl) == classidget(hostDatetimeControl) &&
+            DateTimeUtil::date(hostDatetimeControl.dateTimeValue()))
+        {
+            initialDate = DateTimeUtil::date(hostDatetimeControl.dateTimeValue());
+        }
+        else if (hostStringcontrol &&
+            classnum(FormStringControl) == classidget(hostStringcontrol) &&
+            hostStringcontrol.text() && str2Date(hostStringcontrol.text(), #Date2StrSequence))
+        {
+            initialDate = str2Date(hostStringcontrol.text(), #Date2StrSequence);
+        }
+        else
+        {
+            initialDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        }
+ 
+        CalendarControl.setSelectDate(date2Str(initialDate, #str2DateSequence, DateDay::Digits1or2, DateSeparator::Slash, DateMonth::Digits1or2, DateSeparator::Slash, DateYear::Digits4, DateFlags::None));
+ 
+        selectedValue   = initialDate;
+        monthShown      = initialDate;
+
+        if(hideMaxDateButton)
+        {
+            buttonControl = element.design().controlName('MaxDateButton');
+            if(buttonControl != null)
+            {
+                buttonControl.visible(false);
+            }
+        }
+
+        //<MazikCare>
+        fr = element.args().caller();
+
+        if (fr)
+        {
+            fc = fr.selectedControl();
+
+            if (classnum(FormIntControl) == fc.handle())
+            {
+
+                //CalendarControl.
+            }
+        }
+        //</MazikCare>
+  
+ 
+        super();
+
+        runOK = true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetMaxDateLabelFromControl</Name>
+				<Source><![CDATA[
+    public void SetMaxDateLabelFromControl(FormControl callerSelectedControl)
+    {
+        FormDateTimeControl dateTimeControl;
+        FormDateControl dateControl;
+        FormButtonControl buttonControl;
+        str maxDateLabelText;
+        ;
+
+        hideMaxDateButton = false;
+
+        if (classnum(FormDateControl) == callerSelectedControl.handle())
+        {
+            dateControl = callerSelectedControl;
+            maxDateLabelText = dateControl.maxDateLabelText();
+        }
+        else if(classnum(FormDateTimeControl) == callerSelectedControl.handle())
+        {
+            dateTimeControl = callerSelectedControl;
+            maxDateLabelText = dateTimeControl.maxDateLabelText();
+        }
+
+        if(maxDateLabelText != '')
+        {
+            buttonControl = element.design().controlName('MaxDateButton');
+            buttonControl.text(maxDateLabelText);
+        }
+        else
+        {
+            hideMaxDateButton = true;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>CalendarControl</Name>
+				<Type>Custom</Type>
+				<Methods>
+					<Method>
+						<Name>SelectedDate</Name>
+						<Source><![CDATA[
+        public void SelectedDate(str _date)
+        {
+            super(_date);
+
+            selectedValue = str2Date(_date, #str2DateSequence);
+            element.closeSelect(_date);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>MinDateButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            minDatePressed = true;
+            element.closeSelect('');
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>SystemDate</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            todayPressed = true;
+            element.closeSelect('');
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>MaxDateButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            maxDatePressed = true;
+            element.closeSelect('');
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<AllowUserSetup xmlns="">No</AllowUserSetup>
+		<ArrangeMethod xmlns="">Auto</ArrangeMethod>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<BottomMargin xmlns="">3</BottomMargin>
+		<BottomMarginMode xmlns="">Fixed</BottomMarginMode>
+		<Frame xmlns="">Border</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<LeftMargin xmlns="">3</LeftMargin>
+		<LeftMarginMode xmlns="">Fixed</LeftMarginMode>
+		<RightMargin xmlns="">3</RightMargin>
+		<RightMarginMode xmlns="">Fixed</RightMarginMode>
+		<SetCompany xmlns="">No</SetCompany>
+		<Style xmlns="">Lookup</Style>
+		<TopMargin xmlns="">3</TopMargin>
+		<TopMarginMode xmlns="">Fixed</TopMarginMode>
+		<ViewEditMode xmlns="">Edit</ViewEditMode>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl>
+				<Name>CalendarControl</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<FormControlExtension>
+					<Name>CalendarControl</Name>
+					<ExtensionComponents />
+					<ExtensionProperties />
+				</FormControlExtension>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Footer</Name>
+				<Type>Group</Type>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>MinDateButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1908874352</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Button</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@SYS190727</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>SystemDate</Name>
+						<ElementPosition>1193046470</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Button</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@SYS57439</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>MaxDateButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1670265058</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Button</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@SYS1091</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

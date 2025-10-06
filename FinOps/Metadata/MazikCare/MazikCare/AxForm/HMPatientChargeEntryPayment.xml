@@ -1,0 +1,3495 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientChargeEntryPayment</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPatientChargeEntryPayment extends FormRun
+{
+    HMResourceSchedulingAppointmentSalesTbl HMResourceSchedulingAppointmentSalesTbl;
+    HMResourceSchedulingAppointment         hmResourceSchedulingAppointment;
+    RecId                                   patientRecId;
+    HMChargeEntryPaymentType                paymentType;
+    Map                                     custTransOpenMap, custTransPaymentMap, custTransRefundMap;
+    SalesTable                              salesTable;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTransOpenMap</Name>
+				<Source><![CDATA[
+    public Map getCustTransOpenMap()
+    {
+        return custTransOpenMap;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTransPaymentMap</Name>
+				<Source><![CDATA[
+    public Map getCustTransPaymentMap()
+    {
+        return custTransPaymentMap;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTransRefundMap</Name>
+				<Source><![CDATA[
+    public Map getCustTransRefundMap()
+    {
+        return custTransRefundMap;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientRecId</Name>
+				<Source><![CDATA[
+    public RecId getPatientRecId()
+    {
+        if(element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+        {
+            if(!patientRecId)
+            {
+                if(!salesTable)
+                {
+                    salesTable = element.args().record();
+                    AccountDetails_SO.visible(false);
+                    PatientNumberSO.text(SalesTable.InvoiceAccount);
+                    PatientNameSo.text(SalesTable.invoiceName());
+                }
+                patientRecId = HMPatient::findByMRN(salesTable.InvoiceAccount).RecId;
+                if(!patientRecId)
+                {
+                    warning("@MAZ12517");
+                    element.close();
+                }
+            }
+        }
+        else
+        {
+            if(!HMResourceSchedulingAppointment)
+            {
+                HMResourceSchedulingAppointment = element.args().record();
+                patientRecId = HMResourceSchedulingAppointment.HMPatient;
+            }
+            else
+            {
+                if(!patientRecId)
+                {
+                    patientRecId = HMResourceSchedulingAppointment.HMPatient;
+                }
+            }
+        }
+        return patientRecId;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        
+        super();
+    
+        if(element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstanding))
+        {
+            paymentType = HMChargeEntryPaymentType::OutstandingPayment;
+            custTransOpenMap = new Map(Types::Int64,Types::Record);
+            custTransPaymentMap = new Map(Types::Int64,Types::Record);
+            custTransRefundMap = new Map(Types::Int64,Types::Record);
+        }
+        else if(element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+        {
+            paymentType = HMChargeEntryPaymentType::InvoicePayment;
+            custTransOpenMap = new Map(Types::Int64,Types::Record);
+            custTransPaymentMap = new Map(Types::Int64,Types::Record);
+            custTransRefundMap = new Map(Types::Int64,Types::Record);
+            HMResourceSchedulingAppointmentDS_ds.queryBuildDataSource().enabled(false);
+            GroupDetails.visible(false);
+            AccountDetails_SO.visible(true);
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshDS</Name>
+				<Source><![CDATA[
+    public void refreshDS()
+    {
+        CustTransOpen_ds.executeQuery();
+        CustTransOpen_Payment_ds.executeQuery();
+        CustTransOpen_Refund_ds.executeQuery();
+        HMResourceSchedulingAppointmentDS_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transactionCompleted</Name>
+				<Source><![CDATA[
+    private void transactionCompleted()
+    {
+        info("@MAZ11990");
+        element.refreshDS();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateSettlement</Name>
+				<Source><![CDATA[
+    public boolean validateSettlement()
+    {
+        MapEnumerator   mapEnumerator;
+        real            invoiceAmount,paymentAmount, refundAmount;
+        CustTransOpen   custTransOpenValidate;
+        if(custTransPaymentMap.empty())
+        {
+            warning("No payment marked for settlement");
+            return false;
+        }
+    
+        if(custTransOpenMap.empty() && custTransRefundMap.empty())
+        {
+            warning("Select either invoice or refund transaction to settle payment");
+            return false;
+        }
+    
+        mapEnumerator = custTransOpenMap.getEnumerator();
+        while (mapEnumerator.moveNext())
+        {
+            custTransOpenValidate =  mapEnumerator.currentValue();
+            invoiceAmount += custTransOpenValidate.AmountCur;
+        }
+    
+        mapEnumerator = custTransPaymentMap.getEnumerator();
+        while (mapEnumerator.moveNext())
+        {
+            custTransOpenValidate =  mapEnumerator.currentValue();
+            paymentAmount += abs(custTransOpenValidate.AmountCur);
+        }
+    
+        mapEnumerator = custTransRefundMap.getEnumerator();
+        while (mapEnumerator.moveNext())
+        {
+            custTransOpenValidate =  mapEnumerator.currentValue();
+            refundAmount += custTransOpenValidate.AmountCur;
+        }
+        if(invoiceAmount == 0)
+        {
+            if(refundAmount > 0 && paymentAmount < invoiceAmount)
+            {
+                warning("Cannot settle the transactions, Payment amount is lesser than refund/invoice amount");
+                return false;
+            }
+        }
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>CustTransOpen</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            if(element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstanding) || element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+            {
+                CustTransOpen_ds.queryBuildDataSource().addRange(fieldNum(CustTransOpen,AccountNum)).value(SysQuery::value(HMPatient::find(element.getPatientRecId()).getMRN()));
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>editIsMarkedForSettlement</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Gets or sets whether the open transaction is marked for settlement.
+        /// </summary>
+        /// <param name="_set">
+        /// true if marked for settlement is set; otherwise, false.
+        /// </param>
+        /// <param name="_custTransOpen">
+        /// The current instance of the CustTransOpen table.
+        /// </param>
+        /// <param name="_isMarkedForSettlement">
+        /// The new marked for settlement when the <paramref name="_set"/> is true.
+        /// </param>
+        /// <returns>
+        /// Whether the open transaction is marked for settlement.
+        /// </returns>
+        
+        // BP deviation documented
+        public edit boolean editIsMarkedForSettlement(
+            boolean _set,
+            CustTransOpen _custTransOpen,
+            boolean _isMarked)
+        {
+            boolean isMarked;
+            if(_set)
+            {
+                if(_isMarked)
+                {
+                    if(!custTransOpenMap.exists(_custTransOpen.RecId))
+                    {
+                        custTransOpenMap.insert(_custTransOpen.RecId,_custTransOpen);
+                    }
+                }
+                else
+                {
+                    if(custTransOpenMap.exists(_custTransOpen.RecId))
+                    {
+                        custTransOpenMap.remove(_custTransOpen.RecId);
+                    }
+                }
+            }
+        
+            isMarked = custTransOpenMap.exists(_custTransOpen.RecId);
+            return isMarked;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>custTransIdRef</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.queryBuildDataSource().addRange(fieldNum(custTransIdRef,TransRefType)).value(SysQuery::value(CusttransRefType::Invoice));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>CustTransOpen_Payment</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            if(element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstanding) || element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+            {
+                CustTransOpen_Payment_ds.queryBuildDataSource().addRange(fieldNum(CustTransOpen,AccountNum)).value(SysQuery::value(HMPatient::find(element.getPatientRecId()).getMRN()));
+                CustTransOpen_Payment_ds.queryBuildDataSource().addRange(fieldNum(CustTransOpen,RecId)).value('((CustTransOpen_Payment.AmountCur<=0))');
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>editIsMarkedForSettlement</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Gets or sets whether the open transaction is marked for settlement.
+        /// </summary>
+        /// <param name="_set">
+        /// true if marked for settlement is set; otherwise, false.
+        /// </param>
+        /// <param name="_custTransOpen">
+        /// The current instance of the CustTransOpen table.
+        /// </param>
+        /// <param name="_isMarkedForSettlement">
+        /// The new marked for settlement when the <paramref name="_set"/> is true.
+        /// </param>
+        /// <returns>
+        /// Whether the open transaction is marked for settlement.
+        /// </returns>
+        
+        // BP deviation documented
+        public edit boolean editIsMarkedForSettlement(
+            boolean _set,
+            CustTransOpen _custTransOpen,
+            boolean _isMarked)
+        {
+            boolean isMarked;
+            if(_set)
+            {
+                if(_isMarked)
+                {
+                    if(!custTransPaymentMap.exists(_custTransOpen.RecId))
+                    {
+                        custTransPaymentMap.insert(_custTransOpen.RecId,_custTransOpen);
+                    }
+                }
+                else
+                {
+                    if(custTransPaymentMap.exists(_custTransOpen.RecId))
+                    {
+                        custTransPaymentMap.remove(_custTransOpen.RecId);
+                    }
+                }
+            }
+        
+            isMarked = custTransPaymentMap.exists(_custTransOpen.RecId);
+            return isMarked;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>custTransIdRef_Payment</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.queryBuildDataSource().addRange(fieldNum(custTransIdRef,TransRefType)).value(SysQuery::value(CusttransRefType::Payment));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMResourceSchedulingAppointmentDS</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            if(element.args().menuItemName() != menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+            {
+                HMResourceSchedulingAppointmentDS_ds.queryBuildDataSource().clearDynalinks();
+                HMResourceSchedulingAppointmentDS_ds.queryBuildDataSource().addRange(fieldNum(HMResourceSchedulingAppointment,RecId)).value(SysQuery::value(element.args().record().RecId));
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>CustTransOpen_Refund</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            if(element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstanding) || element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+            {
+                CustTransOpen_Refund_ds.queryBuildDataSource().addRange(fieldNum(CustTransOpen,AccountNum)).value(SysQuery::value(HMPatient::find(element.getPatientRecId()).getMRN()));
+                CustTransOpen_Refund_ds.queryBuildDataSource().addRange(fieldNum(CustTransOpen,RecId)).value('((CustTransOpen_Refund.AmountCur>=0))');
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>editIsMarkedForSettlement</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Gets or sets whether the open transaction is marked for settlement.
+        /// </summary>
+        /// <param name="_set">
+        /// true if marked for settlement is set; otherwise, false.
+        /// </param>
+        /// <param name="_custTransOpen">
+        /// The current instance of the CustTransOpen table.
+        /// </param>
+        /// <param name="_isMarkedForSettlement">
+        /// The new marked for settlement when the <paramref name="_set"/> is true.
+        /// </param>
+        /// <returns>
+        /// Whether the open transaction is marked for settlement.
+        /// </returns>
+        
+        // BP deviation documented
+        public edit boolean editIsMarkedForSettlement(
+            boolean _set,
+            CustTransOpen _custTransOpen,
+            boolean _isMarked)
+        {
+            boolean isMarked;
+            if(_set)
+            {
+                if(_isMarked)
+                {
+                    if(!custTransRefundMap.exists(_custTransOpen.RecId))
+                    {
+                        custTransRefundMap.insert(_custTransOpen.RecId,_custTransOpen);
+                    }
+                }
+                else
+                {
+                    if(custTransRefundMap.exists(_custTransOpen.RecId))
+                    {
+                        custTransRefundMap.remove(_custTransOpen.RecId);
+                    }
+                }
+            }
+        
+            isMarked = custTransRefundMap.exists(_custTransOpen.RecId);
+            return isMarked;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>custTransIdRef_Refund</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.queryBuildDataSource().addRange(fieldNum(custTransIdRef,TransRefType)).value(SysQuery::value(CusttransRefType::Payment));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>HMPatientChargeEntryNewPaymentDialog</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            Args args;
+            if(element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+            {
+                args = new Args();
+                args.record(HMPatient::find(patientRecId));
+                args.parm('CalledFromSO');
+                args.caller(element);
+                new MenuFunction(menuitemDisplayStr(HMPatientChargeEntryNewPaymentDialog),MenuItemType::Display).run(args);
+            }
+            else
+            {
+                super();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMPatientAdvancePaymentPosting</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            if(element.args().menuItemName() != menuitemDisplayStr(HMPatientChargeEntryPaymentOutstandingSO))
+            {
+                HMResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(HMResourceSchedulingAppointment.RecId);
+                if(LedgerJournalTable::find(HMResourceSchedulingAppointment.LedgerJournalTable_AdvancePayment).Posted == NoYes::Yes)
+                {
+                    element.close();
+                }
+            }
+            else
+            {
+                element.close();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMPatientPaymentSettlements</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            if(Box::yesNo("@MAZ12009",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+            {
+                if(element.validateSettlement())
+                {
+                    super();
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMTableofbenefits</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+        
+            super();
+        
+        
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>CustTransOpen</Name>
+			<Table>CustTransOpen</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankDiscNoticeDeadline</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankLCExportLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscountLedgerDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjUnrealizedReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineAmountPaymCur_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineAmount_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestAmountPaymCur_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestAmount_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastInterestDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PossibleCashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledLinePercent_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledTotalAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettlementPriorityCashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdAmountOrigin_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TCSAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TDSAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseCashDisc</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCheck>No</AllowCheck>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>CustTrans</Name>
+			<Table>CustTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountingEvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approved</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approver</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeText</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankLCExportLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankRemittanceFileId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeSeqNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CancelledPayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashPayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Closed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyBankAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ControlNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Correct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustBillingClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExchAdjustmentRealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExchAdjustmentUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirectDebitMandate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EODProcessed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EUROTriangulation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjustment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjustmentReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRateSecond</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FixedExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointmentNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMerchantDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Interest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Invoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceProject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdj</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjRateReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleAccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleCompany</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPaymOrderID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OffsetRecid</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymentNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSchedId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSpec</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfileClose</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Prepayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyCrossRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingExchAdjustmentRealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingExchAdjustmentUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailCustTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailStoreId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailTerminalId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Settlement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxInvoiceSalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ThirdPartyBankAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Txt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Voucher</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustTransOpen</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>custTransIdRef</Name>
+			<Table>CustTransIdRef</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRefId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRefType</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DelayActive>No</DelayActive>
+			<JoinSource>CustTrans</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<Index>TransRecIdIdx</Index>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>CustTransOpen_Payment</Name>
+			<Table>CustTransOpen</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankDiscNoticeDeadline</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankLCExportLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscountLedgerDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjUnrealizedReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineAmountPaymCur_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineAmount_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestAmountPaymCur_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestAmount_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastInterestDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PossibleCashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledLinePercent_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledTotalAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettlementPriorityCashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdAmountOrigin_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TCSAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TDSAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseCashDisc</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCheck>No</AllowCheck>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>CustTrans_Payment</Name>
+			<Table>CustTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountingEvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approved</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approver</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeText</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankLCExportLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankRemittanceFileId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeSeqNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CancelledPayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashPayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Closed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyBankAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ControlNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Correct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustBillingClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExchAdjustmentRealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExchAdjustmentUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirectDebitMandate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EODProcessed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EUROTriangulation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjustment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjustmentReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRateSecond</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FixedExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointmentNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMerchantDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Interest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Invoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceProject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdj</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjRateReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleAccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleCompany</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPaymOrderID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OffsetRecid</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymentNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSchedId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSpec</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfileClose</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Prepayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyCrossRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingExchAdjustmentRealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingExchAdjustmentUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailCustTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailStoreId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailTerminalId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Settlement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxInvoiceSalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ThirdPartyBankAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Txt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Voucher</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustTransOpen_Payment</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>custTransIdRef_Payment</Name>
+			<Table>CustTransIdRef</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRefId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRefType</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DelayActive>No</DelayActive>
+			<JoinSource>CustTrans_Payment</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<Index>TransRecIdIdx</Index>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingAppointmentDS</Name>
+			<Table>HMResourceSchedulingAppointment</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActualArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AdmissionOrderSource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentConfirmationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Bed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMVersion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BookingNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChartPrepared</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChiefComplaint</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientBillingLogisticsPostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientReportLogisticsPostalAddres</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CopyOfEmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardToken</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardTokenRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CriticalMedicalInformation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DispositionComments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DispositionFollowUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Duration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmailStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EODProcessed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FinanceBillingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FinanceBillingStatus_Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForceBookingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreeFollowUpAvailed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GOPNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAnesthesiaType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointmentType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBookingOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCancellationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMConfirmationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceContractClassOrPlans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitAdmissionWard</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitServiceLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientInsurance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientVisit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRecurrentApptDetail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster_PerformingDoctor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMScheduleType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMWaitingList</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ImportedNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InclinicNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IncompleteInfoLog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IncompleteReserveAppointmentTaskGeneratd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDelayed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsHotspot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOnlineAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOverBooked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsReconfirmEmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsSpecificConsultant</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LedgerJournalTable_AdvancePayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientContact</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientRequestor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalChartRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PONum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriorityNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Referral</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportSentContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestorContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RescheduleWithoutConfirmation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultExpectedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultVisitStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SendEmailTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SmsSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SysOutgoingEmailTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WalkinPatient</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>CustTransOpen_Refund</Name>
+			<Table>CustTransOpen</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankDiscNoticeDeadline</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankLCExportLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscountLedgerDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjUnrealizedReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineAmountPaymCur_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineAmount_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestAmountPaymCur_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestAmount_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastInterestDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PossibleCashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledLinePercent_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledTotalAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettlementPriorityCashDiscDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdAmountOrigin_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TCSAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TDSAmount_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseCashDisc</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCheck>No</AllowCheck>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>CustTrans_Refund</Name>
+			<Table>CustTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountingEvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approved</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Approver</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeText</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankLCExportLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankRemittanceFileId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeSeqNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillOfExchangeStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CancelledPayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashPayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Closed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CollectionLetterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyBankAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ControlNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Correct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustBillingClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExchAdjustmentRealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExchAdjustmentUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeliveryMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirectDebitMandate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DueDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EODProcessed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EUROTriangulation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjustment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchAdjustmentReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExchRateSecond</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FixedExchRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointmentNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMerchantDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Interest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Invoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceProject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdj</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjRateReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastExchAdjVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleAccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleCompany</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastSettleVoucher</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPaymOrderID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OffsetRecid</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymentNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSchedId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSpec</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingProfileClose</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Prepayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingCurrencyCrossRate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingExchAdjustmentRealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportingExchAdjustmentUnrealized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailCustTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailStoreId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailTerminalId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetailTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountMST</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettleAmountReporting</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Settlement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxInvoiceSalesId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ThirdPartyBankAccountId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Txt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Voucher</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustTransOpen_Refund</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>custTransIdRef_Refund</Name>
+			<Table>CustTransIdRef</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRefId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TransRefType</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DelayActive>No</DelayActive>
+			<JoinSource>CustTrans_Refund</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<Index>TransRecIdIdx</Index>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ8417</Caption>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTab</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPaneTab</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>ButtonGroup</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ButtonGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMPatientChargeEntryNewPaymentDialog</Name>
+										<ElementPosition>818089008</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+										<MenuItemName>HMPatientChargeEntryNewPaymentDialog</MenuItemName>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMPatientAdvancePaymentPosting</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1227133512</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<AutoRefreshData>Yes</AutoRefreshData>
+										<MenuItemName>HMPatientAdvancePaymentPosting</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMPatientPaymentSettlements</Name>
+										<ElementPosition>1533916890</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+										<MenuItemName>HMPatientPaymentSettlements</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>buttonVoucherTrans</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1738439142</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<MenuItemName>LedgerTransVoucher1</MenuItemName>
+										<SaveRecord>No</SaveRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMTableofbenefits</Name>
+										<ElementPosition>1942961394</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+										<MenuItemName>HMInsuranceCarrier</MenuItemName>
+										<Text>@MAZ13120</Text>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Main</Name>
+						<ElementPosition>966367640</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>MainInstruction</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>StaticText</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<FontSize>13</FontSize>
+								<ForegroundColor>ScrollBar</ForegroundColor>
+								<Style>MainInstruction</Style>
+								<Text>@MAZ6569</Text>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Group_</Name>
+						<ElementPosition>1382442596</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>AccountDetails_SO</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>805306366</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>PatientNumberSO</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ11373</HelpText>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@MAZ11856</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>PatientNameSO</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@MAZ9</Label>
+									</AxFormControl>
+								</Controls>
+								<Columns>2</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupDetails</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1207959549</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>AppointmentGroup</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>AppointmentNumber</Name>
+												<ElementPosition>390451572</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>AppointmentNumber[1]</DataField>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ8923</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>PatientNumber</Name>
+												<ElementPosition>585677358</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ11373</HelpText>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>getPatientChartNum</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ11856</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Patient</Name>
+												<ElementPosition>780903144</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>getPatientName</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>DoctorName</Name>
+												<ElementPosition>976128930</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>getAppointmentResource</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ65</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>ApptDateTime</Name>
+												<ElementPosition>1171354716</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>HMResourceSchedulingAppointmentDS_AppointmentDate</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Date</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>AppointmentDate[1]</DataField>
+														<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+														<Label>@MAZ:HMAppointmentDate</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormTimeControl">
+														<Name>HMResourceSchedulingAppointmentDS_AppointmentTime</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Time</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>AppointmentTime[1]</DataField>
+														<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+														<Label>@MAZ:HMAppointmentTime</Label>
+													</AxFormControl>
+												</Controls>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>ExpectedCharges</Name>
+												<AllowEdit>No</AllowEdit>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1317774055</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ11998</HelpText>
+												<Type>Real</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<Width>100</Width>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>getAppointmentChargesForPatient</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ11997</Label>
+												<NoOfDecimals>-1</NoOfDecimals>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>AppointmentOutstandingToPay</Name>
+												<AllowEdit>No</AllowEdit>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1464193395</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ11993</HelpText>
+												<Type>Real</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Width>100</Width>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>totalAppointmentInvoiceAmount</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ11994</Label>
+												<NoOfDecimals>-1</NoOfDecimals>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>AppointmentPayments</Name>
+												<AllowEdit>No</AllowEdit>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1561806288</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ11991</HelpText>
+												<Type>Real</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Width>100</Width>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>totalAppointmentAdvancePayments</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ2727</Label>
+												<NoOfDecimals>-1</NoOfDecimals>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>AppointmentAvailableAmount</Name>
+												<AllowEdit>No</AllowEdit>
+												<ElementPosition>1952257860</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ11996</HelpText>
+												<Type>Real</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Width>100</Width>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>totalAvailableAmount</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ11995</Label>
+												<NoOfDecimals>-1</NoOfDecimals>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+										<Caption>@MAZ3465</Caption>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>PaymentDetails</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>TotalInvoiceAmount</Name>
+												<ElementPosition>858993458</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ12001</HelpText>
+												<Type>Real</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Width>100</Width>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>patientTotalInvoiceAmount</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ12002</Label>
+												<NoOfDecimals>-1</NoOfDecimals>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>TotalAdvancePaid</Name>
+												<ElementPosition>1288490187</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ12000</HelpText>
+												<Type>Real</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Width>100</Width>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>patientTotalAdvancePayments</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ2727</Label>
+												<NoOfDecimals>-1</NoOfDecimals>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormRealControl">
+												<Name>TotalAvailableAmount</Name>
+												<ElementPosition>1717986916</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ12005</HelpText>
+												<Type>Real</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Width>100</Width>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataMethod>patientTotalAvlblAmount</DataMethod>
+												<DataSource>HMResourceSchedulingAppointmentDS</DataSource>
+												<Label>@MAZ12004</Label>
+												<NoOfDecimals>-1</NoOfDecimals>
+											</AxFormControl>
+										</Controls>
+										<Caption>Payment details</Caption>
+									</AxFormControl>
+								</Controls>
+								<Columns>2</Columns>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>PaymentGroup</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupPaymentGrid</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>858993458</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGridControl">
+												<Name>PaymentGrid</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>Grid</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Payment_IsMarkedForSettlement</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>357913940</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS24864</HelpText>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<BackgroundColor>WindowBackground</BackgroundColor>
+														<DataMethod>editIsMarkedForSettlement</DataMethod>
+														<DataSource>CustTransOpen_Payment</DataSource>
+														<Label>@SYS19120</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Payment_ReferenceId</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>536870910</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS107402</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>TransRefId</DataField>
+														<DataSource>custTransIdRef_Payment</DataSource>
+														<Label>@SYS107394</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>Payment_ReferenceType</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>715827880</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS107403</HelpText>
+														<Skip>Yes</Skip>
+														<Type>ComboBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>TransRefType</DataField>
+														<DataSource>custTransIdRef_Payment</DataSource>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>CustTrans_Payment_HMAppointmentNumber</Name>
+														<ElementPosition>894784850</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>HMAppointmentNumber[1]</DataField>
+														<DataSource>CustTrans_Payment</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>CustTrans_Payment_HMMerchantDetails</Name>
+														<ElementPosition>984263335</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<DataSource>CustTrans_Payment</DataSource>
+														<ReferenceField>HMMerchantDetails[1]</ReferenceField>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Payment_Company</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1073741820</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS108571</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>dataAreaId</DataField>
+														<DataSource>CustTransOpen_Payment</DataSource>
+														<Label>@SYS10499</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Payment_Voucher</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1252698790</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>Voucher</DataField>
+														<DataSource>CustTrans_Payment</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Payment_AccountNum</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1431655760</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS108572</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>AccountNum</DataField>
+														<DataSource>CustTransOpen_Payment</DataSource>
+														<Label>@SYS24500</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>Payment_DueDate</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1610612730</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Skip>Yes</Skip>
+														<Type>Date</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>DueDate</DataField>
+														<DataSource>CustTransOpen_Payment</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>Payment_AmountAvailableToPay</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1789569700</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS114319</HelpText>
+														<Skip>Yes</Skip>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>AmountCur</DataField>
+														<DataSource>CustTransOpen_Payment</DataSource>
+														<Label>@SYS114325</Label>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Payment_Currency</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1968526670</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS114320</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>CurrencyCode</DataField>
+														<DataSource>CustTrans_Payment</DataSource>
+													</AxFormControl>
+												</Controls>
+												<DataSource>CustTransOpen_Payment</DataSource>
+												<ShowRowLabels>No</ShowRowLabels>
+												<VisibleRows>6</VisibleRows>
+												<VisibleRowsMode>Fixed</VisibleRowsMode>
+											</AxFormControl>
+										</Controls>
+										<Caption>@SYS115698</Caption>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>VSplitter</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<Style>SplitterVerticalContainer</Style>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupRefundGrid</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1717986916</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGridControl">
+												<Name>RefundGrid</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Grid</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Settlement_IsMarkedForSettlement</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>357913940</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS24864</HelpText>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<BackgroundColor>WindowBackground</BackgroundColor>
+														<DataMethod>editIsMarkedForSettlement</DataMethod>
+														<DataSource>CustTransOpen_Refund</DataSource>
+														<Label>@SYS19120</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Settlement_ReferenceId</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>536870910</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS107402</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>TransRefId</DataField>
+														<DataSource>custTransIdRef_Refund</DataSource>
+														<Label>@SYS107394</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>Settlement_ReferenceType</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>715827880</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS107403</HelpText>
+														<Skip>Yes</Skip>
+														<Type>ComboBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>TransRefType</DataField>
+														<DataSource>custTransIdRef_Refund</DataSource>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Settlement_HMAppointmentNumber</Name>
+														<ElementPosition>894784850</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>HMAppointmentNumber[1]</DataField>
+														<DataSource>CustTrans_Refund</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>CustTrans_Refund_HMMerchantDetails</Name>
+														<ElementPosition>984263335</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<DataSource>CustTrans_Refund</DataSource>
+														<ReferenceField>HMMerchantDetails[1]</ReferenceField>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Settlement_Company</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1073741820</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS108571</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>dataAreaId</DataField>
+														<DataSource>CustTransOpen_Refund</DataSource>
+														<Label>@SYS10499</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Settlement_Voucher</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1252698790</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>Voucher</DataField>
+														<DataSource>CustTrans_Refund</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Settlement_AccountNum</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1431655760</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS108572</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>AccountNum</DataField>
+														<DataSource>CustTransOpen_Refund</DataSource>
+														<Label>@SYS24500</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>Settlement_DueDate</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1610612730</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Skip>Yes</Skip>
+														<Type>Date</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>DueDate</DataField>
+														<DataSource>CustTransOpen_Refund</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>Settlement_AmountAvailableToPay</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1789569700</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS114319</HelpText>
+														<Skip>Yes</Skip>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>AmountCur</DataField>
+														<DataSource>CustTransOpen_Refund</DataSource>
+														<Label>@MAZ12007</Label>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Settlement_Currency</Name>
+														<AllowEdit>No</AllowEdit>
+														<ElementPosition>1968526670</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@SYS114320</HelpText>
+														<Skip>Yes</Skip>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>CurrencyCode</DataField>
+														<DataSource>CustTrans_Refund</DataSource>
+													</AxFormControl>
+												</Controls>
+												<DataSource>CustTransOpen_Refund</DataSource>
+												<ShowRowLabels>No</ShowRowLabels>
+												<VisibleRows>6</VisibleRows>
+												<VisibleRowsMode>Fixed</VisibleRowsMode>
+											</AxFormControl>
+										</Controls>
+										<Caption>@MAZ11992</Caption>
+									</AxFormControl>
+								</Controls>
+								<Columns>3</Columns>
+								<Columnspace>0</Columnspace>
+								<ColumnspaceMode>Fixed</ColumnspaceMode>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>SelectToPay</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1798517553</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>SelectToPay_Grid</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>IsMarkedForSettlement</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>357913940</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS24864</HelpText>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<DataMethod>editIsMarkedForSettlement</DataMethod>
+										<DataSource>CustTransOpen</DataSource>
+										<Label>@SYS19120</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ReferenceId</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>536870910</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS107402</HelpText>
+										<Skip>Yes</Skip>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>TransRefId</DataField>
+										<DataSource>custTransIdRef</DataSource>
+										<Label>@SYS107394</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>ReferenceType</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>715827880</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS107403</HelpText>
+										<Skip>Yes</Skip>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>TransRefType</DataField>
+										<DataSource>custTransIdRef</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>CustTrans_HMAppointmentNumber</Name>
+										<ElementPosition>894784850</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMAppointmentNumber[1]</DataField>
+										<DataSource>CustTrans</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Company</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1073741820</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS108571</HelpText>
+										<Skip>Yes</Skip>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>dataAreaId</DataField>
+										<DataSource>CustTransOpen</DataSource>
+										<Label>@SYS10499</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Voucher</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1252698790</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Skip>Yes</Skip>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Voucher</DataField>
+										<DataSource>CustTrans</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>AccountNum</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1431655760</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS108572</HelpText>
+										<Skip>Yes</Skip>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AccountNum</DataField>
+										<DataSource>CustTransOpen</DataSource>
+										<Label>@SYS24500</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>DueDate</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1610612730</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Skip>Yes</Skip>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>DueDate</DataField>
+										<DataSource>CustTransOpen</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>AmountAvailableToPay</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1789569700</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS114319</HelpText>
+										<Skip>Yes</Skip>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AmountCur</DataField>
+										<DataSource>CustTransOpen</DataSource>
+										<Label>@SYS114325</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Currency</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1968526670</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS114320</HelpText>
+										<Skip>Yes</Skip>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CurrencyCode</DataField>
+										<DataSource>CustTrans</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>CustTransOpen</DataSource>
+								<ShowRowLabels>No</ShowRowLabels>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS114329</Caption>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

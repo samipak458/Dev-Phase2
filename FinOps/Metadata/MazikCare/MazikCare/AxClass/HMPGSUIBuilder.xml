@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPGSUIBuilder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPGSUIBuilder extends SysOperationAutomaticUIBuilder
+{
+    DialogField     dialogTPA;
+    DialogField     dialogInsuranceCompany;
+    DialogField     dialogBatchNumber;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>batchLookup</Name>
+				<Source><![CDATA[
+    public void batchLookup(FormStringControl _lookup)
+    {
+        Query                   query = new Query();
+    QueryBuildDataSource    qbds;
+        SysTableLookup          sysTableLookup;
+        QueryBuildRange         qbr;
+        HMInsuranceCarrier      carrier = HMInsuranceCarrier::findByPartyName(dialogInsuranceCompany.value());
+    
+        if (_lookup!=null)
+        {
+            sysTableLookup = SysTableLookup::newParameters(tableNum(HMInsuranceCarrierBatchDetails), _lookup);
+    
+            qbds    = query.addDataSource(tableNum(HMInsuranceCarrierBatchDetails));
+    
+            qbr     = qbds.addRange(fieldNum(HMInsuranceCarrierBatchDetails, HMInsuranceCarrier));
+            qbr.Value(int642str(carrier.RecId));
+    
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, Month), true);
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, BatchNumber), true);
+    
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.performFormLookup();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>build</Name>
+				<Source><![CDATA[
+    public void build()
+    {
+        HMPGSContract   contract;
+    
+        contract = this.dataContractObject() as HMPGSContract;
+    
+        dialogTPA               = this.addDialogField(methodStr(HMGSSContract, parmTPACode), contract);
+        dialogInsuranceCompany  = this.addDialogField(methodStr(HMGSSContract, parmInsuranceCarrier), contract);
+        dialogBatchNumber       = this.addDialogField(methodStr(HMGSSContract, parmBatchNumber), contract);
+       /* dialogFromDate          = this.addDialogField(methodStr(HMGSSContract, parmFromDate), contract);
+        dialogToDate            = this.addDialogField(methodStr(HMGSSContract, parmToDate), contract);*/
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insuranceLookup</Name>
+				<Source><![CDATA[
+    public void insuranceLookup(FormStringControl _lookup)
+    {
+        Query                   query = new Query();
+    QueryBuildDataSource    qbds;
+        SysTableLookup          sysTableLookup;
+        QueryBuildRange         qbr;
+        HMTPA                   TPA;
+        HMTpaDetails            TPADetails;
+        boolean                 querySet = false;
+        HMInsuranceCarrier      carrier;
+    
+        if (_lookup!=null)
+        {
+            sysTableLookup = SysTableLookup::newParameters(tableNum(HMInsuranceCarrier), _lookup);
+    
+            qbds    = query.addDataSource(tableNum(HMInsuranceCarrier));
+    
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrier, Code), true);
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrier, Name), true);
+    
+            if (dialogTPA.value())
+            {
+                TPA = HMTPA::findByCode(dialogTPA.value());
+    
+                if (TPA)
+                {
+                    while select TPADetails
+                        where TPADetails.TPA == TPA.RecId
+                    {
+                        qbr     = qbds.addRange(fieldNum(HMInsuranceCarrier, RecId));
+                        qbr.Value(int642str(TPADetails.HMInsuranceCarrier));
+                        querySet = true;
+                    }
+                }
+    
+                if (!querySet)
+                {
+                    qbr     = qbds.addRange(fieldNum(HMInsuranceCarrier, RecId));
+                    qbr.Value('111');
+                }
+            }
+            else
+            {
+                while select carrier
+                    notExists join TPADetails
+                        where TPADetails.HMInsuranceCarrier == carrier.RecId
+                {
+                    qbr     = qbds.addRange(fieldNum(HMInsuranceCarrier, RecId));
+                    qbr.Value(int642str(carrier.RecId));
+                    querySet = true;
+                }
+            }
+    
+    
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.performFormLookup();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modified</Name>
+				<Source><![CDATA[
+    public boolean modified(FormStringControl _control)
+    {
+        dialogInsuranceCompany.value(_control.valueStr());
+        dialogBatchNumber.value('');
+    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedTPA</Name>
+				<Source><![CDATA[
+    public boolean modifiedTPA(FormStringControl _control)
+    {
+        dialogInsuranceCompany.value('');
+        dialogBatchNumber.value('');
+    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postBuild</Name>
+				<Source><![CDATA[
+    public void postBuild()
+    {
+        super();
+    
+        dialogTPA.registerOverrideMethod(methodStr(FormStringControl, lookup),                  methodStr(HMGSSUIBuilder, TPALookup),       this);
+        dialogTPA.registerOverrideMethod(methodStr(FormStringControl, modified),                methodStr(HMGSSUIBuilder, modifiedTPA),     this);
+        dialogInsuranceCompany.registerOverrideMethod(methodStr(FormStringControl, lookup), methodStr(HMPGSUIBuilder, insuranceLookup), this);
+        dialogInsuranceCompany.registerOverrideMethod(methodStr(FormStringControl, modified), methodStr(HMPGSUIBuilder, modified), this);
+        dialogBatchNumber.registerOverrideMethod(methodStr(FormStringControl, lookup), methodStr(HMPGSUIBuilder, batchLookup), this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>TPALookup</Name>
+				<Source><![CDATA[
+    public void TPALookup(FormStringControl _lookup)
+    {
+        Query                   query = new Query();
+    QueryBuildDataSource    qbds;
+        SysTableLookup          sysTableLookup;
+    
+        if (_lookup!=null)
+        {
+            sysTableLookup = SysTableLookup::newParameters(tableNum(HMTPA), _lookup);
+    
+            qbds    = query.addDataSource(tableNum(HMTPA));
+    
+            sysTableLookup.addLookupField(fieldNum(HMTPA, Name), true);
+            sysTableLookup.addLookupField(fieldNum(HMTPA, Code), true);
+    
+            sysTableLookup.addSelectionField(fieldNum(HMTPA, Code));
+    
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.performFormLookup();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

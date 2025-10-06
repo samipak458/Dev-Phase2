@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>MZKCreateInventItem</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Removed unused footnote group. */
+/* TODO: (Code Upgrade) Duplicate captions or extra secondary instruction were detected for this form, but the control MainInstruction is potentially referenced in code. The control is deleted and replaced with a string control which has the same name as the original static text control. You need to delete this replacement string control and ensure no code referencing it remains. Logic should instead be performed on formDesign.Caption or the secondary instruction control if you need to programmatically modify it. */
+[Form]
+public class MZKCreateInventItem extends FormRun
+{
+
+    AssetTable      assetTable;
+    FormDataSource  callerDataSource;
+ 
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        RecId     assetRecId;
+
+        super();
+
+        if(element.args().record().RecId)
+        {
+            assetRecId = element.args().record().RecId;
+            assetTable = AssetTable::findByRecId(assetRecId);
+            SerialNumber.text(assetTable.AssetId);
+            callerDataSource = element.args().record().dataSource();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+       /// <summary>
+       /// /
+       /// </summary>
+        public void clicked()
+        {
+            MZKCreateItemNInventory     createItemInventory;
+            FixedAssetITems             fixedAssetItems, fixedAssetItemsSerialId;
+            InventTable                 InventTable,inventTableUpdate;
+            AssetTable                  assetTableUpdate;
+
+            createItemInventory = new MZKCreateItemNInventory();
+            select * from fixedAssetItemsSerialId
+                where fixedAssetItemsSerialId.AssetId == assetTable.AssetId
+                    && fixedAssetItemsSerialId.InventSerialId == SerialNumber.text();
+
+            if(!fixedAssetItemsSerialId)
+            {
+                if(assetTable.AssetId)
+                {
+                    select * from InventTable
+                        where InventTable.ItemId == assetTable.AssetId;
+
+                    select * from fixedAssetItems
+                        where fixedAssetItems.AssetId == assetTable.AssetId;
+
+                    if(!InventTable)
+                    {
+                        MZKCreateItemNInventory::createReleasedProduct(SerialNumber.text(), assetTable.AssetId);
+                    }
+                    else
+                    {
+                        MZKCreateItemNInventory::createMovementJournal(fixedAssetItems.ItemId, SerialNumber.text(), fixedAssetItems.AssetId);
+
+                        if (!fixedAssetItems)
+                        {
+                            fixedAssetItems.clear();
+                            fixedAssetItems.AssetId = assetTable.AssetId;
+                            fixedAssetItems.ItemId = assetTable.AssetId;
+                            fixedAssetItems.InventSerialId = SerialNumber.text();
+                            fixedAssetItems.insert();
+                        }
+                        ttsbegin;
+                        //Update ItemId on AssetTable table
+                        select forupdate assetTableUpdate where assetTableUpdate.AssetId == assetTable.AssetId;
+                        if (assetTableUpdate.RecId && !assetTableUpdate.ItemId)
+                        {
+                            assetTableUpdate.ItemId = assetTable.AssetId;
+                            assetTableUpdate.update();
+                        }
+
+                        //Update AssetId on inventTable table
+                        select forupdate inventTableUpdate where inventTableUpdate.ItemId == assetTable.AssetId;
+                        if (inventTableUpdate.RecId && !inventTableUpdate.AssetId)
+                        {
+                            inventTableUpdate.AssetId = assetTable.AssetId;
+                            inventTableUpdate.update();
+                        }
+                        ttscommit;
+
+                    }
+                    info(strFmt("Inventory Item: %1, with Serial number: %2 created.", assetTable.AssetId, SerialNumber.text()));
+
+                    callerDataSource.refresh();
+                    callerDataSource.reread();
+                    callerDataSource.research(true);
+                }
+            }
+            else
+                checkFailed(strFmt("This serial number is already used for item: %1", assetTable.AssetId));
+
+            this.formRun().close();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">Create inventory item</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormStaticTextControl">
+				<Name>SupplementalInstruction</Name>
+				<ElementPosition>1073741823</ElementPosition>
+				<ExtendedStyle>dialog_secondaryInstruction</ExtendedStyle>
+				<FilterExpression>%1</FilterExpression>
+				<Type>StaticText</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<Visible>No</Visible>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<DisplayHeight>2</DisplayHeight>
+				<DisplayHeightMode>Fixed</DisplayHeightMode>
+				<DisplayLength>80</DisplayLength>
+				<DisplayLengthMode>Fixed</DisplayLengthMode>
+				<Text></Text>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>MainInstruction</Name>
+						<HelpText>Replacement for extra main instruction static text control</HelpText>
+						<Type>String</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>Main Instruction</Label>
+						<Text>Create inventory item</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>SerialNumber</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612734</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>Serial number</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<SaveRecord>No</SaveRecord>
+						<Text>OK</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

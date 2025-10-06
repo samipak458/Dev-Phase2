@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPaymentReceiptDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMPaymentReceiptContract))
+]
+class HMPaymentReceiptDP extends SRSReportDataProviderBase
+{
+    HMPaymentReceiptHeader      hmPaymentReceiptHeader;
+    HMPaymentReceiptLines       hmPaymentReceiptLines;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMPaymentReceiptHeader</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('hmPaymentReceiptHeader')]
+    public hmPaymentReceiptHeader getHMPaymentReceiptHeader()
+    {
+        select hmPaymentReceiptHeader;
+    
+        return hmPaymentReceiptHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMPaymentReceiptLine</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('hmPaymentReceiptLine')]
+    public HMPaymentReceiptLines getHMPaymentReceiptLine()
+    {
+        select hmPaymentReceiptLines;
+    
+        return hmPaymentReceiptLines;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getJournalNameFromCustTrans</Name>
+				<Source><![CDATA[
+    public str getJournalNameFromCustTrans(RefRecId _custTransRecId)
+    {
+        LedgerJournalTrans ledgerJournalTrans;
+    
+        select firstOnly ledgerJournalTrans
+                where ledgerJournalTrans.CustTransId == _custTransRecId;
+    
+        return ledgerJournalTrans.JournalNum;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemDescription</Name>
+				<Source><![CDATA[
+    private EcoResDescription itemDescription(ItemId _itemId)
+    {
+        EcoResDescription description;
+        HMInventTable hmInventTable;
+        InventTable inventTable;
+    
+        select DIN from hmInventTable
+            join * from inventTable
+                where hmInventTable.InventTable == _itemId
+                && inventTable.ItemId == _itemId;
+    
+        description = inventTable.itemDescriptionOrName();
+    
+        return description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paymentReference</Name>
+				<Source><![CDATA[
+    private str paymentReference(CustInvoiceJour custInvoiceJour)
+    {
+        CustSettlement  settlement;
+        CustTrans       custTransInvoice;
+        str             paymReference;
+    
+        while select Recid from settlement
+            where settlement.OffsetRecid == custInvoiceJour.custTrans().RecId
+            join PaymReference from custTransInvoice
+            where settlement.TransCompany == custTransInvoice.dataAreaId
+            && settlement.TransRecId == custTransInvoice.RecId
+            && settlement.AccountNum == custTransInvoice.AccountNum
+        {
+            paymReference += custTransInvoice.PaymReference + '; ';
+        }
+    
+        return paymReference;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        RecId   billedToAddress;
+        real    paidAmount, refundAmount;
+        List            refundTransactions = new List(Types::Int64);
+        ListIterator    refundTransIterator;
+    
+        HMCaseTrans                     caseTrans, caseTransRefund;
+        HMCaseTransDetail               caseTransDetails, caseTransDetailsLocal;
+        CustTrans                       custTrans;
+        LedgerJournalTable              journalTable;
+        LedgerJournalTrans              ledgerJournalTrans;
+        HMInsuranceCarrier              carrier;
+        HMPaymentReceiptContract        dataContract;
+        CompanyInfo                     companyInfo;
+        InventTable                     inventTable;
+        HMPatient                       hmPatient;
+        DirPerson                       dirPerson;
+        HMPatientInsurance              patientInsurance;
+        HMInsuranceContractClassOrPlans plan;
+        HMInsuranceContract             contract;
+        int                             refundFactor = 1;
+        String50                        journalNumber;
+        string100                             callerMenuName;
+        HMCasePaymtReceivedDetails      paymentDetails;
+        HMCase                          hmCase;
+        Set                             setJournalNames = new Set(Types::String);
+    
+    
+        HMOrganizationalUnit                    organizationalUnit;
+        hmResourceSchedulingAppointment         appointment;
+        HMResourceSchedulingPlanningObject      planning;
+        HMInsuranceContractCarrierCombination   combination;
+    
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject  HMResourceSchedulingPlanningObject;
+        HMResourceMaster                    resourceMaster;
+    
+        companyInfo         = companyInfo::find();
+        dataContract        = this.parmDataContract() as HMPaymentReceiptContract;
+    
+        appointment = hmResourceSchedulingAppointment::find(dataContract.parmAppointmentRecId());
+        hmcase      = hmCase::find(dataContract.parmCaseRecId());
+    
+        if (appointment)
+        {
+            hmPatient           = HMPatient::find(appointment.HMPatient);
+            patientInsurance    = HMPatientInsurance::find(appointment.HMPatientInsurance);
+            planning            = HMResourceSchedulingPlanningObject::find(appointment.HMResourceSchedulingPlanningObject);
+            resourceMaster      = HMResourceMaster::find(planning.HMResourceMaster);
+            organizationalUnit  = HMOrganizationalUnit::find(planning.HMOrganizationalUnit);
+    
+        }
+        else if (hmCase)
+        {
+            hmPatient           = HMPatient::find(hmcase.HMPatient);
+            patientInsurance    = HMPatientInsurance::find(hmcase.HMPatientInsurance);
+            organizationalUnit  = HMOrganizationalUnit::find(hmCase.Clinic);
+        }
+    
+        if (appointment || hmCase)
+        {
+            dirPerson           = DirPerson::find(hmPatient.DirPartyTable);
+    
+            Plan        = HMInsuranceContractClassOrPlans::find(patientInsurance.HMInsuranceContractClassOrPlans);
+            Contract    = HMInsuranceContract::find(plan.HMInsuranceContract);
+            combination = HMInsuranceContractCarrierCombination::find(contract.HMInsuranceContractCarrierCombination);
+            carrier     = HMInsuranceCarrier::find(combination.HMInsuranceCarrier);
+    
+    
+            hmPaymentReceiptHeader.clear();
+    
+            hmPaymentReceiptHeader.PatientMRNumber      = hmPatient.getMRN();
+            HMPaymentReceiptHeader.PatientName          = dirPerson.getFullName();
+            HMPaymentReceiptHeader.PatientNameArabic    = dirPerson.getFullArabicName();
+    
+            HMPaymentReceiptHeader.ContractName         = contract.HMContractName;
+            HMPaymentReceiptHeader.DebtorName           = carrier.Name;
+            hmPaymentReceiptHeader.ClinicName           = organizationalUnit.Description;
+            //CS: Bug 3601:Cash Payment Receipt issues by Ammar.Ali
+            HMPaymentReceiptHeader.PhysicianName        = HMResourceMaster::find(hmCase.HMResourceMaster).Description;
+            //CE: Bug 3601:Cash Payment Receipt issues
+            hmPaymentReceiptHeader.InvoicedBy           = curUserId();
+            hmPaymentReceiptHeader.PrintedBy            = curUserId();
+    
+            if (appointment)
+            {
+                hmPaymentReceiptHeader.Heading = "Out patient invoice";
+                hmPaymentReceiptHeader.HeadingComplete = "فاتورة خارج المريض";
+    
+            }
+            else if (hmCase)
+            {
+                //CS: Bug 3601:Cash Payment Receipt issues by Ammar.Ali
+                //hmPaymentReceiptHeader.Heading = "Emergency patient invoice";
+                hmPaymentReceiptHeader.Heading = enum2Str(hmCase.HMCaseType) + " invoice";
+                //CE: Bug 3601:Cash Payment Receipt issues by Ammar.Ali
+                hmPaymentReceiptHeader.HeadingComplete = "فاتورة المريض في حالات الطوارئ";
+            }
+    
+            callerMenuName = dataContract.parmOutputSelection();
+    
+            if ( callerMenuName != 'PaymentReceiptReport')// && callerMenuName != "Refund" && (hmCase.HMPatient ))
+            {
+                while select journalTable
+                order by journalTable.PostedDateTime desc
+                where journalTable.Posted
+                    join ledgerJournalTrans
+                    where journalTable.JournalNum == ledgerJournalTrans.JournalNum
+                        join caseTransDetails
+                        where caseTransDetails.RefRecId     == ledgerJournalTrans.CustTransId
+                        && caseTransDetails.RefTableId      == tableNum(custTrans)
+                            join caseTrans
+                            where caseTransDetails.HMCaseTrans == caseTrans.RecId
+                                && (
+                                    (caseTrans.HMResourceSchedulingAppointment == appointment.RecId && appointment.RecId != 0)
+                                    || (caseTrans.HMCase == HMCase.RecId && HMCase.RecId != 0)
+                                    )
+                {
+                    journalNumber = journalTable.JournalNum;
+                    break;
+                }
+            }
+            else
+            {
+                journalNumber = '';
+            }
+    
+            while select caseTrans
+                where ((caseTrans.HMResourceSchedulingAppointment == appointment.RecId && appointment.RecId != 0)
+                        || (caseTrans.HMCase == HMCase.RecId && HMCase.RecId != 0))
+                exists join caseTransDetails
+                where   caseTransDetails.HMCaseTrans == caseTrans.RecId
+                        && ((
+                            (  caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::PatientPayment
+                            || caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::InsurancePayment)
+                                && caseTrans.BillingStatus == HMBillStatus::Paid
+                                && caseTransDetails.Reversed == false)
+                        ||
+                        (
+                            (caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::PatientRefund
+                            || caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::InsuranceRefund)
+                            && caseTrans.BillingStatus == HMBillStatus::NotPaid
+                            && (callerMenuName == "Refund")
+                        )
+                        )
+                        join LedgerJournalTrans
+                        where ledgerJournalTrans.CustTransId == caseTransDetails.RefRecId
+                        && caseTransDetails.RefTableId       == tableNum(custTrans)
+                        && (ledgerJournalTrans.JournalNum == journalNumber || !journalNumber)
+                        && (caseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Client || dataContract.parmResponsibility()  != 'Insurance')
+                        && (    (caseTrans.Urgency   == HMUrgency::Routine && dataContract.parmSource() == "Pharmacy")
+                            ||  (dataContract.parmSource() == "NotPharmacy"))
+            {
+    
+                select firstOnly caseTransDetailsLocal
+                    order by caseTransDetailsLocal.createdDateTime desc
+                    where caseTransDetailsLocal.HMCaseTrans == caseTrans.RecId
+                        && (caseTransDetailsLocal.TransactionType    == HMCaseTransDetailTransactionType::PatientPayment
+                            || caseTransDetailsLocal.TransactionType == HMCaseTransDetailTransactionType::InsurancePayment);
+    
+                paymentDetails = HMCasePaymtReceivedDetails::find(caseTransDetailsLocal.HMCasePaymtReceivedDetails);
+    
+                if (callerMenuName != "Refund")
+                {
+                    HMPaymentReceiptLines.clear();
+    
+                    HMPaymentReceiptLines.ItemId            = caseTrans.ItemId;
+                    HMPaymentReceiptLines.Description       = this.itemDescription(caseTrans.ItemId);//"Out-patient invoice - Patient share   فاتورة عيادات خارجية - تحمل المريض ";
+                    HMPaymentReceiptLines.Quantity          = caseTrans.Qty;
+                    HMPaymentReceiptLines.TransactionType   = enum2str(caseTransDetails.TransactionType);
+                    hmPaymentReceiptLines.ReceiptNumber     = journalNumber;
+    
+                    HMPaymentReceiptLines.InsuranceAmount    = caseTrans.InsuranceAmount;
+    
+                    HMPaymentReceiptLines.DeductibleActual      = (caseTrans.DeductibleActual + caseTrans.CashAmount) * refundFactor;
+                    HMPaymentReceiptLines.DiscountPercentage    = caseTrans.DiscPercent1        * refundFactor;
+                    HMPaymentReceiptLines.DiscountAmount        = (caseTrans.DiscountAmount)    * refundFactor;
+                    HMPaymentReceiptLines.UnitPrice             = caseTrans.SalesPrice          ;
+                    hmPaymentReceiptLines.CashAmount            = caseTrans.CashAmount          * refundFactor;
+    
+                    hmPaymentReceiptLines.ChangeDueAmount   = paymentDetails.ReturnedAmount;
+                    hmPaymentReceiptLines.PaidAmount        = paymentDetails.AmountPaid ;
+    
+                    HMPaymentReceiptLines.insert();
+                }
+                else
+                {
+                    refundFactor = -1;
+    
+                    if (hmCase.HMPatientInsurance || appointment.HMPatientInsurance)
+                    {
+                        refundTransactions = dataContract.parmRefundTransactions();
+    
+                        refundTransIterator = new ListIterator(refundTransactions);
+    
+                        if (refundTransactions)
+                        {
+                            while(refundTransIterator.more())
+                            {
+                                select AmountCurDebit from ledgerJournalTrans
+                                join journalTable
+                                    where journalTable.Posted
+                                    && journalTable.JournalNum == ledgerJournalTrans.JournalNum
+                                        exists join caseTransDetails
+                                        where caseTransDetails.RefRecId     == ledgerJournalTrans.CustTransId
+                                        && caseTransDetails.RefTableId      == tableNum(custTrans)
+                                        && (caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::PatientRefund
+                                            || caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::InsuranceRefund)
+                                        && caseTransDetails.RecId == refundTransIterator.value();
+    
+                                if (!setJournalNames.in(journalTable.JournalNum))
+                                {
+                                    refundAmount += ledgerJournalTrans.AmountCurDebit;
+                                    setJournalNames.add(journalTable.JournalNum);
+                                }
+                                journalNumber = ledgerJournalTrans.JournalNum;
+                                refundTransIterator.next();
+                            }
+                        }
+    
+                        HMPaymentReceiptLines.clear();
+    
+                        HMPaymentReceiptLines.ItemId            = "Refund";
+                        HMPaymentReceiptLines.Description       = "Amount Paid to the patient.";
+                        hmPaymentReceiptLines.ReceiptNumber     = journalNumber;
+                        HMPaymentReceiptLines.InsuranceAmount   = refundAmount * refundFactor;
+    
+                        HMPaymentReceiptLines.DeductibleActual  = refundAmount * refundFactor;
+                        hmPaymentReceiptLines.CashAmount        = refundAmount * refundFactor;
+    
+                        HMPaymentReceiptLines.insert();
+                        break;
+    
+                    }
+                    else
+                    {
+                        HMPaymentReceiptLines.ItemId            = caseTrans.ItemId;
+                        HMPaymentReceiptLines.Description       = this.itemDescription(caseTrans.ItemId);//"Out-patient invoice - Patient share   فاتورة عيادات خارجية - تحمل المريض ";
+                        HMPaymentReceiptLines.Quantity          = caseTrans.Qty;
+                        HMPaymentReceiptLines.TransactionType   = enum2str(caseTransDetails.TransactionType);
+                        hmPaymentReceiptLines.ReceiptNumber     = journalNumber;
+    
+                        HMPaymentReceiptLines.InsuranceAmount    = caseTrans.InsuranceAmount;
+    
+                        HMPaymentReceiptLines.DeductibleActual      = (caseTrans.DeductibleActual + caseTrans.CashAmount)    * refundFactor;
+                        HMPaymentReceiptLines.DiscountPercentage    = caseTrans.DiscPercent1        * refundFactor;
+                        HMPaymentReceiptLines.DiscountAmount        = (caseTrans.DiscountAmount)    * refundFactor;
+                        HMPaymentReceiptLines.UnitPrice             = caseTrans.SalesPrice          * refundFactor;
+                        hmPaymentReceiptLines.CashAmount            = caseTrans.CashAmount          * refundFactor;
+    
+                        HMPaymentReceiptLines.insert();
+                    }
+                }
+            }
+    
+            if (!paymentDetails)
+            {
+                while select  hmPaymentReceiptLines
+                {
+                    paidAmount        += hmPaymentReceiptLines.CashAmount + HMPaymentReceiptLines.DeductibleActual ;
+                }
+    
+                while select forUpdate hmPaymentReceiptLines
+                {
+                    ttsBegin;
+                    hmPaymentReceiptLines.ChangeDueAmount   = 0;
+                    hmPaymentReceiptLines.PaidAmount        = paidAmount ;
+                    hmPaymentReceiptLines.update();
+                    ttsCommit;
+                }
+            }
+    
+            HMPaymentReceiptHeader.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimActionAndNoteCreateBulkBatch</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClaimActionAndNoteCreateBulkBatch extends RunBaseBatch
+{
+    QueryRun            gQueryRun;
+    int                 sleepTime;
+    DialogField         dlgNumberOfRecords,dlgSleepTime;
+    int   numberOfRecords;
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.NumberofRecords
+        numberOfRecords
+    #endmacro
+    #localmacro.SleepTime
+        sleepTime
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    public server static HMClaimActionAndNoteCreateBulkBatch construct()
+    {
+        return new HMClaimActionAndNoteCreateBulkBatch();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args args)
+    {
+        HMClaimActionAndNoteCreateBulkBatch obj = HMClaimActionAndNoteCreateBulkBatch::construct();
+
+        obj.caption();
+        obj.initQueryRun();
+
+        if (obj.prompt())
+        {
+            obj.run();
+        }
+            
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    static ClassDescription description()
+    {
+        return "Create action and notes in bulk";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        HMClaimTable hmClaimTable,hmCLaimTableUpdate;
+        HMClaimNotes hmCLaimNotes;
+
+        
+
+        for(int i = 0; i<numberOfRecords; i++)
+        {
+            gQueryRun = new QueryRun(gQueryRun.query());
+            while(gQueryRun.next())
+            {
+                hmClaimTable = gQueryRun.get(tableNum(HMClaimTable));
+                try
+                {
+                    ttsbegin;
+                    select forupdate hmCLaimTableUpdate where hmCLaimTableUpdate.RecId == hmClaimTable.RecId;
+
+                    hmCLaimNotes.HMClaimTable = hmCLaimTableUpdate.RecId;
+
+                    hmCLaimNotes.HMClaimProcessStatus = 'Acute-PPay';
+                    hmCLaimNotes.HMActionType = 'Add to Payer Project';
+                    hmCLaimNotes.HMDecisionBasedOn = HMDecisionBasedOn::Call;
+                    hmCLaimNotes.HMReferenceNumber = "Test reference";
+                    hmCLaimNotes.HMICNNumber = "Test ICN";
+                    hmCLaimNotes.HMFollowUp = systemDateGet() + 10;
+                    hmCLaimNotes.Notes = strFmt ("This is a test claim notes created through a batch job on %1 UTC 0 with record count number %2",DateTimeUtil::utcnow(), i);
+                    hmCLaimNotes.insert();
+
+                    hmCLaimTableUpdate.HMClaimLatestNote_Internal             = hmCLaimNotes.Notes;
+                    hmCLaimTableUpdate.HMClaimLatestNoteDate_Internal         = HMClaimNotes.ModifiedDateTime;
+                    hmCLaimTableUpdate.HMClaimLatestNoteCreatedBy_Internal    = HMClaimNotes.ModifiedBy;
+                    hmCLaimTableUpdate.update();
+                    ttscommit;
+                    System.Threading.Thread::Sleep(sleepTime);
+                }
+                catch
+                {
+                    warning(strFmt("Record for claim id %1 failed to insert on count %2",hmClaimTable.claimid ,i));
+                }
+
+            }
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        container pack = conNull();
+
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+
+        return [#CurrentVersion] + [pack] + [#numberOfRecords] + [#sleepTime];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #numberOfRecords, #sleepTime] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+            default:
+                ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQueryRun</Name>
+				<Source><![CDATA[
+    public void parmQueryRun(QueryRun _qr)
+    {
+        gQueryRun = _qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNmberOfRecords</Name>
+				<Source><![CDATA[
+    public void parmNmberOfRecords(int _numberOfRecords)
+    {
+        numberOfRecords = _numberOfRecords;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    // <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    public boolean canGoBatchJournal()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryRun</Name>
+				<Source><![CDATA[
+    public QueryRun queryRun()
+    {
+        return gQueryRun;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQueryRun</Name>
+				<Source><![CDATA[
+    public void initQueryRun()
+    {
+        Query   query;
+        
+        query = new Query (queryStr(HMAssignPriorityToClaimsQuery));
+
+        gQueryRun = new QueryRun(query);
+        gQueryRun.saveUserSetup(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void initParmDefault()
+    {
+        this.initQueryRun();
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQueryValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// </summary>
+    /// <returns></returns>
+    public boolean showQueryValues()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    public Object dialog()
+    {
+        DialogRunbase dialog = super();
+
+        dlgNumberOfRecords = dialog.addFieldValue(extendedTypeStr(Integer), numberOfRecords, "Number of records to insert");
+        dlgSleepTime = dialog.addFieldValue(extendedTypeStr(Integer), sleepTime, "Sleep for (ms)");
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public boolean getFromDialog()
+    {
+        numberOfRecords = dlgNumberOfRecords.value();
+        sleepTime = dlgSleepTime.value();
+        return super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

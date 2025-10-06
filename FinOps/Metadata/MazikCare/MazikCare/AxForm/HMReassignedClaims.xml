@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMReassignedClaims</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMReassignedClaims extends FormRun
+{   
+    str                     gPool;
+    CustCollectionsAgent    mzkCustCollectionsAgent = CustCollectionsAgent::findCurrentAgent();
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>assignPoolAndAgent</Name>
+				<Source><![CDATA[
+    public void assignPoolAndAgent(HMClaimTable _hmClaimTable,CustCollectionsPool _custCollectionsPool, RecId _agentId, str _agentName)
+    {
+        _hmClaimTable.selectForUpdate(true);
+
+        _hmClaimTable.ClaimPool = _custCollectionsPool.RecId;
+        _hmClaimTable.PoolName = _custCollectionsPool.Name;
+        _hmClaimTable.ClaimAgent = _agentId;
+        _hmClaimTable.AgentName = _agentName;
+        _hmClaimTable.update();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>Pool</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            FormStringControl       _control;
+            SysTableLookup			sysTableLookUp;
+            QueryBuildDataSource    qbdsCustcollectionsAgentPool;
+            Query					query = new Query();
+
+            qbdsCustcollectionsAgentPool = query.addDataSource(tableNum(CustCollectionsAgentPool));
+            qbdsCustcollectionsAgentPool.addRange(fieldNum(CustCollectionsAgentPool,CustCollectionsAgent)).value(queryValue(mzkCustCollectionsAgent.RecId));
+ 
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(CustCollectionsAgentPool), this);
+            sysTableLookUp.addLookupfield(fieldNum(CustCollectionsAgentPool,CustomerPoolId), true);
+
+            sysTableLookUp.parmQuery(query);
+            sysTableLookUp.performFormLookup();
+
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <returns></returns>
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+
+            gPool = this.text();
+
+            Agent.lookup();
+                
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Agent</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            FormStringControl       _control;
+            SysTableLookup			sysTableLookUp;
+            QueryBuildDataSource	qbdsCustCollectionsAgent;
+            QueryBuildDataSource	qbdsDirPartyRelationship;
+            QueryBuildDataSource	qbdsDirPartyTable;
+            QueryBuildDataSource    qbdsCustcollectionsAgentPool;
+            Query					query = new Query();
+
+            qbdsDirPartyTable = query.addDataSource(tableNum(DirPartyTable));
+            qbdsDirPartyRelationship = qbdsDirPartyTable.addDataSource(tableNum(DirPartyRelationship));
+            qbdsDirPartyRelationship.addLink(fieldNum(DirPartyTable,RecId),fieldNum(DirPartyRelationship,ChildParty));
+            qbdsDirPartyRelationship.joinMode(joinMode::InnerJoin);
+            qbdsCustCollectionsAgent = qbdsDirPartyRelationship.addDataSource(tableNum(CustCollectionsAgent));
+            qbdsCustCollectionsAgent.addLink(fieldNum(DirPartyRelationship,RecId),fieldNum(CustCollectionsAgent,DirPartyRelationship));
+            qbdsCustCollectionsAgent.joinMode(joinMode::InnerJoin);
+            qbdsCustCollectionsAgentPool = qbdscustCollectionsAgent.addDataSource(tableNum(CustCollectionsAgentPool));
+            qbdsCustCollectionsAgentPool.addLink(fieldNum(CustCollectionsAgent,RecId),fieldNum(CustCollectionsAgentPool,CustCollectionsAgent));
+            qbdsCustCollectionsAgentPool.joinMode(joinMode::InnerJoin);
+            qbdsCustCollectionsAgentPool.addRange(fieldNum(CustCollectionsAgentPool,CustomerPoolId)).value(SysQuery::value(gPool));
+
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(DirPartyTable), this);
+            sysTableLookUp.addLookupfield(fieldNum(DirPartyTable, Name), true);
+
+            sysTableLookUp.parmQuery(query);
+
+            sysTableLookUp.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CommandOK</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            FormRun                 formRun;
+            
+            formRun = element.args().caller();
+            formDataSource fds = formRun.dataSource();
+            super();
+
+            MultiSelectionHelper	    multiSelectionHelper;
+            HMClaimTable			    claimTable;
+            CustCollectionsAgent	    getCustCollectionsAgent;
+            CustCollectionsPool         getCustCollectionsPool;
+            DirPartyRelationship	    getDirPartyRelationship;
+            DirPartyTable			    partyTable;
+            CustCollectionsAgentPool	getCustCollectionsAgentPool;
+
+            select firstonly getCustCollectionsPool
+                where getCustCollectionsPool.Name == Pool.text();
+
+            if (getCustCollectionsPool.RecId == 0)
+            {
+                throw Error("Pool must selected");
+            }
+
+            if (Agent.text())
+            {
+                
+                select firstonly RecId from getCustCollectionsAgent
+                    join getDirPartyRelationship
+                        where getDirPartyRelationship.RecId == getCustCollectionsAgent.DirPartyRelationship
+                    join partyTable
+                        where partyTable.RecId == getDirPartyRelationship.ChildParty
+                            && partyTable.Name == Agent.text();
+
+                if (getCustCollectionsAgent.RecId == 0)
+                {
+                    throw Error ("Please select valid collection agent");
+                }
+            }
+
+            multiSelectionHelper = MultiSelectionHelper::construct();
+            multiSelectionHelper.parmDatasource(fds);
+
+            claimTable = multiSelectionHelper.getFirst();
+
+ 
+            if (SkipClaims.value() == false)
+            {
+                while (claimTable.RecId != 0)
+                {
+                    ttsbegin;
+                    element.assignPoolAndAgent(claimTable,getCustCollectionsPool,getCustCollectionsAgent.RecId,Agent.text());
+                    ttscommit;
+
+                    claimTable = multiSelectionHelper.getNext();
+                }
+
+                fds.research();
+                fds.refresh();
+            }
+            else
+            {
+                while (claimTable.RecId !=0 )
+                {
+                    if (claimTable.ClaimAgent == 0)
+
+                    {
+                        ttsbegin;
+                        element.assignPoolAndAgent(claimTable,getCustCollectionsPool,getCustCollectionsAgent.RecId,Agent.text());
+                        ttscommit;
+                    }
+
+                    claimTable = multiSelectionHelper.getNext();
+                }
+                fds.research();
+                fds.refresh();
+            }
+
+            element.close();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@MAZ:HMPoolAgentAssign</Caption>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Pool</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS10507</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Agent</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS65249</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>SkipClaims</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1561806288</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>CheckBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ:HMButtonLabel</Label>
+						<Value>1</Value>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandOK</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<AutoRefreshData>Yes</AutoRefreshData>
+						<ButtonDisplay>TextOnly</ButtonDisplay>
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@MAZ6110</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

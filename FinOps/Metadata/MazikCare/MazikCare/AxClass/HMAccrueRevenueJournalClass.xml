@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAccrueRevenueJournalClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMAccrueRevenueJournalClass
+{
+    LedgerJournalTable ledgerJournalTable;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createGeneralJournal</Name>
+				<Source><![CDATA[
+    private LedgerJournalId createGeneralJournal()
+    {
+        LedgerJournalName                       LedgerJournalName;
+        LedgerJournalTableData                  jourTableData;
+        //Zain  -- In AX7 AxLedgerJournalTable is deprecated.
+        //AxLedgerJournalTable                    header = new AxLedgerJournalTable();
+        LedgerJournalName = LedgerJournalName::find(HMBillParameters::getAccrueRevenueJournalName());
+        if (LedgerJournalName.RecId)
+        {
+            //header.parmJournalName(LedgerJournalName.JournalName);
+            //header.parmJournalType(LedgerJournalType::Daily);
+            //header.save();
+            //ledgerJournalTable = header.ledgerJournalTable();
+            //return header.parmJournalNum();
+            ledgerJournalTable.JournalName = LedgerJournalName.JournalName;
+            ledgerJournalTable.initFromLedgerJournalName();
+            jourTableData = JournalTableData::newTable(ledgerJournalTable);
+            ledgerJournalTable.JournalNum = jourTableData.nextJournalId();
+            ledgerJournalTable.Name = "Daily Trans";
+            ledgerJournalTable.JournalType = LedgerJournalType::Daily;
+            ledgerJournalTable.insert();
+            return ledgerJournalTable.JournalNum;
+            //Zain
+        }
+        else
+        {
+            checkfailed("@MAZ13252");
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createLines</Name>
+				<Source><![CDATA[
+    public void createLines(List _list, boolean _reverse = false, boolean _fromService = false)
+    {
+        ListEnumerator              listEnumerator;
+        boolean                     isFirst = true;
+        HMCaseTrans                 hmCaseTrans;
+        LedgerJournalId               journalId;
+        //Zain  -- In AX7 AxLedgerJournalTrans has been deprecated
+        //AxLedgerJournalTrans        journalTrans;
+        HMCaseTransDetail           hmCaseTransDetail;
+        LedgerJournalCheckPost      LedgerJournalCheckPost;
+        LedgerJournalTrans          ledgerJournalTrans;
+        HMFinancialDimensionHelper  dimensionHelper = new HMFinancialDimensionHelper();
+        HMDimensionClass            HMDimensionClass =new HMDimensionClass();
+        MainAccountNum              mainAccountId;
+        AmountMst                   reverseAmount,insuranceAmount;
+        NumberSeq                               numberSeq;
+    
+    
+        //Zain  
+        // Accrue journal posting is now parameterized.
+        if(HMBillParameters::find().EnableAccrueJournal)
+        {
+            listEnumerator = _list.getEnumerator();
+            ttsBegin;
+            while(listEnumerator.moveNext())
+            {
+                hmCaseTrans = listEnumerator.current();
+                if(_reverse)
+                {
+                    select forupdate Value,RecId,Reversed  from hmCaseTransDetail
+                where hmCaseTransDetail.hmcaseTrans == hmCaseTrans.RecId
+                && hmCaseTransDetail.TransactionType == HMCaseTransDetailTransactionType::AccrueRevenue
+                && hmCaseTransDetail.Reversed == NoYes::No;
+                    if(!hmCaseTransDetail)
+                    {
+                        continue;
+                    }
+    
+                    reverseAmount = hmCaseTransDetail.Value;
+                    if(reverseAmount == 0)
+                    {
+                        continue;
+                    }
+                    hmCaseTransDetail.Reversed = NoYes::Yes;
+                    hmCaseTransDetail.update();
+                }
+    
+    
+                if(hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Patient)
+                {
+                    continue;
+                }
+                if(isFirst)
+                {
+                    isFirst = false;
+                    journalId = this.createGeneralJournal();
+                }
+                if(ledgerJournalTable)
+                {
+    
+                    numberSeq                                   =   NumberSeq::newGetVoucherFromId((LedgerJournalName::find(ledgerJournalTable.JournalName).NumberSequenceTable));
+    
+                    ledgerJournalTrans.Voucher                  =   numberSeq.voucher();
+
+                    //journalTrans = new AxLedgerJournalTrans();
+                    //journalTrans.parmJournalNum(ledgerJournalTable.JournalNum);
+                    ledgerJournalTrans.JournalNum = journalId;
+                    ledgerJournalTrans.CurrencyCode = Ledger::accountingCurrency(CompanyInfo::current());
+                    ledgerJournalTrans.ExchRate = 1.0;
+                    ledgerJournalTrans.AccountType = LedgerJournalACType::Ledger;
+                    ledgerJournalTrans.DefaultDimension = dimensionHelper.GetDefaultDimensionForAccrueJournal(hmCaseTrans);
+
+
+                    ////journalTrans.parmAccountType(LedgerJournalACType::Ledger);
+                    ////journalTrans.parmDefaultDimension(dimensionHelper.GetDefaultDimensionForAccrueJournal(hmCaseTrans));
+    
+                    mainAccountId = MainAccount::findByLedgerDimension(this.getPostingAccountByItemAndAcctType(hmCaseTrans.ItemId, InventAccountType::SalesPckSlipRevenueOffsetAccount)).MainAccountId;
+
+                    ledgerJournalTrans.LedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, ledgerJournalTrans.DefaultDimension);//journalTrans.parmDefaultDimension());
+    
+                    //journalTrans.parmLedgerDimension(this.getPostingAccountByItemAndAcctType(hmCaseTrans.ItemId, InventAccountType::SalesPckSlipRevenue));
+                    ////journalTrans.parmLedgerDimension(HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, journalTrans.parmDefaultDimension()));
+    
+                    //journalTrans.parmOffsetAccountType(LedgerJournalACType::Ledger);
+                    //journalTrans.parmOffsetLedgerDimension(this.getPostingAccountByItemAndAcctType(hmCaseTrans.ItemId, InventAccountType::SalesPckSlipRevenueOffsetAccount));
+                    mainAccountId = MainAccount::findByLedgerDimension(this.getPostingAccountByItemAndAcctType(hmCaseTrans.ItemId, InventAccountType::SalesPckSlipRevenue)).MainAccountId;
+                    ledgerJournalTrans.OffsetAccountType = LedgerJournalACType::Ledger;
+                    ledgerJournalTrans.OffsetLedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, ledgerJournalTrans.DefaultDimension);
+    
+                    ////ledgerJournalTrans = journalTrans.ledgerJournalTrans();
+                
+                    //ledgerJournalTrans.OffsetLedgerDimension = this.getPostingAccountByItemAndAcctType(hmCaseTrans.ItemId, InventAccountType::SalesPckSlipRevenueOffsetAccount);
+                    //ledgerJournalTrans.OffsetLedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, journalTrans.parmDefaultDimension());
+                    //journalTrans.parmOffsetLedgerDimension(this.getPostingAccountByItemAndAcctType(hmCaseTrans.ItemId, InventAccountType::SalesPackingSlipOffsetAccount));
+    
+                    //journalTrans.parmTransDate(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+                    //if(!journalTrans.parmLedgerDimension() ||!journalTrans.parmOffsetLedgerDimension())
+                    //{
+                    //    ttsAbort;
+                    //    return;
+                    //}
+                    ledgerjournaltrans.TransDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    if(!ledgerJournalTrans.LedgerDimension || !ledgerJournalTrans.OffsetLedgerDimension)
+                    {
+                        ttsabort;
+                        return;
+                    }
+                    if(_reverse)
+                    {
+    
+                        reverseAmount = decRound(reverseAmount,2);
+                        //journalTrans.parmAmountCurCredit(reverseAmount);
+                        ledgerJournalTrans.AmountCurCredit = reverseAmount;
+                    }
+                    else
+                    {
+                        insuranceAmount = decRound(hmCaseTrans.TotalAmount,2);
+                        //journalTrans.parmAmountCurDebit(hmCaseTrans.TotalAmount);
+                        ledgerJournalTrans.AmountCurDebit = hmCaseTrans.TotalAmount;
+                    }
+    
+                    //journalTrans.save();
+                    ledgerJournalTrans.insert();
+    
+                    if(_reverse)
+                    {
+                        //hmCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,HMCaseTransDetailTransactionType::AccrueRevenueReturned,journalTrans.parmRecId(),tableNum(InventJournalTrans),reverseAmount);
+                        hmCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,HMCaseTransDetailTransactionType::AccrueRevenueReturned, ledgerJournalTrans.RecId,tableNum(InventJournalTrans),reverseAmount);
+                    }
+                    else
+                    {
+                        //hmCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,HMCaseTransDetailTransactionType::AccrueRevenue,journalTrans.parmRecId(),tableNum(InventJournalTrans),hmCaseTrans.TotalAmount);
+                        hmCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,HMCaseTransDetailTransactionType::AccrueRevenue, ledgerJournalTrans.RecId,tableNum(InventJournalTrans),hmCaseTrans.TotalAmount);
+                    }
+    
+                }
+
+                if(!_fromService)
+                {
+                    this.updateCaseTransInventoryStatus(hmCaseTrans, HMServiceStatus::Complete);
+                }
+            }
+            if(!isFirst)
+            {
+                LedgerjournalCheckPost = LedgerjournalCheckPost::newLedgerJournalTable(ledgerJournalTable,NoYes::Yes);
+                LedgerjournalCheckPost.run();
+            }
+            ttsCommit;
+        }
+        //Zain
+
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPostingAccountByItemAndAcctType</Name>
+				<Source><![CDATA[
+    private DimensionDynamicAccount getPostingAccountByItemAndAcctType(ItemId _itemId, InventAccountType _accountType)
+    {
+        InventPosting   inventPOsting;
+        InventTable     inventTable;
+        ItemGroupId     itemGroupId;
+        //get by item
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::Table
+            && inventPOsting.ItemRelation == _itemId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        itemGroupId = InventItemGroupItem::findByItemIdLegalEntity(_itemId, curext()).ItemGroupId;
+    
+        //get by item group
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::GroupId
+            && inventPOsting.ItemRelation == itemGroupId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+    
+        //get by all
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::All;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        return checkFailed(strFmt("Could not find ledger dimension in posting profile for packing slip revenue against %1",_itemId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createJournalLines</Name>
+				<Source><![CDATA[
+    public static void createJournalLines(List _list,boolean _reverse = false)
+    {
+        HMAccrueRevenueJournalClass objClass = new HMAccrueRevenueJournalClass();
+        objClass.createLines(_list,_reverse);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTransInventoryStatus</Name>
+				<Source><![CDATA[
+    public void updateCaseTransInventoryStatus(HMCaseTrans _caseTrans, HMServiceStatus _hmserviceStatus)
+    {
+        HMCaseTrans caseTransLocal;
+    
+        caseTransLocal = HMCaseTrans::find(_caseTrans.RecId, true, ConcurrencyModel::Auto);
+    
+        caseTransLocal.HMServiceStatus = _hmserviceStatus;
+    
+        ttsBegin;
+        caseTransLocal.update();
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

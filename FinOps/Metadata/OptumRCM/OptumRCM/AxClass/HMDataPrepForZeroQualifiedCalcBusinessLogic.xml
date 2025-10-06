@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDataPrepForZeroQualifiedCalcBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used to implement the business logic for data preparation of updation of aging days batch job for $0 denied claims
+/// </summary>
+class HMDataPrepForZeroQualifiedCalcBusinessLogic
+{
+    SysGuid                  currentGuid;
+    int                      taskNumber;
+    RecId                    hmClaimBatchJobLogsHeader;
+    HMLastPostingCodes       postedCodes;
+    HMDaysSinceDenialPosting daysSinceDenialPosting;
+    
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMDataPrepForZeroQualifiedCalcBusinessLogic construct()
+    {
+        return new HMDataPrepForZeroQualifiedCalcBusinessLogic();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method processes the insertion of the data into the data preparation table
+    /// </summary>
+    /// <param name="_queryRun"><c>QueryRun</c> object</param>
+    /// <param name="_taskNumber">Batch task number</param>
+    /// <param name="_hmClaimBatchJobLogsHeader"><c>HMClaimBatchJobLogsHeader</c> record id</param>
+    /// <param name="_lastPostedCodes">Post code parameter from batch job dialog</param>
+    /// <param name="_daysSinceDenialPosting">Days since last denial posted parameter from batch job dialog</param>
+    public void processInit(QueryRun _queryRun, int _taskNumber = 0, RecId _hmClaimBatchJobLogsHeader = 0, HMLastPostingCodes _lastPostedCodes = '',
+                            HMDaysSinceDenialPosting _daysSinceDenialPosting = 0)
+    {
+        try
+        {
+            currentGuid                 = newGuid();
+            taskNumber                  = _taskNumber;
+            hmClaimBatchJobLogsHeader   = _hmClaimBatchJobLogsHeader;
+            postedCodes                 = _lastPostedCodes;
+            daysSinceDenialPosting      = _daysSinceDenialPosting;
+
+            this.insertDataIntoHMZeroClaimQualified(_queryRun);
+        }
+        catch
+        {
+            throw;
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoHMZeroClaimQualified</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method processes the insertion of the data into the data preparation table
+    /// </summary>
+    /// <param name="_queryRun"><c>QueryRun</c> object</param>
+    public void insertDataIntoHMZeroClaimQualified(QueryRun _queryRun)
+    {
+        HMClaimTable                     claimTable;
+        HMZeroClaimQualificationCriteria hmZeroClaimQualificationCriteria;
+        HMClaimBatchJobsLogs             hmClaimBatchJobsLogs;
+        RecordInsertList                 insertRecListForClaimLogs;
+        RecordInsertList                 recordInsertList;
+        HMZeroClaimBatchJobStatus        hmZeroClaimBatchJobStatus;
+        boolean                          exceptionOccured = false;
+        HMClaimProcessingStatus          claimProcessingStatus;
+        str                              validationMsg = '';
+
+        recordInsertList          = new RecordInsertList(tableNum(HMZeroClaimBatchJobStatus));
+        insertRecListForClaimLogs = new RecordInsertList(tableNum(HMClaimBatchJobsLogs));
+
+        while(_queryRun.next())
+        {
+            claimTable = _queryRun.get(tableNum(HMClaimTable));
+
+            hmZeroClaimQualificationCriteria = HMZeroClaimQualificationCriteria::construct();
+
+            if (hmZeroClaimQualificationCriteria.isClaimQualifiedForCriteria(claimTable, daysSinceDenialPosting, postedCodes))
+            {
+                hmZeroClaimBatchJobStatus.ClaimID = claimTable.ClaimID;
+
+                if (hmZeroClaimBatchJobStatus.validateWrite())
+                {
+                    recordInsertList.add(hmZeroClaimBatchJobStatus);
+
+                    claimProcessingStatus = HMClaimProcessingStatus::Successful;
+                }
+                else
+                {
+                    claimProcessingStatus   = HMClaimProcessingStatus::Failed;
+                    validationMsg           = strFmt("@MAZ:TempTableValidationFailedMSG", 'HMZeroClaimBatchJobStatus', claimtable.ClaimID);
+                }
+
+                hmClaimBatchJobsLogs = HMClaimBatchJobsLogs::createData(HMClaimJobType::ZeroQualificationDataPrep
+                                                                    , claimtable.ClaimID
+                                                                    , ''
+                                                                    , ''
+                                                                    , taskNumber
+                                                                    , claimProcessingStatus
+                                                                    , validationMsg
+                                                                    , hmClaimBatchJobLogsHeader);
+
+                insertRecListForClaimLogs.add(hmClaimBatchJobsLogs);
+            }
+        }
+
+        try
+        {
+            ttsbegin;
+
+            recordInsertList.insertDatabase();
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error("@MAZ:FailedToInsertDataOnTempTable");
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error("@MAZ:FailedToInsertDataOnTempTable");
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        finally
+        {
+            this.insertDataIntoClaimBatchLogsTable(insertRecListForClaimLogs);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoClaimBatchLogsTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method inserts the batch logs to the logs table
+    /// </summary>
+    /// <param name="_insertRecListForClaimLogs"><c>RecordInsertList</c> object</param>
+    /// <returns>Returns true if logs inserted else false</returns>
+    public boolean insertDataIntoClaimBatchLogsTable(RecordInsertList _insertRecListForClaimLogs)
+    {
+        boolean isLogsCreated = true;
+
+        try
+        {
+            ttsbegin;
+               
+            _insertRecListForClaimLogs.insertDatabase();
+                
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                isLogsCreated = false;
+
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                isLogsCreated = false;
+
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+        return isLogsCreated;
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

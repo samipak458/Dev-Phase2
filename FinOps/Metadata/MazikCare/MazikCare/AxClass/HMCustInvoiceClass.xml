@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCustInvoiceClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCustInvoiceClass
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createCustInvoiceLine</Name>
+				<Source><![CDATA[
+    public RecId createCustInvoiceLine(CustInvoiceTable _custInvoiceTable, HMPatientChargeEntryLine _chargeEntryLine, HMcaseTrans _caseTrans, AMount _amount, Amount _coPayAmount = 0, Amount _deductible = 0, Amount _coInsuranceAmount = 0)
+    {
+        CustInvoiceLine             custInvoiceLine;
+        int                         lineNum;
+        HMFinancialDimensionHelper  dimensionHelper = new HMFinancialDimensionHelper();
+        //Zain  -- Deprecated in AX7
+        //AxCustInvoiceLine           AxCustInvoiceLIne;
+        CustTable                   custTable;
+        try
+        {
+            //AxCustInvoiceLIne = new AxCustInvoiceLine();
+            custInvoiceLine.clear();
+            custInvoiceLine.initValue();
+            custInvoiceLine.LedgerDimension = this.getPostingAccountByItemAndAcctType(_caseTrans.ItemId, InventAccountType::SalesRevenue);
+            custInvoiceLine.initFromCustInvoiceTable(_custInvoiceTable);
+    
+            custInvoiceLine.Description = strFmt('%1 - %2',_caseTrans.ItemId, HMInventTableClass::showDescription(_caseTrans.ItemId));
+            custInvoiceLine.ParentRecId = _custInvoiceTable.RecId;
+            custInvoiceLine.HMCaseTrans = _caseTrans.RecId;
+            custInvoiceLine.CoPayAmount = _coPayAmount;
+            custInvoiceLine.CoInsuranceAmount = _coInsuranceAmount;
+            custInvoiceLine.Deductible = _deductible;
+            custInvoiceLine.HMInsuranceCarrierBatchDetails = _chargeEntryLine.HMInsuranceCarrierBatchDetails;
+    
+            //CS: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+            /*
+            select CustType from CustTable
+            where CustTable.AccountNum == _custInvoiceTable.InvoiceAccount;
+            */
+            //CE: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+    
+            custInvoiceLine.AmountCur = _amount;
+            custInvoiceLine.DefaultDimension = dimensionHelper.GetDefaultDimensionFoCustomerInvoice(_caseTrans);
+            custInvoiceLine.insert();
+            return custInvoiceLine.RecId;
+        }
+        catch
+        {
+            return error("Error creating customer invoice line record");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCustInvoiceTable</Name>
+				<Source><![CDATA[
+    public RecId createCustInvoiceTable(CustAccount _custAccount, HMInsuranceCarrierBatchNumber _batchId, RecId _hmCaseRecId, RecId _chargeEntryTableRecId = 0, CustAccount _patientAccount = '')
+    {
+        CustInvoiceTable    custInvoiceTable;
+        NumberSeq     _sequence;
+        HMFinancialDimensionHelper  dimensionHelper = new HMFinancialDimensionHelper();
+        try
+        {
+    
+            custInvoiceTable.initFromCustTable(CustTable::find(_custAccount));
+            if(_batchId)
+            {
+                custInvoiceTable.HMInsuranceCarrierBatchDetails = HMInsuranceCarrierBatchDetails::findRecIdbByBatchNumber(_batchId);
+            }
+            if(_hmCaseRecId)
+            {
+                custInvoiceTable.DefaultDimension = dimensionHelper.GetDefaultDimensionForCustInvoiceHeader(HMCase::find(_hmCaseRecId),_batchId);
+            }
+            custInvoiceTable.HMCase = _hmCaseRecId;
+
+            if(_chargeEntryTableRecId)
+            {
+                custInvoiceTable.HMPatientChargeEntryTable = _chargeEntryTableRecId;
+            }
+
+            if(_patientAccount)
+            {
+                custInvoiceTable.OrderAccount = _patientAccount;
+            }
+            //_sequence = NumberSeq::newGetNum( NumberSeqReference::findReference(extendedTypeNum(CustInvoiceId)));
+            //custInvoiceTable.invoiceid = _sequence.num();
+    
+            custInvoiceTable.insert();
+            return custInvoiceTable.RecId;
+        }
+        catch
+        {
+            return error("Error creating customer invoice header record");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPostingAccountByItemAndAcctType</Name>
+				<Source><![CDATA[
+    private DimensionDynamicAccount getPostingAccountByItemAndAcctType(ItemId _itemId, InventAccountType _accountType)
+    {
+        InventPosting   inventPOsting;
+        InventTable     inventTable;
+        ItemGroupId     itemGroupId;
+        //get by item
+        select LedgerDimension from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::Table
+            && inventPOsting.ItemRelation == _itemId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        itemGroupId = InventItemGroupItem::findByItemIdLegalEntity(_itemId, curext()).ItemGroupId;
+    
+        //get by item group
+        select LedgerDimension from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::GroupId
+            && inventPOsting.ItemRelation == itemGroupId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+    
+        //get by all
+        select LedgerDimension from inventPOsting
+            where inventPOsting.InventAccountType == _accountType
+            && inventPOsting.ItemCode == InventPostingItemCode::All;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        return checkFailed(strFmt("@MAZ13651",_itemId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>post</Name>
+				<Source><![CDATA[
+    public void post(CustInvoiceTable _custInvoiceTable)
+    {
+        CustPostInvoice custPostInvoice;
+        custPostInvoice = new CustPostInvoice(_custInvoiceTable);
+        custPostInvoice.run();
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

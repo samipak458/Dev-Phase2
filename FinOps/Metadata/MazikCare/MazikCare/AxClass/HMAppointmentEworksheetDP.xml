@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAppointmentEworksheetDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMAppointmentEworksheetDataContract))
+]
+class HMAppointmentEworksheetDP extends SRSReportDataProviderBase
+{
+    HMAppointmentEworksheetTmp  hmAppointmentEworksheetTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMAppointmentEworksheetTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute("HMAppointmentEworksheetTmp")]
+    public HMAppointmentEworksheetTmp getHMAppointmentEworksheetTmp()
+    {
+        select * from hmAppointmentEworksheetTmp;
+        return hmAppointmentEworksheetTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMAppointmentEworksheetDataContract       dataContract;
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+        HMResourceMaster                    hmResourceMaster;
+        HMResourceSchedulingTypeCode        HMResourceSchedulingTypeCode;
+        HMResourceSchedulingAppointmentInvent   hmResourceSchedulingAppointmentInvent;
+        HMClientProtocol                        hmClientProtocol;
+        RecId                                   mainAppointmentRecId, relatedAppointmentRecId, visitREcId;
+        ReasonTable     reasonTable;
+        BOM         bomTable;
+        BOMVersion  bomVersion;
+        HMPatient hmPatient;
+        ListEnumerator        listEnumr;
+    
+        dataContract = this.parmDataContract();
+    
+        listEnumr = dataContract.parmAppointmentRecId().getEnumerator();
+    
+        while(listEnumr.moveNext())
+        {
+            hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(listEnumr.current());
+            if(hmResourceSchedulingAppointment.PrimaryAppointment == YesNo::No)
+            {
+                relatedAppointmentRecId = hmResourceSchedulingAppointment.RecId;
+                visitREcId = hmResourceSchedulingAppointment.HMPatientVisit;
+                select RecId from hmResourceSchedulingAppointment
+                where hmResourceSchedulingAppointment.HMPatientVisit == visitREcId
+                && hmResourceSchedulingAppointment.PrimaryAppointment == YesNo::Yes;
+                mainAppointmentRecId = hmResourceSchedulingAppointment.RecId;
+            }
+            else
+            {
+                mainAppointmentRecId = hmResourceSchedulingAppointment.RecId;
+            }
+            while select AppointmentNumber, AppointmentDate, @Client,AppointmentTime, HMPatient,HMResourceSchedulingPlanningObject, ImportedNotes, Notes from hmResourceSchedulingAppointment
+                where hmResourceSchedulingAppointment.RecId == mainAppointmentRecId
+                join CriticalMedicalInformation, BirthDate, PhysicalChartNumber, CustTable  from hmPatient where hmPatient.RecId == hmResourceSchedulingAppointment.HMPatient
+                join InventTable, ServiceSubStatus, HMServiceStatus, Protocol, RelatedAppointmentRecId from hmResourceSchedulingAppointmentInvent where hmResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == hmResourceSchedulingAppointment.RecId
+                join Description from HMResourceSchedulingTypeCode
+                    where HMResourceSchedulingTypeCode.RecId == hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode
+            {
+                if(relatedAppointmentRecId != 0 && relatedAppointmentRecId != hmResourceSchedulingAppointmentInvent.RelatedAppointmentRecId)
+                {
+                    continue;
+                }
+                if(hmResourceSchedulingAppointmentInvent.isProtocol())
+                {
+                    select firstonly BOMId,RecId, HMNotes from bomVersion
+                    where bomVersion.ItemId == hmResourceSchedulingAppointmentInvent.InventTable
+                    //&& bomVersion.Active
+                    && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+                    && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+    
+                    if (bomVersion.RecId)
+                    {
+                        While select ItemId, HMCondition from bomTable
+                            where bomTable.BOMId == bomVersion.BOMId
+                        {
+                            hmAppointmentEworksheetTmp.clear();
+                            hmAppointmentEworksheetTmp.AppointmentNumber = hmResourceSchedulingAppointment.AppointmentNumber;
+                            hmAppointmentEworksheetTmp.AppointmentDate = hmResourceSchedulingAppointment.AppointmentDate;
+                            hmAppointmentEworksheetTmp.AppointmentTime = hmResourceSchedulingAppointment.displayTimeWithoutSec();
+                            hmAppointmentEworksheetTmp.PatientName = hmResourceSchedulingAppointment.getPatientName();
+                            hmAppointmentEworksheetTmp.CriticalMedicalInformation   = HMPatient.CriticalMedicalInformation;
+                            hmAppointmentEworksheetTmp.PhysicalChartNumber   = HMPatient.PhysicalChartNumber;
+                            hmAppointmentEworksheetTmp.VirtualFileNumber   = HMPatient.patientChartNum();
+                            hmAppointmentEworksheetTmp.BirthDate   = HMPatient.BirthDate;
+                            hmAppointmentEworksheetTmp.CSRNotes = hmResourceSchedulingAppointment.Notes;
+    
+                            hmClientProtocol = HMClientProtocol::find(hmResourceSchedulingAppointment.Client, hmResourceSchedulingAppointmentInvent.InventTable);
+    
+                            hmAppointmentEworksheetTmp.ProtocolId = hmResourceSchedulingAppointmentInvent.InventTable;
+                            hmAppointmentEworksheetTmp.ProtocolName = hmClientProtocol.itemAlias();
+                            if(hmResourceSchedulingAppointment.ImportedNotes)
+                            {
+                                hmAppointmentEworksheetTmp.HMNotes = hmResourceSchedulingAppointment.ImportedNotes;
+                            }
+                            else
+                            {
+                                if(hmClientProtocol.HMNotes)
+                                {
+                                    hmAppointmentEworksheetTmp.HMNotes = hmClientProtocol.HMNotes;
+                                }
+                                //else
+                                //{
+                                    //hmAppointmentEworksheetTmp.HMNotes = bomVersion.HMNotes;
+                                //}
+    
+                            }
+    
+    
+                            select RecId from hmResourceSchedulingPlanningObject
+                            where hmResourceSchedulingPlanningObject.RecId == hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject
+                            join Type,RefRecId from hmResourceMaster
+                            where hmResourceSchedulingPlanningObject.HMResourceMaster == hmResourceMaster.RecId;
+                            if(hmResourceMaster)
+                            {
+                                hmAppointmentEworksheetTmp.ResourceName = hmResourceMaster.refRecIdDescription();
+                            }
+    
+                            hmAppointmentEworksheetTmp.ClientName = hmResourceSchedulingAppointment.getClientName();
+                            hmAppointmentEworksheetTmp.AppointmentType = HMResourceSchedulingTypeCode.Description;
+    
+                            select Description from reasonTable
+                                where reasonTable.Reason == hmResourceSchedulingAppointmentInvent.ServiceSubStatus;
+    
+                            hmAppointmentEworksheetTmp.ItemId = bomTable.ItemId;
+                            hmAppointmentEworksheetTmp.ItemName = bomTable.itemName();
+                            hmAppointmentEworksheetTmp.HMCondition = bomTable.HMCondition;
+                            hmAppointmentEworksheetTmp.DeclineReason = reasonTable.Description;
+                            hmAppointmentEworksheetTmp.ServiceStatus = hmResourceSchedulingAppointmentInvent.HMServiceStatus;
+    
+                            hmAppointmentEworksheetTmp.insert();
+                        }
+                    }
+                }
+                else
+                {
+                    hmAppointmentEworksheetTmp.clear();
+                    hmAppointmentEworksheetTmp.AppointmentNumber = hmResourceSchedulingAppointment.AppointmentNumber;
+                    hmAppointmentEworksheetTmp.AppointmentDate = hmResourceSchedulingAppointment.AppointmentDate;
+                    hmAppointmentEworksheetTmp.AppointmentTime = hmResourceSchedulingAppointment.displayTimeWithoutSec();
+                    hmAppointmentEworksheetTmp.PatientName = hmResourceSchedulingAppointment.getPatientName();
+                    hmAppointmentEworksheetTmp.CriticalMedicalInformation   = HMPatient.CriticalMedicalInformation;
+                    hmAppointmentEworksheetTmp.PhysicalChartNumber   = HMPatient.PhysicalChartNumber;
+                    hmAppointmentEworksheetTmp.VirtualFileNumber   = HMPatient.patientChartNum();
+                    hmAppointmentEworksheetTmp.BirthDate   = HMPatient.BirthDate;
+                    hmAppointmentEworksheetTmp.CSRNotes = hmResourceSchedulingAppointment.Notes;
+    
+                    select RecId from hmResourceSchedulingPlanningObject
+                    where hmResourceSchedulingPlanningObject.RecId == hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject
+                    join Type,RefRecId from hmResourceMaster
+                    where hmResourceSchedulingPlanningObject.HMResourceMaster == hmResourceMaster.RecId;
+                    if(hmResourceMaster)
+                    {
+                        hmAppointmentEworksheetTmp.ResourceName = hmResourceMaster.refRecIdDescription();
+                    }
+    
+                    hmAppointmentEworksheetTmp.ClientName = hmResourceSchedulingAppointment.getClientName();
+                    hmAppointmentEworksheetTmp.AppointmentType = HMResourceSchedulingTypeCode.Description;
+    
+                    select Description from reasonTable
+                        where reasonTable.Reason == hmResourceSchedulingAppointmentInvent.ServiceSubStatus;
+    
+                    hmAppointmentEworksheetTmp.ItemId = hmResourceSchedulingAppointmentInvent.InventTable;
+                    hmAppointmentEworksheetTmp.ItemName = hmResourceSchedulingAppointmentInvent.showItemDescription();
+                    hmAppointmentEworksheetTmp.DeclineReason = reasonTable.Description;
+                    hmAppointmentEworksheetTmp.ServiceStatus = hmResourceSchedulingAppointmentInvent.HMServiceStatus;
+    
+                    if(hmResourceSchedulingAppointmentInvent.Protocol)
+                    {
+                        select firstonly BOMId,RecId, HMNotes from bomVersion
+                        where bomVersion.ItemId == hmResourceSchedulingAppointmentInvent.Protocol
+                        //&& bomVersion.Active
+                        && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+                        && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                        hmClientProtocol = HMClientProtocol::find(hmResourceSchedulingAppointment.Client, hmResourceSchedulingAppointmentInvent.Protocol);
+    
+                        hmAppointmentEworksheetTmp.ProtocolId = hmResourceSchedulingAppointmentInvent.Protocol;
+                        hmAppointmentEworksheetTmp.ProtocolName = hmClientProtocol.itemAlias();
+    
+                        if(hmResourceSchedulingAppointment.ImportedNotes)
+                        {
+                            hmAppointmentEworksheetTmp.HMNotes = hmResourceSchedulingAppointment.ImportedNotes;
+                        }
+                        else
+                        {
+                            if(hmClientProtocol.HMNotes)
+                            {
+                                hmAppointmentEworksheetTmp.HMNotes = hmClientProtocol.HMNotes;
+                            }
+                            //else
+                            //{
+                                //hmAppointmentEworksheetTmp.HMNotes = bomVersion.HMNotes;
+                            //}
+    
+                        }
+                    }
+                    else
+                    {
+                        hmAppointmentEworksheetTmp.HMNotes = hmResourceSchedulingAppointment.ImportedNotes;
+                    }
+                    hmAppointmentEworksheetTmp.insert();
+                }
+            }
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

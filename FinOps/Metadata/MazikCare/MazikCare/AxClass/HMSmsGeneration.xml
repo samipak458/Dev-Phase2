@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSmsGeneration</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMSmsGeneration
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>SendSms</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method is used to send Sms.
+    /// </summary>
+    /// <param name="_recepientNumber">
+    /// The Recepient to whom the message will be send.
+    /// </param>
+    /// <param name="_message">
+    /// Message for the recepient.
+    /// </param>
+    /// <returns>
+    /// Returns the message status.
+    /// </returns>
+    public static boolean SendSms(str _recepientNumber,str _message)
+    {
+    
+        RetailWebRequest request;
+        System.Text.Encoding ascii;
+        str credentials;
+        RetailWebResponse response;
+        str rawResponse, value, postData,username,password,tagName,url;
+        Map data;
+        HMParameters hmParameter;
+    
+        RetailCommonWebAPI webApi = RetailCommonWebAPI::construct();
+        hmParameter = HMParameters::find();
+    
+        //Parameterize the following 3 fields
+        username = hmParameter.SmsUserName;  //'bupaclinic';
+        password = hmParameter.SmsPassword; // '123456';
+        tagName  = hmParameter.SmsTagName;  // 'bupaclinic';
+        url = hmParameter.SmsUrl;           //http://api.yamamah.com/SendSms;
+    
+        try
+        {
+            if (username && password && tagName)
+            {
+                postData = '{"Username": "'+username+'","Password": "'+password+'","Tagname": "'+tagName+'","RecepientNumber": "'+_recepientNumber+'","VariableList": "","ReplacementList": "","Message": "'+_message+'","SendDateTime": 0,"EnableDR": 0}';
+                response = webApi.makePostRequest(url,postData,'',"application/json");
+    
+                rawResponse = response.parmData();
+                data = RetailCommonWebAPI::getMapFromJsonString(rawResponse);
+                value = data.lookup("StatusDescription");
+                if (value == "Success")
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setSmsStatus</Name>
+				<Source><![CDATA[
+    public static void setSmsStatus(RecId  _appointmentId, YesNo   _smsStatus,str _message = "")
+    {
+        HMResourceSchedulingAppointment   HMResourceSchedulingAppointmentLocal ;
+        HMSmsLog    hmSmsLog;
+        ttsBegin;
+    
+        select forUpdate * from HMResourceSchedulingAppointmentLocal
+            where HMResourceSchedulingAppointmentLocal.RecId == _appointmentId;
+    
+        HMResourceSchedulingAppointmentLocal.SmsSent = _smsStatus;
+        HMResourceSchedulingAppointmentLocal.update();
+        if (HMResourceSchedulingAppointmentLocal)
+        {
+            hmSmsLog.RefTableId  = tableNum(HMResourceSchedulingAppointment);
+            hmSmsLog.RefRecId    = HMResourceSchedulingAppointmentLocal.RecId;
+            hmSmsLog.IsSmsSent   = _smsStatus;
+            hmSmsLog.SmsDateTime = DateTimeUtil::getSystemDateTime();
+            hmSmsLog.message     = _message;
+            hmSmsLog.insert();
+        }
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

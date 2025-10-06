@@ -1,0 +1,1398 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimArchivingHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClaimArchivingHelper
+{
+    #OCCRetryCount
+
+    HMCLaimIdsTmp               gHMClaimIdsTmp;
+    DMFDefinitionGroupExecution dmfDefinitionGroupExecution;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// constructor to initialize the class object
+    /// </summary>
+    /// <returns></returns>
+    public server static HMClaimArchivingHelper construct()
+    {
+        return new HMClaimArchivingHelper();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process the functions of the class
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution"></param>
+    public void processInit(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        ttsbegin;
+
+        dmfDefinitionGroupExecution = _dmfDefinitionGroupExecution;
+
+        this.collectArchivingClaimsFromStaging();
+        this.insertIntoStagingArchive();
+        this.insertIntoHMClaimTableArchive();
+        this.insertIntoHMClaimTableDetailsArchive();
+        this.insertIntoHMClaimVersionArchive();
+        this.insertIntoHMClaimChargeLineArchive();
+        this.insertIntoHMClaimPaymentPostingArchive();
+
+        this.deleteClaimsFromStaging();
+        this.deleteClaims();
+
+        ttscommit;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectArchivingClaimsFromStaging</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into temporary table for bulk insertion
+    /// </summary>
+    public void collectArchivingClaimsFromStaging()
+    {
+        HMClaimTable                claimTable;
+        //HMClaimDetailsV2Staging   stagingTable;
+        HMClaimDetailsV3Staging     stagingTable;
+
+        gHMClaimIdsTmp.clear();
+        gHMClaimIdsTmp.delete();
+
+        try 
+        {
+            insert_recordset gHMClaimIdsTmp(ClaimId, ExecutionId, HMUniqueID, HMClaimTable)
+            select HMClaimTable_ClaimID, ExecutionId from stagingTable
+                group by HMClaimTable_ClaimID, ExecutionId, claimTable.HMUniqueID, claimTable.RecId
+                where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes
+                join HMUniqueID, RecId from claimTable
+                    where claimTable.ClaimID == stagingTable.HMClaimTable_ClaimID;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimIdsTmp'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimIdsTmp'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoStagingArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert HMClaimDetailsV2Staging table into HMClaimDetailsV2StagingArchive table
+    /// </summary>
+    public void insertIntoStagingArchive()
+    {
+        HMClaimDetailsV3StagingArchive  stagingTableArchive;
+        HMClaimDetailsV3Staging         stagingTable;
+        //HMClaimDetailsV2StagingArchive  stagingTableArchive;
+        //HMClaimDetailsV2Staging         stagingTable;
+        
+        try
+        {
+            insert_recordset stagingTableArchive (IsClaimDeleted
+                ,DefinitionGroup
+                ,ExecutionId
+                ,IsSelected
+                ,TransferStatus
+                ,FederalTaxIDNumber
+                ,HMCardIssueNumber
+                ,HMInsuranceMembershipId
+                ,ICD10Code1
+                ,ICD10Code2
+                ,ICD10Code3
+                ,ICD10Code4
+                ,InsuranceCarrierAddress
+                ,InsuranceCarrierContractName
+                ,InsuranceCarrierContractNumber
+                ,InsuranceCarrierName
+                ,InsuranceCarrierPlanId
+                ,InsuranceCarrierPlanName
+                ,InsuranceProgram
+                ,InsuredCity
+                ,InsuredGender
+                ,InsuredName
+                ,InsuredPhone
+                ,InsuredPhoneLocal
+                ,InsuredPlanProgramName
+                ,InsuredPolicyGroupNumber
+                ,InsuredState
+                ,InsuredStreet
+                ,InsuredZipCode
+                ,isNewVisit
+                ,OtherInsuredGender
+                ,OtherInsuredName
+                ,OtherInsuredPlanProgramName
+                ,OtherInsuredPolicyGroupNumber
+                ,OutsideLab
+                ,OutsideLabCharges
+                ,PatientAnotherPlan
+                ,PatientAutoAccident
+                ,PatientAutoAccidentPlaceState
+                ,PatientCity
+                ,PatientEmployement
+                ,PatientGender
+                ,PatientInsuredRelation
+                ,PatientMaritalStatus
+                ,PatientName
+                ,PatientOtherAccident
+                ,PatientPhone
+                ,PatientPhoneLocal
+                ,PatientState
+                ,PatientZipCode
+                ,PriorAuthorizationNumber
+                ,ReferringProvider
+                ,ReferringProviderNPI
+                ,ReferringProviderQualifier
+                ,ReferringProviderQualifierValue
+                ,VisitDate
+                ,HMClaimTable_ClaimID
+                ,ClaimAmount
+                ,PatientMRN
+                ,ValidFrom
+                ,ValidTo
+                ,Version_ValidFrom
+                ,Version_ValidTo
+                ,HMDatePatientUnableWorkFromDate
+                ,HMDatePatientUnableWorkToDate
+                ,HMDateOfServiceStart
+                ,HMDateOfServiceEnd
+                ,HMInsuredBirthDate
+                ,HMSecondaryInsuredBirthDate
+                ,HMPatientBirthDate
+                ,PatientAccountNum
+                ,CaseNo
+                ,HMAmountPaid
+                ,HMBalanceAmount
+                ,TotalChargeAmount
+                ,HMExpectingClaim
+                ,PayorClaimStatus
+                ,HMClaimDate
+                ,HMDenialDate
+                ,HMPaymentDate
+                ,HMLastApprovalDate
+                ,HMICDCode1
+                ,HMICDCode2
+                ,HMICDCode3
+                ,HMICDCode4
+                ,InsuranceCarrierCode
+                ,HMPatient
+                ,HMInsuranceCarrier
+                ,PaymentReference
+                ,HMClaimLocation
+                ,Priority
+                ,RevisedAmount
+                ,HMRevisedAmount
+                ,IsClaimModified
+                ,Payor
+                ,Patient
+                ,PatientAccount
+                ,BalanceAmount
+                ,HMInvoiceType
+                ,HMTherapyType
+                ,HMCMN
+                ,HMDateofInjury
+                ,HMExpectedAmount
+                ,HMPharmacySite
+                ,HMRemitToSite
+                ,HMPatientAddress
+                ,Status
+                ,HMSite
+                ,HMResponsible
+                ,AttendingPhysician
+                ,BillingCode
+                ,CompoundCode
+                ,CompoundDisUnitForm
+                ,CompoundDosageForm
+                ,CompoundType
+                ,CoversPeriodDays
+                ,CoversPeriodFrom
+                ,CoversPeriodThrough
+                ,DateFilledDOS
+                ,DateRxWritten
+                ,DaysSupply
+                ,DischargeStatus
+                ,DispensesAsWritten
+                ,NewRefillCode
+                ,OtherCoverageCode
+                ,PersonCode
+                ,PharmacyServiceType
+                ,PlaceOfResidence
+                ,PrescriberID
+                ,PrescribingPhysician
+                ,PrescriptionNumber
+                ,ProductServiceIDQualifier
+                ,QuantityDispensed
+                ,QuantityPrescribed
+                ,RefillsPresecribed
+                ,RelationshipCode
+                ,RouteOfAdministration
+                ,RxOriginCode
+                ,StartOfCareDate
+                ,TypeOfBill
+                ,UB04Source
+                ,UBO4Type
+                ,UnitDoseIndictator
+                ,HMPatientInsurancePrimaryId
+                ,ClaimType
+                ,UB04_PBM_ValidFrom
+                ,UB04_PBM_ValidTo
+                ,BilledRegion
+                ,HMUniqueID)
+        select IsClaimDeleted
+                ,DefinitionGroup
+                ,ExecutionId
+                ,IsSelected
+                ,TransferStatus
+                ,FederalTaxIDNumber
+                ,HMCardIssueNumber
+                ,HMInsuranceMembershipId
+                ,ICD10Code1
+                ,ICD10Code2
+                ,ICD10Code3
+                ,ICD10Code4
+                ,InsuranceCarrierAddress
+                ,InsuranceCarrierContractName
+                ,InsuranceCarrierContractNumber
+                ,InsuranceCarrierName
+                ,InsuranceCarrierPlanId
+                ,InsuranceCarrierPlanName
+                ,InsuranceProgram
+                ,InsuredCity
+                ,InsuredGender
+                ,InsuredName
+                ,InsuredPhone
+                ,InsuredPhoneLocal
+                ,InsuredPlanProgramName
+                ,InsuredPolicyGroupNumber
+                ,InsuredState
+                ,InsuredStreet
+                ,InsuredZipCode
+                ,isNewVisit
+                ,OtherInsuredGender
+                ,OtherInsuredName
+                ,OtherInsuredPlanProgramName
+                ,OtherInsuredPolicyGroupNumber
+                ,OutsideLab
+                ,OutsideLabCharges
+                ,PatientAnotherPlan
+                ,PatientAutoAccident
+                ,PatientAutoAccidentPlaceState
+                ,PatientCity
+                ,PatientEmployement
+                ,PatientGender
+                ,PatientInsuredRelation
+                ,PatientMaritalStatus
+                ,PatientName
+                ,PatientOtherAccident
+                ,PatientPhone
+                ,PatientPhoneLocal
+                ,PatientState
+                ,PatientZipCode
+                ,PriorAuthorizationNumber
+                ,ReferringProvider
+                ,ReferringProviderNPI
+                ,ReferringProviderQualifier
+                ,ReferringProviderQualifierValue
+                ,VisitDate
+                ,HMClaimTable_ClaimID
+                ,ClaimAmount
+                ,PatientMRN
+                ,ValidFrom
+                ,ValidTo
+                ,Version_ValidFrom
+                ,Version_ValidTo
+                ,HMDatePatientUnableWorkFromDate
+                ,HMDatePatientUnableWorkToDate
+                ,HMDateOfServiceStart
+                ,HMDateOfServiceEnd
+                ,HMInsuredBirthDate
+                ,HMSecondaryInsuredBirthDate
+                ,HMPatientBirthDate
+                ,PatientAccountNum
+                ,CaseNo
+                ,HMAmountPaid
+                ,HMBalanceAmount
+                ,TotalChargeAmount
+                ,HMExpectingClaim
+                ,PayorClaimStatus
+                ,HMClaimDate
+                ,HMDenialDate
+                ,HMPaymentDate
+                ,HMLastApprovalDate
+                ,HMICDCode1
+                ,HMICDCode2
+                ,HMICDCode3
+                ,HMICDCode4
+                ,InsuranceCarrierCode
+                ,HMPatient
+                ,HMInsuranceCarrier
+                ,PaymentReference
+                ,HMClaimLocation
+                ,Priority
+                ,RevisedAmount
+                ,HMRevisedAmount
+                ,IsClaimModified
+                ,Payor
+                ,Patient
+                ,PatientAccount
+                ,BalanceAmount
+                ,HMInvoiceType
+                ,HMTherapyType
+                ,HMCMN
+                ,HMDateofInjury
+                ,HMExpectedAmount
+                ,HMPharmacySite
+                ,HMRemitToSite
+                ,HMPatientAddress
+                ,Status
+                ,HMSite
+                ,HMResponsible
+                ,AttendingPhysician
+                ,BillingCode
+                ,CompoundCode
+                ,CompoundDisUnitForm
+                ,CompoundDosageForm
+                ,CompoundType
+                ,CoversPeriodDays
+                ,CoversPeriodFrom
+                ,CoversPeriodThrough
+                ,DateFilledDOS
+                ,DateRxWritten
+                ,DaysSupply
+                ,DischargeStatus
+                ,DispensesAsWritten
+                ,NewRefillCode
+                ,OtherCoverageCode
+                ,PersonCode
+                ,PharmacyServiceType
+                ,PlaceOfResidence
+                ,PrescriberID
+                ,PrescribingPhysician
+                ,PrescriptionNumber
+                ,ProductServiceIDQualifier
+                ,QuantityDispensed
+                ,QuantityPrescribed
+                ,RefillsPresecribed
+                ,RelationshipCode
+                ,RouteOfAdministration
+                ,RxOriginCode
+                ,StartOfCareDate
+                ,TypeOfBill
+                ,UB04Source
+                ,UBO4Type
+                ,UnitDoseIndictator
+                ,HMPatientInsurancePrimaryId
+                ,ClaimType
+                ,UB04_PBM_ValidFrom
+                ,UB04_PBM_ValidTo
+                ,BilledRegion
+                ,HMUniqueID
+            from stagingTable
+                where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId     == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus  == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimDetailsV2StagingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimDetailsV2StagingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimTableArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimTableArchive table
+    /// </summary>
+    public void insertIntoHMClaimTableArchive()
+    {
+        HMClaimTable        claimTable;
+        HMClaimTableArchive claimTableArchive;
+
+        try
+        {
+            insert_recordset claimTableArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,AgentName
+                ,AgingDate
+                ,BilledRegion
+                ,CaseNo
+                ,ClaimAgent
+                ,ClaimAmount
+                ,ClaimID
+                ,ClaimPool
+                ,ClaimType
+                ,HMActionType
+                ,HMAppealDate
+                ,HMBalanceAmount
+                ,HMCase
+                ,HMClaimDate
+                ,HMClaimLatestNote_Internal
+                ,HMClaimLatestNoteCreatedBy_Internal
+                ,HMClaimLatestNoteDate_Internal
+                ,HMClaimLocation
+                ,HMClaimPriority
+                ,HMClaimProcessStatus
+                ,HMCMN
+                ,HMDateofInjury
+                ,HMDateOfServiceEnd
+                ,HMDateOfServiceStart
+                ,HMDenialDate
+                ,HMExpectedAmount
+                ,HMFollowUp
+                ,HMICDCode1
+                ,HMICDCode2
+                ,HMICDCode3
+                ,HMICDCode4
+                ,HMInsuranceCarrier
+                ,HMInvoiceType
+                ,HMLastApprovalDate
+                ,HMLastEdiGeneratedDateTime
+                ,HMPatient
+                ,HMPatientAddress
+                ,HMPatientChargeEntryTable
+                ,HMPatientInsurancePrimaryId
+                ,HMPaymentDate
+                ,HMPharmacySite
+                ,HMRegionDescription
+                ,HMRemitToSite
+                ,HMResourceMaster
+                ,HMResponsible
+                ,HMResponsibleGroup
+                ,HMSite
+                ,HMTherapyType
+                ,HMTimelyFilingDate
+                ,HMUniqueID
+                ,IsClaimModified, IsClaimPriorityManual
+                ,MzkClaimAgingDays
+                ,PatientAccountNum
+                ,PatientName
+                ,PaymentReference
+                ,PayorClaimStatus
+                ,PayorName
+                ,PoolChangeNotes
+                ,PoolChangeReasonCode
+                ,PoolName
+                ,Priority
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMClaimTable
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,AgentName
+                ,AgingDate
+                ,BilledRegion
+                ,CaseNo
+                ,ClaimAgent
+                ,ClaimAmount
+                ,ClaimID
+                ,ClaimPool
+                ,ClaimType
+                ,HMActionType
+                ,HMAppealDate
+                ,HMBalanceAmount
+                ,HMCase
+                ,HMClaimDate
+                ,HMClaimLatestNote_Internal
+                ,HMClaimLatestNoteCreatedBy_Internal
+                ,HMClaimLatestNoteDate_Internal
+                ,HMClaimLocation
+                ,HMClaimPriority
+                ,HMClaimProcessStatus
+                ,HMCMN
+                ,HMDateofInjury
+                ,HMDateOfServiceEnd
+                ,HMDateOfServiceStart
+                ,HMDenialDate
+                ,HMExpectedAmount
+                ,HMFollowUp
+                ,HMICDCode1
+                ,HMICDCode2
+                ,HMICDCode3
+                ,HMICDCode4
+                ,HMInsuranceCarrier
+                ,HMInvoiceType
+                ,HMLastApprovalDate
+                ,HMLastEdiGeneratedDateTime
+                ,HMPatient
+                ,HMPatientAddress
+                ,HMPatientChargeEntryTable
+                ,HMPatientInsurancePrimaryId
+                ,HMPaymentDate
+                ,HMPharmacySite
+                ,HMRegionDescription
+                ,HMRemitToSite
+                ,HMResourceMaster
+                ,HMResponsible
+                ,HMResponsibleGroup
+                ,HMSite
+                ,HMTherapyType
+                ,HMTimelyFilingDate
+                ,HMUniqueID
+                ,IsClaimModified
+                ,IsClaimPriorityManual
+                ,MzkClaimAgingDays
+                ,PatientAccountNum
+                ,PatientName
+                ,PaymentReference
+                ,PayorClaimStatus
+                ,PayorName
+                ,PoolChangeNotes
+                ,PoolChangeReasonCode
+                ,PoolName
+                ,Priority
+                ,createdBy
+                ,modifiedBy
+                ,RecId
+                from claimTable
+                join ExecutionId from gHMClaimIdsTmp
+                    where gHMClaimIdsTmp.ClaimId == claimTable.ClaimID;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimTableArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimTableArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimTableDetailsArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimTableDetailsArchive table
+    /// </summary>
+    public void insertIntoHMClaimTableDetailsArchive()
+    {
+        HMClaimTableDetailsArchive  claimTableDetailsArchive;
+        HMClaimTableDetails         claimTableDetails;
+
+        try
+        {
+            insert_recordset claimTableDetailsArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,AcceptAssignment
+                ,AmountPaidLeft
+                ,AmountPaidRight
+                ,BalanceDueLeft
+                ,BalanceDueRight
+                ,BatchNumber
+                ,CaseType
+                ,ChiefComplaint
+                ,DateOfCurrentDay
+                ,DateOfCurrentMonth
+                ,DateOfCurrentYear
+                ,DatePatientUnableWorkFromDay
+                ,DatePatientUnableWorkFromMonth
+                ,DatePatientUnableWorkFromYear
+                ,DatePatientUnableWorkToDay
+                ,DatePatientUnableWorkToMonth
+                ,DatePatientUnableWorkToYear
+                ,FederalTaxIDNumber
+                ,FederalTaxType
+                ,FirstDateSimilarIllnessDay
+                ,FirstDateSimilarIllnessMonth
+                ,FirstDateSimilarIllnessYear
+                ,HMAmountPaid
+                ,HMBalanceAmount
+                ,HMCardIssueNumber
+                ,HMClaimTable
+                ,HMDateOfServiceEnd
+                ,HMDateOfServiceStart
+                ,HMDatePatientUnableWorkFromDate
+                ,HMDatePatientUnableWorkToDate
+                ,HMExpectingClaim
+                ,HMInsuranceMembershipId
+                ,HMInsuredBirthDate
+                ,HMPatientBirthDate
+                ,HMPerformaInvoiceDate
+                ,HMPerformaInvoiceId
+                ,HMRevisedAmount
+                ,HMSecondaryInsuredBirthDate
+                ,HMVisitDate
+                ,HospitalizationDateFromDay
+                ,HospitalizationDateFromMonth
+                ,HospitalizationDateFromYear
+                ,HospitalizationDateToDay
+                ,HospitalizationDateToMonth
+                ,HospitalizationDateToYear
+                ,ICD10Code1
+                ,ICD10Code2
+                ,ICD10Code3
+                ,ICD10Code4
+                ,InsuranceCarrierAddress
+                ,InsuranceCarrierContractName
+                ,InsuranceCarrierContractNumber
+                ,InsuranceCarrierName
+                ,InsuranceCarrierPlanId
+                ,InsuranceCarrierPlanName
+                ,InsuranceCarrierTPAName
+                ,InsuranceCarrierTPANumber
+                ,InsuranceIDNumber
+                ,InsuranceProgram
+                ,InsuredBirthDay
+                ,InsuredBirthMonth
+                ,InsuredBirthYear
+                ,InsuredCity
+                ,InsuredEmployersSchoolName
+                ,InsuredGender
+                ,InsuredName
+                ,InsuredPhone
+                ,InsuredPhoneLocal
+                ,InsuredPlanProgramName
+                ,InsuredPolicyGroupNumber
+                ,InsuredState
+                ,InsuredStreet
+                ,InsuredZipCode
+                ,isFollowUpOrRefill
+                ,isNewVisit
+                ,isPatientMarried
+                ,isPatientSingle
+                ,isReferral
+                ,isWalkIn
+                ,ItemCategory1
+                ,ItemCategory10
+                ,ItemCategory11
+                ,ItemCategory2
+                ,ItemCategory3
+                ,ItemCategory4
+                ,ItemCategory5
+                ,ItemCategory6
+                ,ItemCategory7
+                ,ItemCategory8
+                ,ItemCategory9
+                ,ItemCode1
+                ,ItemCode10
+                ,ItemCode11
+                ,ItemCode2
+                ,ItemCode3
+                ,ItemCode4
+                ,ItemCode5
+                ,ItemCode6
+                ,ItemCode7
+                ,ItemCode8
+                ,ItemCode9
+                ,ItemDescription1
+                ,ItemDescription10
+                ,ItemDescription11
+                ,ItemDescription2
+                ,ItemDescription3
+                ,ItemDescription4
+                ,ItemDescription5
+                ,ItemDescription6
+                ,ItemDescription7
+                ,ItemDescription71
+                ,ItemDescription8
+                ,ItemDescription9
+                ,ItemQuantity1
+                ,ItemQuantity10
+                ,ItemQuantity11
+                ,ItemQuantity2
+                ,ItemQuantity3
+                ,ItemQuantity4
+                ,ItemQuantity5
+                ,ItemQuantity6
+                ,ItemQuantity7
+                ,ItemQuantity8
+                ,ItemQuantity9
+                ,MedicaidReSubmisionCode
+                ,OrignalReferenceNumber
+                ,OtherInsuredBirthDay
+                ,OtherInsuredBirthMonth
+                ,OtherInsuredBirthYear
+                ,OtherInsuredEmployersSchoolName
+                ,OtherInsuredGender
+                ,OtherInsuredName
+                ,OtherInsuredPlanProgramName
+                ,OtherInsuredPolicyGroupNumber
+                ,OutsideLab
+                ,OutsideLabCharges
+                ,PatientAccountNum
+                ,PatientAnotherPlan
+                ,PatientAutoAccident
+                ,PatientAutoAccidentPlaceState
+                ,PatientBirthDay
+                ,PatientBirthMonth
+                ,PatientBirthYear
+                ,PatientCity
+                ,PatientEmployement
+                ,PatientEmployementStatus
+                ,PatientGender
+                ,PatientInsuredRelation
+                ,PatientMaritalStatus
+                ,PatientName
+                ,PatientOtherAccident
+                ,PatientPhone
+                ,PatientPhoneLocal
+                ,PatientState
+                ,PatientStreet
+                ,PatientZipCode
+                ,PriorAuthorizationNumber
+                ,ReferringProvider
+                ,ReferringProviderNPI
+                ,ReferringProviderQualifier
+                ,ReferringProviderQualifierValue
+                ,RevisedAmount
+                ,SpecialtyDescription
+                ,TotalChargeAmount
+                ,TotalChargeLeft
+                ,TotalChargeRight
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMUniqueID
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,AcceptAssignment
+                ,AmountPaidLeft
+                ,AmountPaidRight
+                ,BalanceDueLeft
+                ,BalanceDueRight
+                ,BatchNumber
+                ,CaseType
+                ,ChiefComplaint
+                ,DateOfCurrentDay
+                ,DateOfCurrentMonth
+                ,DateOfCurrentYear
+                ,DatePatientUnableWorkFromDay
+                ,DatePatientUnableWorkFromMonth
+                ,DatePatientUnableWorkFromYear
+                ,DatePatientUnableWorkToDay
+                ,DatePatientUnableWorkToMonth
+                ,DatePatientUnableWorkToYear
+                ,FederalTaxIDNumber
+                ,FederalTaxType
+                ,FirstDateSimilarIllnessDay
+                ,FirstDateSimilarIllnessMonth
+                ,FirstDateSimilarIllnessYear
+                ,HMAmountPaid
+                ,HMBalanceAmount
+                ,HMCardIssueNumber
+                ,HMClaimTable
+                ,HMDateOfServiceEnd
+                ,HMDateOfServiceStart
+                ,HMDatePatientUnableWorkFromDate
+                ,HMDatePatientUnableWorkToDate
+                ,HMExpectingClaim
+                ,HMInsuranceMembershipId
+                ,HMInsuredBirthDate
+                ,HMPatientBirthDate
+                ,HMPerformaInvoiceDate
+                ,HMPerformaInvoiceId
+                ,HMRevisedAmount
+                ,HMSecondaryInsuredBirthDate
+                ,HMVisitDate
+                ,HospitalizationDateFromDay
+                ,HospitalizationDateFromMonth
+                ,HospitalizationDateFromYear
+                ,HospitalizationDateToDay
+                ,HospitalizationDateToMonth
+                ,HospitalizationDateToYear
+                ,ICD10Code1
+                ,ICD10Code2
+                ,ICD10Code3
+                ,ICD10Code4
+                ,InsuranceCarrierAddress
+                ,InsuranceCarrierContractName
+                ,InsuranceCarrierContractNumber
+                ,InsuranceCarrierName
+                ,InsuranceCarrierPlanId
+                ,InsuranceCarrierPlanName
+                ,InsuranceCarrierTPAName
+                ,InsuranceCarrierTPANumber
+                ,InsuranceIDNumber
+                ,InsuranceProgram
+                ,InsuredBirthDay
+                ,InsuredBirthMonth
+                ,InsuredBirthYear
+                ,InsuredCity
+                ,InsuredEmployersSchoolName
+                ,InsuredGender
+                ,InsuredName
+                ,InsuredPhone
+                ,InsuredPhoneLocal
+                ,InsuredPlanProgramName
+                ,InsuredPolicyGroupNumber
+                ,InsuredState
+                ,InsuredStreet
+                ,InsuredZipCode
+                ,isFollowUpOrRefill
+                ,isNewVisit
+                ,isPatientMarried
+                ,isPatientSingle
+                ,isReferral
+                ,isWalkIn
+                ,ItemCategory1
+                ,ItemCategory10
+                ,ItemCategory11
+                ,ItemCategory2
+                ,ItemCategory3
+                ,ItemCategory4
+                ,ItemCategory5
+                ,ItemCategory6
+                ,ItemCategory7
+                ,ItemCategory8
+                ,ItemCategory9
+                ,ItemCode1
+                ,ItemCode10
+                ,ItemCode11
+                ,ItemCode2
+                ,ItemCode3
+                ,ItemCode4
+                ,ItemCode5
+                ,ItemCode6
+                ,ItemCode7
+                ,ItemCode8
+                ,ItemCode9
+                ,ItemDescription1
+                ,ItemDescription10
+                ,ItemDescription11
+                ,ItemDescription2
+                ,ItemDescription3
+                ,ItemDescription4
+                ,ItemDescription5
+                ,ItemDescription6
+                ,ItemDescription7
+                ,ItemDescription71
+                ,ItemDescription8
+                ,ItemDescription9
+                ,ItemQuantity1
+                ,ItemQuantity10
+                ,ItemQuantity11
+                ,ItemQuantity2
+                ,ItemQuantity3
+                ,ItemQuantity4
+                ,ItemQuantity5
+                ,ItemQuantity6
+                ,ItemQuantity7
+                ,ItemQuantity8
+                ,ItemQuantity9
+                ,MedicaidReSubmisionCode
+                ,OrignalReferenceNumber
+                ,OtherInsuredBirthDay
+                ,OtherInsuredBirthMonth
+                ,OtherInsuredBirthYear
+                ,OtherInsuredEmployersSchoolName
+                ,OtherInsuredGender
+                ,OtherInsuredName
+                ,OtherInsuredPlanProgramName
+                ,OtherInsuredPolicyGroupNumber
+                ,OutsideLab
+                ,OutsideLabCharges
+                ,PatientAccountNum
+                ,PatientAnotherPlan
+                ,PatientAutoAccident
+                ,PatientAutoAccidentPlaceState
+                ,PatientBirthDay
+                ,PatientBirthMonth
+                ,PatientBirthYear
+                ,PatientCity
+                ,PatientEmployement
+                ,PatientEmployementStatus
+                ,PatientGender
+                ,PatientInsuredRelation
+                ,PatientMaritalStatus
+                ,PatientName
+                ,PatientOtherAccident
+                ,PatientPhone
+                ,PatientPhoneLocal
+                ,PatientState
+                ,PatientStreet
+                ,PatientZipCode
+                ,PriorAuthorizationNumber
+                ,ReferringProvider
+                ,ReferringProviderNPI
+                ,ReferringProviderQualifier
+                ,ReferringProviderQualifierValue
+                ,RevisedAmount
+                ,SpecialtyDescription
+                ,TotalChargeAmount
+                ,TotalChargeLeft
+                ,TotalChargeRight
+                ,createdBy
+                ,modifiedBy
+                from claimTableDetails
+                join HMUniqueID, ExecutionId from gHMClaimIdsTmp
+                    where gHMClaimIdsTmp.HMClaimTable == claimTableDetails.HMClaimTable;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimTableDetailsArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimTableDetailsArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimVersionArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimVersionArchive table
+    /// </summary>
+    public void insertIntoHMClaimVersionArchive()
+    {
+        HMClaimVersion          claimVersion;
+        HMClaimVersionArchive   claimVersionArchive;
+
+        try
+        {
+            insert_recordset claimVersionArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,AfterDIsputed
+                ,ClaimSubmissionId
+                ,HMClaimTable
+                ,Status
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMUniqueID
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,AfterDIsputed
+                ,ClaimSubmissionId
+                ,HMClaimTable
+                ,Status
+                ,createdBy
+                ,modifiedBy
+            from claimVersion
+            join HMUniqueID, ExecutionId from gHMClaimIdsTmp
+                where gHMClaimIdsTmp.HMClaimTable == claimVersion.HMClaimTable;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimVersionArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimVersionArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimChargeLineArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimChargeLineArchive table
+    /// </summary>
+    public void insertIntoHMClaimChargeLineArchive()
+    {
+        HMClaimChargeLine           claimChargeLines;
+        HMClaimChargeLineArchive    claimChargeLineArchive;
+
+        try
+        {
+            insert_recordset claimChargeLineArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,AdjustedAmount
+                ,Balance
+                ,BalanceChangeDate
+                ,BalanceResponsible
+                ,ChargeLeft
+                ,ChargeRight
+                ,ClaimID
+                ,Cost
+                ,CPT_HCPCS_Code
+                ,DiagnosisPointer
+                ,Disputed
+                ,DrugName
+                ,EMG
+                ,GrossAmount
+                ,HMAdjustedAmount
+                ,HMAuthorization
+                ,HMBalance
+                ,HMCaseTrans
+                ,HMChargeLineAmount
+                ,HMClaimTable
+                ,HMCodeorChequeNumber
+                ,HMDescriptionofCharges
+                ,HMDiagnosisIdentifier
+                ,HMExpectedAmount
+                ,HMHCPC
+                ,HMItemOrServiceCode
+                ,HMNDC
+                ,HMNDCQualifier
+                ,HMNDCUnits
+                ,HMPatientChargeEntryLine
+                ,HMPlaceOfService
+                ,HMProcedureMasterCode
+                ,HMProcedureModifier1
+                ,HMProcedureModifier2
+                ,HMProcedureModifier3
+                ,HMProcedureModifier4
+                ,HMRevenueCategory
+                ,HMRxNumber
+                ,HMServiceFromDate
+                ,HMServiceToDate
+                ,HMTotalPaid
+                ,HMUnits
+                ,InventTable
+                ,IsImportedFromChargeEntryLine
+                ,IsRejected
+                ,LineNumber
+                ,NPI
+                ,Priority
+                ,Quantity
+                ,UCCharge
+                ,Units
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMUniqueID
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,AdjustedAmount
+                ,Balance
+                ,BalanceChangeDate
+                ,BalanceResponsible
+                ,ChargeLeft
+                ,ChargeRight
+                ,ClaimID
+                ,Cost
+                ,CPT_HCPCS_Code
+                ,DiagnosisPointer
+                ,Disputed
+                ,DrugName
+                ,EMG
+                ,GrossAmount
+                ,HMAdjustedAmount
+                ,HMAuthorization
+                ,HMBalance
+                ,HMCaseTrans
+                ,HMChargeLineAmount
+                ,HMClaimTable
+                ,HMCodeorChequeNumber
+                ,HMDescriptionofCharges
+                ,HMDiagnosisIdentifier
+                ,HMExpectedAmount
+                ,HMHCPC
+                ,HMItemOrServiceCode
+                ,HMNDC
+                ,HMNDCQualifier
+                ,HMNDCUnits
+                ,HMPatientChargeEntryLine
+                ,HMPlaceOfService
+                ,HMProcedureMasterCode
+                ,HMProcedureModifier1
+                ,HMProcedureModifier2
+                ,HMProcedureModifier3
+                ,HMProcedureModifier4
+                ,HMRevenueCategory
+                ,HMRxNumber
+                ,HMServiceFromDate
+                ,HMServiceToDate
+                ,HMTotalPaid
+                ,HMUnits
+                ,InventTable
+                ,IsImportedFromChargeEntryLine
+                ,IsRejected
+                ,LineNumber
+                ,NPI
+                ,Priority
+                ,Quantity
+                ,UCCharge
+                ,Units
+                ,createdBy
+                ,modifiedBy
+                from claimChargeLines
+                join HMUniqueID, ExecutionId from gHMClaimIdsTmp
+                    where gHMClaimIdsTmp.HMClaimTable == claimChargeLines.HMClaimTable;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimChargeLineArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimChargeLineArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimPaymentPostingArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimPaymentPostingArchive table
+    /// </summary>
+    public void insertIntoHMClaimPaymentPostingArchive()
+    {
+        HMClaimPaymentPosting           claimPaymentPosting;
+        HMClaimPaymentPostingArchive    claimPaymentPostingArchive;
+
+        try
+        {
+            insert_recordset claimPaymentPostingArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,DatePosted
+                ,HMClaimPaymentDate
+                ,LineNumber
+                ,Payor
+                ,TransToClaim
+                ,Type
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMUniqueID
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,DatePosted
+                ,HMClaimPaymentDate
+                ,LineNumber
+                ,Payor
+                ,TransToClaim
+                ,Type
+                ,createdBy
+                ,modifiedBy
+                from claimPaymentPosting
+                join HMUniqueID, ExecutionId from gHMClaimIdsTmp
+                    where gHMClaimIdsTmp.ClaimId == claimPaymentPosting.ClaimID;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaimsFromStaging</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delete claims data from HMClaimDetailsV2Staging table
+    /// </summary>
+    public void deleteClaimsFromStaging()
+    {
+        //HMClaimDetailsV2Staging stagingTable;
+        HMClaimDetailsV3Staging stagingTable;
+
+        try
+        {
+            delete_from stagingTable
+             where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimDetailsV2Staging'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimDetailsV2Staging'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delete claims data from HMClaimTable table
+    /// </summary>
+    public void deleteClaims()
+    {
+        HMClaimTable claimTable;
+
+        try
+        {
+            delete_from claimTable
+                exists join gHMClaimIdsTmp
+                    where gHMClaimIdsTmp.ClaimId == claimTable.ClaimID;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimTable'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimTable'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

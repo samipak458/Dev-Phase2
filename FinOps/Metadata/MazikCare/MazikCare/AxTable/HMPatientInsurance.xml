@@ -1,0 +1,2331 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientInsurance</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMPatientInsurance extends common
+{
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>CarrierName</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display Name CarrierName()
+    {
+        if(this.HMPayerType==HMPayerType::InsuranceCarrier || this.HMPayerType==HMPayerType::Gurantor)
+        {
+            return DirPartyTable::findRec(CustTable::find(this.InsuranceCarrier).Party).Name;
+    
+        }
+        else if(this.HMPayerType==HMPayerType::Patient)
+        {
+            return this.Name();
+        }
+        else
+        {
+            return '';
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>contactPersonName</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display ContactPersonName contactPersonName()
+    {
+        return this.getCustTable().editContactPersonName(false, '');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>coveragePlanName</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display Description coveragePlanName()
+    {
+        return HMInsuranceCoveragePlan::find(this.HMInsuranceCoveragePlan).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>decreasePriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Decreases the priority of the selected transaction type.
+    /// </summary>
+    /// <returns>
+    ///    true if the priority is decreased; otherwise, false.
+    /// </returns>
+    private boolean decreasePriority()
+    {
+        boolean ret ;
+       // int newPriority;
+        #Define.MinPriority(0)
+    
+        HMPatientInsurance hmPatientInsurance;
+    
+        if (this.Priority == #MinPriority)
+        {
+            ret = false;
+        }
+        else
+        {
+            // find the secondary order to swap
+            hmPatientInsurance = HMPatientInsurance::findByPriorityInDirection(this.HMPatient, this.Priority, false, true);
+            if(hmPatientInsurance)
+            {
+                this.swapPriority(this, hmPatientInsurance, hmPatientInsurance.Priority);
+                ret = true;
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        
+        HMResourceSchedulingAppointment appointment;
+    
+        if (this.RecId)
+        {
+            select firstOnly appointment
+                where appointment.HMPatientInsurance == this.RecId;
+        }
+    
+        if (appointment)
+        {
+            error("Cannot delete the patient insurance, as there is an appointment created against this record.");
+        }
+        else
+        {
+            super();
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>EditPatientIdExpirationDate</Name>
+				<Source><![CDATA[
+    public edit HcmIdentificationExpirationDate EditPatientIdExpirationDate(Boolean _set, HcmIdentificationExpirationDate _identificationExpirationDate)
+    {
+        HcmIdentificationExpirationDate expirationDate = _identificationExpirationDate;
+        HcmPersonIdentificationNumber   PersonIdNumber;
+    
+        select forupdate firstOnly PersonIdNumber
+                where PersonIdNumber.Person == HMPatient::find(this.HMPatient).DirPartyTable;
+    
+        if (_set)
+        {
+            ttsBegin;
+    
+            PersonIdNumber.ExpirationDate       = expirationDate;
+            PersonIdNumber.HMHijriExpiryDate    = HMHijriDateHelper::convertGeorgianToHijri(expirationDate);
+            PersonIdNumber.update();
+    
+            ttsCommit;
+        }
+    
+        else
+        {
+            expirationDate = PersonIdNumber.ExpirationDate;
+        }
+    
+        return expirationDate;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>email</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display Email email()
+    {
+        return this.getCustTable().email();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCarrier</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMInsuranceCarrier getCarrier()
+    {
+        HMInsuranceContract                     contract;
+        HMInsuranceContractCarrierCombination   carrierCombination;
+        HMInsuranceCarrier                      carrier;
+        HMInsuranceContractClassOrPlans         plans;
+    
+        plans               = HMInsuranceContractClassOrPlans::find(this.HMInsuranceContractClassOrPlans);
+        contract            = HMInsuranceContract::find(plans.HMInsuranceContract);
+        carrierCombination  = HMInsuranceContractCarrierCombination::find(contract.HMInsuranceContractCarrierCombination);
+        carrier             = HMInsuranceCarrier::find(carrierCombination.HMInsuranceCarrier);
+    
+        return carrier;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getContractName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMContractName getContractName()
+    {
+        return HMInsuranceContract::find(this.HMInsuranceContract).HMContractName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCoPayInsurance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method returns either the Copay amount or Co insurance rate (%) of the patient insurance
+    /// </summary>
+    /// <returns>
+    /// A string containing the copay amount or co insurance with currency symbol on the left or percentage symbol at the end
+    /// </returns>
+    
+    [SysClientCacheDataMethodAttribute(true)]
+    display Description255 getCoPayInsurance()
+    {
+        //str num2Str(    real number,     int character,     int decimals,     int separator1,     int separator2)
+        str     coPayInsurance = '';
+        if (this.PolicyType == PolicyType::CoPay)
+        {
+            coPayInsurance = CompanyInfoHelper::standardCurrency() + ' ' + Num2Str(this.CoPayAmount,0,0,1,2);
+        }
+        else if (this.PolicyType == PolicyType::CoPay)
+        {
+            coPayInsurance = Num2Str(this.CoInsurance,0,0,1,2) + '%';
+        }
+        return coPayInsurance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTable</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    public CustTable getCustTable()
+    {
+        CustTable   custTable;
+    
+        select firstOnly custTable where custTable.AccountNum == this.InsuranceCarrier;
+    
+        return custTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInsuranceVisits</Name>
+				<Source><![CDATA[
+    display Description255 getInsuranceVisits()
+    {
+    
+        // The implementation is not carried since pending busines requirements
+        return '1 / 10';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatFamBalance</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Description255 getPatFamBalance()
+    {
+    
+        // The implementation is not carried since pending busines requirements
+        return 'USD 10.00 / 100.00';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientIdentificationExpiryDate</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display HcmIdentificationExpirationDate getPatientIdentificationExpiryDate()
+    {
+        DirPerson                       person;
+        HcmPersonIdentificationNumber   personIdNumber;
+    
+        select firstOnly personIdNumber
+            where personIdNumber.Person == CustTable::findRecId(HMPatient::find(this.HMPatient).CustTable).Party;
+    
+        return personIdNumber.ExpirationDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPlanName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMContractClassName getPlanName()
+    {
+        return  HMInsuranceContractClassOrPlans::find(this.HMInsuranceContractClassOrPlans).HMContractClassName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuranceName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getSecondaryInsuranceName()
+    {
+    
+        HMPatientInsurance hmPatientInsurance;
+        select * from hmPatientInsurance
+        where hmPatientInsurance.HMPatient == this.HMPatient
+        && hmPatientInsurance.Priority == 2;
+    
+        if (hmPatientInsurance.RecId)
+        {
+            return DirPartyTable::findRec(CustTable::find(hmPatientInsurance.InsuranceCarrier).Party).Name;
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTPA</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMTPA getTPA()
+    {
+        HMTPA                                   TPA;
+        HMInsuranceContract                     contract;
+        HMInsuranceContractCarrierCombination   carrierCombination;
+       
+        HMInsuranceContractClassOrPlans         plans;
+    
+        plans               = HMInsuranceContractClassOrPlans::find(this.HMInsuranceContractClassOrPlans);
+        contract            = HMInsuranceContract::find(plans.HMInsuranceContract);
+        carrierCombination  = HMInsuranceContractCarrierCombination::find(contract.HMInsuranceContractCarrierCombination);
+        TPA                 = HMTPA::find(carrierCombination.HMInsuranceTPA);
+        return TPA;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GuarantorName</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the gurantor name from  <c>HMPatientGuarantor</c>table.
+    /// </summary>
+    /// <param name="_set">
+    /// The <c>HMPatientGuarantor</c> table buffer.
+    /// </param>
+    /// <param name="_guarantorName">
+    /// The <c>HMPatientGuarantor</c> table buffer.
+    /// </param>
+    /// <returns>
+    /// The gurantor name from<c>HMPatientGuarantor</c>table.
+    /// </returns>
+    //BP Deviation Documented
+    edit Name GuarantorName(boolean _set, Name _guarantorName)
+    {
+       // HMPatientGuarantor patientGuarantor;
+    
+    /*    if (_set)
+        {
+            if(this.SelfPolicy == NoYes::No)
+            {
+                select patientGuarantor
+                where patientGuarantor.Name == _guarantorName
+                    && patientGuarantor.HMPatient == this.HMPatient;
+    
+                this.Guarantor = patientGuarantor.RecId;
+            }
+        }
+    
+        return HMPatientGuarantor::find(this.Guarantor).Name;
+    */
+        return '';
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>increasePriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Increases the priority of the selected Insurace policy.
+    /// </summary>
+    /// <returns>
+    ///    true if the priority is increased; otherwise, false.
+    /// </returns>
+    private boolean increasePriority()
+    {
+        boolean ret;
+      //  HMInsurancePolicyPriority newPriority;
+    
+        HMPatientInsurance hmPatientInsurance;
+    
+        // find the secondary order to swap
+        hmPatientInsurance = HMPatientInsurance::findByPriorityInDirection(this.HMPatient, this.Priority, true, true);
+        this.swapPriority(this, hmPatientInsurance, hmPatientInsurance.Priority);
+        ret = true;
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        super();
+    
+        this.HMCardIssueNumber = "1";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        if (this.RecId == 0)
+        {
+            this.Priority = this.Priority == 0 ? HMPatientInsurance::getMinPriorityByPatient(this.HMPatient) + 1 : this.Priority;
+        }
+        super();
+    
+        this.updateCustomer();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Name</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display Name Name()
+    {
+        return DirPartyTable::findRec(HMPatient::find(this.HMPatient).DirPartyTable).Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>phone</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display Phone phone()
+    {
+        return this.getCustTable().phone();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postalAddress</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display LogisticsAddressing postalAddress()
+    {
+        return this.getCustTable().address();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>primaryEmail</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display LogisticsElectronicAddressLocator primaryEmail()
+    {
+        CustTable                   custTable;
+        DirPartyTable               dirPartyTable;
+        DirPartyLocation            dirPartyLocation;
+        LogisticsLocation           logisticsLocation;
+        LogisticsElectronicAddress  logisticsElectronicAddress;
+    
+    
+        select * from logisticsElectronicAddress
+        join * from logisticsLocation
+        join * from dirPartyLocation
+        join * from dirPartyTable
+        join * from custTable
+        where logisticsElectronicAddress.Location==logisticsLocation.RecId
+        && logisticsLocation.RecId==dirPartyLocation.Location
+        && dirPartyLocation.Party==dirPartyTable.RecId
+        && dirPartyTable.RecId==custTable.Party
+        && custTable.RecId==CustTable::find(this.InsuranceCarrier).RecId
+        && dirPartyLocation.IsPrimary==NoYes::Yes
+        && logisticsElectronicAddress.Type==LogisticsElectronicAddressMethodType::Email;
+    
+        return logisticsElectronicAddress.locator;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>primaryFax</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display LogisticsElectronicAddressLocator primaryFax()
+    {
+        CustTable                   custTable;
+        DirPartyTable               dirPartyTable;
+        DirPartyLocation            dirPartyLocation;
+        LogisticsLocation           logisticsLocation;
+        LogisticsElectronicAddress  logisticsElectronicAddress;
+    
+    
+        select * from logisticsElectronicAddress
+        join * from logisticsLocation
+        join * from dirPartyLocation
+        join * from dirPartyTable
+        join * from custTable
+        where logisticsElectronicAddress.Location==logisticsLocation.RecId
+        && logisticsLocation.RecId==dirPartyLocation.Location
+        && dirPartyLocation.Party==dirPartyTable.RecId
+        && dirPartyTable.RecId==custTable.Party
+        && custTable.RecId==CustTable::find(this.InsuranceCarrier).RecId
+        && dirPartyLocation.IsPrimary==NoYes::Yes
+        && logisticsElectronicAddress.Type==LogisticsElectronicAddressMethodType::Fax;
+    
+        return logisticsElectronicAddress.locator;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>primaryPhone</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display LogisticsElectronicAddressLocator primaryPhone()
+    {
+        CustTable                   custTable;
+        DirPartyTable               dirPartyTable;
+        DirPartyLocation            dirPartyLocation;
+        LogisticsLocation           logisticsLocation;
+        LogisticsElectronicAddress  logisticsElectronicAddress;
+    
+    
+        select * from logisticsElectronicAddress
+        join * from logisticsLocation
+        join * from dirPartyLocation
+        join * from dirPartyTable
+        join * from custTable
+        where logisticsElectronicAddress.Location==logisticsLocation.RecId
+        && logisticsLocation.RecId==dirPartyLocation.Location
+        && dirPartyLocation.Party==dirPartyTable.RecId
+        && dirPartyTable.RecId==custTable.Party
+        && custTable.RecId==CustTable::find(this.InsuranceCarrier).RecId
+        && dirPartyLocation.IsPrimary==NoYes::Yes
+        && logisticsElectronicAddress.Type==LogisticsElectronicAddressMethodType::Phone;
+    
+        return logisticsElectronicAddress.locator;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>subscriberName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display CustName subscriberName()
+    {
+        return HMPatient::find(this.HMPatientSubscriber).patientName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>swapPriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Swaps the priorities of two records.
+    /// </summary>
+    /// <param name="_currHMPatientInsurance">
+    ///    The <c>HMPatientInsurance</c> type value of the record.
+    /// </param>
+    /// <param name="_newHMPatientInsurance">
+    ///    A <c>HMPatientInsurance</c> value that indicates the records with which to swap the priority.
+    /// </param>
+    /// <param name="_newPriority">
+    ///    A <c>HMInsurancePolicyPriority</c> value that indicates the new priority to be assigned.
+    /// </param>
+    private void swapPriority(HMPatientInsurance _currHMPatientInsurance,
+        HMPatientInsurance _newHMPatientInsurance,
+        HMInsurancePolicyPriority _newPriority)
+    {
+        ttsbegin;
+        _newHMPatientInsurance.Priority = _currHMPatientInsurance.Priority;
+        _currHMPatientInsurance.Priority = _newPriority;
+    
+        _newHMPatientInsurance.update();
+        _currHMPatientInsurance.selectForUpdate(true);
+        _currHMPatientInsurance.update();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>telefax</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    [SysClientCacheDataMethodAttribute(true)]
+    display TeleFax telefax()
+    {
+        return this.getCustTable().telefax();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        super();
+    
+        this.updateCustomer();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCustomer</Name>
+				<Source><![CDATA[
+    private void updateCustomer()
+    {
+        CustTable custTable;
+        HMPatient hmPatient;
+    
+        ttsBegin;
+        select forUpdate custTable
+            join hmPatient
+                where hmPatient.CustTable == custTable.RecId
+                && hmPatient.RecId == this.HMPatient;
+        if(custTable)
+        {
+            custTable.IsGurantor = this.SelfPolicy;
+            custTable.update();
+        }
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    public boolean validateDelete()
+    {
+        boolean ret;
+        HMPatientInsurance      hmPatientInsuranceForUpdate;
+        //CS: Bug 3563:Insurance record on patient record cant be deleted by Ammar.Ali
+        HMCase                  hmCaseLocal;
+        HMCaseTrans             hmCaseTrans;
+        HMCaseInsurance         hmCaseInsurance;
+        //CE: Bug 3563:Insurance record on patient record cant be deleted by Ammar.Ali
+    
+        ret = super();
+
+        //CS: Bug 3563:Insurance record on patient record cant be deleted by Ammar.Ali
+        select RecId from hmCaseLocal
+            join RecId from hmCaseInsurance
+                where hmCaseInsurance.HMPatientInsurance == this.RecId
+                    && hmCaseLocal.HMPatient == this.HMPatient;
+
+        if(hmCaseLocal)
+        {
+            ret = false;
+            warning("Patient insurance cannot be deleted. Case/invoices exists for this patient.");
+        }
+        //CS: Bug 3563:Insurance record on patient record cant be deleted by Ammar.Ali
+    
+        if( ret )
+        {
+            ttsBegin;
+            while select forUpdate * from hmPatientInsuranceForUpdate
+            where hmPatientInsuranceForUpdate.HMPatient == this.HMPatient
+            && hmPatientInsuranceForUpdate.Priority > this.Priority
+            {
+                hmPatientInsuranceForUpdate.Priority--;
+                if( hmPatientInsuranceForUpdate.validateWrite())
+                {
+                    hmPatientInsuranceForUpdate.update();
+                }
+            }
+    
+            ttsCommit;
+    
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateField</Name>
+				<Source><![CDATA[
+    public boolean validateField(FieldId _fieldIdToCheck)
+    {
+        boolean ret;
+    
+        ret = super(_fieldIdToCheck);
+    
+        // Check if Current deductible is greater than total deductible amount
+        if (ret && fieldId2name(tableNum(HMPatientInsurance), _fieldIdToCheck) == 'CurrentDeductibleAmount')
+        {
+            if (this.CurrentDeductibleAmount > this.DeductibleAmount)
+            {
+                error("@MAZ4683");
+                ret = false;
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    public boolean validateWrite()
+    {
+        boolean ret;
+        HMPatientInsurance  tempPatientInsurance;
+        HMInsuranceContract insuranceContract;
+        #ISOCountryRegionCodes
+    
+        ret = super();
+    
+        if (ret)
+        {
+            if(ret && this.PolicyType == PolicyType::CoInsurance && this.CoInsurance > 100.00)
+            {
+                ret = checkFailed("@MAZ1619");
+            }
+    
+            if (this.HMPayerType == HMPayerType::Gurantor)
+            {
+                if (this.RelationShip == PatientInsuranceRelation::None)
+                {
+                    ret = checkFailed("@MAZ3324");
+                }
+            }
+            if (this.HMPayerType == HMPayerType::Gurantor && this.RelationShip == PatientInsuranceRelation::Self)
+            {
+                ret = checkFailed("@MAZ3354");
+            }
+    
+            /*select tempPatientInsurance
+                where tempPatientInsurance.InsuranceCarrier == this.InsuranceCarrier
+                    && tempPatientInsurance.HMPatient       == this.HMPatient
+                    && tempPatientInsurance.RecId           != this.RecId;
+    
+            if (tempPatientInsurance)
+            {
+                ret = checkFailed("@MAZ13167");
+            }*/
+    
+           /* if (ret)
+            {
+                select tempPatientInsurance
+                    where tempPatientInsurance.HMCardIssueNumber    == this.HMCardIssueNumber
+                        && tempPatientInsurance.RecId               != this.RecId;
+    
+                if (tempPatientInsurance)
+                {
+                    ret = checkFailed("@MAZ13419");
+                }
+            }*/
+        }
+        if(this.EndDate == dateNull())
+        {
+            select HMContractEndDate from insuranceContract
+            where insuranceContract.RecId == this.HMInsuranceContract;
+            this.EndDate = insuranceContract.HMContractEndDate;
+        }
+
+        select firstonly RecId from tempPatientInsurance
+        where tempPatientInsurance.InsuranceCarrier == this.InsuranceCarrier
+                && tempPatientInsurance.HMInsuranceContract == this.HMInsuranceContract
+                && tempPatientInsurance.HMInsuranceContractClassOrPlans == this.HMInsuranceContractClassOrPlans
+                && tempPatientInsurance.HMPatient == this.HMPatient
+                && tempPatientInsurance.Priority == this.Priority
+                && tempPatientInsurance.RecId != this.RecId;
+    
+        if(tempPatientInsurance.RecId)
+        {
+            ret = false;
+            warning("@MAZ13532");
+        }
+        // <IN>
+        if (SysCountryRegionCode::isLegalEntityInCountryRegion([#isoIN]) && ret)
+        {
+            ret = HMPatientInsuranceAction::validateInsuranceCorporate_IN(this.HMPatient, this.RecId);
+        }
+        // </IN>
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record is located in the <c>HMPatientInsurance</c> table.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMPatientInsurance</c> table record to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    /// <remarks>
+    ///    If the specified record is not located in the <c>HMPatientInsurance</c> table, an error message is
+    ///    displayed.
+    /// </remarks>
+    public static boolean checkExist(RecId _recId)
+    {
+        boolean ret = true;
+    
+        if (!HMPatientInsurance::exist(_recId))
+        {
+            ret = checkFailed(strfmt(HMPatientInsurance::txtNotExist(), _recId));
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record in the <c>HMPatientInsurance</c> table exists.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMPatientInsurance</c> table to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    public static boolean exist(RecId _recId)
+    {
+        boolean found;
+    
+        found = (select firstonly
+                     RecId
+                 from
+                     hmPatientInsurance
+                 where
+                     hmPatientInsurance.RecId == _recId).RecId != 0;
+    
+        return found;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMPatientInsurance</c> table.
+    /// </summary>
+    /// <param name="_recid">
+    ///     The record ID of the <c>HMPatientInsurance</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMPatientInsurance</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientInsurance find(
+    RecId               _recid,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMPatientInsurance  hmPatientInsurance;
+    
+        hmPatientInsurance.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmPatientInsurance.concurrencyModel(_concurrencyModel);
+        }
+    
+        select firstonly * from hmPatientInsurance where hmPatientInsurance.RecId == _recid;
+    
+        return hmPatientInsurance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByPatient</Name>
+				<Source><![CDATA[
+    public static HMPatientInsurance findByPatient(
+    RecId               _patientRecid)
+    {
+    
+        HMPatientInsurance  hmPatientInsurance;
+    
+        select * from hmPatientInsurance
+    
+        Where hmPatientInsurance.HMPatient == _patientRecid;
+        return hmPatientInsurance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByPriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Finds the specified record in the <c>HMPatientInsurance</c> table by priority.
+    /// </summary>
+    /// <param name="_patientRecId">
+    ///    The record ID of the <c>Patient</c> table to find.
+    /// </param>
+    /// <param name="_currPriority">
+    ///    A <c>HMInsurancePolicyPriority</c> type value that indicates the attribute priority to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///    A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <returns>
+    ///    A record of the <c>HMPatientInsurance</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientInsurance findByPriority(HMPatientRecId _patientRecId, HMInsurancePolicyPriority _currPriority,
+    boolean _forUpdate = false)
+    {
+        HMPatientInsurance hmPatientInsurance;
+    
+        hmPatientInsurance.selectForUpdate(_forUpdate);
+    
+        select firstonly hmPatientInsurance
+            where hmPatientInsurance.Priority == _currPriority
+            && hmPatientInsurance.HMPatient == _patientRecId;
+    
+        return hmPatientInsurance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByPriorityInDirection</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Finds the specified record in the <c>HMPatientInsurance</c> table by priority.
+    /// </summary>
+    /// <param name="_patientRecId">
+    ///    The record ID of the <c>Patient</c> table to find.
+    /// </param>
+    /// <param name="_currPriority">
+    ///    A <c>HMInsurancePolicyPriority</c> type value that indicates the attribute priority to find.
+    /// </param>
+    /// <param name="_direction">
+    ///    A boolean specifying the direction to search.
+    /// </param>
+    /// /// <param name="_forUpdate">
+    ///    A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <returns>
+    ///    A record of the <c>HMPatientInsurance</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMPatientInsurance findByPriorityInDirection(HMPatientRecId _patientRecId, HMInsurancePolicyPriority _currPriority, boolean _direction,
+    boolean _forUpdate = false)
+    {
+        HMPatientInsurance hmPatientInsurance;
+        HMInsurancePolicyPriority newPriority;
+        int counter;
+        select forUpdate hmPatientInsurance where hmPatientInsurance.HMPatient == _patientRecId && hmPatientInsurance.Priority == _currPriority;
+        hmPatientInsurance.selectForUpdate(_forUpdate);
+    
+        if (_direction)
+        {
+            newPriority = _currPriority + 1;
+            counter = HMPatientInsurance::getMinPriorityByPatient(_patientRecId);
+    
+            while (newPriority <= counter)
+            {
+                select firstonly hmPatientInsurance
+                    where hmPatientInsurance.Priority == newPriority
+                    && hmPatientInsurance.HMPatient == _patientRecId;
+    
+                if (hmPatientInsurance)
+                {
+                    break;
+                }
+                else
+                {
+                    ++newPriority;
+                }
+            }
+        }
+        else
+        {
+            newPriority = _currPriority - 1;
+    
+            while (newPriority > 0)
+            {
+                select firstonly hmPatientInsurance
+                    where hmPatientInsurance.Priority == newPriority
+                    && hmPatientInsurance.HMPatient == _patientRecId;
+    
+                if (hmPatientInsurance)
+                {
+                    break;
+                }
+                else
+                {
+                    --newPriority;
+                }
+            }
+        }
+    
+        return hmPatientInsurance;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findGuarantorByPatient</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method finds for the guarantor of the parameter patient recid
+    /// </summary>
+    /// <param name="_patientRecid">
+    /// The patient's rec id to be found
+    /// </param>
+    /// <returns>
+    /// HMPatientInsurance recrd found
+    /// </returns>
+    /// <remarks>
+    /// Jan 10 2012 - created for CCD - consumed for finding patient's guarantor
+    /// </remarks>
+    
+    public static HMPatientInsurance findGuarantorByPatient(
+    RecId               _patientRecid)
+    {
+        HMPatient           hmPatient;
+        HMPatientInsurance  hmPatientInsurance;
+    
+        select RecId, HMPatient,InsuranceCarrier, HMPayerType
+        from hmPatientInsurance
+        join RecId from hmPatient
+        Where hmPatientInsurance.HMPatient == hmPatient.RecId
+            && hmPatient.RecId == _patientRecid
+            && HMPatientInsurance.InsuranceCarrier && hmPatientInsurance.HMPayerType == HMPayerType::Gurantor;
+        return hmPatientInsurance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMinPriorityByPatient</Name>
+				<Source><![CDATA[
+    public static int getMinPriorityByPatient(HMPatientRecId _patientRecId)
+    {
+        HMPatientInsurance hmPatientInsurance;
+    
+        select maxOf(Priority) from hmPatientInsurance
+            where hmPatientInsurance.HMPatient == _patientRecId;
+    
+        return hmPatientInsurance.Priority;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPrimaryInsuranceName</Name>
+				<Source><![CDATA[
+    public static DirPartyName getPrimaryInsuranceName(RecId _patientRecId)
+    {
+    
+        HMPatientInsurance hmPatientInsurance;
+        select * from hmPatientInsurance
+        where hmPatientInsurance.HMPatient == _patientRecId
+        && hmPatientInsurance.Priority == 1;
+    
+        if (hmPatientInsurance.RecId)
+        {
+            return DirPartyTable::findRec(CustTable::find(hmPatientInsurance.InsuranceCarrier).Party).Name;
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPrimaryInsurance</Name>
+				<Source><![CDATA[
+    public static AccountNum getPrimaryInsurance(RecId _patientRecId)
+    {
+    
+        HMPatientInsurance hmPatientInsurance;
+        HMInsuranceCarrier hmInsuranceCarrier;
+        select * from hmPatientInsurance
+            join hmInsuranceCarrier
+                where hmPatientInsurance.InsuranceCarrier == hmInsuranceCarrier.Code
+                   && hmPatientInsurance.HMPatient == _patientRecId
+                   && hmPatientInsurance.Priority == 1;
+        
+        return hmInsuranceCarrier.Code;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>txtNotExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets the message to use when a specific record in the <c>HMPatientInsurance</c> does not exist.
+    /// </summary>
+    /// <returns>
+    ///    The message that states a record does not exist.
+    /// </returns>
+    public static TxtNotExist txtNotExist()
+    {
+        return "@SYS127989";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePriorityOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Updates the priority of the specified attribute.
+    /// </summary>
+    /// <param name="_patientInsurance">
+    ///    A <c>CustSettlementPriorityAttribute</c> type value that indicates the attribute to update.
+    /// </param>
+    /// <param name="_isIncrease">
+    ///    A Boolean value that indicates whether to increase or decrease the priority.
+    /// </param>
+    /// <returns>
+    ///    true if the attribute priority is updated; otherwise, false.
+    /// </returns>
+    public static boolean updatePriorityOrder(HMPatientInsurance _patientInsurance,
+    boolean _isIncrease = false)
+    {
+        boolean ret;
+        HMPatientInsurance hmPatientInsurance;
+    
+        hmPatientInsurance = _patientInsurance;
+        //hmPatientInsurance = HMPatientInsurance::findByPriority(_patientInsurance.HMPatient, _patientInsurance.Priority, true);
+    
+        Debug::assert(hmPatientInsurance.RecId != 0);
+    
+        if (_isIncrease)
+        {
+            ret = hmPatientInsurance.increasePriority();
+        }
+        else
+        {
+            ret = hmPatientInsurance.decreasePriority();
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCarrier_US</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    display HMInsuranceCarrier getCarrier_US()
+    {
+         return HMInsuranceCarrier::findByCode(this.InsuranceCarrier);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getContract</Name>
+				<Source><![CDATA[
+    public HMInsuranceContract getContract()
+    {
+        HMInsuranceContract                     contract;
+        HMInsuranceContractClassOrPlans         plans;
+    
+        plans               = HMInsuranceContractClassOrPlans::find(this.HMInsuranceContractClassOrPlans);
+        contract            = HMInsuranceContract::find(plans.HMInsuranceContract);
+    
+        return contract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTPACode</Name>
+				<Source><![CDATA[
+    //BP Deviation Documented
+    display HMTPACode getTPACode()
+    {
+        HMInsuranceContract                     contract;
+        HMInsuranceContractCarrierCombination   carrierCombination;
+        HMTPA                                   TPA;
+        HMInsuranceContractClassOrPlans         plans;
+    
+        plans               = HMInsuranceContractClassOrPlans::find(this.HMInsuranceContractClassOrPlans);
+        contract            = HMInsuranceContract::find(plans.HMInsuranceContract);
+        carrierCombination  = HMInsuranceContractCarrierCombination::find(contract.HMInsuranceContractCarrierCombination);
+        TPA                 = HMTPA::find(carrierCombination.HMInsuranceTPA);
+    
+        return TPA.Code;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>PayerType</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute]
+    display String20 PayerType()
+    {
+        return enum2str(this.HMPayerType);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>PatientMgmt</ConfigurationKey>
+	<DeveloperDocumentation>@MAZ855</DeveloperDocumentation>
+	<FormRef>HMPatientInsurance</FormRef>
+	<Label>@MAZ1254</Label>
+	<TableGroup>Main</TableGroup>
+	<TitleField1>PolicyNumber</TitleField1>
+	<TitleField2>PolicyType</TitleField2>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<PrimaryIndex>PatientInsurance</PrimaryIndex>
+	<ReplacementKey>PatientInsurance</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>SubscriberRelation</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CoInsurance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CoPayAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CurrentDeductibleAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DeductibleAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DeductibleUpdateDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EffectiveDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EligibilityComments</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GroupNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceCoveragePlan</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceEligibilityStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPatient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPatientSubscriber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPayerType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyPlan</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Priority</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RelationShip</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SelfPolicy</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SubscriberID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EmployeeID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PreauthorizationReqd</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationExpiryDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationLimit</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationNotes</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationRequest</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceEligibilityStatus</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMPatient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Priority</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Insurance</Name>
+			<Label>@SYS32352</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceCarrier</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceContract</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceContractClassOrPlans</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS34991</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CoInsurance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CoPayAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CurrentDeductibleAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DeductibleAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DeductibleUpdateDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EffectiveDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EligibilityComments</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GroupNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceCoveragePlan</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceEligibilityStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPatient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPatientSubscriber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPayerType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyPlan</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Priority</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RelationShip</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SelfPolicy</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SubscriberID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SubscriberRelation</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>GroupName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EligibilityLastChecked</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceNotes</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EmployeeID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PreauthorizationReqd</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PriorAuthorizationNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationExpiryDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationLimit</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationNotes</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationRequest</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InsuranceEligibilityStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AuthorizationDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EmployeeGrade</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMEligibleClass</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMCorporatePlan</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Policy</Name>
+			<Label>@SYS111161</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>PolicyNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyGroup</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PolicyPlan</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SubscriberID</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CoPayAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DeductibleAmount</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EffectiveDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CoInsurance</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMInsuranceCoveragePlan</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DeductibleUpdateDate</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>AuthorizationDate</Name>
+			<ExtendedDataType>HMPatientInsAuthorizationDate</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>AuthorizationExpiryDate</Name>
+			<ExtendedDataType>HMPatientInsAuthorizationExpiryDate</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AuthorizationLimit</Name>
+			<ExtendedDataType>HMPatientInsAuthorizationLimit</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>AuthorizationNotes</Name>
+			<ExtendedDataType>HMPatientInsAuthorizationNotes</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>AuthorizationRequest</Name>
+			<ExtendedDataType>HMPatientInsAuthorizationRequest</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>BalanceAmount</Name>
+			<ExtendedDataType>HMPatientInsuranceBalanceAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CoInsurance</Name>
+			<ExtendedDataType>HMInsuranceCoInsurancePercentage</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CoPayAmount</Name>
+			<ExtendedDataType>HMInsuranceCoPayAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CurrentDeductibleAmount</Name>
+			<ExtendedDataType>HMInsuranceCurrentDeductibleAmnt</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CustTable</Name>
+			<Label>@SYS302</Label>
+			<StringSize>20</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DeductibleAmount</Name>
+			<ExtendedDataType>HMInsuranceDeductibleAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>DeductibleUpdateDate</Name>
+			<ExtendedDataType>HMInsuranceDeductibleUpdatedOn</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>EffectiveDate</Name>
+			<ExtendedDataType>HMInsuranceEffectiveDate</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>EligibilityAmount</Name>
+			<ExtendedDataType>HMPatientInsuranceEligibilityAmount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EligibilityComments</Name>
+			<ExtendedDataType>HMInsuranceEligibilityComments</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>EligibilityLastChecked</Name>
+			<ExtendedDataType>HMEligibilityLastChecked</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EmployeeGrade</Name>
+			<ExtendedDataType>HMCorporateCarrierEmployeeGrade</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EmployeeID</Name>
+			<ExtendedDataType>HMPolicySubscriberID</ExtendedDataType>
+			<HelpText>@MAZ6800</HelpText>
+			<Label>@SYS14981</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>EndDate</Name>
+			<ExtendedDataType>HMInsuranceEndDate</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GroupName</Name>
+			<ExtendedDataType>HMGroupName</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GroupNumber</Name>
+			<ExtendedDataType>HMInsuranceGroupNumber</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HcmTitle</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ8988</HelpText>
+			<Label>@MAZ8987</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMCardIssueNumber</Name>
+			<ExtendedDataType>HMCardIssueNumber</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMClassOrPlanId</Name>
+			<ExtendedDataType>HMClassOrPlanId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMClassOrPlanId1</Name>
+			<Label>Class</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMCorporatePlan</Name>
+			<HelpText>@MAZ8837</HelpText>
+			<Label>@MAZ8836</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMEligibleClass</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ8838</HelpText>
+			<Label>@MAZ8839</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMInsuranceCarrier</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ607</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMInsuranceContract</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMInsuranceContractClassOrPlans</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMInsuranceCoveragePlan</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMInsuranceEligibilityStatus</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ6131</HelpText>
+			<Label>@MAZ6132</Label>
+			<Visible>No</Visible>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMPatient</Name>
+			<ExtendedDataType>HMPatientRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMPatientInsuranceMembershipId</Name>
+			<ExtendedDataType>HMInsuranceMembershipId</ExtendedDataType>
+			<HelpText>@MAZ13043</HelpText>
+			<Label>@MAZ13042</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMPatientSubscriber</Name>
+			<ConfigurationKey>PatientMgmt</ConfigurationKey>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ6138</HelpText>
+			<Label>@MAZ6154</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMPayerType</Name>
+			<ExtendedDataType>HMInsurancePayerType</ExtendedDataType>
+			<EnumType>HMPayerType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InsuranceCarrier</Name>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+			<HelpText>@MAZ6149</HelpText>
+			<Label>@MAZ10848</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>InsuranceEligibilityStatus</Name>
+			<ExtendedDataType>HMPatientInsuranceEligibilityStatus</ExtendedDataType>
+			<EnumType>HMEligibilityStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InsuranceNotes</Name>
+			<ExtendedDataType>HMInsuranceNotes</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>InsuranceStatus</Name>
+			<ExtendedDataType>HMPatientInsuranceStatus</ExtendedDataType>
+			<EnumType>HMInsuranceStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PolicyGroup</Name>
+			<ExtendedDataType>HMPolicyGroup</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PolicyNumber</Name>
+			<ExtendedDataType>HMPolicyNumber</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PolicyPlan</Name>
+			<ExtendedDataType>HMPolicyPlan</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PolicyType</Name>
+			<ExtendedDataType>HMInsurancePolicyType</ExtendedDataType>
+			<EnumType>PolicyType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PreauthorizationReqd</Name>
+			<HelpText>@MAZ6876</HelpText>
+			<Label>@MAZ6877</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PriorAuthorizationNumber</Name>
+			<ExtendedDataType>HMPriorAuthorizationNumber</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Priority</Name>
+			<ExtendedDataType>HMInsurancePolicyPriority</ExtendedDataType>
+			<HelpText>@MAZ6166</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>RelationShip</Name>
+			<HelpText>@MAZ1257</HelpText>
+			<EnumType>PatientInsuranceRelation</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SelfPolicy</Name>
+			<HelpText>@MAZ105</HelpText>
+			<Label>@MAZ105</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SubscriberID</Name>
+			<ExtendedDataType>HMPolicySubscriberID</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SubscriberRelation</Name>
+			<ExtendedDataType>HMInsuranceSubscriberRelation</ExtendedDataType>
+			<EnumType>PatientInsuranceRelation</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>AssignmentOfBenefitsIndicator</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>Assignment Of Benefits Indicator</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>DeductibleIncInOutOfPocket</Name>
+			<Label>Deductible included in out of pocket</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DeductibleMet</Name>
+			<ExtendedDataType>HMInsuranceDeductibleAmount</ExtendedDataType>
+			<Label>Deductible met</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EmployerNameofTheInsured</Name>
+			<Label>Employer Name</Label>
+			<StringSize>25</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HealthPlanId</Name>
+			<ExtendedDataType>String20</ExtendedDataType>
+			<Label>Health Plan Id</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMClaimFileIndicator</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>Claim file indicator</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMClaimTableSetup</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>OutOfPocket</Name>
+			<ExtendedDataType>HMInsuranceDeductibleAmount</ExtendedDataType>
+			<Label>Out of pocket</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>OutOfPocketMet</Name>
+			<ExtendedDataType>HMInsuranceDeductibleAmount</ExtendedDataType>
+			<Label>Out of pocket met</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PatientID</Name>
+			<Label>@MAZ10672</Label>
+			<StringSize>29</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>PatientRelationshipToInsured</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>Patient Relationship To Insured</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>ReleaseofInformationCertificationIndicat</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>SubscriberDateOfBirth</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<Label>Subscriber date of birth</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SubscriberEmployer</Name>
+			<Label>Employer Name</Label>
+			<StringSize>25</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>SubscriberName</Name>
+			<ExtendedDataType>Name</ExtendedDataType>
+			<Label>@MAZ6154</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>HMPatientIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMPatient</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>PriorityIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Priority</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMInsuranceCoveragePlanIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMInsuranceCoveragePlan</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMInsuranceEligibilityStatusIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMInsuranceEligibilityStatus</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMPatientIdx1</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMPatientSubscriber</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMPatientInsuranceIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>HMPatientSubscriber</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>HMPatient</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMPatientMembershipId</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMPatientInsuranceMembershipId</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMCardIssueNumber</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMCardIssueNumber</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>PatientInsurance</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMPatient</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>Priority</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HcmTitle</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HcmTitle</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HcmTitle</Name>
+					<Field>HcmTitle</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMClassOrPlans</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMInsuranceContractClassOrPlans</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HMContractClassStatus</Name>
+					<RelatedField>HMContractClassStatus</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMInsuranceContractClassOrPlans</Name>
+					<Field>HMInsuranceContractClassOrPlans</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMInsuranceCarrier</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMInsuranceCarrier</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InsuranceCarrier</Name>
+					<Field>InsuranceCarrier</Field>
+					<RelatedField>Code</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMInsuranceContract</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMInsuranceContract</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HMContractStatus</Name>
+					<RelatedField>HMContractStatus</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMInsuranceContract</Name>
+					<Field>HMInsuranceContract</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMInsuranceCoveragePlan</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMInsuranceCoveragePlan</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMInsuranceCoveragePlan</Name>
+					<Field>HMInsuranceCoveragePlan</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMInsuranceEligibilityStatus</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMInsuranceEligibilityStatus</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMInsuranceEligibilityStatus</Name>
+					<Field>HMInsuranceEligibilityStatus</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatient_FK</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>HMPatient</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPatient</Name>
+					<Field>HMPatient</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatientSubscriber</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMPatient</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMPatientSubscriber</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPatientSubscriber</Name>
+					<Field>HMPatientSubscriber</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMTreatmentClassification</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMTreatmentClassification</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>Status</Name>
+					<RelatedField>Status</RelatedField>
+					<Value>1</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMEligibleClass</Name>
+					<Field>HMEligibleClass</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>AssignmentOfBenefitsIndicator</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMClaimTableSetup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>AssignmentOfBenefitsIndicator</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HMClaimEnumList</Name>
+					<RelatedField>HMClaimEnumList</RelatedField>
+					<Value>15</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>AssignmentOfBenefitsIndicator</Name>
+					<Field>AssignmentOfBenefitsIndicator</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>ClaimFileIndicator</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMClaimTableSetup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>ClaimFileIndicator</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HMClaimEnumList</Name>
+					<RelatedField>HMClaimEnumList</RelatedField>
+					<Value>24</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMClaimFileIndicator</Name>
+					<Field>HMClaimFileIndicator</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>PatientRelationshipToInsured</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMClaimTableSetup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HMClaimEnumList</Name>
+					<RelatedField>HMClaimEnumList</RelatedField>
+					<Value>10</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>PatientRelationshipToInsured</Name>
+					<Field>PatientRelationshipToInsured</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>ReleaseofInformationCertificationIndicat</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMClaimTableSetup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>ReleaseofInformationCertificationIndicat</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HMClaimEnumList</Name>
+					<RelatedField>HMClaimEnumList</RelatedField>
+					<Value>14</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ReleaseofInformationCertificationIndicat</Name>
+					<Field>ReleaseofInformationCertificationIndicat</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

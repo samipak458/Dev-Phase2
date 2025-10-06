@@ -1,0 +1,986 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientMerge</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientMerge
+{
+    RecId targetPatientRecId, sourcePatientRecId, reasonRecId;
+    RecId           custSourceRecId, custTargetRecId;
+    RecId           partySourceRecId, partyTargetRecId;
+    boolean         demographics, addresses, contacts, documents, relationships,
+                    complements, appointments, calltasks, notes;
+
+    HMPatientMergeAuditTrail    hmPatientMergeAuditTrail;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insertAuditTrailDetail</Name>
+				<Source><![CDATA[
+    private void insertAuditTrailDetail(TableId _tableId, RecId _recId)
+    {
+        HMPatientMergeAuditTrailDetail  hmPatientMergeAuditTrailDetail;
+    
+        hmPatientMergeAuditTrailDetail.initValue();
+    
+        hmPatientMergeAuditTrailDetail.HMPatientMergeAuditTrail = hmPatientMergeAuditTrail.RecId;
+        hmPatientMergeAuditTrailDetail.RefRecId = _recId;
+        hmPatientMergeAuditTrailDetail.RefTableid = _tableId;
+    
+        hmPatientMergeAuditTrailDetail.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mergePatient</Name>
+				<Source><![CDATA[
+    public boolean mergePatient()
+    {
+        boolean ret = true;
+    
+        if(!this.parmSourcePatientRecId())
+        {
+            warning("@MAZ8347");
+            ret = false;
+        }
+    
+        if(!this.parmTargetPatientRecId())
+        {
+            warning("@MAZ8348");
+            ret = false;
+        }
+    
+        if(!this.parmReasonRecId())
+        {
+            warning("@MAZ8349");
+            ret = false;
+        }
+    
+        if(ret && this.parmTargetPatientRecId() == this.parmSourcePatientRecId())
+        {
+            warning("@MAZ8350");
+            ret = false;
+        }
+    
+        if(ret)
+        {
+            try
+            {
+                ttsBegin;
+    
+                this.mergePatientData();
+                this.replaceRecId();
+    
+                ttsCommit;
+            }
+            catch
+            {
+                ret = false;
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>mergePatientData</Name>
+				<Source><![CDATA[
+    private void mergePatientData()
+    {
+        HMPatient   hmPatientSource;
+        HMPatient   hmPatientTarget;
+        RecId       targetCustAccountRecId;
+        LogisticsPostalAddress  employementAddress;
+    
+        select forUpdate * from hmPatientSource where hmPatientSource.RecId == this.parmSourcePatientRecId();
+    
+        select forUpdate * from hmPatientTarget where hmPatientTarget.RecId == this.parmTargetPatientRecId();
+        if(this.parmDemographics())
+        {
+            hmPatientTarget.ReasonTableMerge = this.parmReasonRecId();
+            targetCustAccountRecId = hmPatientTarget.CustTable;
+            buf2Buf(hmPatientSource,hmPatientTarget);
+            hmPatientTarget.CustTable = targetCustAccountRecId;
+            hmPatientSource.PhysicalChartNumber = '';
+            /*
+            if(!hmPatientTarget.BirthTime)
+            {
+                hmPatientTarget.BirthTime = hmPatientSource.BirthTime;
+            }
+    
+            if(!hmPatientTarget.IsVIP)
+            {
+                hmPatientTarget.IsVIP = hmPatientSource.IsVIP;
+            }
+    
+            if(!hmPatientTarget.RAMQ)
+            {
+                hmPatientTarget.RAMQ = hmPatientSource.RAMQ;
+            }
+    
+            if(!hmPatientTarget.Pilot)
+            {
+                hmPatientTarget.Pilot = hmPatientSource.Pilot;
+            }
+    
+            if(!hmPatientTarget.LogisticsAddressCountryRegion)
+            {
+                hmPatientTarget.LogisticsAddressCountryRegion = hmPatientSource.LogisticsAddressCountryRegion;
+            }
+    
+            if(!enum2str(hmPatientTarget.BloodGroup) || hmPatientTarget.BloodGroup == BloodGroup::Unknown)
+            {
+                hmPatientTarget.BloodGroup = hmPatientSource.BloodGroup;
+            }
+    
+            if(!hmPatientTarget.ContactPerson)
+            {
+                hmPatientTarget.ContactPerson = hmPatientSource.ContactPerson;
+            }
+    
+            if(!hmPatientTarget.CallNotes)
+            {
+                hmPatientTarget.CallNotes = hmPatientSource.CallNotes;
+            }
+    
+            if(!hmPatientTarget.Category)
+            {
+                hmPatientTarget.Category = hmPatientSource.Category;
+            }
+    
+            if(!hmPatientTarget.Client)
+            {
+                hmPatientTarget.Client = hmPatientSource.Client;
+            }
+    
+            if(!hmPatientTarget.Clinic)
+            {
+                hmPatientTarget.Clinic = hmPatientSource.Clinic;
+            }
+    
+            if(!hmPatientTarget.RecallDate)
+            {
+                hmPatientTarget.RecallDate = hmPatientSource.RecallDate;
+                hmPatientTarget.ContactFirst = hmPatientSource.ContactFirst;
+            }
+    
+            if(!hmPatientTarget.ExecutiveProtocol)
+            {
+                hmPatientTarget.ExecutiveProtocol = hmPatientSource.ExecutiveProtocol;
+                hmPatientTarget.Executive = hmPatientSource.Executive;
+            }
+    
+            if(!hmPatientTarget.FileLocation)
+            {
+                hmPatientTarget.FileLocation = hmPatientSource.FileLocation;
+            }
+    
+            if(!hmPatientTarget.PreEmploymentProtocol)
+            {
+                hmPatientTarget.PreEmploymentProtocol = hmPatientSource.PreEmploymentProtocol;
+                hmPatientTarget.PreEmployment = hmPatientSource.PreEmployment;
+            }
+    
+            if(!hmPatientTarget.ContactPhoneMobile)
+            {
+                hmPatientTarget.ContactPhoneMobile = hmPatientSource.ContactPhoneMobile;
+            }
+    
+            if(!hmPatientTarget.DrivingLicenseNumber)
+            {
+                hmPatientTarget.DrivingLicenseNumber = hmPatientSource.DrivingLicenseNumber;
+            }
+    
+            if(!hmPatientTarget.Employer)
+            {
+                hmPatientTarget.Employer = hmPatientSource.Employer;
+            }
+    
+            if(!enum2str(hmPatientTarget.Employment) || hmPatientTarget.Employment == PatientEmployment::None)
+            {
+                hmPatientTarget.Employment = hmPatientSource.Employment;
+            }
+    
+            if(!hmPatientTarget.EmploymentEmail)
+            {
+                hmPatientTarget.EmploymentEmail = hmPatientSource.EmploymentEmail;
+            }
+    
+            if(!hmPatientTarget.EmploymentFax)
+            {
+                hmPatientTarget.EmploymentFax = hmPatientSource.EmploymentFax;
+            }
+    
+            if(!hmPatientTarget.DocuRef)
+            {
+                hmPatientTarget.DocuRef = hmPatientSource.DocuRef;
+            }
+    
+            if(!hmPatientTarget.EmploymentLogisticsLocation)
+            {
+                hmPatientTarget.EmploymentLogisticsLocation = hmPatientSource.EmploymentLogisticsLocation;
+            }
+            else
+            {
+                employementAddress = LogisticsPostalAddress::findByLocation(hmPatientTarget.EmploymentLogisticsLocation);
+    
+                if(!(employementAddress.ZipCodeRecId || employementAddress.Street || employementAddress.StreetNumber || employementAddress.BuildingCompliment ||
+                    employementAddress.District || employementAddress.CityRecId || employementAddress.County || employementAddress.State))
+                {
+                    hmPatientTarget.EmploymentLogisticsLocation = hmPatientSource.EmploymentLogisticsLocation;
+                }
+            }
+    
+            if(!hmPatientTarget.EmploymentPhone)
+            {
+                hmPatientTarget.EmploymentPhone = hmPatientSource.EmploymentPhone;
+            }
+    
+            if(!hmPatientTarget.EncounterActive)
+            {
+                hmPatientTarget.EncounterActive = hmPatientSource.EncounterActive;
+            }
+    
+            if(!enum2str(hmPatientTarget.Gender) || hmPatientTarget.Gender == HcmPersonGender::None)
+            {
+                hmPatientTarget.Gender = hmPatientSource.Gender;
+            }
+    
+            if(!hmPatientTarget.HcmEthnicOrigin)
+            {
+                hmPatientTarget.HcmEthnicOrigin = hmPatientSource.HcmEthnicOrigin;
+            }
+    
+            if(!hmPatientTarget.HcmLanguageCode)
+            {
+                hmPatientTarget.HcmLanguageCode = hmPatientSource.HcmLanguageCode;
+            }
+    
+            if(!hmPatientTarget.HMAgeValue)
+            {
+                hmPatientTarget.HMAgeValue = hmPatientSource.HMAgeValue;
+            }
+    
+            if(!hmPatientTarget.AgeInDays)
+            {
+                hmPatientTarget.AgeInDays = hmPatientSource.AgeInDays;
+            }
+    
+            if(!hmPatientTarget.AgeInMonths)
+            {
+                hmPatientTarget.AgeInMonths = hmPatientSource.AgeInMonths;
+            }
+    
+            if(hmPatientTarget.HMCalcBirthDate == dateNull())
+            {
+                hmPatientTarget.HMCalcBirthDate = hmPatientSource.HMCalcBirthDate;
+            }
+    
+            if(!hmPatientTarget.HMClinicStaff)
+            {
+                hmPatientTarget.HMClinicStaff = hmPatientSource.HMClinicStaff;
+            }
+    
+            if(!hmPatientTarget.HMClinicStaffFamilyDoctor)
+            {
+                hmPatientTarget.HMClinicStaffFamilyDoctor = hmPatientSource.HMClinicStaffFamilyDoctor;
+            }
+    
+            if(!hmPatientTarget.HMLaboratories)
+            {
+                hmPatientTarget.HMLaboratories = hmPatientSource.HMLaboratories;
+            }
+    
+            if(!enum2str(hmPatientTarget.HMPatientAllergyInvestigationStatus) || hmPatientTarget.HMPatientAllergyInvestigationStatus == HMPatientAllergyInvestigationStatus::Unknonwn)
+            {
+                hmPatientTarget.HMPatientAllergyInvestigationStatus = hmPatientSource.HMPatientAllergyInvestigationStatus;
+            }
+    
+            if(!hmPatientTarget.DirPartyRelationshipNextToKin)
+            {
+                hmPatientTarget.DirPartyRelationshipNextToKin = hmPatientSource.DirPartyRelationshipNextToKin;
+            }
+    
+            if(!hmPatientTarget.HMPharmacy)
+            {
+                hmPatientTarget.HMPharmacy = hmPatientSource.HMPharmacy;
+            }
+    
+            if(!hmPatientTarget.HMProfession)
+            {
+                hmPatientTarget.HMProfession = hmPatientSource.HMProfession;
+            }
+    
+            if(!hmPatientTarget.HMRaceCode)
+            {
+                hmPatientTarget.HMRaceCode = hmPatientSource.HMRaceCode;
+            }
+    
+            if(!hmPatientTarget.HMReferringPhysician)
+            {
+                hmPatientTarget.HMReferringPhysician = hmPatientSource.HMReferringPhysician;
+            }
+    
+            if(!enum2str(hmPatientTarget.NameSuffix) || hmPatientTarget.NameSuffix == HRMNameSuffix::None)
+            {
+                hmPatientTarget.NameSuffix = hmPatientSource.NameSuffix;
+            }
+    
+            if(!hmPatientTarget.OtherName)
+            {
+                hmPatientTarget.OtherName = hmPatientSource.OtherName;
+            }
+    
+            if(hmPatientTarget.PassportExpireDate == dateNull())
+            {
+                hmPatientTarget.PassportExpireDate = hmPatientSource.PassportExpireDate;
+            }
+    
+            if(!hmPatientTarget.PassportNum)
+            {
+                hmPatientTarget.PassportNum = hmPatientSource.PassportNum;
+            }
+    
+            if(!enum2str(hmPatientTarget.ProfessionalStatus) || hmPatientTarget.ProfessionalStatus == HMProfessionalStatus::None)
+            {
+                hmPatientTarget.ProfessionalStatus = hmPatientSource.ProfessionalStatus;
+            }
+    
+            if(hmPatientTarget.RegistrationDate == dateNull())
+            {
+                hmPatientTarget.RegistrationDate = hmPatientSource.RegistrationDate;
+            }
+    
+            if(!enum2str(hmPatientTarget.Relationship) || hmPatientTarget.Relationship == HMRelationship::None)
+            {
+                hmPatientTarget.Relationship = hmPatientSource.Relationship;
+            }
+    
+            if(!enum2str(hmPatientTarget.Salutation) || hmPatientTarget.Salutation == HRMSalutation::None)
+            {
+                hmPatientTarget.Salutation = hmPatientSource.Salutation;
+            }
+    
+            if(!hmPatientTarget.SelfEmployed)
+            {
+                hmPatientTarget.SelfEmployed = hmPatientSource.SelfEmployed;
+            }
+    
+            if(!hmPatientTarget.SocialSecurityNumber)
+            {
+                hmPatientTarget.SocialSecurityNumber = hmPatientSource.SocialSecurityNumber;
+            }
+            */
+            hmPatientTarget.update();
+    
+    
+    
+            hmPatientSource.Status = PatientStatus::InActive;
+            hmPatientSource.ReasonTableMerge = this.parmReasonRecId();
+            hmPatientSource.update();
+    
+            //creating Log
+            hmPatientMergeAuditTrail.initValue();
+    
+            hmPatientMergeAuditTrail.HMPatientSource = hmPatientSource.RecId;
+            hmPatientMergeAuditTrail.HMPatientTarget = hmPatientTarget.RecId;
+    
+            hmPatientMergeAuditTrail.insert();
+        }
+        else
+        {
+            hmPatientTarget.ReasonTableMerge = this.parmReasonRecId();
+    
+            hmPatientTarget.update();
+    
+            hmPatientSource.Status = PatientStatus::InActive;
+            hmPatientSource.ReasonTableMerge = this.parmReasonRecId();
+            hmPatientSource.update();
+    
+            //creating Log
+            hmPatientMergeAuditTrail.initValue();
+    
+            hmPatientMergeAuditTrail.HMPatientSource = hmPatientSource.RecId;
+            hmPatientMergeAuditTrail.HMPatientTarget = hmPatientTarget.RecId;
+    
+            hmPatientMergeAuditTrail.insert();
+        }
+    
+        custSourceRecId = hmPatientSource.CustTable;
+        custTargetRecId = hmPatientTarget.CustTable;
+    
+        partySourceRecId = CustTable::findRecId(custSourceRecId).Party;
+        partyTargetRecId = CustTable::findRecId(custTargetRecId).Party;
+    
+        this.updateCustomerReference();
+        this.updatePartyReference();
+        this.updatePersonReference();
+        this.updateAddressBook();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAddresses</Name>
+				<Source><![CDATA[
+    public boolean parmAddresses(boolean _addresses = addresses)
+    {
+        addresses = _addresses;
+    
+        return addresses;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAppointments</Name>
+				<Source><![CDATA[
+    public boolean parmAppointments(boolean _appointments = appointments)
+    {
+        appointments = _appointments;
+    
+        return appointments;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCalltasks</Name>
+				<Source><![CDATA[
+    public boolean parmCalltasks(boolean _calltasks = calltasks)
+    {
+        calltasks = _calltasks;
+    
+        return calltasks;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmComplements</Name>
+				<Source><![CDATA[
+    public boolean parmComplements(boolean _complements = complements)
+    {
+        complements = _complements;
+    
+        return complements;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmContacts</Name>
+				<Source><![CDATA[
+    public boolean parmContacts(boolean _contacts = contacts)
+    {
+        contacts = _contacts;
+    
+        return contacts;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDemographics</Name>
+				<Source><![CDATA[
+    public boolean parmDemographics(boolean _demographics = demographics)
+    {
+        demographics = _demographics;
+    
+        return demographics;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDocuments</Name>
+				<Source><![CDATA[
+    public boolean parmDocuments(boolean _documents = documents)
+    {
+        documents = _documents;
+    
+        return documents;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNotes</Name>
+				<Source><![CDATA[
+    public boolean parmNotes(boolean _notes = notes)
+    {
+        notes = _notes;
+    
+        return notes;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmReasonRecId</Name>
+				<Source><![CDATA[
+    public RecId parmReasonRecId(RecId _reasonRecId = reasonRecId)
+    {
+        reasonRecId = _reasonRecId;
+        return reasonRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmRelationships</Name>
+				<Source><![CDATA[
+    public boolean parmRelationships(boolean _relationships = relationships)
+    {
+        relationships = _relationships;
+    
+        return relationships;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSourcePatientRecId</Name>
+				<Source><![CDATA[
+    public RecId parmSourcePatientRecId(RecId _sourcePatientRecId = sourcePatientRecId)
+    {
+        sourcePatientRecId = _sourcePatientRecId;
+        return sourcePatientRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTargetPatientRecId</Name>
+				<Source><![CDATA[
+    public RecId parmTargetPatientRecId(RecId _targetPatientRecId = targetPatientRecId)
+    {
+        targetPatientRecId = _targetPatientRecId;
+        return targetPatientRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replaceActivities</Name>
+				<Source><![CDATA[
+    private void replaceActivities()
+    {
+        smmActivityParentLinkTable activityParentLinkTable;
+    
+        while select forUpdate RefRecId,REcId from activityParentLinkTable
+            where activityParentLinkTable.RefTableId == tableNum(HMPatient)
+            && activityParentLinkTable.RefRecId == this.parmSourcePatientRecId()
+        {
+            activityParentLinkTable.RefRecId = this.parmTargetPatientRecId();
+            activityParentLinkTable.update();
+    
+            this.insertAuditTrailDetail(tableNum(smmActivityParentLinkTable), activityParentLinkTable.RecId);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>replaceRecId</Name>
+				<Source><![CDATA[
+    private void replaceRecId()
+    {
+    
+        HMPatientNotes                      hmPatientNotesLocal;
+        HMWaitingList                       hmWaitingListLocal;
+        HMPatientInsurance                  hmPatientInsuranceLocal;
+        HMPatientHealthVaultRepo            hmPatientHealthVaultRepoLocal;
+        
+        
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointmentLocal;
+        HMPatientReferrals                  hmPatientReferralsLocal;
+        HMPatientVisit                      hmPatientVisit;
+    
+    
+        if(this.parmNotes())
+        {
+            while select forUpdate RecId, HMPatient from hmPatientNotesLocal
+                where hmPatientNotesLocal.HMPatient == this.parmSourcePatientRecId()
+            {
+                hmPatientNotesLocal.HMPatient = this.parmTargetPatientRecId();
+                hmPatientNotesLocal.update();
+    
+                this.insertAuditTrailDetail(tableNum(hmPatientNotes), hmPatientNotesLocal.RecId);
+            }
+        }
+    
+        while select forUpdate RecId, HMPatient from hmWaitingListLocal
+            where hmWaitingListLocal.HMPatient == this.parmSourcePatientRecId()
+        {
+            hmWaitingListLocal.HMPatient = this.parmTargetPatientRecId();
+            hmWaitingListLocal.update();
+    
+            this.insertAuditTrailDetail(tableNum(hmWaitingList), hmWaitingListLocal.RecId);
+        }
+    
+        select count(RecId) from hmPatientInsuranceLocal
+            where hmPatientInsuranceLocal.HMPatient == this.parmTargetPatientRecId();
+    
+        if(hmPatientInsuranceLocal.RecId == 0)
+        {
+            while select forUpdate RecId, HMPatient from hmPatientInsuranceLocal
+                where hmPatientInsuranceLocal.HMPatient == this.parmSourcePatientRecId()
+            {
+                hmPatientInsuranceLocal.HMPatient = this.parmTargetPatientRecId();
+                hmPatientInsuranceLocal.update();
+    
+                this.insertAuditTrailDetail(tableNum(hmPatientInsurance), hmPatientInsuranceLocal.RecId);
+            }
+        }
+    
+        while select forUpdate RecId, HMPatientSubscriber from hmPatientInsuranceLocal
+                where hmPatientInsuranceLocal.HMPatientSubscriber == this.parmSourcePatientRecId()
+        {
+            hmPatientInsuranceLocal.HMPatientSubscriber = this.parmTargetPatientRecId();
+            hmPatientInsuranceLocal.update();
+    
+            this.insertAuditTrailDetail(tableNum(hmPatientInsurance), hmPatientInsuranceLocal.RecId);
+        }
+    
+        while select forUpdate RecId, HMPatient from hmPatientHealthVaultRepoLocal
+            where hmPatientHealthVaultRepoLocal.HMPatient == this.parmSourcePatientRecId()
+        {
+            hmPatientHealthVaultRepoLocal.HMPatient = this.parmTargetPatientRecId();
+            hmPatientHealthVaultRepoLocal.update();
+    
+            this.insertAuditTrailDetail(tableNum(hmPatientHealthVaultRepo), hmPatientHealthVaultRepoLocal.RecId);
+        }
+        if(this.parmAppointments())
+        {
+            
+            while select forUpdate RecId, HMPatient from hmResourceSchedulingAppointmentLocal
+                where hmResourceSchedulingAppointmentLocal.HMPatient == this.parmSourcePatientRecId()
+            {
+                hmResourceSchedulingAppointmentLocal.HMPatient = this.parmTargetPatientRecId();
+                hmResourceSchedulingAppointmentLocal.update();
+    
+                this.insertAuditTrailDetail(tableNum(hmResourceSchedulingAppointment), hmResourceSchedulingAppointmentLocal.RecId);
+            }
+            while select forUpdate RecId, Patient from hmPatientVisit
+                where hmPatientVisit.Patient == this.parmSourcePatientRecId()
+            {
+                hmPatientVisit.Patient = this.parmTargetPatientRecId();
+                hmPatientVisit.update();
+    
+                this.insertAuditTrailDetail(tableNum(HMPatientVisit), hmPatientVisit.RecId);
+            }
+            
+        }
+    
+        while select forUpdate RecId, HMPatient from hmPatientReferralsLocal
+            where hmPatientReferralsLocal.HMPatient == this.parmSourcePatientRecId()
+        {
+            hmPatientReferralsLocal.HMPatient = this.parmTargetPatientRecId();
+            hmPatientReferralsLocal.update();
+    
+            this.insertAuditTrailDetail(tableNum(hmPatientReferrals), hmPatientReferralsLocal.RecId);
+        }
+    
+    
+        if(this.parmCalltasks())
+        {
+            this.replaceActivities();
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAddressBook</Name>
+				<Source><![CDATA[
+    private void updateAddressBook()
+    {
+        DirPartyLocation                dirPartyLocationLocal, dirPartyLocationTarget, dirPartyLocationExist;
+        LogisticsElectronicAddress      logisticsElectronicAddressLocal, logisticsElectronicAddressExist;
+        Query                           queryPostal = new Query();
+        QueryBuildDataSource            qbds;
+        QueryRun                        qryRun;
+        DirPerson                       dirPersonTarget;
+    
+        if(this.parmAddresses())
+        {
+            qbds = queryPostal.addDataSource(tableNum(DirPartyLocation));
+            qbds.update(true);
+            qbds.addRange(fieldNum(DirPartyLocation,Party)).value(SysQuery::value(partySourceRecId));
+            qbds.addRange(fieldNum(DirPartyLocation,IsPostalAddress)).value(SysQuery::value(NoYes::Yes));
+    
+            qryRun = new QueryRun(queryPostal);
+    
+            while(qryRun.next())
+            {
+                dirPartyLocationLocal = qryRun.get(tableNum(DirPartyLocation));
+    
+                if(DirParty::primaryPostalAddress(partyTargetRecId).RecId)
+                {
+                    dirPartyLocationLocal.IsPrimary = NoYes::No;
+                }
+    
+                dirPartyLocationLocal.Party = partyTargetRecId;
+                dirPartyLocationLocal.update();
+    
+                //if(dirPartyLocationLocal.IsPrimary)
+                //{
+                    //select forUpdate RecId from dirPersonTarget where dirPersonTarget.RecId == partyTargetRecId;
+    //
+                    //dirPersonTarget.PrimaryAddressLocation = dirPartyLocationLocal.Location;
+    //
+                    //dirPersonTarget.update();
+                //}
+    
+                this.insertAuditTrailDetail(tableNum(DirPartyLocation), dirPartyLocationLocal.RecId);
+            }
+        }
+    
+        if(this.parmContacts())
+        {
+            while select forUpdate RecId, Party,Location from dirPartyLocationLocal
+                where dirPartyLocationLocal.Party == partySourceRecId
+                && dirPartyLocationLocal.IsPostalAddress == NoYes::No
+            {
+                select Location from dirPartyLocationTarget
+                    where dirPartyLocationTarget.Party == partyTargetRecId
+                    && dirPartyLocationTarget.IsPostalAddress == NoYes::No;
+    
+                if(!dirPartyLocationTarget.location)
+                {
+                    dirPartyLocationLocal.Party = partyTargetRecId;
+                    dirPartyLocationLocal.update();
+    
+                    this.insertAuditTrailDetail(tableNum(DirPartyLocation), dirPartyLocationLocal.RecId);
+                }
+                else
+                {
+                    while select forUpdate HMPreferredTime,IsEmergency,Type,IsPrimary,RecId from logisticsElectronicAddressLocal
+                        where logisticsElectronicAddressLocal.Location == dirPartyLocationLocal.Location
+                    {
+                        if(logisticsElectronicAddressLocal.HMPreferredTime == HMPreferredTime::DayTime)
+                        {
+                            select count(RecId) from dirPartyLocationExist
+                                join logisticsElectronicAddressExist
+                                where dirPartyLocationExist.Party == partyTargetRecId
+                                && dirPartyLocationExist.IsPostalAddress == NoYes::No
+                                && dirPartyLocationExist.Location == logisticsElectronicAddressExist.Location
+                                && logisticsElectronicAddressExist.HMPreferredTime == HMPreferredTime::DayTime;
+    
+                            if(dirPartyLocationExist.RecId != 0)
+                            {
+                                logisticsElectronicAddressLocal.HMPreferredTime = HMPreferredTime::NULL;
+                            }
+                        }
+                        else if(logisticsElectronicAddressLocal.HMPreferredTime == HMPreferredTime::NightTime)
+                        {
+                            select count(RecId) from dirPartyLocationExist
+                                join logisticsElectronicAddressExist
+                                where dirPartyLocationExist.Party == partyTargetRecId
+                                && dirPartyLocationExist.IsPostalAddress == NoYes::No
+                                && dirPartyLocationExist.Location == logisticsElectronicAddressExist.Location
+                                && logisticsElectronicAddressExist.HMPreferredTime == HMPreferredTime::NightTime;
+    
+                            if(dirPartyLocationExist.RecId != 0)
+                            {
+                                logisticsElectronicAddressLocal.HMPreferredTime = HMPreferredTime::NULL;
+                            }
+                        }
+                        else if(logisticsElectronicAddressLocal.IsEmergency)
+                        {
+                            select count(RecId) from dirPartyLocationExist
+                                join logisticsElectronicAddressExist
+                                where dirPartyLocationExist.Party == partyTargetRecId
+                                && dirPartyLocationExist.IsPostalAddress == NoYes::No
+                                && dirPartyLocationExist.Location == logisticsElectronicAddressExist.Location
+                                && logisticsElectronicAddressExist.IsEmergency == NoYes::Yes;
+    
+                            if(dirPartyLocationExist.RecId != 0)
+                            {
+                                logisticsElectronicAddressLocal.IsEmergency = NoYes::No;
+                            }
+                        }
+                        else if(logisticsElectronicAddressLocal.IsPrimary)
+                        {
+                            select count(RecId) from dirPartyLocationExist
+                                join RecId from logisticsElectronicAddressExist
+                                where dirPartyLocationExist.Party == partyTargetRecId
+                                && dirPartyLocationExist.IsPostalAddress == NoYes::No
+                                && dirPartyLocationExist.Location == logisticsElectronicAddressExist.Location
+                                && logisticsElectronicAddressExist.IsPrimary == NoYes::Yes
+                                && logisticsElectronicAddressExist.Type == logisticsElectronicAddressLocal.Type;
+    
+                            if(dirPartyLocationExist.RecId != 0)
+                            {
+                                logisticsElectronicAddressLocal.IsPrimary = NoYes::No;
+                            }
+                        }
+    
+                        logisticsElectronicAddressLocal.Location = dirPartyLocationTarget.Location;
+                        logisticsElectronicAddressLocal.update();
+    
+                        this.insertAuditTrailDetail(tableNum(logisticsElectronicAddress), logisticsElectronicAddressLocal.RecId);
+                    }
+                }
+            }
+    
+            select forUpdate RecId from dirPersonTarget where dirPersonTarget.RecId == partyTargetRecId;
+    
+            while select Type,IsPrimary,RecId from logisticsElectronicAddressLocal
+                join Location from dirPartyLocationTarget
+                    where dirPartyLocationTarget.Party == partyTargetRecId
+                    && dirPartyLocationTarget.IsPostalAddress == NoYes::No
+                    && logisticsElectronicAddressLocal.Location == dirPartyLocationTarget.Location
+                    && logisticsElectronicAddressLocal.IsPrimary == NoYes::Yes
+            {
+                switch(logisticsElectronicAddressLocal.Type)
+                {
+                    case LogisticsElectronicAddressMethodType::Email:
+                        dirPersonTarget.PrimaryContactEmail = logisticsElectronicAddressLocal.RecId;
+                        break;
+                    case LogisticsElectronicAddressMethodType::Phone:
+                        dirPersonTarget.PrimaryContactPhone = logisticsElectronicAddressLocal.RecId;
+                        break;
+                    case LogisticsElectronicAddressMethodType::Telex:
+                        dirPersonTarget.PrimaryContactTelex = logisticsElectronicAddressLocal.RecId;
+                        break;
+                    case LogisticsElectronicAddressMethodType::Fax:
+                        dirPersonTarget.PrimaryContactFax = logisticsElectronicAddressLocal.RecId;
+                        break;
+                    case LogisticsElectronicAddressMethodType::URL:
+                        dirPersonTarget.PrimaryContactURL = logisticsElectronicAddressLocal.RecId;
+                        break;
+                }
+            }
+    
+            dirPersonTarget.update();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCustomerReference</Name>
+				<Source><![CDATA[
+    private void updateCustomerReference()
+    {
+        CustTable       custTableSource;
+        CustTable       custTableTarget;
+        DocuRef         docuRefLocal;
+    
+        select * from custTableSource where custTableSource.RecId == custSourceRecId;
+    
+        select forUpdate * from custTableTarget where custTableTarget.RecId == custTargetRecId;
+        custTableTarget.PatientMerged = NoYes::Yes;
+        custTableTarget.update();
+    
+        if(this.parmDemographics())
+        {
+            if(!custTableTarget.IsGurantor)
+            {
+                custTableTarget.IsGurantor = custTableSource.IsGurantor;
+            }
+    
+            custTableTarget.update();
+        }
+    
+        if(this.parmDocuments())
+        {
+            while select forUpdate RecId, RefRecId from docuRefLocal
+                where docuRefLocal.RefRecId == custSourceRecId
+                && docuRefLocal.RefTableId == tableNum(CustTable)
+                && docuRefLocal.RefCompanyId == custTableSource.dataAreaId
+            {
+                docuRefLocal.RefRecId = custTargetRecId;
+                docuRefLocal.update();
+    
+                this.insertAuditTrailDetail(tableNum(DocuRef), docuRefLocal.RecId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePartyReference</Name>
+				<Source><![CDATA[
+    private void updatePartyReference()
+    {
+        DirPartyRelationship               dirPartyRelationshipLocal, dirPartyRelationshipExist; //2
+        if(this.parmRelationships())
+        {
+            dirPartyRelationshipLocal.validTimeStateUpdateMode(ValidTimeStateUpdate::Correction);
+    
+            while select forUpdate RecId, ParentParty from dirPartyRelationshipLocal
+                where dirPartyRelationshipLocal.ParentParty == partySourceRecId
+                notExists join dirPartyRelationshipExist where dirPartyRelationshipExist.ParentParty == partyTargetRecId
+                && dirPartyRelationshipExist.ChildParty == dirPartyRelationshipLocal.ChildParty
+            {
+                dirPartyRelationshipLocal.ParentParty = partyTargetRecId;
+                dirPartyRelationshipLocal.update();
+    
+                this.insertAuditTrailDetail(tableNum(DirPartyRelationship), dirPartyRelationshipLocal.RecId);
+            }
+    
+            while select forUpdate RecId, ChildParty from dirPartyRelationshipLocal
+                where dirPartyRelationshipLocal.ChildParty == partySourceRecId
+                notExists join dirPartyRelationshipExist where dirPartyRelationshipExist.ChildParty == partyTargetRecId
+                && dirPartyRelationshipExist.ParentParty == dirPartyRelationshipLocal.ParentParty
+            {
+                dirPartyRelationshipLocal.ChildParty = partyTargetRecId;
+                dirPartyRelationshipLocal.update();
+    
+                this.insertAuditTrailDetail(tableNum(DirPartyRelationship), dirPartyRelationshipLocal.RecId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePersonReference</Name>
+				<Source><![CDATA[
+    private void updatePersonReference()
+    {
+        DirPerson  dirPersonSource;
+        DirPerson  dirPersonTarget;
+        DirPersonName       dirPersonNameTarget, dirPersonNameSource;
+    
+        if(this.parmDemographics())
+        {
+            select * from dirPersonSource where dirPersonSource.RecId == partySourceRecId;
+    
+            select forUpdate * from dirPersonTarget where dirPersonTarget.RecId == partyTargetRecId;
+    
+            if(!enum2str(dirPersonTarget.MaritalStatus) || dirPersonTarget.MaritalStatus == DirPersonMaritalStatus::None)
+            {
+                dirPersonTarget.MaritalStatus = dirPersonSource.MaritalStatus;
+            }
+    
+            dirPersonTarget.BirthDay = dirPersonSource.BirthDay;
+            dirPersonTarget.BirthMonth = dirPersonSource.BirthMonth;
+            dirPersonTarget.BirthYear = dirPersonSource.BirthYear;
+    
+            dirPersonTarget.MaritalStatus = dirPersonSource.MaritalStatus;
+            dirPersonTarget.LanguageId = dirPersonSource.LanguageId;
+    
+            dirPersonTarget.update();
+    
+            select * from dirPersonNameSource
+                where dirPersonNameSource.Person == dirPersonSource.RecId;
+    
+            DirPersonName::addNewNameToPerson(dirPersonTarget.RecId, dirPersonNameSource.FirstName, dirPersonNameSource.MiddleName, dirPersonNameSource.LastName);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

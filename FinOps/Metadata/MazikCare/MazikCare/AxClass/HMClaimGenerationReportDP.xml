@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimGenerationReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+    //SRSReportQueryAttribute(querystr(HMClaimListPage))
+    SRSReportParameterAttribute(classstr(HMClaimGenerationReportContract))
+]
+public class HMClaimGenerationReportDP extends SRSReportDataProviderBase
+{
+    HMClainGenerationReportTmp      tempTable;
+    HMClainGenerationSummaryTmp     tempSummaryTable;
+    HMResourceSchedulingAppointment appointments;
+    // Todo: HMPatientEncounter              encounters;
+    HMClaim                         claims;
+    HMClaimError                    claimErrors;
+
+    FromDate                        fromDate;
+    ToDate                          toDate;
+    HcmPersonnelNumberId            parmPhysician;
+    HMInsuranceCarrierCode          parmInsuranceCarrier;
+    Counter                         claimCount;
+    Counter                         errorsCount;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMClainGenerationReportTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute(tablestr(HMClainGenerationReportTmp))
+    ]
+    
+    public HMClainGenerationReportTmp getHMClainGenerationReportTmp()
+    {
+        select * from tempTable;
+        return  tempTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMClainGenerationSummaryTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute(tablestr(HMClainGenerationSummaryTmp))
+    ]
+    
+    public HMClainGenerationSummaryTmp getHMClainGenerationSummaryTmp()
+    {
+        select * from tempSummaryTable;
+        return  tempSummaryTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertData</Name>
+				<Source><![CDATA[
+    public void insertData(boolean isEncounterExists)
+    {
+        str errorClaims;
+        boolean isFirst;
+    
+        if (isEncounterExists)
+        {
+        //Todo: Take from CaseTrans    tempTable.EncounterDate = encounters.EncounterDate;
+        // Todo:    tempTable.CaseNo = encounters.CaseNo;
+        }
+        else
+        {
+            tempTable.EncounterDate = appointments.AppointmentDate;
+            tempTable.CaseNo = '';
+        }
+        tempTable.PatientName = appointments.getPatientName();
+        tempTable.Provider = appointments.physicianNameOnClaim();
+        tempTable.InsuranceCarrier = HMInsuranceCarrier::find(appointments.getVisitPrimaryInsurance()).Name;
+    
+        select * from claims where claims.HMResourceSchedulingAppointment == appointments.RecId;
+        if (claims && appointments.BillStatus == HMBillStatus::ClaimGenerated)
+        {
+            tempTable.Status = "@MAZ7216";
+            tempTable.ClaimErrorLog = '';
+            //@SYS65182 = Errors
+        }
+        errorClaims = '';
+        isFirst = true;
+        if (appointments.BillStatus == HMBillStatus::ClaimNotValidated)
+        {
+            while select * from claimErrors where claimErrors.HMResourceSchedulingAppointment == appointments.RecId
+            {
+                if (isFirst == false)
+                {
+                    errorClaims+=', ';
+                }
+                errorClaims+=claimErrors.ClaimErrorLog;
+                isFirst = false;
+            }
+            tempTable.Status = "@SYS65182";
+            tempTable.ClaimErrorLog = errorClaims;
+        }
+        tempTable.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        Query query;
+        Query queryWithNotExist;
+        QueryRun    queryRun;
+        HMClaimGenerationReportContract parmContractClass;
+        RecId physicianRecId;
+        HMInsuranceCarrier  insuranceCarrier;
+        AccountNum  custAccount;
+    
+        parmContractClass=this.parmDataContract() as HMClaimGenerationReportContract;
+        //breakpoint;
+        fromDate= parmContractClass.parmDateFrom();
+        toDate=parmContractClass.parmDateTo();
+        parmPhysician = parmContractClass.parmPhysician();
+        parmInsuranceCarrier = parmContractClass.parmInsuranceCarrier();
+    
+        query = new Query();
+        //adding Appointments Table
+        query.addDataSource(tableNum(HMResourceSchedulingAppointment));
+    
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment, BillStatus)).value(enum2str(HMBillStatus::ClaimGenerated));
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment, BillStatus)).value(enum2str(HMBillStatus::ClaimNotValidated));
+    
+        query.dataSourceTable(tablenum(HMResourceSchedulingAppointment)).addRange(fieldnum(HMResourceSchedulingAppointment, AppointmentDate)).value(queryRange(fromDate,toDate));
+        query.dataSourceTable(tablenum(HMResourceSchedulingAppointment)).addRange(fieldnum(HMResourceSchedulingAppointment, HMAppointmentType)).value(SysQuery::valueNot(HMAppointmentType::Admission));
+    
+        //adding Encounter Table
+      //Todo:   query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addDataSource(tableNum(HMPatientEncounter));
+     //Todo:   query.dataSourceTable(tableNum(HMPatientEncounter)).relations(true);
+    
+        claimCount = 0;
+        errorsCount = 0;
+    
+        if (parmPhysician != '')
+        {
+            //adding Encounter Staff Table
+        //Todo:    query.dataSourceTable(tableNum(HMPatientEncounter)).addDataSource(tableNum(HMPatientEncounterClinicStaff));
+            query.dataSourceTable(tableNum(HMPatientEncounterClinicStaff)).relations(true);
+            query.dataSourceTable(tableNum(HMPatientEncounterClinicStaff)).addRange(fieldNum(HMPatientEncounterClinicStaff, IsPrimaryPhysician)).value(enum2str(NoYes::Yes));
+    
+            physicianRecId = HMClinicStaff::findByWorker(HcmWorker::findByPersonnelNumber(parmPhysician).RecId).RecId;
+            query.dataSourceTable(tableNum(HMPatientEncounterClinicStaff)).addRange(fieldNum(HMPatientEncounterClinicStaff, HMClinicStaff)).value(int642str(physicianRecId));
+        }
+    
+        if (parmInsuranceCarrier != '')
+        {
+            //adding CAse Insurance Table
+       //Todo:     query.dataSourceTable(tableNum(HMPatientEncounter)).addDataSource(tableNum(HMCaseInsurance));
+            query.dataSourceTable(tableNum(HMCaseInsurance)).relations(true);
+    
+            select firstOnly RecId, CustTable from insuranceCarrier where insuranceCarrier.Code == parmInsuranceCarrier;
+            if (insuranceCarrier)
+            {
+                custAccount = CustTable::findRecId(insuranceCarrier.CustTable).AccountNum;
+                query.dataSourceTable(tableNum(HMCaseInsurance)).addRange(fieldNum(HMCaseInsurance, insuranceCarrier)).value(custAccount);
+            }
+        }
+    
+        queryRun = new QueryRun(query);
+    
+        while (queryRun.next())
+        {
+            appointments = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+        //Todo:    encounters = queryRun.get(tableNum(HMPatientEncounter));
+            if (appointments.BillStatus == HMBillStatus::ClaimNotValidated)
+            {
+                errorsCount++;
+            }
+            else if (appointments.BillStatus == HMBillStatus::ClaimGenerated)
+            {
+                claimCount++;
+            }
+            this.insertData(true);
+        }
+    
+        // adding records which do not exists in patientencounter
+        queryWithNotExist = new Query();
+        //adding Appointments Table
+        queryWithNotExist.addDataSource(tableNum(HMResourceSchedulingAppointment));
+    
+        //adding Encounter Table
+     /*Todo:   queryWithNotExist.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addDataSource(tableNum(HMPatientEncounter));
+        queryWithNotExist.dataSourceTable(tableNum(HMPatientEncounter)).relations(true);
+        queryWithNotExist.dataSourceTable(tableNum(HMPatientEncounter)).joinMode(JoinMode::NoExistsJoin);*/
+    
+        queryWithNotExist.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment, BillStatus)).value(enum2str(HMBillStatus::ClaimGenerated));
+        queryWithNotExist.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment, BillStatus)).value(enum2str(HMBillStatus::ClaimNotValidated));
+    
+        queryWithNotExist.dataSourceTable(tablenum(HMResourceSchedulingAppointment)).addRange(fieldnum(HMResourceSchedulingAppointment, AppointmentDate)).value(queryRange(fromDate,toDate));
+        queryWithNotExist.dataSourceTable(tablenum(HMResourceSchedulingAppointment)).addRange(fieldnum(HMResourceSchedulingAppointment, HMAppointmentType)).value(SysQuery::valueNot(HMAppointmentType::Admission));
+    
+        if (parmPhysician != '')
+        {
+            physicianRecId = HMClinicStaff::findByWorker(HcmWorker::findByPersonnelNumber(parmPhysician).RecId).RecId;
+            if (physicianRecId > 0)
+            {
+                //adding Encounter Staff Table
+                queryWithNotExist.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addDataSource(tableNum(HMResourceSchedulingPlanningObject));
+                queryWithNotExist.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).relations(true);
+    
+                queryWithNotExist.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject, HMClinicStaff)).value(int642str(physicianRecId));
+            }
+        }
+        if (parmInsuranceCarrier != '')
+        {
+            //adding CAse Insurance Table
+            queryWithNotExist.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addDataSource(tableNum(HMPatient));
+            queryWithNotExist.dataSourceTable(tableNum(HMPatient)).relations(true);
+    
+            queryWithNotExist.dataSourceTable(tableNum(HMPatient)).addDataSource(tableNum(HMPatientInsurance));
+            queryWithNotExist.dataSourceTable(tableNum(HMPatientInsurance)).relations(true);
+    
+            select firstOnly RecId, CustTable from insuranceCarrier where insuranceCarrier.Code == parmInsuranceCarrier;
+            if (insuranceCarrier)
+            {
+                custAccount = CustTable::findRecId(insuranceCarrier.CustTable).AccountNum;
+                queryWithNotExist.dataSourceTable(tableNum(HMPatientInsurance)).addRange(fieldNum(HMPatientInsurance, insuranceCarrier)).value(custAccount);
+            }
+        }
+        queryRun = new QueryRun(queryWithNotExist);
+        while (queryRun.next())
+        {
+            appointments = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+           //Todo: encounters = queryRun.get(tableNum(HMPatientEncounter));
+    
+            if (appointments.BillStatus == HMBillStatus::ClaimNotValidated)
+            {
+                errorsCount++;
+            }
+            else if (appointments.BillStatus == HMBillStatus::ClaimGenerated)
+            {
+                claimCount++;
+            }
+            this.insertData(false);
+        }
+    
+        tempSummaryTable.ClaimCount = claimCount;
+        tempSummaryTable.ErrorCount = errorsCount;
+        tempSummaryTable.insert();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

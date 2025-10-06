@@ -1,0 +1,1664 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMResourceSchedulingAppointmentMultiRsrc</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMResourceSchedulingAppointmentMultiRsrc extends FormRun
+{
+    HMResourceSchedulingOpenTimeSlotsTmp    hmResourceSchedulingOpenTimeSlotsTmpMain;
+    Set                                     setPlanObj;
+    Map                                     planningObjectMapForRsrc;
+    Set                                     resourceGroupRecIdSet;
+    HMResourceSchedulingPlanningObject      planObject;
+    QueryBuildDataSource                    qbds;
+    boolean                                 isFirst, isEscape;
+    RecId                                   parentSubclinicRecId, parentResourceRecId, parentScheduleTypeRecId, patientRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canClose</Name>
+				<Source><![CDATA[
+    public boolean canClose()
+    {
+        boolean ret;
+    
+        ret = super();
+    
+        if(ret && !isEscape)
+        {
+            ret = element.validateSlots();
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkOverlapping</Name>
+				<Source><![CDATA[
+    public boolean checkOverlapping(HMResourceSchedulingOpenTimeSlotsTmp _hmResourceSchedulingOpenTimeSlotsTmp)
+    {
+        HMResourceSchedulingOpenTimeSlotsTmp    hmResourceSchedulingOpenTimeSlotsTmpLocal;
+        utcDateTime newAppointmentEnd,oldAppointmentEnd,newAppointmentStart,oldAppointmentStart;
+    
+        newAppointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(_hmResourceSchedulingOpenTimeSlotsTmp.Date,_hmResourceSchedulingOpenTimeSlotsTmp.Time),HMResourceMasterHelper::getDurationInMinutes(_hmResourceSchedulingOpenTimeSlotsTmp.HMResourceMaster,_hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode));
+        newAppointmentStart = DateTimeUtil::newDateTime(_hmResourceSchedulingOpenTimeSlotsTmp.Date,_hmResourceSchedulingOpenTimeSlotsTmp.Time);
+    
+        oldAppointmentStart = DateTimeUtil::newDateTime(AppointmentDate.dateValue(),AppointmentTime.value());
+        oldAppointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(AppointmentDate.dateValue(),AppointmentTime.value()),HMResourceMasterHelper::getDurationInMinutes(parentResourceRecId,parentScheduleTypeRecId));
+    
+        if(oldAppointmentStart != newAppointmentStart)
+        {
+            if((oldAppointmentStart > newAppointmentStart && oldAppointmentStart < newAppointmentEnd)
+            ||(oldAppointmentEnd > newAppointmentStart && oldAppointmentEnd < newAppointmentEnd)
+            || (newAppointmentStart > oldAppointmentStart && newAppointmentStart < oldAppointmentEnd)
+            ||(newAppointmentEnd > oldAppointmentStart && newAppointmentEnd < oldAppointmentEnd))
+            {
+                error("@MAZ12011");
+                return false;
+            }
+        }
+    
+        hmResourceSchedulingOpenTimeSlotsTmpLocal = HMResourceSchedulingOpenTimeSlotsTmpAppt_DS.getFirst();
+    
+        while(hmResourceSchedulingOpenTimeSlotsTmpLocal)
+        {
+            if(hmResourceSchedulingOpenTimeSlotsTmpLocal.RecId != _hmResourceSchedulingOpenTimeSlotsTmp.RecId)
+            {
+                oldAppointmentStart = DateTimeUtil::newDateTime(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date,hmResourceSchedulingOpenTimeSlotsTmpLocal.Time);
+                oldAppointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date,hmResourceSchedulingOpenTimeSlotsTmpLocal.Time),HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceMaster,hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingTypeCode));
+    
+                if(oldAppointmentStart == newAppointmentStart)
+                {
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal = HMResourceSchedulingOpenTimeSlotsTmpAppt_DS.getNext();
+                    continue;
+                }
+    
+                if((oldAppointmentStart > newAppointmentStart && oldAppointmentStart < newAppointmentEnd)
+                    ||(oldAppointmentEnd > newAppointmentStart && oldAppointmentEnd < newAppointmentEnd)
+                    || (newAppointmentStart > oldAppointmentStart && newAppointmentStart < oldAppointmentEnd)
+                    ||(newAppointmentEnd > oldAppointmentStart && newAppointmentEnd < oldAppointmentEnd))
+                {
+                    error("@MAZ12011");
+                    return false;
+                }
+            }
+    
+            hmResourceSchedulingOpenTimeSlotsTmpLocal = HMResourceSchedulingOpenTimeSlotsTmpAppt_DS.getNext();
+        }
+    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    public void close()
+    {
+        if(!isEscape)
+        {
+            element.args().caller().storeMultiResourceAppt(HMResourceSchedulingOpenTimeSlotsTmpAppt);
+        }
+        super();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPlanningObjectMapForRsrc</Name>
+				<Source><![CDATA[
+    public Map getPlanningObjectMapForRsrc()
+    {
+        return planningObjectMapForRsrc;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        ContainerClass conClass = element.args().parmObject();
+        container con;
+    
+    
+        super();
+        setPlanObj = new Set(Types::Int64);
+    
+        if(conClass != null)
+        {
+            con = conClass.value();
+            Patient.text(conPeek(con, 1));
+            PhysicalFileNumber.text(conPeek(con, 2));
+            Resource.text(conPeek(con, 3));
+            AppointmentDate.dateValue(conPeek(con, 4));
+            AppointmentTime.value(conPeek(con, 5));
+            parentSubclinicRecId = conPeek(con, 6);
+            parentResourceRecId = conPeek(con, 7);
+            parentScheduleTypeRecId = conPeek(con, 8);
+            patientRecId = conPeek(con, 9);
+            ArrivalTime.value(conPeek(con, 10));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        HMResourceSchedulingOpenTimeSlotsTmp multiResourceAppt;
+        HMResourceSchedulingHelper::storeMultiResourceAppt(element.args().caller().getMultiResourceApptBuffer(),HMResourceSchedulingOpenTimeSlotsTmpAppt);
+        HMResourceSchedulingOpenTimeSlotsTmpAppt_ds.executeQuery();
+        SlotDate.dateValue(element.args().caller().getAppointmentDate());
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeResourceGroup</Name>
+				<Source><![CDATA[
+    public void storeResourceGroup(RecId _hmResourceGroupRecId)
+    {
+        HMResourceGroupResourceMaster hmResourceGroupResourceMaster;
+        HMResourceMaster_ds.queryBuildDataSource().clearRanges();
+        if(HMResourceMaster_ds.query().dataSourceTable(tableNum(HMResourceGroupResourceMaster)))
+        {
+            HMResourceMaster_ds.query().dataSourceTable(tableNum(HMResourceGroupResourceMaster)).enabled(false);
+        }
+        if(_hmResourceGroupRecId)
+        {
+            if(!HMResourceMaster_ds.query().dataSourceTable(tableNum(HMResourceGroupResourceMaster)))
+            {
+                HMResourceMaster_ds.queryBuildDataSource().addDataSource(tableNum(HMResourceGroupResourceMaster)).relations(true);
+            }
+    
+            HMResourceMaster_ds.query().dataSourceTable(tableNum(HMResourceGroupResourceMaster)).enabled(true);
+            HMResourceMaster_ds.query().dataSourceTable(tableNum(HMResourceGroupResourceMaster)).clearRanges();
+            HMResourceMaster_ds.query().dataSourceTable(tableNum(HMResourceGroupResourceMaster)).addRange(fieldnum(HMResourceGroupResourceMaster,HMResourceGroup)).value(SysQuery::value(_hmResourceGroupRecId));
+        }
+        else
+        {
+            HMResourceMaster_ds.queryBuildDataSource().clearRanges();
+        }
+        HMResourceSchedulingPlanningObjectRelatedAppt_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>task</Name>
+				<Source><![CDATA[
+    public int task(int _taskId)
+    {
+        #task
+    
+        int ret;
+    
+        if(_taskId == #taskESC)
+        {
+            isEscape = true;
+        }
+        else
+        {
+            isEscape = false;
+        }
+    
+        ret = super(_taskId);
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateOpenSlots</Name>
+				<Source><![CDATA[
+    public void updateOpenSlots()
+    {
+        HMResourceSchedulingOpenTimeSlotsSearch openSlotSearch = new HMResourceSchedulingOpenTimeSlotsSearch();
+        HMResourceSchedulingOpenTimeSlotsTmp hmResourceSchedulingOpenTimeSlotsTmpLocal;
+    
+        //if(!setPlanObj.in(HMResourceSchedulingPlanningObjectRelatedAppt.RecId))
+        //{
+            hmResourceSchedulingOpenTimeSlotsTmpLocal = openSlotSearch.searchOpenTimeSlot(HMResourceSchedulingPlanningObjectRelatedAppt.RecId,
+                                    SlotDate.dateValue(), SlotDate.dateValue(), true, 0, false, [false,false,false,false,false,false,false],
+                                    false, 0, 0, HMIncludeExclude::Exclude);
+    
+            //while select hmResourceSchedulingOpenTimeSlotsTmpLocal
+            //{
+                HMResourceSchedulingOpenTimeSlotsTmpResource.setTmpData(hmResourceSchedulingOpenTimeSlotsTmpLocal);
+                //HMResourceSchedulingOpenTimeSlotsTmpResource.insert();
+            //}
+    
+            //setPlanObj.add(HMResourceSchedulingPlanningObjectRelatedAppt.RecId);
+            HMResourceSchedulingOpenTimeSlotsTmpResource_ds.executeQuery();
+        //}
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateSlots</Name>
+				<Source><![CDATA[
+    public boolean validateSlots()
+    {
+        boolean ret = true;
+        HMResourceSchedulingOpenTimeSlotsTmp    hmResourceSchedulingOpenTimeSlotsTmpLocal, hmResourceSchedulingOpenTimeSlotsTmpCopy;
+    
+        hmResourceSchedulingOpenTimeSlotsTmpLocal = HMResourceSchedulingOpenTimeSlotsTmpAppt_DS.getFirst();
+    
+        while(hmResourceSchedulingOpenTimeSlotsTmpLocal)
+        {
+            buf2Buf(hmResourceSchedulingOpenTimeSlotsTmpLocal, hmResourceSchedulingOpenTimeSlotsTmpCopy);
+            hmResourceSchedulingOpenTimeSlotsTmpCopy.insert();
+    
+            hmResourceSchedulingOpenTimeSlotsTmpLocal = HMResourceSchedulingOpenTimeSlotsTmpAppt_DS.getNext();
+        }
+    
+        while select * from hmResourceSchedulingOpenTimeSlotsTmpCopy
+        {
+            if(hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingTypeCode == hmResourceSchedulingOpenTimeSlotsTmpCopy.HMParentSchedulingTypeCode)
+            {
+                ret = false;
+                warning("@MAZ11955");
+                break;
+            }
+    
+            if(!hmResourceSchedulingOpenTimeSlotsTmpCopy.HMOrganizationalUnitSubClinic)
+            {
+                ret = false;
+                warning(strFmt("@SYS84753","@MAZ11675"));
+                break;
+            }
+    
+            if(!HMResourceSchedulingHelper::checkPhysicianTimeOverlapping(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date,hmResourceSchedulingOpenTimeSlotsTmpCopy.Time,hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceMaster,hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingTypeCode,hmResourceSchedulingOpenTimeSlotsTmpCopy.AppointmentRecId))
+            {
+                ret = false;
+                break;
+            }
+    
+            if(!HMResourceSchedulingHelper::checkPatientTimeOverlapping(hmResourceSchedulingOpenTimeSlotsTmpCopy.Date,hmResourceSchedulingOpenTimeSlotsTmpCopy.Time,hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceMaster,hmResourceSchedulingOpenTimeSlotsTmpCopy.HMResourceSchedulingTypeCode,hmResourceSchedulingOpenTimeSlotsTmpCopy.AppointmentRecId, patientRecId))
+            {
+                ret = false;
+                break;
+            }
+    
+            if(!element.checkOverlapping(hmResourceSchedulingOpenTimeSlotsTmpCopy))
+            {
+                ret = false;
+                break;
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMResourceSchedulingOpenTimeSlotsTmpResource</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            QueryBuildDataSource qbdsScheduleType;
+            super();
+        
+            this.queryBuildDataSource().addRange(fieldNum(HMResourceSchedulingOpenTimeSlotsTmp, isClosed)).value(SysQuery::value(NoYes::No));
+            this.queryBuildDataSource().addRange(fieldNum(HMResourceSchedulingOpenTimeSlotsTmp, isBlocked)).value(SysQuery::value(NoYes::No));
+            this.queryBuildDataSource().addRange(fieldNum(HMResourceSchedulingOpenTimeSlotsTmp, @Client)).value(SysQuery::value(0));
+            qbdsScheduleType = this.queryBuildDataSource().addDataSource(tableNum(HMResourceSchedulingTypeCode));
+            qbdsScheduleType.relations(true);
+            qbdsScheduleType.addRange(fieldNum(HMResourceSchedulingTypeCode,Isbreak)).value(SysQuery::value(NoYes::No));
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMResourceSchedulingPlanningObjectRelatedAppt</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.queryBuildDataSource().clearDynalinks();
+            planningObjectMapForRsrc = new Map(Types::Int64,Types::Int64);
+            resourceGroupRecIdSet = new Set(Types::Int64);
+        
+            planObject = element.args().record();
+            qbds = this.queryBuildDataSource();
+            //qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, HMOrganizationalUNit)).value(SysQuery::value(planObject.HMOrganizationalUnit));
+            isFirst = true;
+        
+        
+                //hmResourceSchedulingOpenTimeSlotsTmpMain = element.args().record();
+                //while select HMResourceSchedulingPlanningObject from hmResourceSchedulingOpenTimeSlotsTmpMain
+                    //group by hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject
+                //{
+                    //this.queryBuildDataSource().addRange(fieldNum(HMResourceSchedulingPlanningObject, RecId)).value(SysQuery::value(hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject));
+        //
+                    //select HMResourceMaster from planObject
+                    //where planObject.recid == hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject;
+        //
+                    //planningObjectMapForRsrc.insert(hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject,
+                                                        //planObject.HMResourceMaster);
+                    //while select * from HMResourceGroupResourceMaster
+                        //where HMResourceGroupResourceMaster.HMResourceMaster == planObject.HMResourceMaster
+                    //{
+                        //resourceGroupRecIdSet.add(HMResourceGroupResourceMaster.HMResourceGroup);
+                    //}
+                //}
+        
+        
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            Object formRun;
+            QueryBuildDataSource                qbdsGroup;
+            RecId                               resourceGroupRecId;
+            if(element.args().parm() == 'Search' && isFirst)
+            {
+                isFirst = false;
+                formRun = element.args().caller();
+                if(formHasMethod(formRun,identifierStr(getSelectedSearchGroupRecId)))
+                {
+                    resourceGroupRecId = element.args().caller().getSelectedSearchGroupRecId();
+                    if(resourceGroupRecId != 0)
+                    {
+                        qbdsGroup = this.query().dataSourceTable(tableNum(HMResourceMaster)).addDataSource(tableNum(HMResourceGroupResourceMaster));
+                        qbdsGroup.relations(true);
+                        qbdsGroup.addRange(fieldNum(HMResourceGroupResourceMaster,HMResourceGroup)).value(SysQuery::value(resourceGroupRecId));
+                        HMResourceGroup.text(HMResourceGroup::find(resourceGroupRecId).Description);
+                    }
+                }
+            }
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+        
+            element.updateOpenSlots();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMResourceMaster</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            this.queryBuildDataSource().addRange(fieldNum(HMResourceMaster, Status)).value(SysQuery::value(HMResourceStatus::Active));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMResourceSchedulingOpenTimeSlotsTmpAppt</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+        
+            if(HMResourceSchedulingOpenTimeSlotsTmpAppt.HMParentSchedulingTypeCode)
+            {
+                HMResourceSchedulingOpenTimeSlotsTmp_HMResourceSchedulingTypeCode1.allowEdit(true);
+            }
+            else
+            {
+                HMResourceSchedulingOpenTimeSlotsTmp_HMResourceSchedulingTypeCode1.allowEdit(false);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            HMResourceSchedulingOpenTimeSlotsTmpAppt_ds.queryBuildDataSource().clearDynalinks();
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateDelete</Name>
+						<Source><![CDATA[
+        public boolean validateDelete()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                if(HMResourceSchedulingOpenTimeSlotsTmpAppt.AppointmentRecId != 0)
+                {
+                    warning("@MAZ11501");
+                    ret = false;
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>HMResourceSchedulingTypeCode</DataField>
+						<Methods>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                Common ret;
+                SysReferenceTableLookup sysReferenceTableLookup;
+            
+                QueryBuildDataSource    queryBuildDataSource;
+                Query                   query = new Query();
+                sysReferenceTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMResourceSchedulingTypeCode), _formReferenceControl, true);
+            
+                queryBuildDataSource = query.addDataSource(tableNum(HMResourceSchedulingTypeCode));
+                queryBuildDataSource.addRange(fieldNum(HMResourceSchedulingTypeCode, IsBlocked)).value(SysQuery::value(NoYes::No));
+                queryBuildDataSource.addRange(fieldnum(HMResourceSchedulingTypeCode,ParentAppointmentType)).value(SysQuery::value(HMResourceSchedulingOpenTimeSlotsTmpAppt.HMParentSchedulingTypeCode));
+            
+                queryBuildDataSource = queryBuildDataSource.addDataSource(tableNum(HMResourceMasterScheduleType));
+                queryBuildDataSource.relations(true);
+                queryBuildDataSource.addRange(fieldNum(HMResourceMasterScheduleType, HMResourceMaster)).value(SysQuery::value(HMResourceSchedulingOpenTimeSlotsTmpAppt.HMResourceMaster));
+            
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMResourceSchedulingTypeCode, Code));
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMResourceSchedulingTypeCode, Description));
+                sysReferenceTableLookup.parmQuery(query);
+            
+                ret = sysReferenceTableLookup.performFormLookup();
+            
+            
+                return ret;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>HMResourceGroup</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal;
+            FormRun itemLookUp;
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMResourceGroupLookup));
+            //argsLocal.parm('FilterResource');
+            argsLocal.caller(element);
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMResourceGroup                     hmResourceGroupLocal;
+            ret = super();
+            if(ret)
+            {
+                if(this.text() != '')
+                {
+        
+                    if(planObject)
+                    {
+                        select RecId from hmResourceGroupLocal
+                        where hmResourceGroupLocal.Description == this.text();
+        
+                        if(hmResourceGroupLocal.RecId == 0)
+                        {
+                            warning("@MAZ11528");
+                            element.storeResourceGroup(0);
+                            this.text('');
+                        }
+                        else
+                        {
+                            element.storeResourceGroup(hmResourceGroupLocal.RecId);
+                        }
+                    }
+        
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>SlotDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            element.updateOpenSlots();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AddSlots</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            boolean     ret;
+        
+            ret = !HMResourceSchedulingHelper::multiResourceApptExist(HMResourceSchedulingOpenTimeSlotsTmpResource,
+                                                                    HMResourceSchedulingOpenTimeSlotsTmpAppt_DS);
+        
+            if(ret)
+            {
+                if(AppointmentDate.dateValue() == HMResourceSchedulingOpenTimeSlotsTmpResource.Date
+                && AppointmentTime.value() == HMResourceSchedulingOpenTimeSlotsTmpResource.Time)
+                {
+                    warning("@MAZ11503");
+                    ret = false;
+                }
+            }
+        
+            super();
+        
+            if(ret)
+            {
+                HMResourceSchedulingOpenTimeSlotsTmpAppt_ds.create();
+        
+                buf2Buf(HMResourceSchedulingOpenTimeSlotsTmpResource,HMResourceSchedulingOpenTimeSlotsTmpAppt);
+                HMResourceSchedulingOpenTimeSlotsTmpAppt.HMResourceSchedulingPlanningObject = HMResourceSchedulingOpenTimeSlotsTmpResource.HMResourceSchedulingPlanningObject;
+                HMResourceSchedulingOpenTimeSlotsTmpAppt.HMParentSchedulingTypeCode = HMResourceSchedulingHelper::getSchedulingSubType(HMResourceSchedulingOpenTimeSlotsTmpAppt.HMResourceSchedulingTypeCode) == HMAppointmentSubType::Pseudo ? HMResourceSchedulingOpenTimeSlotsTmpAppt.HMResourceSchedulingTypeCode : 0;
+                HMResourceSchedulingOpenTimeSlotsTmpAppt.HMOrganizationalUnitSubClinic = parentSubclinicRecId;
+        
+                HMResourceSchedulingOpenTimeSlotsTmpAppt.insert();
+        
+                HMResourceSchedulingOpenTimeSlotsTmpAppt_ds.executeQuery();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingOpenTimeSlotsTmpResource</Name>
+			<Table>HMResourceSchedulingOpenTimeSlotsTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AppointmentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Date</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DayEndTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DayName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Duration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitSubClinic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMParentSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingDayPlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingDayPlanItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingWeekPlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>isBlocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>isClosed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsHotspot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsNoWoman</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOverBooked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SlotEndTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Time</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMResourceSchedulingPlanningObjectRelatedAppt</JoinSource>
+			<LinkType>Active</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingPlanningObjectRelatedAppt</Name>
+			<Table>HMResourceSchedulingPlanningObject</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AvailabilityStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CaseType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Category</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultScheduleType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBuildingUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HotSpotType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HotSpotValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OverbookAllowed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlanningObjectStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScheduleOnPublicHoliday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SearchInterval</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StartDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceMaster</Name>
+			<Table>HMResourceMaster</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AppointmentTaking</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CancellationPolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Confirmation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DimensionDefault</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentSending</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmTitle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Highlight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaffRole</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LicenseExpirationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LicenseNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OpeningHours</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReferralNeeded</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Type</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendorType</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMResourceSchedulingPlanningObjectRelatedAppt</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingOpenTimeSlotsTmpAppt</Name>
+			<Table>HMResourceSchedulingOpenTimeSlotsTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AppointmentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Date</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DayEndTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DayName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Duration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitSubClinic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMParentSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingDayPlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingDayPlanItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingWeekPlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>isBlocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>isClosed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsHotspot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsNoWoman</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOverBooked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SlotEndTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Time</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ11527</Caption>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>OpenTimeSlotGroup</Name>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Group_</Name>
+						<ElementPosition>763549740</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Patient</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>613566756</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1881</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ9</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PhysicalFileNumber</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>920350134</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ11142</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Resource</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1227133512</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS89158</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>AppointmentDate</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1533916890</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>TransDate</ExtendedDataType>
+								<Label>@SYS100104</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTimeControl">
+								<Name>AppointmentTime</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1840700268</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ2007</HelpText>
+								<Type>Time</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>TimeOfDay</ExtendedDataType>
+								<Label>@SYS92604</Label>
+								<TimeSeconds>No</TimeSeconds>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTimeControl">
+								<Name>ArrivalTime</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1994091957</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11148</HelpText>
+								<Type>Time</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>TimeOfDay</ExtendedDataType>
+								<Label>@MAZ11147</Label>
+								<TimeSeconds>No</TimeSeconds>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+						<Caption>Main appointment details</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Group3</Name>
+						<ElementPosition>1145324610</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Resources</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>858993458</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMResourceGroup</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>954437176</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@SYS15433</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGridControl">
+										<Name>GridResources</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Grid</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>HMResourceMaster_Code</Name>
+												<ElementPosition>858993458</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Code</DataField>
+												<DataSource>HMResourceMaster</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>HMResourceMaster_Description</Name>
+												<ElementPosition>1288490187</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Description</DataField>
+												<DataSource>HMResourceMaster</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormComboBoxControl">
+												<Name>HMResourceMaster_Type</Name>
+												<ElementPosition>1717986916</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ComboBox</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Type</DataField>
+												<DataSource>HMResourceMaster</DataSource>
+												<Items />
+											</AxFormControl>
+										</Controls>
+										<DataSource>HMResourceSchedulingPlanningObjectRelatedAppt</DataSource>
+										<VisibleRows>8</VisibleRows>
+										<VisibleRowsMode>Fixed</VisibleRowsMode>
+									</AxFormControl>
+								</Controls>
+								<Caption>@MAZ10621</Caption>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>VSplitterRelatedAppointments</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1288490187</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<FramePosition>Inside</FramePosition>
+								<Style>SplitterVerticalContainer</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Timeslots</Name>
+								<ElementPosition>1717986916</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>SlotDate</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>636291450</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>TransDate</ExtendedDataType>
+										<Label>@MAZ4437</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneControl">
+										<Name>TimeSlotActionPane</Name>
+										<ElementPosition>954437176</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPane</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormActionPaneTabControl">
+												<Name>TimeSlotActionPaneTab</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ActionPaneTab</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonGroupControl">
+														<Name>ButtonGroup</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ButtonGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormButtonControl">
+																<Name>AddSlots</Name>
+																<ElementPosition>1431655764</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>Button</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+																<NormalImage>New</NormalImage>
+																<Text>Add</Text>
+															</AxFormControl>
+														</Controls>
+														<ArrangeMethod>Vertical</ArrangeMethod>
+														<DataSource>HMResourceSchedulingOpenTimeSlotsTmpResource</DataSource>
+													</AxFormControl>
+												</Controls>
+												<AlignChild>No</AlignChild>
+												<AlignChildren>No</AlignChildren>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+										<Style>Strip</Style>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGridControl">
+										<Name>TimeslotsGrid</Name>
+										<ElementPosition>1550960411</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Grid</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormDateControl">
+												<Name>HMResourceSchedulingOpenTimeSlotsTmp_Date</Name>
+												<ElementPosition>613566756</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Date</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Date</DataField>
+												<DataSource>HMResourceSchedulingOpenTimeSlotsTmpResource</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormTimeControl">
+												<Name>HMResourceSchedulingOpenTimeSlotsTmp_Time</Name>
+												<ElementPosition>920350134</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Time</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Time</DataField>
+												<DataSource>HMResourceSchedulingOpenTimeSlotsTmpResource</DataSource>
+												<TimeSeconds>No</TimeSeconds>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormTimeControl">
+												<Name>HMResourceSchedulingOpenTimeSlotsTmp_ArrivalTime</Name>
+												<ElementPosition>1227133512</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Time</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>ArrivalTime</DataField>
+												<DataSource>HMResourceSchedulingOpenTimeSlotsTmpResource</DataSource>
+												<TimeSeconds>No</TimeSeconds>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormReferenceGroupControl">
+												<Name>HMResourceSchedulingOpenTimeSlotsTmp_HMResourceSchedulingTypeCode</Name>
+												<ElementPosition>1533916890</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ReferenceGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>HMResourceSchedulingOpenTimeSlotsTmpResource</DataSource>
+												<ReferenceField>HMResourceSchedulingTypeCode</ReferenceField>
+												<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormComboBoxControl">
+												<Name>HMResourceSchedulingOpenTimeSlotsTmp_IsHotspot</Name>
+												<ElementPosition>1840700268</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ComboBox</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>IsHotspot</DataField>
+												<DataSource>HMResourceSchedulingOpenTimeSlotsTmpResource</DataSource>
+												<Items />
+											</AxFormControl>
+										</Controls>
+										<DataSource>HMResourceSchedulingOpenTimeSlotsTmpResource</DataSource>
+										<ShowRowLabels>No</ShowRowLabels>
+										<VisibleRows>7</VisibleRows>
+										<VisibleRowsMode>Fixed</VisibleRowsMode>
+									</AxFormControl>
+								</Controls>
+								<Caption>@MAZ6111</Caption>
+							</AxFormControl>
+						</Controls>
+						<Columns>3</Columns>
+						<Columnspace>0</Columnspace>
+						<ColumnspaceMode>Fixed</ColumnspaceMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>MultiResourceSlotGroup</Name>
+						<ElementPosition>1717986916</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>ActionPane</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>ActionPaneTab</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPaneTab</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>ButtonGroupApptResrc</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ButtonGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>DeleteButton</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<NeedsRecord>Yes</NeedsRecord>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<Text>@SYS14425</Text>
+													</AxFormControl>
+												</Controls>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<DataSource>HMResourceSchedulingOpenTimeSlotsTmpAppt</DataSource>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>MultiResourcesApptGrid</Name>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>HMResourceSchedulingOpenTimeSlotsTmp_Date1</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>715827882</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Date</DataField>
+										<DataSource>HMResourceSchedulingOpenTimeSlotsTmpAppt</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTimeControl">
+										<Name>HMResourceSchedulingOpenTimeSlotsTmp_Time1</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1073741823</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Time</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Time</DataField>
+										<DataSource>HMResourceSchedulingOpenTimeSlotsTmpAppt</DataSource>
+										<TimeSeconds>No</TimeSeconds>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ResourceMaster</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>resourceMasterDescription</DataMethod>
+										<DataSource>HMResourceSchedulingOpenTimeSlotsTmpAppt</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMResourceSchedulingOpenTimeSlotsTmp_HMResourceSchedulingTypeCode1</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1789569705</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMResourceSchedulingOpenTimeSlotsTmpAppt</DataSource>
+										<Mandatory>Yes</Mandatory>
+										<ReferenceField>HMResourceSchedulingTypeCode</ReferenceField>
+										<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMResourceSchedulingOpenTimeSlotsTmpAppt_HMOrganizationalUnitSubClinic</Name>
+										<ElementPosition>1968526675</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMResourceSchedulingOpenTimeSlotsTmpAppt</DataSource>
+										<Mandatory>Yes</Mandatory>
+										<ReferenceField>HMOrganizationalUnitSubClinic</ReferenceField>
+										<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMResourceSchedulingOpenTimeSlotsTmpAppt</DataSource>
+								<VisibleRows>7</VisibleRows>
+								<VisibleRowsMode>Fixed</VisibleRowsMode>
+							</AxFormControl>
+						</Controls>
+						<Caption>@MAZ11209</Caption>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

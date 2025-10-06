@@ -1,0 +1,4443 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMEDI837XMLCreate</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.IO;
+
+class HMEDI837XMLCreate
+{
+    str                             sourceXMLFile, sNumber, sName, sClass;
+    XmlDocument                     triggerXMLDocument, xmlDocument;
+    str                             claimCounter;
+    int                             hlCounter,chargeEntryCounter;
+    HMParameters                    hMParameters;
+    HMClaimTable                    hmClaimTable;
+    CompanyInfo                     companyInfo;
+    LogisticsPostalAddress          postalAddress,patientPostalAddress;
+    DirPartyLocation                partyLocation;
+    HMPatient                       hmPatient;
+    HMPatientInsurance              HMPatientInsurance,HMPatientInsuranceScd;
+    HMCaseInsurance                 HMCaseInsurance,HMCaseInsuranceScd;
+    HMInsuranceCarrier              hMInsuranceCarrier;
+    HMCase                          hmCase;
+    HMPatientChargeEntryTable       HMPatientChargeEntryTable;
+    CustTable                       custtable;
+    LogisticsLocation               logisticslocation;
+    DirPartyTable                   dirpartytable;
+    MemoryStream                    FilepathMemoryStream;
+    FilePath                        edi837Filepath;
+    boolean                         svalid;
+    boolean                         validateOnly;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillAMT_PEAD_2300</Name>
+				<Source><![CDATA[
+    private void fillAMT_PEAD_2300()
+    {
+        #define.AMT01('AMT01')
+        #define.AMT02('AMT02')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        HMPatientChargeEntryLine hmPatientChargeEntryLine;
+        HMCaseTrans              hmCaseTrans;
+        real    sumOfTotalCharges = 0;
+    
+        nodeList = xmlDocument.selectNodes('//AMT_PEAD_2300');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#AMT01))
+            node.selectSingleNode(#AMT01).text('F3');
+    
+        while select RevenueCode, FromDate, CPTCodes,RecId
+                    from hmPatientChargeEntryLine
+                           order by hmPatientChargeEntryLine.RecId
+                        group by hmPatientChargeEntryLine.RevenueCode, hmPatientChargeEntryLine.FromDate, CPTCodes, hmPatientChargeEntryLine.RecId
+                            where hmPatientChargeEntryLine.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId
+                    join sum(TotalAmount), sum(Qty)
+                    //join TotalAmount, Qty
+                        from hmCaseTrans
+                            where hmCaseTrans.RecId == hmPatientChargeEntryLine.HMCaseTrans && hmCaseTrans.IsPPS==NoYes::No
+            {
+                sumOfTotalCharges += hmCaseTrans.TotalAmount;
+            }
+        if(node.selectSingleNode(#AMT02))
+            node.selectSingleNode(#AMT02).text(int2str(real2int(sumOfTotalCharges)));
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillBHTNode</Name>
+				<Source><![CDATA[
+    private void fillBHTNode()
+    {
+        #define.BHT01('BHT01')
+        #define.BHT02('BHT02')
+        #define.BHT03('BHT03')
+        #define.BHT04('BHT04')
+        #define.BHT05('BHT05')
+        #define.BHT06('BHT06')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//BHT');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#BHT01))
+            node.selectSingleNode(#BHT01).text("0019");
+    
+        if(node.selectSingleNode(#BHT02))
+            node.selectSingleNode(#BHT02).text('00');
+    
+        if(node.selectSingleNode(#BHT03))
+            node.selectSingleNode(#BHT03).text(claimCounter);
+    
+        if(node.selectSingleNode(#BHT04))
+            node.selectSingleNode(#BHT04).text(date2str(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+    
+        if(node.selectSingleNode(#BHT05))
+            node.selectSingleNode(#BHT05).text(strReplace(time2StrHMLeadingZero(DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone())),":",''));//strReplace(time2StrHMS(timeNow()),":",""));
+    
+        if(node.selectSingleNode(#BHT06))
+            node.selectSingleNode(#BHT06).text("CH");
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillC022</Name>
+				<Source><![CDATA[
+    private void fillC022(String50 _node)
+    {
+        #define.C02201('C02201')
+        #define.C02202('C02202')
+        #define.C02203('C02203')
+        #define.C02204('C02204')
+        #define.C02205('C02205')
+    
+        XmlNodeList             nodeList;
+        XmlNode                 node;
+        XMLNodeListIterator     xmlNodeListIterator;
+        hmPatient               HMsubscriber;
+        str                     firstName,lastName,middleName;
+        HMCaseOtherDiagnosisCode1450 hMCaseOtherDiagnosisCode;
+        HMCaseOccurrenceSpanCode1450 hMCaseOccurrenceSpanCode;
+        HMCaseOccurrenceCode1450     hMCaseOccurrenceCode;
+        HMCaseValueCode1450          hMCaseValueCode;
+        HMClaimConditionCode1450     hMClaimConditionCode;
+        HMProcedureCodeMaster   hMProcedureCodeMaster;
+    
+        switch(_node)
+        {
+            case '//C022_HCCI_1_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_1_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABK");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='67';
+    
+                if(strLen(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code)==0)
+                {
+                    //todo: Commenting for demo
+                    //svalid=checkFailed("Principal diagnosis code is missing");
+                }
+                else
+                {
+                    if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+    
+                }
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('');
+                break;
+    
+            case '//C022_HCCI_2_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_2_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='A';
+    
+                if(strLen(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code)==0)
+                {
+                    //todo: Commenting for demo
+                    //svalid=checkFailed("Diagnosis code  at field locator(A) is missing");
+                }
+                else
+                {
+                    if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+                }
+    
+                break;
+    
+            case '//C022_HCCI_3_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_3_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='B';
+                if(strLen(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code)==0)
+                {
+                    //todo: Commenting for demo
+                    //svalid=checkFailed("Diagnosis code  at field locator(B) is missing");
+                }
+                else
+                {
+                    if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+                }
+    
+                break;
+    
+            case '//C022_HCCI_4_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_4_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='C';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_5_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_5_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='D';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_6_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_6_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='E';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_7_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_7_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='F';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_8_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_8_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='G';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_9_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_9_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='H';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_10_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_10_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='I';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_11_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_11_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='J';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+            case '//C022_HCCI_12_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_12_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("ABF");
+    
+                Select firstOnly hMCaseOtherDiagnosisCode
+                where hMCaseOtherDiagnosisCode.Case==HMPatientChargeEntryTable.HMCase
+                && hMCaseOtherDiagnosisCode.Fieldlocator=='K';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hMCaseOtherDiagnosisCode.Code).Code);
+            break;
+    
+             //case '//C022_HCCI_169_2300':
+                //nodeList = xmlDocument.selectNodes('//C022_HCCI_169_2300');
+                //xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    //
+                //node = xmlNodeListIterator.value();
+                //if(node.selectSingleNode(#C02201))
+                    //node.selectSingleNode(#C02201).text("ABJ");
+    //
+                //if(node.selectSingleNode(#C02202))
+                    //node.selectSingleNode(#C02202).text(HMDiagnosisDictionary::find(hmCase.AdmittingDiagnosisCode).Code);
+            //break;
+    
+            case '//DRGI_2_2300':
+                nodeList = xmlDocument.selectNodes('//DRGI_2_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("DR");
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMProcedureCodeMaster::find(hmCase.HMPPSCode).Code);
+            break;
+    
+            case '//C022_HCCI_229_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_229_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BBR");
+    
+                Select firstOnly hMProcedureCodeMaster
+                    where hMProcedureCodeMaster.RecId==hmCase.PrincipalProcedureCode
+                        && hMProcedureCodeMaster.Type==HMProcCodeSearchType::PCS;
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(hMProcedureCodeMaster.Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hmCase.PrincipalProcedureDate,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_253_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_253_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                Select firstOnly hMCaseOccurrenceSpanCode
+                    where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceSpanCode.Fieldlocator=='35(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMCaseOccurrenceSpanCode.Code,HMClaimEnumList::OccurenceSpanCodes).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_254_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_254_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                Select firstOnly hMCaseOccurrenceSpanCode
+                    where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceSpanCode.Fieldlocator=='35(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMCaseOccurrenceSpanCode.Code,HMClaimEnumList::OccurenceSpanCodes).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_255_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_255_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                Select firstOnly hMCaseOccurrenceSpanCode
+                    where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMCaseOccurrenceSpanCode.Code,HMClaimEnumList::OccurenceSpanCodes).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits2)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_256_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_256_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                Select firstOnly hMCaseOccurrenceSpanCode
+                    where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceSpanCode.Fieldlocator=='36(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMCaseOccurrenceSpanCode.Code,HMClaimEnumList::OccurenceSpanCodes).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_257_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_257_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_258_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_258_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_259_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_259_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_260_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_260_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_261_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_261_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_262_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_262_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_263_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_263_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_264_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_264_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BI");
+    
+                //Select firstOnly hMCaseOccurrenceSpanCode
+                    //where hMCaseOccurrenceSpanCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceSpanCode.Fieldlocator=='36(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('RD8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_265_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_265_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='31(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_266_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_266_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='31(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_267_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_267_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='32(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_268_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_268_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='32(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_269_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_269_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='33(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_270_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_270_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='33(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_271_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_271_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='34(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_272_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_272_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                Select firstOnly hMCaseOccurrenceCode
+                    where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseOccurrenceCode.Fieldlocator=='34(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseOccurrenceCode.Code,HMClaimEnumList::OccurenceCode).Code);
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text(date2str(hMCaseOccurrenceSpanCode.From,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)+date2str(hMCaseOccurrenceSpanCode.Through,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+            break;
+    
+            case '//C022_HCCI_273_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_273_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                //Select firstOnly hMCaseOccurrenceCode
+                    //where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceCode.Fieldlocator=='34(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+             case '//C022_HCCI_274_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_274_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                //Select firstOnly hMCaseOccurrenceCode
+                    //where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceCode.Fieldlocator=='34(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+             case '//C022_HCCI_275_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_275_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                //Select firstOnly hMCaseOccurrenceCode
+                    //where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceCode.Fieldlocator=='34(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+             case '//C022_HCCI_276_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_276_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BH");
+    
+                //Select firstOnly hMCaseOccurrenceCode
+                    //where hMCaseOccurrenceCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMCaseOccurrenceCode.Fieldlocator=='34(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+    
+                if(node.selectSingleNode(#C02203))
+                    node.selectSingleNode(#C02203).text('D8');
+    
+                if(node.selectSingleNode(#C02204))
+                    node.selectSingleNode(#C02204).text('');
+            break;
+    
+            case '//C022_HCCI_277_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_277_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='39(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_278_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_278_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='39(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_279_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_279_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='39(c)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_280_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_280_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='39(d)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_281_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_281_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='40(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_282_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_282_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='40(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_283_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_283_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='40(c)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_284_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_284_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='40(d)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_285_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_285_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='41(a)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_286_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_286_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='41(b)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_287_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_287_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='41(c)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_288_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_288_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BE");
+    
+                Select firstOnly hMCaseValueCode
+                    where hMCaseValueCode.Case==HMPatientChargeEntryTable.HMCase
+                         && hMCaseValueCode.Fieldlocator=='41(d)';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(HMCaseValueCode.Code,HMClaimEnumList::ValueCodes).Code);
+    
+                if(node.selectSingleNode(#C02205))
+                    node.selectSingleNode(#C02205).text(num2str(HMCaseValueCode.Amount,0,17,1,3));
+    
+            break;
+    
+            case '//C022_HCCI_289_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_289_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='18';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_290_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_290_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='19';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_291_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_291_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='20';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_292_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_292_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='21';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_293_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_293_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='22';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_294_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_294_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='23';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_295_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_295_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='24';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_296_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_296_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='25';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_297_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_290_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='26';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_298_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_298_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='27';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+    
+            case '//C022_HCCI_299_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_299_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                Select firstOnly hMClaimConditionCode
+                    where hMClaimConditionCode.HMCase==HMPatientChargeEntryTable.HMCase
+                         && hMClaimConditionCode.Fieldlocator=='28';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text(HMClaimTableSetup::findByRecEnum(hMClaimConditionCode.Code,HMClaimEnumList::ConditionCodes).Code);
+            break;
+            case '//C022_HCCI_300_2300':
+                nodeList = xmlDocument.selectNodes('//C022_HCCI_300_2300');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#C02201))
+                    node.selectSingleNode(#C02201).text("BG");
+    
+                //Select firstOnly hMClaimConditionCode
+                    //where hMClaimConditionCode.Case==HMPatientChargeEntryTable.HMCase
+                         //&& hMClaimConditionCode.Fieldlocator=='19';
+    
+                if(node.selectSingleNode(#C02202))
+                    node.selectSingleNode(#C02202).text('');
+            break;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillC023_HCSLI_2300</Name>
+				<Source><![CDATA[
+    private void fillC023_HCSLI_2300()
+    {
+        #define.C02301('C02301')
+        #define.C02302('C02302')
+        #define.C02303('C02303')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//C023_HCSLI_2300');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#C02301))
+            node.selectSingleNode(#C02301).text('13');
+    
+        if(node.selectSingleNode(#C02302))
+            node.selectSingleNode(#C02302).text('A');
+    
+        if(node.selectSingleNode(#C02301))
+            node.selectSingleNode(#C02301).text('1');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillCL1_ICC_2300</Name>
+				<Source><![CDATA[
+    private void fillCL1_ICC_2300()
+    {
+        #define.CL101('CL101')
+        #define.CL102('CL102')
+        #define.CL103('CL103')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//CL1_ICC_2300');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+        if(hmCase.TypeOfAdmission==0)
+        {
+            svalid=checkFailed("Type of admission is missing");
+        }
+        else
+        {
+            if(node.selectSingleNode(#CL101))
+            node.selectSingleNode(#CL101).text(HMClaimTableSetup::findByRecEnum(hmCase.TypeOfAdmission,HMClaimEnumList::TypeOfAdmission).Code );
+        }
+    
+        //Point of origin new born is not on case entity
+        if(hmCase.PointOfOrigin==0)
+        {
+            svalid=checkFailed("Point of origin is missing");
+        }
+        else
+        {
+            if(node.selectSingleNode(#CL102))
+            node.selectSingleNode(#CL102).text(HMClaimTableSetup::findByRecEnum(hmCase.PointOfOrigin,HMClaimEnumList::PointOfOriginAdult).Code );
+        }
+    
+        if(hmCase.DischargeStatus==0)
+        {
+            svalid=checkFailed("Discharge status is missing");
+        }
+        else
+        {
+             if(node.selectSingleNode(#CL103))
+             node.selectSingleNode(#CL103).text(HMClaimTableSetup::findByRecEnum(hmCase.DischargeStatus,HMClaimEnumList::DischargeStatus).Code );
+        }
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillCLM_CI_2300</Name>
+				<Source><![CDATA[
+    private void fillCLM_CI_2300()
+    {
+        #define.CLM01('CLM01')
+        #define.CLM02('CLM02')
+        #define.CLM06('CLM06')
+        #define.CLM07('CLM07')
+        #define.CLM08('CLM08')
+        #define.CLM09('CLM09')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        HMPatientChargeEntryLine hmPatientChargeEntryLine;
+        HMCaseTrans              hmCaseTrans;
+        hmpatient                hmPatient1;
+        real    sumOfTotalCharges = 0;
+    
+        nodeList = xmlDocument.selectNodes('//CLM_CI_2300');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+        hmPatient1=hmPatient::find(hmCase.HMPatient);
+        //changed from patient MRN to case number
+        if(node.selectSingleNode(#CLM01))
+            node.selectSingleNode(#CLM01).text(hmCase.CaseNo);
+    
+        if(node.selectSingleNode(#CLM02))
+        {
+            while select RevenueCode, FromDate, CPTCodes,RecId
+                    from hmPatientChargeEntryLine
+                           order by hmPatientChargeEntryLine.RecId
+                        group by hmPatientChargeEntryLine.RevenueCode, hmPatientChargeEntryLine.FromDate, CPTCodes, hmPatientChargeEntryLine.RecId
+                            where hmPatientChargeEntryLine.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId
+                    join sum(TotalAmount), sum(Qty)
+                    //join TotalAmount, Qty
+                        from hmCaseTrans
+                            where hmCaseTrans.RecId == hmPatientChargeEntryLine.HMCaseTrans && hmCaseTrans.IsPPS==NoYes::No
+            {
+                sumOfTotalCharges += hmCaseTrans.TotalAmount;
+            }
+    
+            //node.selectSingleNode(#CLM02).text(num2str(round(sumOfTotalCharges,0.01),0,17,1,3));
+            node.selectSingleNode(#CLM02).text(int2str(real2int(sumOfTotalCharges)));
+    
+        }
+    
+        if(node.selectSingleNode(#CLM06))
+            node.selectSingleNode(#CLM06).text('N');
+    
+        if(node.selectSingleNode(#CLM07))
+            node.selectSingleNode(#CLM07).text('A');
+        if(HMPatientInsurance.AssignmentOfBenefitsIndicator==0)
+        {
+            //todo: commenting for demo
+            //svalid=checkFailed("Assignment of benefit indicator code is missing");
+        }
+        else
+        {
+            if(node.selectSingleNode(#CLM08))
+            node.selectSingleNode(#CLM08).text(HMClaimTableSetup::findByRecEnum(HMPatientInsurance.AssignmentOfBenefitsIndicator,HMClaimEnumList::AssignmentOfBenefit).Code);
+    
+        }
+    
+        if(node.selectSingleNode(#CLM09))
+            node.selectSingleNode(#CLM09).text('Y');//HMClaimTableSetup::findByRecEnum(HMPatientInsurance.ReleaseofInformationCertificationIndicat,HMClaimEnumList::ReleaseOfInformationCerficationIndicator).Code);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillDMG_PDI_2010CA</Name>
+				<Source><![CDATA[
+    private void fillDMG_PDI_2010CA()
+    {
+        #define.DMG01('DMG01')
+        #define.DMG02('DMG02')
+        #define.DMG03('DMG03')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        hmPatient           HMsubscriber;
+        str                 dOb,gEnder;
+    
+        nodeList = xmlDocument.selectNodes('//DMG_PDI_2010CA');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+    
+         dOb    = date2str(hmpatient.patientBirthDate(),321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4);
+         gEnder = hmpatient.Gender==HcmPersonGender::Male ? "M" : hmpatient.Gender==HcmPersonGender::Female ? "F" : "U" ;
+    
+        if(node.selectSingleNode(#DMG01))
+            node.selectSingleNode(#DMG01).text("D8");
+    
+        if(node.selectSingleNode(#DMG02))
+            node.selectSingleNode(#DMG02).text(dob);
+    
+        if(node.selectSingleNode(#DMG03))
+            node.selectSingleNode(#DMG03).text(gEnder);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillDMG_SDI_2010BA</Name>
+				<Source><![CDATA[
+    private void fillDMG_SDI_2010BA()
+    {
+        #define.DMG01('DMG01')
+        #define.DMG02('DMG02')
+        #define.DMG03('DMG03')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        hmPatient           HMsubscriber;
+        str                 dOb,gEnder;
+    
+        nodeList = xmlDocument.selectNodes('//DMG_SDI_2010BA');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+         if(HMPatientInsurance.SubscriberName)
+         {
+            HMsubscriber = hmPatient::find(HMPatientInsurance.HMPatientSubscriber);
+            //dOb          = subStr(int2str(year(HMsubscriber.patientBirthDate())),1,2)+date2str(HMsubscriber.patientBirthDate(),231,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits2);
+            dOb    = date2str(HMPatientInsurance.SubscriberDateOfBirth,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4);
+            gEnder       = HMsubscriber.Gender==HcmPersonGender::Male ? "M" : HMsubscriber.Gender==HcmPersonGender::Female ? "F" : "U" ;
+         }
+        else
+        {
+            dOb    = date2str(hmpatient.patientBirthDate() ,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4);
+            //dOb           = subStr(int2str(year(hmpatient.patientBirthDate())),1,2)+date2str(hmpatient.patientBirthDate(),231,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits2);
+            gEnder        = hmpatient.Gender==HcmPersonGender::Male ? "M" : hmpatient.Gender==HcmPersonGender::Female ? "F" : "U" ;
+        }
+        if(!dob)
+        {
+            dOb = "19000101";
+        }
+        if(node.selectSingleNode(#DMG01))
+            node.selectSingleNode(#DMG01).text("D8");
+    
+        if(node.selectSingleNode(#DMG02))
+            node.selectSingleNode(#DMG02).text(dob);
+    
+        if(node.selectSingleNode(#DMG03))
+            node.selectSingleNode(#DMG03).text(gEnder);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillDTP</Name>
+				<Source><![CDATA[
+    private void fillDTP(String50 _node)
+    {
+        #define.DTP01('DTP01')
+        #define.DTP02('DTP02')
+        #define.DTP03('DTP03')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        utcDateTime         datetimeDischarge,datetimeAdmin;
+        str                 statementCoverperiod,adminDateTime;
+        System.DateTime     sysDateTime;
+        str                 dateTimeStr;
+        switch(_node)
+        {
+            case '//DTP_DH_2300':
+            nodeList = xmlDocument.selectNodes('//DTP_DH_2300');
+            xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+            node = xmlNodeListIterator.value();
+    
+            if(node.selectSingleNode(#DTP01))
+                node.selectSingleNode(#DTP01).text('096');
+    
+            if(node.selectSingleNode(#DTP02))
+                node.selectSingleNode(#DTP02).text('TM');
+    
+            datetimeDischarge =  DateTimeUtil::applyTimeZoneOffset(hmCase.DischargeDate,DateTimeUtil::getUserPreferredTimeZone());
+            if(node.selectSingleNode(#DTP03))
+                node.selectSingleNode(#DTP03).text(int2str(DateTimeUtil::hour(datetimeDischarge)));
+            break;
+    
+            case '//DTP_SD_2300':
+            nodeList = xmlDocument.selectNodes('//DTP_SD_2300');
+            xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+            node = xmlNodeListIterator.value();
+    
+            if(node.selectSingleNode(#DTP01))
+                node.selectSingleNode(#DTP01).text('434');
+    
+            if(node.selectSingleNode(#DTP02))
+                node.selectSingleNode(#DTP02).text('RD8');
+    
+            statementCoverperiod = date2str(DateTimeUtil::date(hmCase.DischargeDate),321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4)
+                                   +"-"+date2str(DateTimeUtil::date(hmCase.AddmisionDate),321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4);
+            if(node.selectSingleNode(#DTP03))
+                node.selectSingleNode(#DTP03).text(statementCoverperiod);
+            break;
+    
+            case '//DTP_ADH_2300':
+            nodeList = xmlDocument.selectNodes('//DTP_ADH_2300');
+            xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+            node = xmlNodeListIterator.value();
+    
+            if(node.selectSingleNode(#DTP01))
+                node.selectSingleNode(#DTP01).text('435');
+    
+            if(node.selectSingleNode(#DTP02))
+                node.selectSingleNode(#DTP02).text('DT');
+    
+            admindatetime = subStr(int2str(year(DateTimeUtil::date(hmCase.AddmisionDate))),1,2)+date2str(DateTimeUtil::date(hmCase.AddmisionDate),231,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits2);
+            datetimeAdmin =  DateTimeUtil::applyTimeZoneOffset(hmCase.AddmisionDate,DateTimeUtil::getUserPreferredTimeZone());
+            sysDateTime = datetimeAdmin;
+            if(node.selectSingleNode(#DTP03))
+            {
+                sysDateTime = datetimeAdmin;
+                dateTimeStr = sysDateTime.ToString("yyyyMMddHHMM");
+                node.selectSingleNode(#DTP03).text(dateTimeStr);
+            }
+                //node.selectSingleNode(#DTP03).text(admindatetime+int2str(DateTimeUtil::hour(datetimeAdmin))+int2str(DateTimeUtil::minute(datetimeAdmin)));
+            break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillHL</Name>
+				<Source><![CDATA[
+    private void fillHL(String50 _node)
+    {
+        #define.HL01('HL01')
+        #define.HL02('HL02')
+        #define.HL03('HL03')
+        #define.HL04('HL04')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        switch(_node)
+        {
+            case '//PER_SN_1000A':
+                nodeList = xmlDocument.selectNodes('//PER_SN_1000A');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+                hlCounter++;
+                if(node.selectSingleNode(#HL01))
+                    node.selectSingleNode(#HL01).text(int2str(hlCounter));
+    
+                if(node.selectSingleNode(#HL03))
+                    node.selectSingleNode(#HL03).text("20");
+    
+                if(node.selectSingleNode(#HL04))
+                    node.selectSingleNode(#HL04).text("1");
+                break;
+             case '//HL_SHL_2000B':
+                nodeList = xmlDocument.selectNodes('//HL_SHL_2000B');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                hlCounter++;
+                node = xmlNodeListIterator.value();
+    
+                if(node.selectSingleNode(#HL01))
+                    node.selectSingleNode(#HL01).text(int2str(hlcounter));
+    
+                if(node.selectSingleNode(#HL02))
+                    node.selectSingleNode(#HL02).text(int2str(hlCounter-1));
+    
+                 if(node.selectSingleNode(#HL03))
+                    node.selectSingleNode(#HL03).text('22');
+    
+                 if(node.selectSingleNode(#HL04))
+                    node.selectSingleNode(#HL04).text('0');
+                 break;
+    
+              case '//HL_BPHL_2000A':
+                    nodeList = xmlDocument.selectNodes('//HL_BPHL_2000A');
+                    xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                    node = xmlNodeListIterator.value();
+                    hlCounter++;
+                    if(node.selectSingleNode(#HL01))
+                        node.selectSingleNode(#HL01).text(int2str(hlCounter));
+    
+                    if(node.selectSingleNode(#HL03))
+                        node.selectSingleNode(#HL03).text("20");
+    
+                    if(node.selectSingleNode(#HL04))
+                        node.selectSingleNode(#HL04).text("1");
+                    break;
+    
+    
+    
+                }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillLine</Name>
+				<Source><![CDATA[
+    private void fillLine()
+    {
+        #define.LX01('LX01')
+        #define.SV201('SV201')
+        #define.SV203('SV203')
+        #define.SV204('SV204')
+        #define.SV205('SV205')
+        #define.SV301('SV301')
+        #define.SV302('SV302')
+        #define.SV303('SV303')
+        #define.SV304('SV304')
+        #define.SV305('SV305')
+        #define.SV306('SV306')
+        #define.SV208('SV208')
+        #define.SV209('SV209')
+        #define.SV210('SV210')
+        #define.DTP01('DTP01')
+        #define.DTP02('DTP02')
+        #define.DTP03('DTP03')
+    
+    
+        XmlNodeList         nodeList,nodelist1;
+        XmlNode             node,nodelx;
+        XMLNodeListIterator xmlNodeListIterator;
+        HMPatientChargeEntryLine    hmpatientchargeentryline;
+        HMCaseTrans                 hmCaseTrans;
+        HMProcedureCodeMaster       hMProcedureCodeMaster;
+        boolean                     first=true;
+        chargeEntryCounter=0;
+    
+        nodeList = xmlDocument.selectNodes('//TS837_2400_LOOP');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+        while select hMPatientChargeEntryLine
+            join hmcasetrans
+            where HMPatientChargeEntryline.HMCaseTrans == HMCaseTrans.RecId
+            && HMPatientChargeEntryline.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId
+            && hmCaseTrans.HMServiceStatus == HMServiceStatus::Complete
+        {
+            chargeEntryCounter=chargeEntryCounter +1;
+    
+            if(first==true)
+            {
+                 //if(node.selectSingleNode('TS837_2400_LOOP'))
+                   node.selectSingleNode(#LX01).text(int2str(chargeEntryCounter));//int2str(chargeEntryCounter));//int2str(chargeEntryCounter));
+                    nodelx=node.cloneNode(1);
+                    select firstonly hMProcedureCodeMaster
+                    where hMProcedureCodeMaster.RecId == hmpatientchargeentryline.RevenueCode && hMProcedureCodeMaster.type == HMProcCodeSearchType::Revenue;
+                   node.selectSingleNode(#SV201).text(hMProcedureCodeMaster.Code);
+    
+    
+                    //if(node.selectSingleNode('TS837_2400_LOOP'))
+                     //HMProcedureCodeMaster::find(hMPatientChargeEntryLine.RevenueCode).Code);
+                    node.selectSingleNode(#SV301).text('HC');
+                    node.selectSingleNode(#SV302).text(hMProcedureCodeMaster.Code);
+                    select firstonly hMProcedureCodeMaster
+                    where hMProcedureCodeMaster.RecId == hmpatientchargeentryline.CPTCodes && hMProcedureCodeMaster.type == HMProcCodeSearchType::CPT_HCPS;
+                    if(hmpatientchargeentryline.CPTCodes==0)
+                    {
+                        node.removeChild(node.selectSingleNode(#SV303));
+                        node.removeChild(node.selectSingleNode(#SV304));
+                        node.removeChild(node.selectSingleNode(#SV305));
+                        node.removeChild(node.selectSingleNode(#SV306));
+                    }
+                    else
+                    {
+                        if(hmpatientchargeentryline.Modifier1==0)
+                        {
+                            svalid=checkFailed("Modifiers1 on charge line is missing");
+                        }
+                        if(hmpatientchargeentryline.Modifier2==0)
+                        {
+                            svalid=checkFailed("Modifiers2 on charge line is missing");
+                        }
+                        if(hmpatientchargeentryline.Modifier3==0)
+                        {
+                            svalid=checkFailed("Modifiers3 on charge line is missing");
+                        }
+                        if(hmpatientchargeentryline.Modifier4==0)
+                        {
+                            svalid=checkFailed("Modifiers4 on charge line is missing");
+                        }
+                        node.selectSingleNode(#SV303).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier1).Code);
+                        node.selectSingleNode(#SV304).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier2).Code);
+                        node.selectSingleNode(#SV305).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier3).Code);
+                        node.selectSingleNode(#SV306).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier4).Code);
+    
+                    }
+    
+                    //node.selectSingleNode(#SV303).text('AB');
+                    //node.selectSingleNode(#SV304).text('UN');
+                    //node.selectSingleNode(#SV305).text('AB');
+                    //node.selectSingleNode(#SV306).text('AB');
+                    //node.removeChild(node.selectSingleNode(#SV301));
+                    //node.removeChild(node.selectSingleNode(#SV302));
+    
+                    node.selectSingleNode(#SV203).text(int2str(real2int(HMCaseTrans::find(hmpatientchargeentryline.HMCaseTrans).TotalAmount)));
+                    node.selectSingleNode(#SV204).text('UN');
+                    node.selectSingleNode(#SV205).text(int2str(real2int(HMCaseTrans::find(hmpatientchargeentryline.HMCaseTrans).Qty)));
+                    node.selectSingleNode(#SV208).text('N');
+                    node.selectSingleNode(#SV209).text('1');
+                    node.selectSingleNode(#SV210).text('1');
+                    node.selectSingleNode(#DTP01).text('472');
+                    node.selectSingleNode(#DTP02).text('D8');
+                    node.selectSingleNode(#DTP03).text(date2str(hmpatientchargeentryline.FromDate,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+    
+    
+                    first=false;
+            }
+           else
+            {
+    
+                nodeList = xmlDocument.selectNodes('//LINE');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+    
+                //if(nodelx.selectSingleNode('TS837_2400_LOOP'))
+                   nodelx.selectSingleNode(#LX01).text(int2str(chargeEntryCounter));//int2str(chargeEntryCounter));//int2str(chargeEntryCounter));
+    
+                 select firstonly hMProcedureCodeMaster
+                    where hMProcedureCodeMaster.RecId == hmpatientchargeentryline.RevenueCode && hMProcedureCodeMaster.type == HMProcCodeSearchType::Revenue;
+                   nodelx.selectSingleNode(#SV201).text(hMProcedureCodeMaster.Code);
+    
+    
+                 select firstonly hMProcedureCodeMaster
+                    where hMProcedureCodeMaster.RecId == hmpatientchargeentryline.CPTCodes && hMProcedureCodeMaster.type == HMProcCodeSearchType::CPT_HCPS;
+    
+                    //if(nodelx.selectSingleNode('TS837_2400_LOOP'))
+                    nodelx.selectSingleNode(#SV301).text('HC');
+                    nodelx.selectSingleNode(#SV302).text(hMProcedureCodeMaster.Code);
+    
+                    if(hmpatientchargeentryline.CPTCodes==0)
+                    {
+                        //todo:
+                        //todo: commenting following code for demo purpose
+                        // these are lot of validations which need to be fill on setup and errors
+                        /*
+                        nodelx.removeChild(nodelx.selectSingleNode(#SV303));
+                        nodelx.removeChild(nodelx.selectSingleNode(#SV304));
+                        nodelx.removeChild(nodelx.selectSingleNode(#SV305));
+                        nodelx.removeChild(nodelx.selectSingleNode(#SV306));
+                        */
+                    }
+                    else
+                    {
+                        if(hmpatientchargeentryline.Modifier1==0)
+                        {
+                            svalid=checkFailed("Modifiers1 on charge line is missing");
+                        }
+                        if(hmpatientchargeentryline.Modifier2==0)
+                        {
+                            svalid=checkFailed("Modifiers2 on charge line is missing");
+                        }
+                        if(hmpatientchargeentryline.Modifier3==0)
+                        {
+                            svalid=checkFailed("Modifiers3 on charge line is missing");
+                        }
+                        if(hmpatientchargeentryline.Modifier4==0)
+                        {
+                            svalid=checkFailed("Modifiers4 on charge line is missing");
+                        }
+                        nodelx.selectSingleNode(#SV303).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier1).Code);
+                        nodelx.selectSingleNode(#SV304).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier2).Code);
+                        nodelx.selectSingleNode(#SV305).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier3).Code);
+                        nodelx.selectSingleNode(#SV306).text(HMProcedureModifier::find(hmpatientchargeentryline.Modifier4).Code);
+    
+                    }
+    
+                    nodelx.selectSingleNode(#SV203).text(int2str(real2int(HMCaseTrans::find(hmpatientchargeentryline.HMCaseTrans).TotalAmount)));
+                    nodelx.selectSingleNode(#SV204).text('UN');
+                    nodelx.selectSingleNode(#SV205).text(int2str(real2int(HMCaseTrans::find(hmpatientchargeentryline.HMCaseTrans).Qty)));
+                    nodelx.selectSingleNode(#SV208).text('N');
+                    nodelx.selectSingleNode(#SV209).text('1');
+                    nodelx.selectSingleNode(#SV210).text('1');
+                    nodelx.selectSingleNode(#DTP01).text('472');
+                    nodelx.selectSingleNode(#DTP02).text('D8');
+                    nodelx.selectSingleNode(#DTP03).text(date2str(hmpatientchargeentryline.FromDate,321,DateDay::Digits2,DateSeparator::None,DateMonth::Digits2,DateSeparator::None,DateYear::Digits4));
+                    node.appendChild(nodelx);
+                }
+    
+        //nodelx=node.selectSingleNode('TS837_2400_Loop1/LX_SLN_2400');
+        //nodelx.value('50');
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillLX_SLN_2400</Name>
+				<Source><![CDATA[
+    private void fillLX_SLN_2400()
+    {
+        #define.LX01('LX01')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//LX_SLN_2400');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#LX01))
+            node.selectSingleNode(#LX01).text(int2str(chargeEntryCounter));
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillN3</Name>
+				<Source><![CDATA[
+    private void fillN3(String50 _node)
+    {
+        #define.N301('N301')
+        #define.N302('N302')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        hmPatient               HMsubscriber,hmPatient1;
+        str                     primaryaddress;
+    
+        switch(_node)
+        {
+            case '//N3_BPA_2010AA':
+                nodeList = xmlDocument.selectNodes('//N3_BPA_2010AA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+    
+                if(node.selectSingleNode(#N301))
+                node.selectSingleNode(#N301).text(postalAddress.Street);
+                break;
+    
+            case '//N3_SA_2010BA':
+                nodeList = xmlDocument.selectNodes('//N3_SA_2010BA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+    
+            if(HMPatientInsurance.HMPatientSubscriber)
+            {
+                HMsubscriber = hmPatient::find(HMPatientInsurance.HMPatientSubscriber);
+                primaryaddress = HMsubscriber.patientPrimaryAddress();
+    
+            }
+            else
+            {
+                hmpatient1=hmPatient::find(HMPatientInsurance.HMPatient);
+                primaryaddress = hmPatient1.patientPrimaryAddress();
+    
+            }
+            if(node.selectSingleNode(#N301))
+                node.selectSingleNode(#N301).text(primaryaddress);
+            break;
+    
+            case '//N3_PA_2010CA':
+                nodeList = xmlDocument.selectNodes('//N3_PA_2010CA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+                hmpatient1=hmPatient::find(hmCase.HMPatient);
+                if(node.selectSingleNode(#N301))
+                    node.selectSingleNode(#N301).text(hmPatient1.patientPrimaryAddress());
+                    //N302 optional (if address exceeding 55)
+                 //if(node.selectSingleNode(#N302))
+                    //node.selectSingleNode(#N302).text();
+            break;
+    
+             case '//N3_SFLA_2310E':
+                nodeList = xmlDocument.selectNodes('//N3_SFLA_2310E');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#N301))
+                   node.selectSingleNode(#N301).text(postalAddress.Street);
+    
+    
+                //node = xmlNodeListIterator.value();
+                //if(node.selectSingleNode(#N301))
+                    //node.selectSingleNode(#N301).text(hmPatient.patientPrimaryAddress());
+                //N302 optional (if address exceeding 55)
+                 //if(node.selectSingleNode(#N302))
+                    //node.selectSingleNode(#N302).text();
+                break;
+    
+            Case '//N3_OSA_2330A':
+                nodeList = xmlDocument.selectNodes('//N3_OSA_2330A');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+    
+    
+            if(HMPatientInsuranceScd.HMPatientSubscriber)
+            {
+                HMsubscriber = hmPatient::find(HMPatientInsuranceScd.HMPatientSubscriber);
+                primaryaddress = HMsubscriber.patientPrimaryAddress();
+    
+            }
+            else
+            {
+                hmpatient1=hmPatient::find(HMPatientInsurance.HMPatient);
+                primaryaddress = hmPatient1.patientPrimaryAddress();
+    
+            }
+    
+    
+            if(node.selectSingleNode(#N301))
+                node.selectSingleNode(#N301).text(primaryaddress );
+            break;
+    
+            case '//N3_PA_2010BB':
+                nodeList = xmlDocument.selectNodes('//N3_PA_2010BB');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+                hmpatient1=hmPatient::find(hmCase.HMPatient);
+                if(node.selectSingleNode(#N301))
+                   node.selectSingleNode(#N301).text(hmPatient1.patientPrimaryAddress());
+    
+                if(node.selectSingleNode(#N302))
+                        node.selectSingleNode(#N302).text('');
+            break;
+            case '//N3_OPA_2330B':
+                nodeList = xmlDocument.selectNodes('//N3_OPA_2330B');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+                hmpatient1=hmPatient::find(hmCase.HMPatient);
+                if(!HMCaseInsuranceScd)
+                {
+                    if(node.selectSingleNode(#N301))
+                        node.selectSingleNode(#N301).text(hmPatient1.patientPrimaryAddress());
+    
+                    if(node.selectSingleNode(#N302))
+                            node.selectSingleNode(#N302).text('');
+                }
+    
+                 if(HMCaseInsuranceScd.RecId)
+                 {
+    
+                        if(HMCaseInsuranceScd.IsActive == NoYes::No)
+                        {
+    
+                             if(node.selectSingleNode(#N301))
+                                node.selectSingleNode(#N301).text(HMCaseInsuranceScd.postalAddress());
+    
+                            if(node.selectSingleNode(#N302))
+                                node.selectSingleNode(#N302).text('');
+    
+                        }
+                 }
+    
+                if(HMCaseInsuranceScd.IsActive == NoYes::Yes && HMCaseInsuranceScd.HMPayerType==HMPayerType::InsuranceCarrier)
+                {
+                    hmpatient1=hmPatient::find(hmCase.HMPatient);
+                    if(node.selectSingleNode(#N301))
+                        node.selectSingleNode(#N301).text(hmPatient1.patientPrimaryAddress());
+    
+                    if(node.selectSingleNode(#N302))
+                            node.selectSingleNode(#N302).text('');
+    
+                }
+    
+    
+    
+            break;
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillN4</Name>
+				<Source><![CDATA[
+    private void fillN4(String50 _node)
+    {
+        #define.N401('N401')
+        #define.N402('N402')
+        #define.N403('N403')
+        #define.N404('N404')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        hmPatient               HMsubscriber,hmpatient1;
+        HMPatientInsurance hmpatientinsurance1;
+        str otherpayer;
+        switch(_node)
+        {
+            case '//N4_BPC_SZCODE_2010AA':
+                nodeList = xmlDocument.selectNodes('//N4_BPC_SZCODE_2010AA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+               node = xmlNodeListIterator.value();
+    
+                if(node.selectSingleNode(#N401))
+                    node.selectSingleNode(#N401).text(postalAddress.City);
+    
+                if(node.selectSingleNode(#N402))
+                    node.selectSingleNode(#N402).text(postalAddress.State);
+    
+                if(node.selectSingleNode(#N403))
+                    node.selectSingleNode(#N403).text(postalAddress.ZipCode);
+    
+                if(node.selectSingleNode(#N404))
+                    node.selectSingleNode(#N404).text(postalAddress.CountryRegionId);
+                break;
+    
+            case '//N4_BPC_SZCODE_2010BA':
+                 nodeList = xmlDocument.selectNodes('//N4_BPC_SZCODE_2010BA');
+                    xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                   node = xmlNodeListIterator.value();
+    
+                    if(HMPatientInsurance.HMPatientSubscriber)
+                    {
+                        HMsubscriber = hmPatient::find(HMPatientInsurance.HMPatientSubscriber);
+                          select firstonly custtable
+                           join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==HMsubscriber.RecId
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+                          if(strLen(patientPostalAddress.State)==0)
+                          {
+                            svalid=checkFailed("Subscriber postal address state is missing");
+                          }
+                          if(strLen(patientPostalAddress.City)==0)
+                          {
+                            svalid=checkFailed("Subscriber postal address city is missing");
+                          }
+    
+                     }
+                    else
+                    {
+    
+                          select firstonly * from custtable
+                            join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==hmCase.HMPatient
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+                        if(strLen(patientPostalAddress.State)==0)
+                        {
+                            svalid=checkFailed("Patient postal address state is missing");
+                        }
+                         if(strLen(patientPostalAddress.City)==0)
+                        {
+                            svalid=checkFailed("Patient postal address city is missing");
+                        }
+    
+                    }
+    
+    
+                    if(node.selectSingleNode(#N401))
+                        node.selectSingleNode(#N401).text(patientpostalAddress.City);
+    
+                    if(node.selectSingleNode(#N402))
+                        node.selectSingleNode(#N402).text(patientpostalAddress.State );
+    
+                    if(node.selectSingleNode(#N403))
+                        node.selectSingleNode(#N403).text(patientpostalAddress.ZipCode);
+    
+                    if(node.selectSingleNode(#N404))
+                        node.selectSingleNode(#N404).text(patientpostalAddress.CountryRegionId);
+                    break;
+    
+            case '//N4_PCS_ZCODE_2010BB':
+                 nodeList = xmlDocument.selectNodes('//N4_PCS_ZCODE_2010BB');
+                    xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                   node = xmlNodeListIterator.value();
+    
+                    select firstonly custtable
+                            join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==hmCase.HMPatient
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+    
+                    if(node.selectSingleNode(#N401))
+                        node.selectSingleNode(#N401).text(patientpostalAddress.City);
+    
+                    if(node.selectSingleNode(#N402))
+                        node.selectSingleNode(#N402).text(patientpostalAddress.State);
+    
+                    if(node.selectSingleNode(#N403))
+                        node.selectSingleNode(#N403).text(patientpostalAddress.ZipCode);
+    
+                    if(node.selectSingleNode(#N404))
+                        node.selectSingleNode(#N404).text(patientpostalAddress.CountryRegionId);
+                    break;
+    
+    
+            case '//N4_PCS_ZCODE_2010CA':
+                 nodeList = xmlDocument.selectNodes('//N4_PCS_ZCODE_2010CA');
+                    xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                   node = xmlNodeListIterator.value();
+    
+                    select firstonly custtable
+                            join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==hmCase.HMPatient
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+    
+                    if(node.selectSingleNode(#N401))
+                        node.selectSingleNode(#N401).text(patientpostalAddress.City);
+    
+                    if(node.selectSingleNode(#N402))
+                        node.selectSingleNode(#N402).text(patientpostalAddress.State);
+    
+                    if(node.selectSingleNode(#N403))
+                        node.selectSingleNode(#N403).text(patientpostalAddress.ZipCode);
+    
+                    if(node.selectSingleNode(#N404))
+                        node.selectSingleNode(#N404).text(patientpostalAddress.CountryRegionId);
+                    break;
+    //todo: ax7 duplicate case issue
+            /*case '//N4_SFLCS_ZCODE_2310E':
+                nodeList = xmlDocument.selectNodes('//N4_SFLCS_ZCODE_2310E');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+               node = xmlNodeListIterator.value();
+    
+                if(node.selectSingleNode(#N401))
+                    node.selectSingleNode(#N401).text(postalAddress.City);
+    
+                if(node.selectSingleNode(#N402))
+                    node.selectSingleNode(#N402).text(postalAddress.State);
+    
+                if(node.selectSingleNode(#N403))
+                    node.selectSingleNode(#N403).text(postalAddress.ZipCode);
+    
+                if(node.selectSingleNode(#N404))
+                    node.selectSingleNode(#N404).text(postalAddress.CountryRegionId);
+                break;*/
+            case '//N4_OSCS_ZCODE_2330A':
+                 nodeList = xmlDocument.selectNodes('//N4_OSCS_ZCODE_2330A');
+                    xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                   node = xmlNodeListIterator.value();
+    
+                    if(HMPatientInsuranceScd.HMPatientSubscriber)
+                    {
+                       HMsubscriber = hmPatient::find(HMPatientInsurance.HMPatientSubscriber);
+    
+                        select firstonly custtable
+                           join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==HMsubscriber.RecId
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+    
+                     }
+                    else
+                    {
+    
+                          select firstonly custtable
+                            join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==hmCase.HMPatient
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+    
+                    }
+    
+    
+                    if(node.selectSingleNode(#N401))
+                        node.selectSingleNode(#N401).text(patientpostalAddress.City);
+    
+                    if(node.selectSingleNode(#N402))
+                        node.selectSingleNode(#N402).text(patientpostalAddress.State);
+    
+                    if(node.selectSingleNode(#N403))
+                        node.selectSingleNode(#N403).text(patientpostalAddress.ZipCode);
+    
+                    if(node.selectSingleNode(#N404))
+                        node.selectSingleNode(#N404).text(patientpostalAddress.CountryRegionId);
+                    break;
+    
+             case '//N4_SFLCS_ZCODE_2310E':
+                nodeList = xmlDocument.selectNodes('//N4_SFLCS_ZCODE_2310E');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+               node = xmlNodeListIterator.value();
+    
+                if(node.selectSingleNode(#N401))
+                    node.selectSingleNode(#N401).text(postalAddress.City);
+    
+                if(node.selectSingleNode(#N402))
+                    node.selectSingleNode(#N402).text(postalAddress.State);
+    
+                if(node.selectSingleNode(#N403))
+                    node.selectSingleNode(#N403).text(postalAddress.ZipCode);
+    
+                if(node.selectSingleNode(#N404))
+                    node.selectSingleNode(#N404).text(postalAddress.CountryRegionId);
+                break;
+    
+            case '//N4_OPCS_ZCODE_2330B':
+                nodeList = xmlDocument.selectNodes('//N4_OPCS_ZCODE_2330B');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+               node = xmlNodeListIterator.value();
+    
+                select firstonly custtable
+                            join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==hmCase.HMPatient
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+    
+    
+                if(!HMCaseInsuranceScd)
+                {
+                    if(node.selectSingleNode(#N401))
+                        node.selectSingleNode(#N401).text(patientpostalAddress.City);
+    
+                    if(node.selectSingleNode(#N402))
+                        node.selectSingleNode(#N402).text(patientpostalAddress.State);
+    
+                    if(node.selectSingleNode(#N403))
+                        node.selectSingleNode(#N403).text(patientpostalAddress.ZipCode);
+    
+                    if(node.selectSingleNode(#N404))
+                        node.selectSingleNode(#N404).text(patientpostalAddress.CountryRegionId);
+                }
+    
+                if(HMCaseInsuranceScd.RecId)
+                {
+    
+                        if(HMCaseInsuranceScd.IsActive == NoYes::No)
+                        {
+                            select firstonly custtable
+                                    join hmpatientinsurance1 where hmpatientinsurance1.InsuranceCarrier==custtable.AccountNum   && hmpatientinsurance1.InsuranceCarrier == HMCaseInsuranceScd.InsuranceCarrier
+                                        join dirpartytable
+                                            where dirPartyTable.RecId==custtable.Party
+                                                join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                                    join logisticsLocation
+                                                        where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                            join patientPostalAddress
+                                                                where patientPostalAddress.Location==logisticsLocation.RecId;
+    
+                            if(HMCaseInsuranceScd.HMPayerType==HMPayerType::Gurantor)
+                            {
+                                otherpayer="Guarantor";
+                            }
+                            else
+                            {
+                                otherpayer="Secondary Insurance";
+                            }
+                            if(strLen(patientpostalAddress.City)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's city is missing",otherpayer));
+                            }
+                            if(node.selectSingleNode(#N401))
+                                node.selectSingleNode(#N401).text(patientpostalAddress.City);
+    
+                            if(strLen(patientpostalAddress.State)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's state is missing",otherpayer));
+                            }
+    
+                            if(node.selectSingleNode(#N402))
+                                node.selectSingleNode(#N402).text(patientpostalAddress.State);
+    
+                            if(strLen(patientpostalAddress.ZipCode)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's zip code is missing",otherpayer));
+                            }
+                            if(node.selectSingleNode(#N403))
+                                node.selectSingleNode(#N403).text(patientpostalAddress.ZipCode);
+    
+                            if(strLen(patientpostalAddress.CountryRegionId)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's country is missing",otherpayer));
+                            }
+                            if(node.selectSingleNode(#N404))
+                                node.selectSingleNode(#N404).text(postalAddress.CountryRegionId);
+                        }
+    
+                        if(HMCaseInsuranceScd.IsActive == NoYes::Yes && HMCaseInsuranceScd.HMPayerType==HMPayerType::InsuranceCarrier)
+                        {
+                           Select firstonly custtable
+                            join hmpatient1 where hmpatient1.CustTable==custtable.RecId && hmpatient1.RecId==hmCase.HMPatient
+                                join dirpartytable
+                                    where dirPartyTable.RecId==custtable.Party
+                                        join partylocation where partyLocation.Party==dirPartyTable.RecId
+                                            join logisticsLocation
+                                                where logisticsLocation.RecId == partylocation.Location && logisticsLocation.IsPostalAddress==NoYes::Yes
+                                                    join patientPostalAddress
+                                                        where patientPostalAddress.Location==logisticsLocation.RecId;
+    
+                            if(strLen(patientpostalAddress.City)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's city is missing","Patient"));
+                            }
+                            if(node.selectSingleNode(#N401))
+                                node.selectSingleNode(#N401).text(patientpostalAddress.City);
+    
+                            if(strLen(patientpostalAddress.State)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's state is missing","Patient"));
+                            }
+    
+                            if(node.selectSingleNode(#N402))
+                                node.selectSingleNode(#N402).text(postalAddress.State);
+    
+                            if(strLen(patientpostalAddress.ZipCode)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's zip code is missing","Patient"));
+                            }
+                            if(node.selectSingleNode(#N403))
+                                node.selectSingleNode(#N403).text(patientpostalAddress.ZipCode);
+    
+                            if(strLen(patientpostalAddress.CountryRegionId)==0)
+                            {
+                                svalid=checkFailed(strFmt("%1's country is missing","Patient"));
+                            }
+                            if(node.selectSingleNode(#N404))
+                                node.selectSingleNode(#N404).text(patientpostalAddress.CountryRegionId);
+                        }
+                }
+    
+    
+                break;
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillNM</Name>
+				<Source><![CDATA[
+    private void fillNM(String50 _node)
+    {
+        #define.NM101('NM101')
+        #define.NM102('NM102')
+        #define.NM103('NM103')
+        #define.NM104('NM104')
+        #define.NM105('NM105')
+        #define.NM106('NM106')
+        #define.NM107('NM107')
+        #define.NM108('NM108')
+        #define.NM109('NM109')
+    
+        XmlNodeList             nodeList;
+        XmlNode                 node;
+        XMLNodeListIterator     xmlNodeListIterator;
+        hmPatient               HMsubscriber,hmPatient1;
+        str                     firstName,lastName,middleName;
+        HMResourceMaster        hMResourceMaster;
+        HcmWorker               hcmWorker;
+        DirPerson               dirPerson;
+        DirPersonName           dirPersonName;
+    
+        switch(_node)
+        {
+            case '//NM1_SN_1000A':
+                nodeList = xmlDocument.selectNodes('//NM1_SN_1000A');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("41");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('2');
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(companyInfo.Name);
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('46');
+    
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text('Prognosis');
+                break;
+    
+            case '//NM1_RN_1000B':
+                nodeList = xmlDocument.selectNodes('//NM1_RN_1000B');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("40");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('2');
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text('Prognosis');
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('46');
+    
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text('12345678');
+            break;
+    
+             case '//NM1_BPN_2010AA':
+                nodeList = xmlDocument.selectNodes('//NM1_BPN_2010AA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("85");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('2');
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(companyInfo.Name);
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('XX');
+    
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text(companyInfo.CoRegNum);
+             break;
+    
+            case '//NM1_SN_2010BA':
+                nodeList = xmlDocument.selectNodes('//NM1_SN_2010BA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                if(HMPatientInsurance.HMPatientSubscriber)
+                {
+                    HMsubscriber = hmPatient::find(HMPatientInsurance.HMPatientSubscriber);
+                    firstName = HMsubscriber.patientFirstName();
+                    middleName = HMsubscriber.patientMiddleName();
+                    lastName = HMsubscriber.patientLastName();
+                }
+                else
+                {
+                    hmpatient1=hmPatient::find(HMPatientInsurance.HMPatient);
+                    firstName = hmPatient1.patientFirstName();
+                    middleName = hmPatient1.patientMiddleName();
+                    lastName = hmPatient1.patientLastName();
+    
+                }
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("IL");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('1');
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(lastname);
+    
+                if(node.selectSingleNode(#NM104))
+                    node.selectSingleNode(#NM104).text(firstName);
+    
+                if(node.selectSingleNode(#NM105))
+                    node.selectSingleNode(#NM105).text(middleName);
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('MI');
+                if(strLen(HMPatientInsurance.HMPatientInsuranceMembershipId)==0)
+                {
+                    //todo: commenting for demo
+                    //svalid=checkFailed("Patient insurance membership id is missing");
+                }
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text(HMPatientInsurance.HMPatientInsuranceMembershipId);
+                break;
+    
+            case '//NM1_PN_2010BB':
+                nodeList = xmlDocument.selectNodes('//NM1_PN_2010BB');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("PR");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('2');
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(HMCaseInsurance.Name());
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('PI');
+    
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text('99999');
+             break;
+    
+            case '//NM1_PN_2010CA':
+                nodeList = xmlDocument.selectNodes('//NM1_PN_2010CA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                hmPatient1=hmPatient::find(hmCase.HMPatient);
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("QC");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('1');
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(hmPatient1.patientLastName());
+    
+                if(node.selectSingleNode(#NM104))
+                    node.selectSingleNode(#NM104).text(hmPatient1.patientFirstName());
+    
+                if(node.selectSingleNode(#NM105))
+                    node.selectSingleNode(#NM105).text(hmPatient1.patientMiddleName());
+              break;
+    
+            case '//NM1_APN_2310A':
+                nodeList = xmlDocument.selectNodes('//NM1_APN_2310A');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("71");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('1');
+                //todo: commenting following code for demo purpose
+                // these are lot of validations which need to be fill on setup
+                
+            /*
+                select HMResourceMaster
+                    where hMResourceMaster.RecId==hmCase.HMResourceMaster
+                        join HcmWorker
+                            where HcmWorker.RecId==HMResourceMaster.RefRecId
+                            && HMResourceMaster.Type==HMResourceType::Employee
+                                join DirPerson
+                                    where DirPerson.RecId==HcmWorker.Person
+                                        join DirPersonName
+                                            where DirPersonName.Person==DirPerson.RecId;
+    
+                if(!hcmworker.RecId)
+                {
+                    svalid=checkFailed("Attending physician is missing");
+                }
+                if(hcmworker.RecId && strLen(DirPersonName.LastName)==0)
+                {
+                    svalid=checkFailed("Attending physician last name is missing");
+                }
+                */
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(DirPersonName.LastName);
+    
+                if(node.selectSingleNode(#NM104))
+                    node.selectSingleNode(#NM104).text(DirPersonName.FirstName);
+    
+                if(node.selectSingleNode(#NM105))
+                    node.selectSingleNode(#NM105).text(DirPersonName.MiddleName);
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('XX');
+                //todo: commenting following code for demo purpose
+                // these are lot of validations which need to be fill on setup
+                /*
+                if(hcmworker.RecId && strLen(hcmworker.NPI)==0)
+                {
+                    svalid=checkFailed("NPI of attending physician is missing");
+                }*/
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text(hcmworker.NPI);
+              break;
+    
+            case '//NM1_OPN_2310B':
+                nodeList = xmlDocument.selectNodes('//NM1_OPN_2310B');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("72");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('1');
+                //todo: commenting following code for demo purpose 
+                // these are lot of validations which need to be fill on setup
+                /*
+                select HMResourceMaster
+                    where hMResourceMaster.RecId==hmCase.OperatingPhysician
+                        join HcmWorker
+                            where HcmWorker.RecId==HMResourceMaster.RefRecId
+                            && HMResourceMaster.Type==HMResourceType::Employee
+                                join DirPerson
+                                    where DirPerson.RecId==HcmWorker.Person
+                                        join DirPersonName
+                                            where DirPersonName.Person==DirPerson.RecId;
+                
+                if(!hcmworker.RecId)
+                {
+                    svalid=checkFailed("Operating physician is missing");
+                }
+                if(hcmworker.RecId && strLen(DirPersonName.LastName)==0)
+                {
+                    svalid=checkFailed("Operating physician last name is missing");
+                }
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(DirPersonName.LastName);
+    
+                if(node.selectSingleNode(#NM104))
+                    node.selectSingleNode(#NM104).text(DirPersonName.FirstName);
+    
+                if(node.selectSingleNode(#NM105))
+                    node.selectSingleNode(#NM105).text(DirPersonName.MiddleName);
+                if(hcmworker.RecId && strLen(strLRTrim(hcmWorker.NPI))==0)
+                {
+                    svalid=checkFailed("NPI of operating physician is missing");
+                }
+                */
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('XX');
+    
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text(hcmworker.NPI);
+             break;
+    
+             case '//NM1_OOPN_2310C':
+                nodeList = xmlDocument.selectNodes('//NM1_OOPN_2310C');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("73");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text('1');
+    
+                select HMResourceMaster
+                    where hMResourceMaster.RecId==hmCase.OtherPhysician
+                        join HcmWorker
+                            where HcmWorker.RecId==HMResourceMaster.RefRecId
+                            && HMResourceMaster.Type==HMResourceType::Employee
+                                join DirPerson
+                                    where DirPerson.RecId==HcmWorker.Person
+                                        join DirPersonName
+                                            where DirPersonName.Person==DirPerson.RecId;
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(DirPersonName.LastName);
+    
+                if(node.selectSingleNode(#NM104))
+                    node.selectSingleNode(#NM104).text(DirPersonName.FirstName);
+    
+                if(node.selectSingleNode(#NM105))
+                    node.selectSingleNode(#NM105).text(DirPersonName.MiddleName);
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text('XX');
+                //todo: commenting following code for demo purpose
+                // these are lot of validations which need to be fill on setup
+                /*
+                if(hcmworker.RecId && strLen(strLRTrim(hcmWorker.NPI))==0)
+                {
+                    svalid=checkFailed("NPI of other operating physician is missing");
+                }
+                */
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text(hcmworker.NPI);
+             break;
+    
+            case '//NM1_SFLN_2310E':
+                nodeList = xmlDocument.selectNodes('//NM1_SFLN_2310E');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("77");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text("2");
+    
+                if(node.selectSingleNode(#NM103))
+                    node.selectSingleNode(#NM103).text(companyInfo.Name);
+    
+                if(node.selectSingleNode(#NM108))
+                    node.selectSingleNode(#NM108).text("XX");
+    
+                if(node.selectSingleNode(#NM109))
+                    node.selectSingleNode(#NM109).text(companyInfo.CoRegNum);
+            break;
+    
+    
+            case '//NM1_OSN_2330A':
+                nodeList = xmlDocument.selectNodes('//NM1_OSN_2330A');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                if(HMCaseInsuranceScd)
+                {
+                    if(HMCaseInsuranceScd.HMPatientSubscriber)
+                    {
+                        HMsubscriber = hmPatient::find(HMCaseInsuranceScd.HMPatientSubscriber);
+                        firstName = HMsubscriber.patientFirstName();
+                        middleName = HMsubscriber.patientMiddleName();
+                        lastName = HMsubscriber.patientLastName();
+    
+                    }
+                    else
+                    {
+                        hmpatient1 = hmPatient::find(hmpatientinsurancescd.HMPatient);
+                        firstName = hmPatient1.patientFirstName();
+                        middleName = hmPatient1.patientMiddleName();
+                        lastName = hmPatient1.patientLastName();
+    
+                    }
+    
+                    node = xmlNodeListIterator.value();
+                    if(node.selectSingleNode(#NM101))
+                        node.selectSingleNode(#NM101).text("IL");
+    
+                    if(node.selectSingleNode(#NM102))
+                        node.selectSingleNode(#NM102).text('1');
+    
+                    if(node.selectSingleNode(#NM103))
+                        node.selectSingleNode(#NM103).text(lastname);
+    
+                    if(node.selectSingleNode(#NM104))
+                        node.selectSingleNode(#NM104).text(firstName);
+    
+                    if(node.selectSingleNode(#NM105))
+                        node.selectSingleNode(#NM105).text(middleName);
+    
+                    if(node.selectSingleNode(#NM106))
+                        node.selectSingleNode(#NM106).text('');
+    
+                    if(node.selectSingleNode(#NM107))
+                        node.selectSingleNode(#NM107).text('');
+    
+                    if(node.selectSingleNode(#NM108))
+                        node.selectSingleNode(#NM108).text('MI');
+    
+                    if(node.selectSingleNode(#NM109))
+                        node.selectSingleNode(#NM109).text(HMPatientInsuranceScd.HMPatientInsuranceMembershipId);
+            }
+                break;
+             case '//NM1_OPN_2330B':
+                nodeList = xmlDocument.selectNodes('//NM1_OPN_2330B');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+                node = xmlNodeListIterator.value();
+    
+                hmPatient1=hmPatient::find(hmCase.HMPatient);
+    
+    
+                if(node.selectSingleNode(#NM101))
+                    node.selectSingleNode(#NM101).text("PR");
+    
+                if(node.selectSingleNode(#NM102))
+                    node.selectSingleNode(#NM102).text("2");
+    
+                if(!HMCaseInsuranceScd)
+                {
+                    if(node.selectSingleNode(#NM103))
+                        node.selectSingleNode(#NM103).text(hmPatient1.patientName());
+    
+                    if(node.selectSingleNode(#NM104))
+                        node.selectSingleNode(#NM104).text('');
+    
+                    if(node.selectSingleNode(#NM105))
+                        node.selectSingleNode(#NM104).text('');
+    
+                    if(node.selectSingleNode(#NM106))
+                        node.selectSingleNode(#NM104).text('');
+    
+                    if(node.selectSingleNode(#NM107))
+                        node.selectSingleNode(#NM104).text('');
+    
+                    if(node.selectSingleNode(#NM108))
+                       node.selectSingleNode(#NM108).text("PI");
+    
+                    if(node.selectSingleNode(#NM109))
+                       node.selectSingleNode(#NM109).text(HMPatientInsurance.HMPatientInsuranceMembershipId);
+                }
+    
+                 if(HMCaseInsuranceScd.RecId)
+                 {
+                        if(HMCaseInsuranceScd.IsActive == NoYes::No)
+                        {
+                            if(node.selectSingleNode(#NM103))
+                                node.selectSingleNode(#NM103).text(hmpatientinsuranceScd.CarrierName());
+    
+                            if(node.selectSingleNode(#NM104))
+                                node.selectSingleNode(#NM104).text('');
+    
+                            if(node.selectSingleNode(#NM108))
+                                node.selectSingleNode(#NM108).text("PI");
+    
+                            if(node.selectSingleNode(#NM109))
+                                node.selectSingleNode(#NM109).text(hmpatientinsuranceScd.HMPatientInsuranceMembershipId);
+    
+                        }
+                 }
+    
+    
+                  if(HMCaseInsuranceScd.IsActive == NoYes::Yes && HMCaseInsuranceScd.HMPayerType==HMPayerType::InsuranceCarrier)
+                  {
+                        if(node.selectSingleNode(#NM103))
+                            node.selectSingleNode(#NM103).text(hmpatientinsuranceScd.CarrierName());
+    
+                        if(node.selectSingleNode(#NM104))
+                            node.selectSingleNode(#NM104).text('');
+    
+                        if(node.selectSingleNode(#NM108))
+                           node.selectSingleNode(#NM108).text("PI");
+    
+                        if(node.selectSingleNode(#NM109))
+                           node.selectSingleNode(#NM109).text(HMPatientInsurance.HMPatientInsuranceMembershipId);
+                  }
+    
+            break;
+    
+        }
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillOI_OICI_2310F</Name>
+				<Source><![CDATA[
+    private void fillOI_OICI_2310F()
+    {
+        #define.OI103('OI103')
+        #define.OI106('OI106')
+    
+        XmlNodeList             nodeList;
+        XmlNode                 node;
+        XMLNodeListIterator     xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//OI_OICI_2310F');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+        hlcounter++;
+    
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#OI103))
+            node.selectSingleNode(#OI103).text('Y');//HMPatientInsuranceScd.AssignmentOfBenefitsIndicator>0 ? "Y" : "");
+    
+        if(node.selectSingleNode(#OI106))
+            node.selectSingleNode(#OI106).text('Y');//HMPatientInsuranceScd.ReleaseofInformationCertificationIndicat>0 ? "Y" : "");
+    
+     }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillPER</Name>
+				<Source><![CDATA[
+    private void fillPER(String50 _node)
+    {
+        #define.PER01('PER01')
+        #define.PER02('PER02')
+        #define.PER03('PER03')
+        #define.PER04('PER04')
+        #define.PER05('PER05')
+        #define.PER06('PER06')
+        #define.PER07('PER07')
+        #define.PER08('PER08')
+    
+    
+        XmlNodeList             nodeList;
+        XmlNode                 node;
+        XMLNodeListIterator     xmlNodeListIterator;
+    
+        switch(_node)
+        {
+            case '//PER_SN_1000A':
+                nodeList = xmlDocument.selectNodes('//PER_SN_1000A');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+                if(node.selectSingleNode(#PER01))
+                    node.selectSingleNode(#PER01).text("IC");
+    
+                if(node.selectSingleNode(#PER02))
+                    node.selectSingleNode(#PER02).text(companyInfo.Name);
+    
+                if(node.selectSingleNode(#PER03))
+                    node.selectSingleNode(#PER03).text('EM');
+    
+                if(node.selectSingleNode(#PER04))
+                    node.selectSingleNode(#PER04).text(companyInfo.primaryEmail());
+    
+                if(node.selectSingleNode(#PER05))
+                    node.selectSingleNode(#PER05).text('FX');
+    
+                if(node.selectSingleNode(#PER06))
+                    node.selectSingleNode(#PER06).text(companyInfo.primaryFax());
+    
+                //todo:since pinnacle isn't using, will enable it later
+                //if(node.selectSingleNode(#PER07))
+                    //node.selectSingleNode(#PER07).text('TE');
+                //
+                //if(node.selectSingleNode(#PER08))
+                    //node.selectSingleNode(#PER08).text(companyInfo.primaryPhone());
+                break;
+    
+            case '//PER_BPCI_2010AA':
+                nodeList = xmlDocument.selectNodes('//PER_BPCI_2010AA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+    
+                if(node.selectSingleNode(#PER01))
+                    node.selectSingleNode(#PER01).text("IC");
+    
+                if(node.selectSingleNode(#PER02))
+                    node.selectSingleNode(#PER02).text(companyInfo.Name);
+    
+                if(node.selectSingleNode(#PER03))
+                    node.selectSingleNode(#PER03).text('EM');
+    
+                if(node.selectSingleNode(#PER04))
+                    node.selectSingleNode(#PER04).text(companyInfo.primaryEmail());
+    
+                if(node.selectSingleNode(#PER05))
+                    node.selectSingleNode(#PER05).text('FX');
+    
+                if(node.selectSingleNode(#PER06))
+                    node.selectSingleNode(#PER06).text(companyInfo.primaryFax());
+    
+                if(node.selectSingleNode(#PER07))
+                    node.selectSingleNode(#PER07).text('TE');
+    
+                if(node.selectSingleNode(#PER08))
+                    node.selectSingleNode(#PER08).text(companyInfo.primaryPhone() );
+              break;
+    //todo: ax7 duplicate cAse
+           /* case '//PER_BPCI_2010AA':
+                nodeList = xmlDocument.selectNodes('//PER_BPCI_2010AA');
+                xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+                node = xmlNodeListIterator.value();
+    
+                if(node.selectSingleNode(#PER01))
+                    node.selectSingleNode(#PER01).text("IC");
+    
+                if(node.selectSingleNode(#PER02))
+                    node.selectSingleNode(#PER02).text(companyInfo.Name);
+    
+                if(node.selectSingleNode(#PER03))
+                    node.selectSingleNode(#PER03).text('EM');
+    
+                if(node.selectSingleNode(#PER04))
+                    node.selectSingleNode(#PER04).text(companyInfo.primaryEmail());
+    
+                if(node.selectSingleNode(#PER05))
+                    node.selectSingleNode(#PER05).text('FX');
+    
+                if(node.selectSingleNode(#PER06))
+                    node.selectSingleNode(#PER06).text(companyInfo.primaryFax());
+    
+                if(node.selectSingleNode(#PER07))
+                    node.selectSingleNode(#PER07).text('TE');
+    
+                if(node.selectSingleNode(#PER08))
+                    node.selectSingleNode(#PER08).text(companyInfo.primaryPhone() );
+              break;
+    */
+
+    
+        }
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillPRV_BPSI_2000A</Name>
+				<Source><![CDATA[
+    private void fillPRV_BPSI_2000A()
+    {
+        #define.PRV1('PRV1')
+        #define.PRV2('PRV2')
+        #define.PRV3('PRV3')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//PRV_BPSI_2000A');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#PRV1))
+            node.selectSingleNode(#PRV1).text("BI");
+    
+         if(node.selectSingleNode(#PRV2))
+            node.selectSingleNode(#PRV2).text("PXC");
+    
+        if(node.selectSingleNode(#PRV3))
+            node.selectSingleNode(#PRV3).text("282N00000X");
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillREF_APSI_2_2310A</Name>
+				<Source><![CDATA[
+    private void fillREF_APSI_2_2310A()
+    {
+        #define.REF01('REF01')
+        #define.REF02('REF02')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//REF_APSI_2_2310A');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#REF01))
+            node.selectSingleNode(#REF01).text('1G');
+        if(hmCase.HMResourceMaster!=0 && strLen(HMResourceMaster::find(hmCase.HMResourceMaster).HMUpinNumber)==0)
+        {
+            svalid=checkFailed("UPinNumber is missing on attending physician");
+        }
+        else
+        {
+            if(node.selectSingleNode(#REF02))
+                node.selectSingleNode(#REF02).text( HMResourceMaster::find(hmCase.HMResourceMaster).HMUpinNumber);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillREF_BPTI_2010AA</Name>
+				<Source><![CDATA[
+    private void fillREF_BPTI_2010AA()
+    {
+        #define.REF01('REF01')
+        #define.REF02('REF02')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//REF_BPTI_2010AA');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#REF01))
+            node.selectSingleNode(#REF01).text("EI");
+         if(strLen(companyInfo.HMEin)==0)
+         {
+            svalid=checkFailed("EIN value is missing");
+         }
+         else
+         {
+             if(node.selectSingleNode(#REF02))
+                node.selectSingleNode(#REF02).text(companyInfo.HMEin);
+         }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillREF_OPSI_3_2310B</Name>
+				<Source><![CDATA[
+    private void fillREF_OPSI_3_2310B()
+    {
+        #define.REF01('REF01')
+        #define.REF02('REF02')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//REF_OPSI_3_2310B');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#REF01))
+            node.selectSingleNode(#REF01).text('1G');
+    
+        if(node.selectSingleNode(#REF02))
+            node.selectSingleNode(#REF02).text(HMResourceMaster::find(hmCase.OperatingPhysician).HMUpinNumber);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillREF_SL_7_2300</Name>
+				<Source><![CDATA[
+    private void fillREF_SL_7_2300()
+    {
+        #define.REF01('REF01')
+        #define.REF02('REF02')
+    
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+        HMPatient           hmpatient1;
+    
+        nodeList = xmlDocument.selectNodes('//REF_SL_7_2300');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+        hmpatient1=hmPatient::find(hmCase.HMPatient);
+        if(node.selectSingleNode(#REF01))
+            node.selectSingleNode(#REF01).text('EA');
+    
+        if(node.selectSingleNode(#REF02))
+            node.selectSingleNode(#REF02).text(hmPatient1.patientChartNum());//hmPatient1.patientChartNum());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillSBR_OSI_2320</Name>
+				<Source><![CDATA[
+    private void fillSBR_OSI_2320()
+    {
+        #define.SBR01('SBR01')
+        #define.SBR02('SBR02')
+        #define.SBR03('SBR03')
+    
+        XmlNodeList             nodeList;
+        XmlNode                 node;
+        XMLNodeListIterator     xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//SBR_OSI_2320');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+        node = xmlNodeListIterator.value();
+        if(HMPatientInsuranceScd)
+        {
+            if(node.selectSingleNode(#SBR01))
+                node.selectSingleNode(#SBR01).text("S");
+    
+        if(node.selectSingleNode(#SBR02))
+            node.selectSingleNode(#SBR02).text(HMPatientInsuranceScd.RelationShip==PatientInsuranceRelation::None ? int2str(PatientInsuranceRelation::Self) : int2str(HMPatientInsuranceScd.RelationShip));
+    
+        if(node.selectSingleNode(#SBR03))
+            node.selectSingleNode(#SBR03).text(HMPatientInsuranceScd.HMClaimFileIndicator!=0 ? HMClaimTableSetup::findByRecEnum(HMPatientInsuranceScd.HMClaimFileIndicator,HMClaimEnumList::ClaimFileIndicator).Code : ' ');
+    
+    
+        }
+    
+     }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillSBR_SI_2000B</Name>
+				<Source><![CDATA[
+    private void fillSBR_SI_2000B()
+    {
+        #define.SBR01('SBR01')
+        #define.SBR02('SBR02')
+        #define.SBR09('SBR09')
+    
+    
+    
+        XmlNodeList             nodeList;
+        XmlNode                 node;
+        XMLNodeListIterator     xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//SBR_SI_2000B');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+    
+        hlcounter++;
+    
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#SBR01))
+            node.selectSingleNode(#SBR01).text("P");
+    
+        if(node.selectSingleNode(#SBR02))
+            node.selectSingleNode(#SBR02).text("18");
+        if(HMInsuranceCarrier.HMClaimFileIndicator==0)
+        {
+            svalid=checkFailed("Claim file indicator code is missing");
+        }
+        else
+        {
+            if(node.selectSingleNode(#SBR09))
+                node.selectSingleNode(#SBR09).text(HMClaimTableSetup::findByRecEnum(HMInsuranceCarrier.HMClaimFileIndicator,HMClaimEnumList::ClaimFileIndicator).Code);
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillSTNode</Name>
+				<Source><![CDATA[
+    private void fillSTNode()
+    {
+        #define.ST01('ST01')
+        #define.ST02('ST02')
+        #define.ST03('ST03')
+        XmlNodeList         nodeList;
+        XmlNode             node;
+        XMLNodeListIterator xmlNodeListIterator;
+    
+        nodeList = xmlDocument.selectNodes('//ST');
+        xmlNodeListIterator = new xmlNodeListIterator(nodeList);
+        node = xmlNodeListIterator.value();
+    
+        if(node.selectSingleNode(#ST01))
+            node.selectSingleNode(#ST01).text("837");
+    
+        if(node.selectSingleNode(#ST02))
+            node.selectSingleNode(#ST02).text(claimCounter);
+    
+        if(node.selectSingleNode(#ST03))
+            node.selectSingleNode(#ST03).text("005010X223A2");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillXML</Name>
+				<Source><![CDATA[
+    private void fillXML()
+    {
+         hmPatient               HMsubscriber,hmPatient1;
+         Set PermissionSet;
+         HMClaimTable            hmClaimtableloc;
+        HMClaimVersion hmClaimVersion;
+    
+    
+        //claimCounter++;
+        sourceXMLFile = this.loadXML();
+        xmlDocument = XmlDocument::newXml(sourceXMLFile);
+        
+        permissionSet = new Set(Types::Class);
+        svalid=true;
+        if(validateOnly)
+        {
+            setPrefix(strFmt("Validation started for claim %1",hmClaimTable.ClaimID));
+        }
+        else
+        {
+            setPrefix(strFmt("Generating XML for claim %1",hmClaimTable.ClaimID));
+        }
+        
+        this.fillSTNode();
+        this.fillBHTNode();
+        this.fillNM('//NM1_SN_1000A');
+        this.fillPER('//PER_SN_1000A');
+        this.fillNM('//NM1_RN_1000B');
+        this.fillHL('//HL_BPHL_2000A');
+        this.fillPRV_BPSI_2000A();
+        this.fillNM('//NM1_BPN_2010AA');
+        this.fillN3('//N3_BPA_2010AA');
+        this.fillN4('//N4_BPC_SZCODE_2010AA');
+        this.fillREF_BPTI_2010AA();
+        this.fillPER('//PER_BPCI_2010AA');
+        this.fillHL('//HL_SHL_2000B');
+        this.fillSBR_SI_2000B();
+        this.fillNM('//NM1_SN_2010BA');
+        this.fillN3('//N3_SA_2010BA');
+        this.fillN4('//N4_BPC_SZCODE_2010BA');
+        this.fillDMG_SDI_2010BA();
+        this.fillNM('//NM1_PN_2010BB');
+        this.fillN3('//N3_PA_2010BB');
+        this.fillN4('//N4_PCS_ZCODE_2010BB');
+        this.fillNM('//NM1_PN_2010CA');
+        this.fillN3('//N3_PA_2010CA');
+        this.fillN4('//N4_PCS_ZCODE_2010CA');
+        this.fillDMG_PDI_2010CA();
+        this.fillCLM_CI_2300();
+        this.fillC023_HCSLI_2300();
+        this.fillDTP('//DTP_DH_2300');
+        this.fillDTP('//DTP_SD_2300');
+        this.fillDTP('//DTP_ADH_2300');
+        this.fillCL1_ICC_2300();
+        this.fillAMT_PEAD_2300();
+        this.fillREF_SL_7_2300();
+        this.fillC022('//C022_HCCI_1_2300');
+        this.fillC022('//C022_HCCI_2_2300');
+        this.fillC022('//C022_HCCI_3_2300');
+        this.fillC022('//C022_HCCI_4_2300');
+        this.fillC022('//C022_HCCI_5_2300');
+        this.fillC022('//C022_HCCI_6_2300');
+        this.fillC022('//C022_HCCI_7_2300');
+        this.fillC022('//C022_HCCI_8_2300');
+        this.fillC022('//C022_HCCI_9_2300');
+        this.fillC022('//C022_HCCI_10_2300');
+        this.fillC022('//C022_HCCI_11_2300');
+        this.fillC022('//C022_HCCI_12_2300');
+        //this.fillC022('//C022_HCCI_169_2300');
+        this.fillC022('//DRGI_2_2300');
+        this.fillC022('//C022_HCCI_229_2300');
+        this.fillC022('//C022_HCCI_253_2300');
+        this.fillC022('//C022_HCCI_254_2300');
+        this.fillC022('//C022_HCCI_255_2300');
+        this.fillC022('//C022_HCCI_256_2300');
+        this.fillC022('//C022_HCCI_257_2300');
+        this.fillC022('//C022_HCCI_258_2300');
+        this.fillC022('//C022_HCCI_259_2300');
+        this.fillC022('//C022_HCCI_260_2300');
+        this.fillC022('//C022_HCCI_261_2300');
+        this.fillC022('//C022_HCCI_262_2300');
+        this.fillC022('//C022_HCCI_263_2300');
+        this.fillC022('//C022_HCCI_264_2300');
+        this.fillC022('//C022_HCCI_265_2300');
+        this.fillC022('//C022_HCCI_266_2300');
+        this.fillC022('//C022_HCCI_267_2300');
+        this.fillC022('//C022_HCCI_268_2300');
+        this.fillC022('//C022_HCCI_269_2300');
+        this.fillC022('//C022_HCCI_270_2300');
+        this.fillC022('//C022_HCCI_271_2300');
+        this.fillC022('//C022_HCCI_272_2300');
+        this.fillC022('//C022_HCCI_273_2300');
+        this.fillC022('//C022_HCCI_274_2300');
+        this.fillC022('//C022_HCCI_275_2300');
+        this.fillC022('//C022_HCCI_276_2300');
+        this.fillC022('//C022_HCCI_277_2300');
+        this.fillC022('//C022_HCCI_278_2300');
+        this.fillC022('//C022_HCCI_279_2300');
+        this.fillC022('//C022_HCCI_280_2300');
+        this.fillC022('//C022_HCCI_281_2300');
+        this.fillC022('//C022_HCCI_282_2300');
+        this.fillC022('//C022_HCCI_283_2300');
+        this.fillC022('//C022_HCCI_284_2300');
+        this.fillC022('//C022_HCCI_285_2300');
+        this.fillC022('//C022_HCCI_286_2300');
+        this.fillC022('//C022_HCCI_287_2300');
+        this.fillC022('//C022_HCCI_288_2300');
+        this.fillC022('//C022_HCCI_289_2300');
+        this.fillC022('//C022_HCCI_290_2300');
+        this.fillC022('//C022_HCCI_291_2300');
+        this.fillC022('//C022_HCCI_292_2300');
+        this.fillC022('//C022_HCCI_293_2300');
+        this.fillC022('//C022_HCCI_294_2300');
+        this.fillC022('//C022_HCCI_295_2300');
+        this.fillC022('//C022_HCCI_296_2300');
+        this.fillC022('//C022_HCCI_297_2300');
+        this.fillC022('//C022_HCCI_298_2300');
+        this.fillC022('//C022_HCCI_299_2300');
+        this.fillC022('//C022_HCCI_300_2300');
+        this.fillC022('//C022_HCCI_290_2300');
+        this.fillC022('//C022_HCCI_290_2300');
+        this.fillC022('//C022_HCCI_290_2300');
+        this.fillC022('//C022_HCCI_290_2300');
+        this.fillNM('//NM1_APN_2310A');
+        this.fillREF_APSI_2_2310A();
+        this.fillNM('//NM1_OPN_2310B');
+        this.fillREF_OPSI_3_2310B();
+        this.fillNM('//NM1_OOPN_2310C');
+        this.fillNM('//NM1_SFLN_2310E');
+        this.fillN3('//N3_SFLA_2310E');
+        this.fillN4('//N4_SFLCS_ZCODE_2310E');
+        this.fillSBR_OSI_2320();
+        this.fillOI_OICI_2310F();
+        this.fillNM('//NM1_OSN_2330A');
+        this.fillN3('//N3_OSA_2330A');
+        this.fillN4('//N4_OSCS_ZCODE_2330A');
+        this.fillNM('//NM1_OPN_2330B');
+        this.fillN3('//N3_OPA_2330B');
+        this.fillN4('//N4_OPCS_ZCODE_2330B');
+        // this.fillLX_SLN_2400();
+        this.fillLine();
+        if(strLen(companyInfo.primaryFax())==0)
+        {
+            svalid=checkFailed("Company primary fax is missing");
+        }
+        //strLen(companyInfo.primaryEmail())==0
+        if(strLen(companyInfo.primaryEmail())==0)
+        {
+            svalid=checkFailed("Company primary email is missing");
+        }
+        //strLen(companyInfo.primaryPhone())==0
+            if(strLen(companyInfo.primaryPhone())==0)
+        {
+            svalid=checkFailed("Company primary phone is missing");
+        }
+        if(strLen(postalAddress.Street)==0)
+        {
+            svalid=checkFailed("Company primary address is missing");
+        }
+        //postalAddress.State
+        if(strLen(postalAddress.State)==0)
+        {
+            svalid=checkFailed("Company postal address state is missing");
+        }
+        if(strLen(postalAddress.City)==0)
+        {
+            svalid=checkFailed("Company postal address city is missing");
+        }
+        //companyInfo.CoRegNum
+            if(strLen(companyInfo.CoRegNum)==0)
+        {
+            svalid=checkFailed("Company NPI is missing");
+        }
+       
+            if(HMPatientInsurance.HMPatientSubscriber)
+            {
+                HMsubscriber = hmPatient::find(HMPatientInsurance.HMPatientSubscriber);
+                if(strLen(HMsubscriber.patientPrimaryAddress())==0)
+                {
+                    svalid=checkFailed("Subscriber primary address is missing");
+                }
+                if(HMsubscriber.patientBirthDate()==dateNull())
+                {
+                    svalid=checkFailed("Subscriber birth date is missing");
+                }
+            }
+            else
+            {
+                hmpatient1=hmPatient::find(HMPatientInsurance.HMPatient);
+    
+                if(strLen(hmPatient1.patientPrimaryAddress())==0)
+                {
+                    svalid=checkFailed("Patient primary address is missing");
+                }
+                if(hmPatient1.patientBirthDate()==dateNull())
+                {
+                    svalid=checkFailed("Patient birth date is missing");
+                }
+            }
+         //todo: commenting for demo 
+        /*
+        if(hmCase.AddmisionDate==utcDateTimeNull())
+        {
+            svalid=checkFailed("Admission date is missing");
+        }
+    
+        if(hmCase.DischargeDate==utcDateTimeNull())
+        {
+            svalid=checkFailed("Discharge date is missing");
+        }
+        */
+        if(svalid && !validateOnly)
+        {
+            /*
+                permissionSet.add(new FileIOPermission(edi837Filepath+"\\" + hmClaimTable.ClaimID+ ".xml",'rw'));
+                CodeAccessPermission::assertMultiple(permissionSet);
+                xmlDocument.save(edi837Filepath+"\\" + hmClaimTable.ClaimID);
+                */
+                xml XmlText = xmlDocument.innerXml();
+              
+                using(System.IO.MemoryStream stream = new System.IO.MemoryStream())
+                    using(System.IO.StreamWriter writer = new System.IO.StreamWriter(stream))
+                {
+                    writer.write(XmlText);
+                    writer.Flush();
+                    stream.Position = 0;
+                    Dynamics.AX.Application.File::SendFileToUser(stream,hmClaimTable.ClaimID+".xml", classstr (FileUploadTemporaryStorageStrategy));
+                }
+                
+                info("Xml file generated successfully.");
+    
+                ttsBegin;
+                select forUpdate hmClaimtableloc
+                    where hmClaimtableloc.ClaimID == hmClaimTable.ClaimID;
+                hmClaimtableloc.HMLastEdiGeneratedDateTime = DateTimeUtil::utcNow();
+                hmClaimtableloc.update();
+                hmClaimVersion.HMClaimTable = hmClaimtableloc.RecId;
+                hmClaimVersion.Status = HMClaimStatus::Submitted;
+                hmClaimVersion.insert();
+                ttsCommit;
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadTriggerXML</Name>
+				<Source><![CDATA[
+    private str loadTriggerXML()
+    {
+        str xmlFile=@'<?xml version="1.0" encoding="utf-8"?>
+                        <ControlMessage xmlns="http://SQLControlMessage.IssueSelect">
+                          <PAM_Control xmlns="http://SQLControlMessage.IssueSelect">
+                            <DestinationParty></DestinationParty>
+                            <EdiMessageType>0</EdiMessageType>
+                            <ActionType>EdiBatchOverride</ActionType>
+                            <ActionDateTime>2016-03-03T14:30:00.000</ActionDateTime>
+                            <UsedOnce>0</UsedOnce>
+                            <BatchId>2</BatchId>
+                            <BatchName>837EDIBatch</BatchName>
+                            <DestinationPartyName>TradingPartner</DestinationPartyName>
+                            <SenderPartyName>Company</SenderPartyName>
+                            <AgreementName>CompanyTradingPartnerProfile</AgreementName>
+                            <ReceiverPartyNameType>TradingPartner</ReceiverPartyNameType>
+                            <ToBeBatched>1</ToBeBatched>
+                          </PAM_Control>
+                        </ControlMessage>';
+        return xmlFile;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadXML</Name>
+				<Source><![CDATA[
+    private str loadXML()
+    {
+        str xmlFile=@'<?xml version="1.0"?>
+    <Claims>
+      <Claim>
+        <ST>
+          <ST01>837</ST01>
+          <ST02>0001</ST02>
+          <ST03>005010X223A2</ST03>
+        </ST>
+        <BHT>
+          <BHT01>0019</BHT01>
+          <BHT02>00</BHT02>
+          <BHT03>1</BHT03>
+          <BHT04>20170301</BHT04>
+          <BHT05>0100</BHT05>
+          <BHT06>CH</BHT06>
+        </BHT>
+        <NM1_SN_1000A>
+          <NM101>4000</NM101>
+          <NM102>1</NM102>
+          <NM103>Pinnacle HOSPITAL</NM103>
+          <NM108>46</NM108>
+          <NM109>Prognosis</NM109>
+        </NM1_SN_1000A>
+        <PER_SN_1000A>
+          <PER01>IC</PER01>
+          <PER02>Jack</PER02>
+          <PER03>EM</PER03>
+          <PER04>abc@abc.com</PER04>
+          <PER05>FX</PER05>
+          <PER06>ABC</PER06>
+          <PER07>TE</PER07>
+          <PER08>ABC</PER08>
+        </PER_SN_1000A>
+        <NM1_RN_1000B>
+           <NM101>40</NM101>
+          <NM102>2</NM102>
+          <NM103>Prognosis</NM103>
+          <NM108>46</NM108>
+          <NM109>123456</NM109>
+        </NM1_RN_1000B>
+        <HL_BPHL_2000A>
+          <HL01>1</HL01>
+          <HL03>20</HL03>
+          <HL04>1</HL04>
+        </HL_BPHL_2000A>
+        <PRV_BPSI_2000A>
+         <PRV1>BI</PRV1>
+          <PRV2>PXC</PRV2>
+          <PRV3>282N00000X</PRV3>
+        </PRV_BPSI_2000A>
+        <NM1_BPN_2010AA>
+          <NM101>85</NM101>
+          <NM102>2</NM102>
+          <NM103>JONES HOSPITAL</NM103>
+          <NM108>XX</NM108>
+          <NM109>123123123</NM109>
+        </NM1_BPN_2010AA>
+        <N3_BPA_2010AA>
+          <N301>ABC</N301>
+          <N302>ABC</N302>
+        </N3_BPA_2010AA>
+        <N4_BPC_SZCODE_2010AA>
+          <N401>Karachi</N401>
+          <N402>IL</N402>
+          <N403>ABC</N403>
+          <N404>ABC</N404>
+        </N4_BPC_SZCODE_2010AA>
+        <REF_BPTI_2010AA>
+          <REF01>EI</REF01>
+          <REF02>10</REF02>
+        </REF_BPTI_2010AA>
+        <PER_BPCI_2010AA>
+          <PER01>IC</PER01>
+          <PER02>Pinnacle</PER02>
+          <PER03>EM</PER03>
+          <PER04>JOE@JOE.NET</PER04>
+          <PER05>FX</PER05>
+          <PER06>ABC</PER06>
+          <PER07>TE</PER07>
+          <PER08>ABC</PER08>
+        </PER_BPCI_2010AA>
+        <HL_SHL_2000B>
+          <HL01>ABC</HL01>
+          <HL02>ABC</HL02>
+          <HL03>22</HL03>
+          <HL04>0</HL04>
+        </HL_SHL_2000B>
+        <SBR_SI_2000B>
+          <SBR01>P</SBR01>
+          <SBR02>18</SBR02>
+          <SBR09>MA</SBR09>>
+        </SBR_SI_2000B>
+        <NM1_SN_2010BA>
+          <NM101>IL</NM101>
+          <NM102>1</NM102>
+          <NM103>Khan</NM103>
+          <NM104>Ahmed</NM104>
+          <NM105>Adeel</NM105>
+          <NM108>MI</NM108>
+          <NM109>123456</NM109>
+        </NM1_SN_2010BA>
+        <N3_SA_2010BA>
+          <N301>ABC</N301>
+          <N302>ABC</N302>
+        </N3_SA_2010BA>
+        <N4_BPC_SZCODE_2010BA>
+          <N401>ABC</N401>
+          <N402>US</N402>
+          <N403>ABC</N403>
+          <N404>ABC</N404>
+        </N4_BPC_SZCODE_2010BA>
+        <DMG_SDI_2010BA>
+           <DMG01>D8</DMG01>
+          <DMG02>19800523</DMG02>
+          <DMG03>M</DMG03>
+        </DMG_SDI_2010BA>
+        <NM1_PN_2010BB>
+          <NM101>PR</NM101>
+          <NM102>2</NM102>
+          <NM103>BCBS</NM103>
+          <NM108>PI</NM108>
+          <NM109>99999</NM109>
+        </NM1_PN_2010BB>
+        <N3_PA_2010BB>
+        <N301>ABC</N301>
+        <N302>ABC</N302>
+        </N3_PA_2010BB>
+        <N4_PCS_ZCODE_2010BB>
+          <N401>ABC</N401>
+          <N402>US</N402>
+          <N403>ABC</N403>
+          <N404>ABC</N404>
+        </N4_PCS_ZCODE_2010BB>
+        <NM1_PN_2010CA>
+          <NM101>QC</NM101>
+          <NM102>1</NM102>
+          <NM103>ABC</NM103>
+          <NM104>ABC</NM104>
+          <NM105>ABC</NM105>
+        </NM1_PN_2010CA>
+        <N3_PA_2010CA>
+          <N301>ABC</N301>
+          <N302>ABC</N302>
+        </N3_PA_2010CA>
+        <N4_PCS_ZCODE_2010CA>
+          <N401>ABC</N401>
+          <N402>US</N402>
+          <N403>ABC</N403>
+          <N404>ABC</N404>
+        </N4_PCS_ZCODE_2010CA>
+        <DMG_PDI_2010CA>
+          <DMG01>D8</DMG01>
+          <DMG02>20110417</DMG02>
+          <DMG03>M</DMG03>
+        </DMG_PDI_2010CA>
+        <CLM_CI_2300>
+          <CLM01>3251460999AA</CLM01>
+          <CLM02>200</CLM02>
+          <CLM06>N</CLM06>
+          <CLM07>A</CLM07>
+          <CLM08>Y</CLM08>
+          <CLM09>Y</CLM09>
+        </CLM_CI_2300>
+        <C023_HCSLI_2300>
+          <C02301>13</C02301>
+          <C02302>A</C02302>
+          <C02303>1</C02303>
+        </C023_HCSLI_2300>
+        <DTP_DH_2300>
+          <DTP01>096</DTP01>
+          <DTP02>TM</DTP02>
+          <DTP03>7</DTP03>
+        </DTP_DH_2300>
+        <DTP_SD_2300>
+          <DTP01>434</DTP01>
+          <DTP02>RD8</DTP02>
+          <DTP03>20170201-20170202</DTP03>
+        </DTP_SD_2300>
+        <DTP_ADH_2300>
+          <DTP01>435</DTP01>
+          <DTP02>DT</DTP02>
+          <DTP03>20170201</DTP03>
+        </DTP_ADH_2300>
+        <CL1_ICC_2300>
+           <CL101>3</CL101>
+          <CL102>1</CL102>
+          <CL103>01</CL103>
+        </CL1_ICC_2300>
+        <AMT_PEAD_2300>
+            <AMT01>F3</AMT01>
+            <AMT02>2500</AMT02>
+        </AMT_PEAD_2300>
+        <REF_SL_7_2300>
+            <REF01>4N</REF01>
+            <REF02>1</REF02>
+        </REF_SL_7_2300>
+        <C022_HCCI_1_2300>
+          <C02201>ABK</C02201>
+          <C02202>ABC</C02202>
+            <C02209>N</C02209>
+        </C022_HCCI_1_2300>
+        <C022_HCCI_2_2300>
+            <C02201>APR</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_2_2300>
+        <C022_HCCI_3_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_3_2300>
+        <C022_HCCI_4_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_4_2300>
+        <C022_HCCI_5_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_5_2300>
+        <C022_HCCI_6_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_6_2300>
+        <C022_HCCI_7_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_7_2300>
+        <C022_HCCI_8_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_8_2300>
+        <C022_HCCI_9_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_9_2300>
+        <C022_HCCI_10_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_10_2300>
+        <C022_HCCI_11_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_11_2300>
+        <C022_HCCI_12_2300>
+            <C02201>ABF</C02201>
+            <C02202>ABC</C02202>
+        </C022_HCCI_12_2300>
+        <DRGI_2_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </DRGI_2_2300>
+        <C022_HCCI_229_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_229_2300>
+        <C022_HCCI_253_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_253_2300>
+        <C022_HCCI_254_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_254_2300>
+        <C022_HCCI_255_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_255_2300>
+        <C022_HCCI_256_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_256_2300>
+        <C022_HCCI_257_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_257_2300>
+        <C022_HCCI_258_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_258_2300>
+        <C022_HCCI_259_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_259_2300>
+        <C022_HCCI_260_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_260_2300>
+        <C022_HCCI_261_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_261_2300>
+        <C022_HCCI_262_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_262_2300>
+        <C022_HCCI_263_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_263_2300>
+        <C022_HCCI_264_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_264_2300>
+        <C022_HCCI_265_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_265_2300>
+        <C022_HCCI_266_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_266_2300>
+        <C022_HCCI_267_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_267_2300>
+        <C022_HCCI_268_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_268_2300>
+        <C022_HCCI_269_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_269_2300>
+        <C022_HCCI_270_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_270_2300>
+        <C022_HCCI_271_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_271_2300>
+        <C022_HCCI_272_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_272_2300>
+        <C022_HCCI_273_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_273_2300>
+        <C022_HCCI_274_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_274_2300>
+        <C022_HCCI_275_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_275_2300>
+        <C022_HCCI_276_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02203>ABC</C02203>
+          <C02204>ABC</C02204>
+        </C022_HCCI_276_2300>
+        <C022_HCCI_277_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_277_2300>
+        <C022_HCCI_278_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_278_2300>
+        <C022_HCCI_279_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_279_2300>
+        <C022_HCCI_280_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_280_2300>
+        <C022_HCCI_281_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_281_2300>
+        <C022_HCCI_282_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_282_2300>
+        <C022_HCCI_283_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_283_2300>
+        <C022_HCCI_284_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_284_2300>
+        <C022_HCCI_285_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_285_2300>
+        <C022_HCCI_286_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_286_2300>
+        <C022_HCCI_287_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_287_2300>
+        <C022_HCCI_288_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+          <C02205>ABC</C02205>
+        </C022_HCCI_288_2300>
+        <C022_HCCI_289_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_289_2300>
+        <C022_HCCI_290_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_290_2300>
+        <C022_HCCI_291_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_291_2300>
+        <C022_HCCI_292_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_292_2300>
+        <C022_HCCI_293_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_293_2300>
+        <C022_HCCI_294_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_294_2300>
+        <C022_HCCI_295_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_295_2300>
+        <C022_HCCI_296_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_296_2300>
+        <C022_HCCI_297_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_297_2300>
+        <C022_HCCI_298_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_298_2300>
+        <C022_HCCI_299_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_299_2300>
+        <C022_HCCI_300_2300>
+          <C02201>ABC</C02201>
+          <C02202>ABC</C02202>
+        </C022_HCCI_300_2300>
+        <NM1_APN_2310A>
+          <NM101>71</NM101>
+          <NM102>1</NM102>
+          <NM103>ABC</NM103>
+          <NM104>ABC</NM104>
+          <NM105>ABC</NM105>
+          <NM108>XX</NM108>
+          <NM109>123456</NM109>
+        </NM1_APN_2310A>
+        <REF_APSI_2_2310A>
+            <REF01>1G</REF01>
+            <REF02>ABC</REF02>
+        </REF_APSI_2_2310A>
+        <NM1_OPN_2310B>
+          <NM101>72</NM101>
+          <NM102>1</NM102>
+          <NM103>ABC</NM103>
+          <NM104>ABC</NM104>
+          <NM105>ABC</NM105>
+          <NM108>XX</NM108>
+          <NM109>NPI</NM109>
+        </NM1_OPN_2310B>
+        <REF_OPSI_3_2310B>
+            <REF01>1G</REF01>
+            <REF02>ABC</REF02>
+        </REF_OPSI_3_2310B>
+        <NM1_OOPN_2310C>
+          <NM101>ABC</NM101>
+          <NM102>ABC</NM102>
+          <NM103>ABC</NM103>
+          <NM104>ABC</NM104>
+          <NM105>ABC</NM105>
+          <NM108>ABC</NM108>
+          <NM109>ABC</NM109>
+        </NM1_OOPN_2310C>
+        <NM1_SFLN_2310E>
+          <NM101>ABC</NM101>
+          <NM102>ABC</NM102>
+          <NM103>ABC</NM103>
+          <NM104>ABC</NM104>
+          <NM108>ABC</NM108>
+          <NM109>ABC</NM109>
+        </NM1_SFLN_2310E>
+        <N3_SFLA_2310E>
+          <N301>ABC</N301>
+          <N302>ABC</N302>
+        </N3_SFLA_2310E>
+        <N4_SFLCS_ZCODE_2310E>
+          <N401>ABC</N401>
+          <N402>US</N402>
+          <N403>ABC</N403>
+          <N404>ABC</N404>
+        </N4_SFLCS_ZCODE_2310E>
+        <SBR_OSI_2320>
+            <SBR01>S</SBR01>
+            <SBR02>18</SBR02>
+            <SBR03>ABC</SBR03>
+        </SBR_OSI_2320>
+        <OI_OICI_2310F>
+            <OI103>Y</OI103>
+            <OI106>Y</OI106>
+        </OI_OICI_2310F>
+        <NM1_OSN_2330A>
+           <NM101>IL</NM101>
+           <NM102>1</NM102>
+           <NM103>ABC</NM103>
+           <NM104>ABC</NM104>
+           <NM105>ABC</NM105>
+           <NM106>ABC</NM106>
+           <NM107>ABC</NM107>
+           <NM108>MI</NM108>
+           <NM109>ABC</NM109>
+        </NM1_OSN_2330A>
+        <N3_OSA_2330A>
+            <N301>ABC</N301>
+            <N302>ABC</N302>
+        </N3_OSA_2330A>
+        <N4_OSCS_ZCODE_2330A>
+            <N401>ABC</N401>
+            <N402>US</N402>
+            <N403>ABC</N403>
+            <N404>ABC</N404>
+        </N4_OSCS_ZCODE_2330A>
+        <NM1_OPN_2330B>
+           <NM101>PR</NM101>
+           <NM102>2</NM102>
+           <NM103>ABC</NM103>
+           <NM104>ABC</NM104>
+           <NM105>ABC</NM105>
+           <NM106>ABC</NM106>
+             <NM107>ABC</NM107>
+           <NM108>PI</NM108>
+           <NM109>ABC</NM109>
+        </NM1_OPN_2330B>
+        <N3_OPA_2330B>
+            <N301>ABC</N301>
+            <N302>ABC</N302>
+        </N3_OPA_2330B>
+        <N4_OPCS_ZCODE_2330B>
+            <N401>ABC</N401>
+            <N402>US</N402>
+            <N403>ABC</N403>
+            <N404>ABC</N404>
+        </N4_OPCS_ZCODE_2330B>
+        <LINE>
+            <TS837_2400_LOOP>
+                <LX01>0</LX01>
+                <SV201>ABC</SV201>
+                <SV203>ABC</SV203>
+                <SV204>ABC</SV204>
+                <SV205>ABC</SV205>
+                <SV301>ER</SV301>
+                <SV302>AB</SV302>
+                <SV303>AB</SV303>
+                <SV304>AB</SV304>
+                <SV305>AB</SV305>
+                <SV306>AB</SV306>
+                <SV208>45.25</SV208>
+                <SV209>UN</SV209>
+                <SV210>25</SV210>
+                <DTP01>573</DTP01>
+                <DTP02>D8</DTP02>
+                <DTP03>20120101</DTP03>
+            </TS837_2400_LOOP>
+        </LINE>
+        <SE>
+          <SE01>ABC</SE01>
+          <SE02>ABC</SE02>
+        </SE>
+      </Claim>
+    </Claims>
+    '
+    ;
+        return xmlFile;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processClaim</Name>
+				<Source><![CDATA[
+    public void processClaim(List _claimList, boolean _validateOnly = false)
+    {
+        ListEnumerator listEnumerator = new ListEnumerator();
+        ListEnumerator = _claimList.getEnumerator();
+        claimCounter = "ST0001";
+        validateOnly = _validateOnly;
+        select * from companyInfo
+        where companyInfo.DataArea == curext();
+    
+        select firstonly postalAddress
+            exists join partyLocation
+                where partyLocation.Location == postalAddress.Location
+                && partyLocation.IsPrimary == true
+                && partyLocation.Party == companyInfo.RecId;
+    
+        select firstOnly HMParameters;
+    
+        while(listEnumerator.moveNext())
+        {
+            hmClaimTable = listEnumerator.current();
+    
+            HMPatientChargeEntryTable = HMPatientChargeEntryTable::find(hmClaimTable.HMPatientChargeEntryTable);
+            hmCase = hmCase::find(HMPatientChargeEntryTable.HMCase);
+    
+            select * from HMCaseInsurance
+            where HMCaseInsurance.HMCase == hmCase.RecId
+            && HMCaseInsurance.IsActive == NoYes::Yes;
+    
+            select * from HMCaseInsuranceScd
+            where HMCaseInsuranceScd.HMCase == hmCase.RecId
+            && HMCaseInsuranceScd.Priority == 2;
+    
+            select firstOnly hMInsuranceCarrier
+            where hMInsuranceCarrier.Code == HMCaseInsurance.InsuranceCarrier;
+    
+            hmpatientinsuranceScd=HMPatientInsurance::find(HMCaseInsuranceScd.HMPatientInsurance);
+    
+            HMPatientInsurance = HMPatientInsurance::find(hmCase.getActivePatientInsuranceRecId_US());
+            hmPatient = hmPatient::find(hmCase.HMPatient);
+            HMCaseNotes::createCaseIdentificationNotes(hmCase.RecId,HMCaseNotesIdentification::UB04,"",HMPatientInsurance.getCarrier().Code);
+    
+            //edi837Filepath = HMParameters.HM837EdiFilePath;
+           
+            //if(strLen(edi837Filepath)>0)
+           // {
+                if(hmClaimTable)
+                {
+                    this.fillXML();
+                }
+            //}
+           // else
+           // {
+           //     warning("837 Edi output file path is not exist in patient management parameters.");
+            //}
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillTriggerXML</Name>
+				<Source><![CDATA[
+    public static void fillTriggerXML(boolean _suppressMsg = false)
+    {
+        str                 triggerXMLFile;
+        Set                 permissionSet;
+        UtcDateTime         dateTime = DateTimeUtil::getSystemDateTime();
+        str                 dateTimeStr;
+        HMEDI837XMLCreate   run;
+        XmlDocument         triggerXMLDocument;
+        boolean             isValid = true;
+        hMParameters        parameters;
+        FilePath            edi837TriggerFilepath;
+        System.DateTime     sysDateTime;
+    
+        sysDateTime =  dateTime;
+        permissionSet = new Set(Types::Class);
+    
+        run = new HMEDI837XMLCreate();
+        triggerXMLFile = run.loadTriggerXML();
+        parameters = HMParameters::find();
+    
+        triggerXMLDocument = XmlDocument::newXml(triggerXMLFile);
+    
+       // edi837TriggerFilepath = parameters.HM837EdiTriggerFilePath;
+        dateTimeStr = sysDateTime.ToString("yyyy-MM-dd HHmmss");
+        if(isValid)
+        {
+           // if(strLen(edi837TriggerFilepath) > 0)
+            {
+                //permissionSet.add(new FileIOPermission(edi837TriggerFilepath + "\\" + "trigger" + dateTimeStr + ".xml",'rw'));
+                //CodeAccessPermission::assertMultiple(permissionSet);
+                //triggerXMLDocument.save(edi837TriggerFilepath + "\\" + "trigger" + dateTimeStr + ".xml");
+                xml XmlText = triggerXMLDocument.innerXml();
+              
+                using(System.IO.MemoryStream stream = new System.IO.MemoryStream())
+                    using(System.IO.StreamWriter writer = new System.IO.StreamWriter(stream))
+                {
+                    writer.write(XmlText);
+                    writer.Flush();
+                    stream.Position = 0;
+                    Dynamics.AX.Application.File::SendFileToUser(stream,"trigger" + dateTimeStr + ".xml", classstr (FileUploadTemporaryStorageStrategy));
+                }
+                
+                if(!_suppressMsg)
+                {
+                    info("EDI triggered successfully.");
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

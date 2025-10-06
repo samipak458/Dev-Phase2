@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPaymentCentreFormHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPaymentCentreFormHandler
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>applyPayments</Name>
+				<Source><![CDATA[
+    public void applyPayments(HMBillPaymentSettlementTmp _HMBillPaymentSettlementTmp, RecId _custTransOpenRecId, real _approveddAmt, real _coPayAmt, real _coInsAmount, real _deductibleAmt, RecId _reasonCodeRecId, real _transferAmount, real _writeOffAmount, real _paymentAmount, real _additionalAmount)
+    {
+        real lineAmount,lineCoPayAmount,lineDeductibleAmount, lineCoInsAmount, lineWriteOffAmount, lineTransferAmount, lineAdditionalAmount, lineApprovedAmount;
+        real totalBilledAmount, lineAmountLeft, lineCoPayAmountLeft, lineCoInsAmountLeft, lineDeductibleAmountLeft, lineTransferAmountLeft, lineWriteOffAmountLeft, lineAdditionalAmountLeft, lineApprovedAmountLeft;
+        int64 totalRowsCount, rowsCount;
+    
+        select count(RecId) from _HMBillPaymentSettlementTmp
+        where _HMBillPaymentSettlementTmp.CustTransOpenRecId == _custTransOpenRecId;
+    
+        totalRowsCount = _HMBillPaymentSettlementTmp.RecId;
+        rowsCount = 0;
+        select sum(AmountCur) from _HMBillPaymentSettlementTmp
+        where _HMBillPaymentSettlementTmp.CustTransOpenRecId == _custTransOpenRecId;
+    
+        totalBilledAmount = _HMBillPaymentSettlementTmp.AmountCur;
+    
+        //if(_approveddAmt > _HMBillPaymentSettlementTmp.AmountCur)
+        //{
+            //error("Approved amount cannot be greater than total amount");
+            //return;
+        //}
+        //if(_approveddAmt < _coPayAmt + _coInsAmount + _deductibleAmt)
+        //{
+            //error("Co-pay/co-insurance/deductible amount cannot be greater than approved amount");
+            //return;
+        //}
+    
+        lineAmountLeft = _paymentAmount;
+        lineCoPayAmountLeft = _coPayAmt;
+        lineCoInsAmountLeft = _coInsAmount;
+        lineDeductibleAmountLeft = _deductibleAmt;
+        lineWriteOffAmountLeft = _writeOffAmount;
+        lineTransferAmountLeft = _transferAmount;
+        lineAdditionalAmountLeft = _additionalAmount;
+        lineApprovedAmountLeft = _approveddAmt;
+        try
+        {
+            ttsBegin;
+            while select forUpdate _HMBillPaymentSettlementTmp
+            where _HMBillPaymentSettlementTmp.CustTransOpenRecId == _custTransOpenRecId
+            {
+                rowsCount++;
+                lineAmount = _paymentAmount * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineAmount = decRound(lineAmount,2);
+    
+                lineCoPayAmount = _coPayAmt * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineCoPayAmount = decRound(lineCoPayAmount,2);
+    
+                lineCoInsAmount = _coInsAmount * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineCoInsAmount = decRound(lineCoInsAmount,2);
+    
+                lineDeductibleAmount = _deductibleAmt * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineDeductibleAmount = decRound(lineDeductibleAmount,2);
+    
+                lineTransferAmount = _transferAmount * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineTransferAmount = decRound(lineTransferAmount,2);
+    
+                lineWriteOffAmount = _writeOffAmount * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineWriteOffAmount = decRound(lineWriteOffAmount,2);
+    
+                lineAdditionalAmount = _additionalAmount * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineAdditionalAmount = decRound(lineAdditionalAmount,2);
+    
+                lineApprovedAmount = _approveddAmt * (_HMBillPaymentSettlementTmp.AmountCur / totalBilledAmount);
+                lineApprovedAmount = decRound(lineApprovedAmount,2);
+    
+                if(rowsCount == totalRowsCount)
+                {
+                    lineCoPayAmount = lineCoPayAmountLeft;
+                    lineCoInsAmount = lineCoInsAmountLeft;
+                    lineDeductibleAmount = lineDeductibleAmountLeft;
+                    lineTransferAmount = lineTransferAmountLeft;
+                    lineWriteOffAmount = lineWriteOffAmountLeft;
+                    lineAmount = lineAmountLeft;
+                    lineAdditionalAmount = lineAdditionalAmountLeft;
+                    lineApprovedAmount = lineApprovedAmountLeft;
+                }
+                else
+                {
+                    lineamountleft -= lineAmount;
+                    lineCoPayAmountLeft -= lineCoPayAmount;
+                    lineCoInsAmountLeft -= lineCoInsAmount;
+                    lineDeductibleAmountLeft -= lineDeductibleAmount;
+                    lineTransferAmountLeft -= lineTransferAmount;
+                    lineWriteOffAmountLeft -=lineWriteOffAmount;
+                    lineAdditionalAmountLeft -= lineAdditionalAmount;
+                    lineApprovedAmountLeft -= lineApprovedAmount;
+                }
+    
+                _HMBillPaymentSettlementTmp.CoPayAmount = lineCoPayAmount;
+                _HMBillPaymentSettlementTmp.CoInsuranceAmount = lineCoInsAmount;
+                _HMBillPaymentSettlementTmp.Deductible = lineDeductibleAmount;
+                _HMBillPaymentSettlementTmp.TransferAmount = lineTransferAmount;
+                _HMBillPaymentSettlementTmp.WriteOffAmount = lineWriteOffAmount;
+                _HMBillPaymentSettlementTmp.AdditionalAmount = lineAdditionalAmount;
+                _HMBillPaymentSettlementTmp.AmountMST = lineApprovedAmount;
+                _HMBillPaymentSettlementTmp.AdditionalAmount = _HMBillPaymentSettlementTmp.AmountMST - _HMBillPaymentSettlementTmp.AmountCur;
+                if(_HMBillPaymentSettlementTmp.AdditionalAmount < 0)
+                {
+                    _HMBillPaymentSettlementTmp.AdditionalAmount  = 0;
+                }
+                _HMBillPaymentSettlementTmp.HMEOBReasonCode = _reasonCodeRecId;
+                _HMBillPaymentSettlementTmp.HMInvoiceNextAction = HMEOBReasonCode::findNextInvoiceAction(_reasonCodeRecId);
+                _HMBillPaymentSettlementTmp.BalanceAmount = _HMBillPaymentSettlementTmp.AmountCur - _HMBillPaymentSettlementTmp.AmountMST - _HMBillPaymentSettlementTmp.WriteOffAmount - _HMBillPaymentSettlementTmp.TransferAmount -_HMBillPaymentSettlementTmp.CoPayAmount - _HMBillPaymentSettlementTmp.Deductible - _HMBillPaymentSettlementTmp.CoInsuranceAmount;
+                if (_HMBillPaymentSettlementTmp.BalanceAmount < 0)
+                {
+                    _HMBillPaymentSettlementTmp.BalanceAmount = 0;
+                }
+                _HMBillPaymentSettlementTmp.AmountPaid  = lineAmount;
+                //_HMBillPaymentSettlementTmp.AmountPaid = _HMBillPaymentSettlementTmp.AmountMST - _HMBillPaymentSettlementTmp.CoPayAmount - _HMBillPaymentSettlementTmp.CoInsuranceAmount - _HMBillPaymentSettlementTmp.Deductible;
+                _HMBillPaymentSettlementTmp.update();
+            }
+            ttsCommit;
+        }
+        catch
+        {
+            error("Error in applying payments");
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillChargeEntryLineTmp</Name>
+				<Source><![CDATA[
+    public HMPatientChargeEntryLinesTmp fillChargeEntryLineTmp(RecId _batchRecId, HMPatientChargeEntryLinesTmp chargeEntryLineTmp)
+    {
+        HMPatientChargeEntryLine    chargeEntryLine;
+        NoYes                         marked = false;
+        delete_from chargeEntryLineTmp;
+        if(_batchRecId )
+        {
+    
+            insert_recordset chargeEntryLineTmp (HMPatientChargeEntryLine, marked, HMPatientChargeEntryTable)
+            select RecId, marked, HMPatientChargeEntryTable  from chargeEntryLine where chargeEntryLine.HMInsuranceCarrierBatchDetails == _batchRecId;
+            //while select RecId,  HMPatientChargeEntryTable from chargeEntryLine
+            //where chargeEntryLine.HMInsuranceCarrierBatchDetails == _batchRecId
+            //{
+                //chargeEntryLineTmp.clear();
+                //chargeEntryLineTmp.HMPatientChargeEntryLine = chargeEntryLine.RecId;
+                //chargeEntryLineTmp.HMPatientChargeEntryTable = chargeEntryLine.HMPatientChargeEntryTable;
+                //chargeEntryLineTmp.Marked = NoYes::Yes;
+                //chargeEntryLineTmp.insert();
+            //}
+        }
+    
+    
+        return chargeEntryLineTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClaimAmountDetailsByBatchNumber</Name>
+				<Source><![CDATA[
+    public container getClaimAmountDetailsByBatchNumber(str _batchid)
+    {
+        AmountMST                   claimAmount, paymentReceivedAmount, DiscountAmountApplied, writeOffAmountApplied, remainingPayment;
+        HMCaseTrans                 hmCaseTrans;
+        HMPatientChargeEntryLine    hmPatientChargeEntryLine;
+        HMClaimVersion              hmClaimVersion;
+        HMClaimTable                hmClaimTable;
+        HMClaimChargeLine           hmClaimChargeLine;
+        CustTransOpen               custTransOpen;
+        HMInsuranceCarrierBatchPayments HMInsuranceCarrierBatchPayments;
+        CustTrans                   custTrans;
+        HMInsuranceCarrierBatchDetails batchDetails = HMInsuranceCarrierBatchDetails::findbByBatchNumber(_batchid);
+        if(batchDetails)
+        {
+            select sum(Discount), sum(WriteOff), sum(DeductibleActual), sum(InsuranceAmount)
+            from hmCaseTrans
+            join hmPatientChargeEntryLine
+            join hmClaimChargeLine
+            join hmClaimTable
+            join hmClaimVersion
+            where hmCaseTrans.recid == hmPatientChargeEntryLine.HMCaseTrans
+            && hmPatientChargeEntryLine.RecId == hmClaimChargeLine.HMPatientChargeEntryLine
+            && hmClaimTable.RecId == hmClaimChargeLine.HMClaimTable
+            && hmClaimTable.RecId == hmClaimVersion.HMClaimTable
+            && (hmCaseTrans.BillingStatus != HMBillStatus::Settled
+            && hmCaseTrans.BillingStatus != HMBillStatus::Reveresed)
+            && hmClaimVersion.Status == HMClaimStatus::Submitted
+            && hmPatientChargeEntryLine.HMInsuranceCarrierBatchDetails == batchDetails.RecId;
+    
+            select sum(AmountMST) from custTrans
+            join HMInsuranceCarrierBatchPayments
+            join custTransOpen
+            where custTrans.recid == HMInsuranceCarrierBatchPayments.CustTrans
+            && custTransOpen.AccountNum == custTrans.AccountNum
+            && custTransOpen.RefRecId == custTrans.RecId
+            && HMInsuranceCarrierBatchPayments.HMInsuranceCarrierBatchDetails == batchDetails.RecId;
+    
+            claimAmount = hmCaseTrans.InsuranceAmount + hmCaseTrans.WriteOff + hmCaseTrans.Discount;
+            DiscountAmountApplied = hmCaseTrans.Discount;
+            writeOffAmountApplied = hmCaseTrans.WriteOff;
+            paymentReceivedAmount = abs(custTrans.AmountMST);
+            remainingPayment = claimAmount - paymentReceivedAmount - DiscountAmountApplied - writeOffAmountApplied;
+        }
+        return [claimAmount,paymentReceivedAmount,DiscountAmountApplied,writeOffAmountApplied,remainingPayment];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unMarkAllChargeEntryLines</Name>
+				<Source><![CDATA[
+    public void unMarkAllChargeEntryLines(HMPatientChargeEntryLinesTmp _linesTmp)
+    {
+        update_recordSet _linesTmp
+        setting Marked = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateChargeEntryLine</Name>
+				<Source><![CDATA[
+    public void updateChargeEntryLine(HMPatientChargeEntryLinesTmp _linesTmp, RecId _chargeEntryTableRecId, NoYes _mark )
+    {
+        update_recordSet _linesTmp
+        setting Marked = _mark
+        where _linesTmp.HMPatientChargeEntryTable == _chargeEntryTableRecId
+        && _linesTmp.Marked != _mark;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,3516 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPaymentCentre</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPaymentCentre extends FormRun
+{
+    PaymMode                        paymentMode;
+    HMInsuranceCarrierBatchNumber   batchNumberId;
+    QueryBuildRange                 qbrBatchNumber,qbrChargeEntryRecid;
+    HMPaymentCentreFormHandler      HMPaymentCentreFormHandler;
+    Map                             markedChargeEntry;
+    RecId                           batchRecId;
+    QueryBuildRange                 qbrClaimStatus;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getBatchId</Name>
+				<Source><![CDATA[
+    public str getBatchId()
+    {
+        return batchNumberId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryHeaderMap</Name>
+				<Source><![CDATA[
+    public Map getChargeEntryHeaderMap()
+    {
+        return markedChargeEntry;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryLinesTmp</Name>
+				<Source><![CDATA[
+    public HMPatientChargeEntryLinesTmp getChargeEntryLinesTmp()
+    {
+        return HMPatientChargeEntryLinesTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInsuranceDetails</Name>
+				<Source><![CDATA[
+    public container getInsuranceDetails()
+    {
+        return [InsuranceId.text(),batchNumberId];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRemainingPayment</Name>
+				<Source><![CDATA[
+    public real getRemainingPayment()
+    {
+        return RemainingPayment.realValue();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTPADetails</Name>
+				<Source><![CDATA[
+    public HMTpaCode getTPADetails()
+    {
+        return TPAId.text();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        HMPaymentCentreFormHandler = new HMPaymentCentreFormHandler();
+        markedChargeEntry = new Map(Types::Int64,Types::Record);
+        HMInsuranceCarrierBatchDetails_ds.positionToRecord(null);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshChargeEntryDetails</Name>
+				<Source><![CDATA[
+    public void refreshChargeEntryDetails()
+    {
+        HMPatientChargeEntryTable_ds.executeQuery();
+        HMPatientChargeEntryLine_ds.executeQuery();
+        element.updateBatchAmountDetailFields();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateBatchAmountDetailFields</Name>
+				<Source><![CDATA[
+    public void updateBatchAmountDetailFields(str _batchId = BatchNumber.text())
+    {
+        container result;
+        result = HMPaymentCentreFormHandler.getClaimAmountDetailsByBatchNumber(_batchId);
+        ClaimAmount.realValue(conPeek(result,1));
+        PaymentReceived.realValue(conPeek(result,2));
+        DiscountAmountApplied.realValue(conPeek(result,3));
+        WriteOffAmountApplied.realValue(conPeek(result,4));
+        RemainingPayment.realValue(conPeek(result,5));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMPatientChargeEntryTable</Name>
+				<Methods>
+					<Method>
+						<Name>netInsuranceAmount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST netInsuranceAmount(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            HMCaseTrans hmCaseTransLocal;
+            hmPatientChargeEntryLine hmPatientChargeEntryLineLocal;
+        
+            select sum(InsuranceAmount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTransLocal.RecId
+            && hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+        
+            return hmCaseTransLocal.InsuranceAmount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>netAmount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST netAmount(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            HMCaseTrans					hmCaseTransLocal;
+            hmPatientChargeEntryLine    hmPatientChargeEntryLineLocal;
+            HMClaimChargeLine           hmClaimChargeLine;
+        
+            select sum(Discount), sum(DiscountAmount), sum(TotalAmount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTransLocal.RecId
+            join HMClaimChargeLine where HMClaimChargeLine.HMPatientChargeEntryLine == hmPatientChargeEntryLineLocal.RecId
+			&& hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.TotalAmount - hmCaseTransLocal.DiscountAmount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>tradeAgreementDiscount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST tradeAgreementDiscount(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            HMCaseTrans hmCaseTransLocal;
+            hmPatientChargeEntryLine hmPatientChargeEntryLineLocal;
+        
+            select sum(DiscountAmount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTransLocal.RecId
+            && hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.DiscountAmount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            qbrChargeEntryRecid = this.queryBuildDataSource().addRange(fieldNum(HMPatientChargeEntryTable,RecId));
+            qbrChargeEntryRecid.value(SysQuery::value(0));
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>editIsMarked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Gets or sets whether the open transaction is marked for settlement.
+        /// </summary>
+        /// <param name="_set">
+        /// true if marked for settlement is set; otherwise, false.
+        /// </param>
+        /// <param name="_hmPatientChargeEntryTable">
+        /// The current instance of the HMPatientChargeEntryTable table.
+        /// </param>
+        /// <param name="_isMarkedForSettlement">
+        /// The new marked for settlement when the <paramref name="_set"/> is true.
+        /// </param>
+        /// <returns>
+        /// Whether the record is marked for discount/write/posting.
+        /// </returns>
+        
+        // BP deviation documented
+        public edit boolean editIsMarked(
+            boolean _set,
+            HMPatientChargeEntryTable _hmPatientChargeEntryTable,
+            boolean _isMarked)
+        {
+            boolean isMarked;
+            if(_set)
+            {
+                if(_isMarked)
+                {
+                    if(!markedChargeEntry.exists(_hmPatientChargeEntryTable.RecId))
+                    {
+                        markedChargeEntry.insert(_hmPatientChargeEntryTable.RecId,_hmPatientChargeEntryTable);
+                        HMPaymentCentreFormHandler.updateChargeEntryLine(HMPatientChargeEntryLinesTmp,_hmPatientChargeEntryTable.RecId,NoYes::Yes);
+                    }
+                }
+                else
+                {
+                    if(markedChargeEntry.exists(_hmPatientChargeEntryTable.RecId))
+                    {
+                        markedChargeEntry.remove(_hmPatientChargeEntryTable.RecId);
+                        HMPaymentCentreFormHandler.updateChargeEntryLine(HMPatientChargeEntryLinesTmp,_hmPatientChargeEntryTable.RecId,NoYes::No);
+                    }
+                }
+            }
+        
+            isMarked = markedChargeEntry.exists(_hmPatientChargeEntryTable.RecId);
+            HMPatientChargeEntryLine_ds.executeQuery();
+        
+            return isMarked;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>totalAmount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST totalAmount(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            HMCaseTrans					hmCaseTransLocal;
+            HMPatientChargeEntryLine	hmPatientChargeEntryLineLocal;
+            HMClaimChargeLine           hmClaimChargeLine;
+        
+            select sum(TotalAmount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTransLocal.RecId
+            join HMClaimChargeLine where HMClaimChargeLine.HMPatientChargeEntryLine == hmPatientChargeEntryLineLocal.RecId
+			&& hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.TotalAmount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>totalAmountWithDiscWrite</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST totalAmountWithDiscWrite(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            hmCaseTrans					hmCaseTransLocal;
+            hmPatientChargeEntryLine	hmPatientChargeEntryLineLocal;
+            HMClaimChargeLine			hmClaimChargeLine;
+ 
+            select sum(TotalAmount), sum(WriteOff) , sum(Discount), sum(DiscountAmount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.hmCaseTrans == hmCaseTransLocal.RecId
+            join HMClaimChargeLine where HMClaimChargeLine.HMPatientChargeEntryLine == hmPatientChargeEntryLineLocal.RecId
+			&& hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.TotalAmount - hmCaseTransLocal.WriteOff - hmCaseTransLocal.Discount - hmCaseTransLocal.DiscountAmount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>writeOffAmount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST writeOffAmount(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            hmCaseTrans					hmCaseTransLocal;
+            hmPatientChargeEntryLine	hmPatientChargeEntryLineLocal;
+            HMClaimChargeLine			hmClaimChargeLine;
+ 
+            select sum(WriteOff) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.hmCaseTrans == hmCaseTransLocal.RecId
+            join HMClaimChargeLine where HMClaimChargeLine.HMPatientChargeEntryLine == hmPatientChargeEntryLineLocal.RecId
+			&& hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.WriteOff;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>deductibleActual</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST deductibleActual(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            HMCaseTrans					hmCaseTransLocal;
+            hmPatientChargeEntryLine	hmPatientChargeEntryLineLocal;
+            HMClaimChargeLine			hmclaimChargeLine;
+
+            select sum(DeductibleActual),sum(CashAMount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTransLocal.RecId
+            join HMClaimChargeLine where HMClaimChargeLine.HMPatientChargeEntryLine == hmPatientChargeEntryLineLocal.RecId
+			&& hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.DeductibleActual + hmCaseTransLocal.CashAmount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>paymentCentreDiscountAmount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST paymentCentreDiscountAmount(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            HMCaseTrans					hmCaseTransLocal;
+            hmPatientChargeEntryLine	hmPatientChargeEntryLineLocal;
+            HMClaimChargeLine			hmClaimChargeLIne;
+
+            select sum(Discount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTransLocal.RecId
+            join HMClaimChargeLine where HMClaimChargeLine.HMPatientChargeEntryLine == hmPatientChargeEntryLineLocal.RecId
+			&& hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.Discount;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>insuranceAmount</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST insuranceAmount(HMPatientChargeEntryTable _HMPatientChargeEntryTable)
+        {
+            HMCaseTrans hmCaseTransLocal;
+            hmPatientChargeEntryLine hmPatientChargeEntryLineLocal;
+            HMClaimChargeLine   hmClaimChargeLine;
+
+            select sum(TotalAmount),sum(DiscountAmount),sum(DeductibleActual),sum(CashAmount) from hmCaseTransLocal
+            join hmPatientChargeEntryLineLocal where hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTransLocal.RecId
+            join HMClaimChargeLine where HMClaimChargeLine.HMPatientChargeEntryLine == hmPatientChargeEntryLineLocal.RecId
+			&& hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == _HMPatientChargeEntryTable.RecId
+            && hmPatientChargeEntryLineLocal.HMInsuranceCarrierBatchDetails == batchRecId
+            && (hmCaseTransLocal.BillingStatus != HMBillStatus::NotPaid
+            && hmCaseTransLocal.BillingStatus != HMBillStatus::Reveresed);
+        
+            return hmCaseTransLocal.TotalAmount - hmCaseTransLocal.DiscountAmount - hmCaseTransLocal.DeductibleActual - hmCaseTransLocal.CashAmount;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMPatientChargeEntryLine</Name>
+				<Methods>
+					<Method>
+						<Name>delete</Name>
+						<Source><![CDATA[
+        public void delete()
+        {
+            super();
+            this.reread();
+            HMPatientChargeEntryTable_ds.research(true);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.query().dataSourceTable(tableNum(HMPatientChargeEntryLine)).addSortField(fieldNum(HMPatientChargeEntryLine, ProcedureOrder));
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMCaseTrans</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            HMCaseTrans_ds.queryBuildDataSource().addRange(fieldNum(HMCaseTrans,BillingStatus)).value(SysQuery::value(HMBillStatus::Paid));
+            HMCaseTrans_ds.queryBuildDataSource().addRange(fieldNum(HMCaseTrans,BillingStatus)).value(SysQuery::value(HMBillStatus::Settled));
+            HMCaseTrans_ds.queryBuildDataSource().addRange(fieldNum(HMCaseTrans,BillingStatus)).value(SysQuery::value(HMBillStatus::Posted));
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+            if(ret)
+            {
+        
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMPatientChargeEntryLine_Filter</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            qbrBatchNumber = this.queryBuildDataSource().addRange(fieldNum(HMPatientChargeEntryLine,HMInsuranceCarrierBatchDetails));
+            if(batchNumberId)
+            {
+                qbrBatchNumber.value(SysQuery::value(HMInsuranceCarrierBatchDetails::findRecIdbByBatchNumber(batchNumberId)));
+            }
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMClaimVersion_Filter</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            qbrClaimStatus = this.queryBuildDataSource().addRange(fieldNum(HMClaimVersion,Status));
+            qbrClaimStatus.value(SysQuery::value(HMClaimStatus::Submitted));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>HMInsuranceCarrierBatchWriteOffForm</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            Args args;
+            HMInsuranceCarrierBatchDetails insuraceCarrierBatchDetails;
+            args = new args();
+            insuraceCarrierBatchDetails = HMInsuranceCarrierBatchDetails::findbByBatchNumber(BatchNumber.text());
+            if(!insuraceCarrierBatchDetails)
+            {
+                warning("No insurance valid batch # found");
+                return;
+            }
+            args.record(insuraceCarrierBatchDetails);
+            new MenuFunction(menuitemDisplayStr(HMInsuranceCarrierBatchWriteOff),MenuItemType::Display).run(args);
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMInsuranceCarrierBatchDiscountForm</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            Args args;
+            HMInsuranceCarrierBatchDetails insuraceCarrierBatchDetails;
+            args = new args();
+            insuraceCarrierBatchDetails = HMInsuranceCarrierBatchDetails::findbByBatchNumber(BatchNumber.text());
+            if(!insuraceCarrierBatchDetails)
+            {
+                warning("No insurance valid batch # found");
+                return;
+            }
+            args.record(insuraceCarrierBatchDetails);
+            new MenuFunction(menuitemDisplayStr(HMInsuranceCarrierBatchDiscounts),MenuItemType::Display).run(args);
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMPaymentCentreApplyDiscount</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMPaymentCentreCreateInvoice</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            //HMPaymentCentreClass::applyInvoiceAndPost(markedChargeEntry,HMPatientChargeEntryLinesTmp,BatchNumber.text());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>TPAId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource;
+            QueryBuildRange queryBuildRange;
+        
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(custTable), this);
+        
+            sysTableLookup.addLookupField(fieldNum(CustTable, AccountNum));
+            sysTableLookup.setLabel("@MAZ13546");
+            sysTableLookup.addLookupMethod(tableMethodStr(CustTable, name));
+        
+        
+        
+            queryBuildDataSource = query.addDataSource(tableNum(CustTable));
+        
+            queryBuildRange = queryBuildDataSource.addRange(fieldNum(CustTable, CustType));
+            queryBuildRange.value(SysQuery::value(CustType::TPA));
+        
+            sysTableLookup.parmQuery(query);
+        
+            sysTableLookup.performFormLookup();
+        
+            //super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                InsuranceId.text('');
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>InsuranceId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource,qbdsTPA;
+            QueryBuildRange queryBuildRange;
+        
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(custTable), this);
+        
+            sysTableLookup.addLookupField(fieldNum(CustTable, AccountNum));
+            sysTableLookup.setLabel("@MAZ13168");
+            sysTableLookup.addLookupMethod(tableMethodStr(CustTable, name));
+        
+            queryBuildDataSource = query.addDataSource(tableNum(CustTable));
+        
+            queryBuildRange = queryBuildDataSource.addRange(fieldNum(CustTable, CustType));
+            queryBuildRange.value(SysQuery::value(CustType::Insurance));
+            queryBuildDataSource.addDataSource(tableNum(HMInsuranceCarrier)).relations(true);
+            qbdsTPA = query.dataSourceTable(tableNum(HMInsuranceCarrier)).addDataSource(tableNum(HMTpaDetails));
+            qbdsTPA.relations(true);
+            if(TPAId.text() == '')
+            {
+                qbdsTPA.joinMode(JoinMode::NoExistsJoin);
+            }
+            else
+            {
+                qbdsTPA.joinMode(JoinMode::InnerJoin);
+                qbdsTPA.addRange(fieldNum(HMTpaDetails,TPA)).value(SysQuery::value(HMTPA::findRecIdByCode(TPAId.text())));
+            }
+        
+            sysTableLookup.parmQuery(query);
+        
+            sysTableLookup.performFormLookup();
+        
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>BatchNumber</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource;
+            QueryBuildRange queryBuildRange;
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMInsuranceCarrierBatchDetails), this);
+        
+            if(InsuranceId.valueStr() == '')
+            {
+                warning("@MAZ13537");
+                return;
+            }
+        
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, BatchNumber));
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, FromDate));
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, ToDate));
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, Reference));
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMInsuranceCarrierBatchDetails));
+        
+            queryBuildRange = queryBuildDataSource.addRange(fieldNum(HMInsuranceCarrierBatchDetails, HMInsuranceCarrier));
+            queryBuildRange.value(SysQuery::value(HMInsuranceCarrier::findByCode(InsuranceId.valueStr()).RecId));
+        
+            queryBuildDataSource.addRange(fieldNum(HMInsuranceCarrierBatchDetails, Status)).value(SysQuery::value(HMInsuranceCarrierBatchStatus::Active));
+        
+            sysTableLookup.parmQuery(query);
+        
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            batchNumberId = this.text();
+            if(ret)
+            {
+                HMInsuranceCarrierBatchDetails_ds.positionToRecord(HMInsuranceCarrierBatchDetails::findbByBatchNumber(batchNumberId));
+                batchRecId = HMInsuranceCarrierBatchDetails.RecId;
+                element.updateBatchAmountDetailFields(batchNumberId);
+                qbrChargeEntryRecid.enabled(true);
+            }
+            HMPatientChargeEntryTable_ds.executeQuery();
+            HMPatientChargeEntryLinesTmp_ds.executeQuery();
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ClaimStatus</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                switch(this.selection())
+                {
+                    case HMPaymentCenterClaimStatus::Submitted:
+                        qbrClaimStatus.enabled(true);
+                        qbrClaimStatus.value(SysQuery::value(HMClaimStatus::Submitted));
+                        break;
+                    case HMPaymentCenterClaimStatus::NotSubmitted:
+                        qbrClaimStatus.enabled(true);
+                        qbrClaimStatus.value(SysQuery::valueNot(HMClaimStatus::Submitted));
+                        break;
+                    case HMPaymentCenterClaimStatus::Both:
+                        qbrClaimStatus.enabled(false);
+                        break;
+                }
+                HMPatientChargeEntryTable_ds.executeQuery();
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>MarkAll</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            HMPatientChargeEntryTable HMPatientChargeEntryTableLocal;
+            HMPatientChargeEntryTableLocal = HMPatientChargeEntryTable_ds.getFirst();
+            while(HMPatientChargeEntryTableLocal)
+            {
+                if(!markedChargeEntry.exists(HMPatientChargeEntryTableLocal.RecId))
+                {
+                    markedChargeEntry.insert(HMPatientChargeEntryTableLocal.RecId,HMPatientChargeEntryTableLocal);
+                    HMPaymentCentreFormHandler.updateChargeEntryLine(HMPatientChargeEntryLinesTmp,HMPatientChargeEntryTableLocal.RecId,NoYes::Yes);
+                }
+                HMPatientChargeEntryTableLocal = HMPatientChargeEntryTable_ds.getNext();
+            }
+            HMPatientChargeentrytable_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>UnmarkAll</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            markedChargeEntry = new Map(Types::Int64,Types::Record);
+            HMPaymentCentreFormHandler.unMarkAllChargeEntryLines(HMPatientChargeEntryLinesTmp);
+            HMPatientChargeentrytable_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ShowChargeEntries</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            if(batchRecId)
+            {
+                qbrBatchNumber.value(SysQuery::value(batchRecId));
+                qbrChargeEntryRecid.enabled(false);
+                HMPaymentCentreFormHandler.fillChargeEntryLineTmp(batchRecId, HMPatientChargeEntryLinesTmp);
+            }
+            else
+            {
+                qbrChargeEntryRecid.enabled(true);
+            }
+            element.updateBatchAmountDetailFields(batchNumberId);
+            HMPatientChargeEntryTable_ds.executeQuery();
+            HMPatientChargeEntryLinesTmp_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMPatientChargeEntryLine_CPTCodes</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            HMProcedureCodeMaster procedureCodeMaster;
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource, queryBuildDataSource2;
+            QueryBuildRange queryBuildRange;
+        
+            SysReferenceTableLookup sysTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMProcedureCodeMaster), this, true);
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMProcedureCodeMaster));
+            queryBuildDataSource2 = queryBuildDataSource.addDataSource(tableNum(HMItemCptPcsCodes));
+            queryBuildDataSource2.joinMode(JoinMode::InnerJoin);
+            queryBuildDataSource2.relations(true);
+            queryBuildDataSource2.addRange(fieldNum(HMItemCptPcsCodes, ItemId)).value(queryValue(HMCaseTrans.ItemId));
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Code));
+            sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Description));
+        
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMInsuranceCarrierBatchWriteOff</Name>
+			<Table>HMInsuranceCarrierBatchWriteOffDiscounts</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AmountOrPercentage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Applied</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReverseWriteOffDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Value</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOffOrDiscount</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMInsuranceCarrierBatchDiscounts</Name>
+			<Table>HMInsuranceCarrierBatchWriteOffDiscounts</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AmountOrPercentage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Applied</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReverseWriteOffDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Value</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOffOrDiscount</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientChargeEntryTable</Name>
+			<Table>HMPatientChargeEntryTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CaseType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChargeEntryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TotalCaseAmount</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatient</Name>
+			<Table>HMPatient</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AgeInDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgeInMonths</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BloodGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BoxId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CallNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CanContact</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CivicAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactFirst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPhoneMobile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardToken</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CriticalMedicalInformation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirPartyRelationshipNextToKin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirPartyTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DrivingLicenseNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Employer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Employment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentEmail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentFax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentLogisticsLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentPhone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EncounterActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Executive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExecutiveProtocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExtraCoveredByClient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FamilyPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Field1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FileLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FormProvision</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Gender</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HasCareBookRegistration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmEthnicOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmLanguageCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HIPAA</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HipaaDateAcknowledge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAgeValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBookingOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCalcBirthDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaffFamilyDoctor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMHijriDateOfBirth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMHijriExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMIdentificationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMLaboratories</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMNationalIdExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMNationalIdType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientAllergyInvestigationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientRestriction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPharmacy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProfession</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRaceCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMReferringPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InClinicFileLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsAuthorized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOnHold</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOutstanding</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsVIP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>JobTitle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LogisticsAddressCountryRegion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NameSuffix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OtherName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PassportExpireDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PassportNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientHighlights</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalChartNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PictureRefused</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Pilot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreEmployment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreEmploymentProtocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrefModeOfCommunication</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProfessionalStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProvincialHealthCardExpDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProvincialHealthCardNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RAMQ</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonTableMerge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonTablePatientDeactivate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecallDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReferringPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefusedToProvidePicture</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefuseToSign</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefuseToSignAcknowledge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RegisteredBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RegistrationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Relationship</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RISRegistered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Salutation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SelfEmployed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmBusRelTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SocialSecurityNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TextOnInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Weight</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryTable</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMCase</Name>
+			<Table>HMCase</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AddmisionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AdmittingDiagnosisCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CaseNo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CaseStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Clinic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CRMCaseRefID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CSVFileGenerated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiagnosisandProcedureCodeQualifier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DimensionDefault</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DischargeDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DischargeStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentControlNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Ecia</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Ecib</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Ecic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ECode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBuildingUnit_Room</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMFinancialClass</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMParentCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientInsurance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPPSCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRoomType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OperatingPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OtherPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OtherPhysician1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientReasonA</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientReasonB</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientReasonC</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PointOfOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAdmittingDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrincipalDiagnosisCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrincipalProcedureCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrincipalProcedureDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Remarks</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>serviceDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TypeOfAdmission</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryTable</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientChargeEntryLine</Name>
+			<Table>HMPatientChargeEntryLine</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationResponse</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Charge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CPTCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustInvoiceLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Fee</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMChargeEntryLineNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientChargeEntryTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformingResource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlaceOfService</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProcedureOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevenueCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TODate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TypeOfService</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Units</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOffReason</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryTable</JoinSource>
+			<LinkType>Active</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMCaseTrans</Name>
+			<Table>HMCaseTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AlternatDrugStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlternatePrimaryCaseTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<AllowEdit>No</AllowEdit>
+					<DataField>BillingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CRMOrderId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Deductible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleActual</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleCollectionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductiblePercentage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductiblePerUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Discount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscountAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimTableSetup_PatientStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMItemCptPcsCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointmentInvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMServiceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Instructions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDim</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPPS</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderedQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentCaseTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PharmacyBatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Protocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Qty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RelatedAppointmentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RemainingBillAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportUrl</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TotalAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Urgency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOff</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryLine</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientChargeEntryLinesTmp</Name>
+			<Table>HMPatientChargeEntryLinesTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientChargeEntryLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientChargeEntryTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceNextAction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Marked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryLine</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientChargeEntryLine_Filter</Name>
+			<Table>HMPatientChargeEntryLine</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationResponse</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Charge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CPTCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustInvoiceLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Fee</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMChargeEntryLineNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientChargeEntryTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformingResource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlaceOfService</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProcedureOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevenueCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TODate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TypeOfService</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Units</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOffReason</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryTable</JoinSource>
+			<LinkType>ExistJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMInsuranceCarrierBatchDetails</Name>
+			<Table>HMInsuranceCarrierBatchDetails</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>BatchNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Month</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Reference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMClaimChargeLine_Filter</Name>
+			<Table>HMClaimChargeLine</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>BalanceChangeDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BalanceResponsible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChargeLeft</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChargeRight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiagnosisPointer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EMG</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EPSDT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDateDay</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDateMonth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDateYear</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientChargeEntryLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPlaceOfService</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProcedureMasterCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProcedureModifier1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProcedureModifier2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProcedureModifier3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProcedureModifier4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsImportedFromChargeEntryLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsRejected</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NPI</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Priority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportUrl</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDateDay</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDateMonth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDateYear</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Units</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryLine_Filter</JoinSource>
+			<LinkType>ExistJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMClaimTable_Filter</Name>
+			<Table>HMClaimTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ClaimID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMLastEdiGeneratedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientChargeEntryTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMClaimChargeLine_Filter</JoinSource>
+			<LinkType>ExistJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMClaimVersion_Filter</Name>
+			<Table>HMClaimVersion</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValidFrom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValidTo</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMClaimTable_Filter</JoinSource>
+			<LinkType>ExistJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">Payment center</Caption>
+		<DialogSize xmlns="">Full</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>536870911</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTab</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPaneTab</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>MainButtonGroup</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ButtonGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMInsuranceCarrierBatchWriteOffForm</Name>
+										<ElementPosition>429496728</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMInsuranceCarrierBatchDetails</DataSource>
+										<MenuItemName>HMInsuranceCarrierBatchWriteOff</MenuItemName>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@MAZ13377</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMInsuranceCarrierBatchDiscountForm</Name>
+										<ElementPosition>644245092</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMInsuranceCarrierBatchDetails</DataSource>
+										<MenuItemName>HMInsuranceCarrierBatchDiscounts</MenuItemName>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@MAZ13376</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDropDialogButtonControl">
+										<Name>HMPatientChargeEntryInsuracePayment</Name>
+										<ElementPosition>858993456</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>DropDialogButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMInsuranceCarrierBatchDetails</DataSource>
+										<MenuItemName>HMPatientChargeEntryInsurancePayment</MenuItemName>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMPaymentCentreApplyWriteOff</Name>
+										<ElementPosition>1073741820</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<AutoRefreshData>Yes</AutoRefreshData>
+										<DataSource>HMInsuranceCarrierBatchDetails</DataSource>
+										<MenuItemName>HMPaymentCentreApplyWriteOff</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMPaymentCentreApplyDiscount</Name>
+										<ElementPosition>1288490184</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<AutoRefreshData>Yes</AutoRefreshData>
+										<CopyCallerQuery>No</CopyCallerQuery>
+										<DataSource>HMInsuranceCarrierBatchDetails</DataSource>
+										<MenuItemName>HMPaymentCentreApplyDiscount</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMPaymentCentreCreateInvoice</Name>
+										<ElementPosition>1503238548</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<AutoRefreshData>Yes</AutoRefreshData>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<MenuItemName>HMPaymentCentreCreateInvoice</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<Text>@SYS60169</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMPaymentCentreApplyPayments</Name>
+										<ElementPosition>1717986912</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMCaseTrans</DataSource>
+										<MenuItemName>HMPaymentCentreApplyPayments</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<Text>Settle payments</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>HMCustTransBatch</Name>
+										<ElementPosition>1932735276</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>HMInsuranceCarrierBatchDetails</DataSource>
+										<MenuItemName>HMCustTransBatch</MenuItemName>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+				<Style>Strip</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStaticTextControl">
+						<Name>MainInstruction</Name>
+						<ElementPosition>715827882</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>StaticText</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<FontSize>13</FontSize>
+						<ForegroundColor>ScrollBar</ForegroundColor>
+						<Style>MainInstruction</Style>
+						<Text>Payment center</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>InsurancePaymentDetails</Name>
+						<ElementPosition>1073741823</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>InsuraceBatchDetails</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>TPAId</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>715827882</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>HMTpaCode</ExtendedDataType>
+										<Label>@MAZ13241</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>InsuranceId</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741823</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>HMInsuranceCarrierCode</ExtendedDataType>
+										<Label>@SYS67403</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>BatchNumber</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@MAZ6995</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>ClaimStatus</Name>
+										<ElementPosition>1789569705</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<EnumType>HMPaymentCenterClaimStatus</EnumType>
+										<Items />
+									</AxFormControl>
+								</Controls>
+								<Caption>Insurace batch details</Caption>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>PaymentDetails</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>ClaimAmount</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>613566756</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@MAZ7489</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>PaymentReceived</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>920350134</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@SYS316246</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>DiscountAmountApplied</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1227133512</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>Discount amount applied</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>WriteOffAmountApplied</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1533916890</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>Write-off amount applied</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RemainingPayment</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1840700268</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>Remaining payment</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+						<Columnspace>100</Columnspace>
+						<ColumnspaceMode>Fixed</ColumnspaceMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ChargeEntryHeaderGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>ActionPaneChargeEntryHeader</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>ActionPaneTabChargeEntryHeader</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPaneTab</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>ButtonGroupChargeEntryHeader</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ButtonGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonControl">
+														<Name>MarkAll</Name>
+														<ElementPosition>858993458</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ13588</HelpText>
+														<Type>Button</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Text>@SYS4082903</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonControl">
+														<Name>UnmarkAll</Name>
+														<ElementPosition>1288490187</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ13588</HelpText>
+														<Type>Button</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Text>@SYS4082898</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonControl">
+														<Name>ShowChargeEntries</Name>
+														<ElementPosition>1717986916</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ13596</HelpText>
+														<Type>Button</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Text>@MAZ13595</Text>
+													</AxFormControl>
+												</Controls>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>ChargeEntryHeaderGrid</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>Mark</Name>
+										<ElementPosition>268435454</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<DataMethod>editIsMarked</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@SYS12714</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>patientChartNum</Name>
+										<ElementPosition>402653181</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<CacheDataMethod>Yes</CacheDataMethod>
+										<DataMethod>patientChartNum</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ4947</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>AppointmentDate</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>536870908</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ1685</HelpText>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<CacheDataMethod>Yes</CacheDataMethod>
+										<DataMethod>appointmentDate</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@SYS100104</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateTimeControl">
+										<Name>HMPatientChargeEntryTable_createdDateTime</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>671088635</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>DateTime</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>createdDateTime</DataField>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>PatientName</Name>
+										<ElementPosition>805306362</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ1881</HelpText>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<CacheDataMethod>Yes</CacheDataMethod>
+										<DataMethod>patientName</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ9</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>totalAmount</Name>
+										<ElementPosition>939524089</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>Total charge entry amount</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>totalAmount</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@SYS11818</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>TradeAgreementdiscountAmount</Name>
+										<ElementPosition>1073741816</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13540</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>tradeAgreementDiscount</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ13629</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>netAmount</Name>
+										<ElementPosition>1207959543</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13608</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>netAmount</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ13630</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>deductibleActual</Name>
+										<ElementPosition>1342177270</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13555</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>deductibleActual</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ13554</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>insuranceAmount</Name>
+										<ElementPosition>1476394997</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13557</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>insuranceAmount</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ13556</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>paymentCentreDiscountAmount</Name>
+										<ElementPosition>1610612724</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13606</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>paymentCentreDiscountAmount</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ13607</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>writeOffAmount</Name>
+										<ElementPosition>1744830451</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13542</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>writeOffAmount</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ13543</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>netInsuranceAmount</Name>
+										<ElementPosition>1879048178</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>netInsuranceAmount</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>Net insurance amount</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>totalAmountWithDiscWrite</Name>
+										<ElementPosition>2013265912</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>totalAmountWithDiscWrite</DataMethod>
+										<DataSource>HMPatientChargeEntryTable</DataSource>
+										<Label>@MAZ13545</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMPatientChargeEntryTable</DataSource>
+								<ShowRowLabels>No</ShowRowLabels>
+							</AxFormControl>
+						</Controls>
+						<Caption>Charge entry header</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ChargeEntryLines</Name>
+						<ElementPosition>1789569705</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>ChargeEntryLinesGrid</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>HMPatientChargeEntryLinesTmp_Marked</Name>
+										<ElementPosition>204522252</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<DataField>Marked</DataField>
+										<DataSource>HMPatientChargeEntryLinesTmp</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMCaseTrans_ItemId</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>272696336</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemId</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Description</Name>
+										<ElementPosition>409044504</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>getitemname</DataMethod>
+										<DataSource>HMCaseTrans</DataSource>
+										<Label>@RUP79</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMCaseTrans_Protocol</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>511305630</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Protocol</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMCaseTrans_BillingStatus</Name>
+										<ElementPosition>613566756</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>BillingStatus</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMCaseTrans_HMServiceStatus</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>715827882</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMServiceStatus</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientChargeEntryLine_HMInsuranceCarrierBatchDetails</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>818089008</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<ReferenceField>HMInsuranceCarrierBatchDetails</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_TotalAmount</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>920350134</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>TotalAmount</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_DiscountAmount</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1022611260</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>DiscountAmount</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>amountAfterDiscount</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1124872386</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<CacheDataMethod>Yes</CacheDataMethod>
+										<DataMethod>amountAfterDiscount</DataMethod>
+										<DataSource>HMCaseTrans</DataSource>
+										<Label>@MAZ13402</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_Deductible</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1227133512</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Deductible</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_DeductibleActual</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1329394638</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>DeductibleActual</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_Discount</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Discount</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_InsuranceAmount</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1636178016</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>InsuranceAmount</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_WriteOff</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1533916890</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>WriteOff</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMCaseTrans_PatientResponsibility</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1902056942</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PatientResponsibility</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_CashAmount</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>1983865842</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>CashAmount</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMPatientChargeEntryLinesTmp_InvoiceNextAction</Name>
+										<ElementPosition>2065674742</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>InvoiceNextAction</DataField>
+										<DataSource>HMPatientChargeEntryLinesTmp</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientChargeEntryLine_CPTCodes</Name>
+										<ElementPosition>363595114</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Label>HCPCS Code</Label>
+										<ReferenceField>CPTCodes</ReferenceField>
+										<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientChargeEntryLine_RevenueCode</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>318145725</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<ReferenceField>RevenueCode</ReferenceField>
+										<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMPatientChargeEntryLinesTmp_SettledAmount</Name>
+										<ElementPosition>1738439142</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>SettledAmount</DataField>
+										<DataSource>HMPatientChargeEntryLinesTmp</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMPatientChargeEntryLine_WriteOffReason</Name>
+										<ElementPosition>1820248042</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>WriteOffReason</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMPatientChargeEntryLinesTmp</DataSource>
+								<ShowRowLabels>No</ShowRowLabels>
+							</AxFormControl>
+						</Controls>
+						<Caption>Charge entry lines</Caption>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>Post</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CancelButton</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

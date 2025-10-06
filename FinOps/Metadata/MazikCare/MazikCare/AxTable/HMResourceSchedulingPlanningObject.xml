@@ -1,0 +1,848 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResourceSchedulingPlanningObject</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMResourceSchedulingPlanningObject extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>showBuildingUnit</Name>
+				<Source><![CDATA[
+    public Description showBuildingUnit()
+    {
+        return HMBuildingUnit::find(this.HMBuildingUnit).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showCategory</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMShortDescription showCategory()
+    {
+        return enum2str(this.Category);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showCodeDescription</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMShortDescription  showCodeDescription()
+    {
+        return this.Description+'('+this.Code+')';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showDepartment</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display Description showDepartment()
+    {
+        return HMOrganizationalUnit::find (this.HMOrganizationalUnit).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showHeader</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String255 showHeader()
+    {
+        if (this.Category == HMResourceSchedulingCategory::OrganizationalUnit)
+        {
+            return this.Description+' : '+this.showOrganizationUnit();
+        }
+        else if (this.Category == HMResourceSchedulingCategory::BuildingUnit)
+        {
+            return this.Description+' : '+this.showOrganizationUnit()+', '+this.showBuildingUnit();
+        }
+        else
+        {
+            return this.Description+' : '+this.showOrganizationUnit()+', '+this.showBuildingUnit()+', '+this.showResourceName();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showOrganizationUnit</Name>
+				<Source><![CDATA[
+    public Description showOrganizationUnit()
+    {
+        return HMOrganizationalUnit::find(this.HMOrganizationalUnit).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showPhysician</Name>
+				<Source><![CDATA[
+    public DirPartyName showPhysician()
+    {
+        HMClinicStaff           hmClinicStafflocal;
+        HcmWorker               hcmWorkerlocal;
+        DirPerson               dirPersonlocal;
+    
+        select Name from dirPersonlocal
+        join * from hmClinicStafflocal
+        join recId,Person from hcmWorkerlocal
+        where
+        hmClinicStafflocal.RecId==this.HMClinicStaff
+        && hmClinicStafflocal.HcmWorker==hcmWorkerlocal.RecId
+        && dirPersonlocal.RecId==hcmWorkerlocal.Person;
+    
+        return dirPersonlocal.ProfessionalTitle + ' ' + dirPersonlocal.Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showResourceName</Name>
+				<Source><![CDATA[
+    public Description showResourceName()
+    {
+        
+        return HMResourceMasterHelper::getResourceName(this.HMResourceMaster);
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showStatus</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMShortDescription showStatus()
+    {
+        return enum2str(this.PlanningObjectStatus);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    public boolean validateWrite()
+    {
+       
+       
+        boolean                                 ret;
+  
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObjectLocal;
+        HMResourceSchedulingWeekPlan            weeklyPlan;
+        HMResourceSchedulingWeekPlanToCalender  weeklyPlanCalendar;
+    
+        ret = super();
+    
+        if(ret)
+        {
+            if(this.isNewRecord() && this.StartDate < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                warning("@MAZ1715");
+                ret = false;
+            }
+    
+            if(this.isNewRecord() && this.EndDate < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                warning("@MAZ1716");
+                ret = false;
+            }
+            if( ret && this.StartDate > this.EndDate)
+            {
+                warning("@SYS120590");
+                ret = false;
+            }
+        }
+    
+        if(ret)
+        {
+            if(this.HMOrganizationalUnit && this.HMBuildingUnit && this.HMClinicStaff)
+            {
+                select count(RecId) from hmResourceSchedulingPlanningObjectLocal
+                    where hmResourceSchedulingPlanningObjectLocal.CaseType == this.CaseType
+                    && hmResourceSchedulingPlanningObjectLocal.HMOrganizationalUnit == this.HMOrganizationalUnit
+                    && hmResourceSchedulingPlanningObjectLocal.HMBuildingUnit == this.HMBuildingUnit
+                    && hmResourceSchedulingPlanningObjectLocal.HMClinicStaff == this.HMClinicStaff
+                    && hmResourceSchedulingPlanningObjectLocal.RecId != this.RecId;
+    
+                if (hmResourceSchedulingPlanningObjectLocal.RecId > 0)
+                {
+                    warning(strFmt("@MAZ3174",HMClinicStaff::getPhysicianNameByRecId(this.HMClinicStaff),HMBuildingUnit::find(this.HMBuildingUnit).Description));
+                    ret = false;
+                }
+            }
+        }
+    
+        if (ret)
+        {
+            while select weeklyPlanCalendar
+                join weeklyPlan
+                    where weeklyPlanCalendar.HMResourceSchedulingWeekPlan == weeklyPlan.RecId
+                        && weeklyPlan.HMResourceSchedulingPlanningObject == this.RecId
+            {
+                if ( (weeklyPlan.WeekNumber > wkOfYr(this.EndDate) && weeklyPlan.ToYear >= year(this.EndDate) ))
+                {
+                    error(strFmt("The week number %1 is in the calendar weeks which exceed to date, either delete this week or or change to date.", weeklyPlan.WeekNumber));
+                    ret = false;
+                }
+    
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record is located in the <c>HMResourceSchedulingPlanningObject</c> table.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMResourceSchedulingPlanningObject</c> table record to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    /// <remarks>
+    ///    If the specified record is not located in the <c>HMResourceSchedulingPlanningObject</c> table, an error message is
+    ///    displayed.
+    /// </remarks>
+    public static boolean checkExist(RecId _recId)
+    {
+        boolean ret = true;
+    
+        if (!HMResourceSchedulingPlanningObject::exist(_recId))
+        {
+            ret = checkFailed(strfmt(HMResourceSchedulingPlanningObject::txtNotExist(), _recId));
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record in the <c>HMResourceSchedulingPlanningObject</c> table exists.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMResourceSchedulingPlanningObject</c> table to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    public static boolean exist(RecId _recId)
+    {
+        boolean found;
+    
+        found = (select firstonly
+                     RecId
+                 from
+                     hmResourceSchedulingPlanningObject
+                 where
+                     hmResourceSchedulingPlanningObject.RecId == _recId).RecId != 0;
+    
+        return found;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMResourceSchedulingPlanningObject</c> table.
+    /// </summary>
+    /// <param name="_recid">
+    ///     The record ID of the <c>HMResourceSchedulingPlanningObject</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMResourceSchedulingPlanningObject</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMResourceSchedulingPlanningObject find(
+    RecId               _recid,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+    
+        hmResourceSchedulingPlanningObject.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmResourceSchedulingPlanningObject.concurrencyModel(_concurrencyModel);
+        }
+    
+        select firstonly  * from hmResourceSchedulingPlanningObject where hmResourceSchedulingPlanningObject.RecId == _recid;
+    
+        return hmResourceSchedulingPlanningObject;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByClinicStaff</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMResourceSchedulingPlanningObject</c> table.
+    /// </summary>
+    /// <param name="_hmClinicStaff">
+    ///     The record ID of the <c>HMClinicStaff</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMResourceSchedulingPlanningObject</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMResourceSchedulingPlanningObject findByClinicStaff(
+    RecId               _hmClinicStaff,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+    
+        hmResourceSchedulingPlanningObject.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmResourceSchedulingPlanningObject.concurrencyModel(_concurrencyModel);
+        }
+    
+        select firstonly  * from hmResourceSchedulingPlanningObject where hmResourceSchedulingPlanningObject.HMClinicStaff == _hmClinicStaff;
+    
+        return hmResourceSchedulingPlanningObject;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAvailableCountByClinicStaff</Name>
+				<Source><![CDATA[
+    public static int getAvailableCountByClinicStaff(RecId _clinicStaffRecId)
+    {
+        HMResourceSchedulingPlanningObject      plannningObject;
+    
+        select count (RecId) from plannningObject
+            where plannningObject.HMClinicStaff == _clinicStaffRecId
+            && (plannningObject.CaseType == HMCaseType::OutPatient || plannningObject.CaseType == HMCaseType::Surgery)
+            && plannningObject.AvailabilityStatus == NoYes::No;
+    
+        return int642int(plannningObject.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAvailableCountByOU</Name>
+				<Source><![CDATA[
+    public static int getAvailableCountByOU(RecId _ouRecId)
+    {
+        HMResourceSchedulingPlanningObject      planningObject;
+        int                                     counts = 0;
+    
+        while select * from planningObject
+            where planningObject.HMOrganizationalUnit == _ouRecId
+            && (planningObject.CaseType == HMCaseType::OutPatient || planningObject.CaseType == HMCaseType::Surgery)
+            && planningObject.AvailabilityStatus == NoYes::No
+        {
+            if (!(HMOrganizationaCategory::find(HMOrganizationalUnit::find(planningObject.HMOrganizationalUnit).HMOrganizationaCategory).Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit && planningObject.HMResourceMaster == 0))
+            {
+                counts++;
+            }
+        }
+    
+        return counts;
+    
+       /* select count (RecId) from planningObject
+            where planningObject.HMOrganizationalUnit == _ouRecId
+            && (planningObject.CaseType == HMCaseType::OutPatient || planningObject.CaseType == HMCaseType::Surgery)
+            && planningObject.AvailabilityStatus == NoYes::No;
+    
+        return int642int(planningObject.RecId);
+       */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAvailableCountByResource</Name>
+				<Source><![CDATA[
+    public static int getAvailableCountByResource(RecId _resourceRecId)
+    {
+        HMResourceSchedulingPlanningObject      plannningObject;
+    
+        select count (RecId) from plannningObject
+            where plannningObject.HMResourceMaster == _resourceRecId
+            && (plannningObject.CaseType == HMCaseType::OutPatient || plannningObject.CaseType == HMCaseType::Surgery)
+            && plannningObject.AvailabilityStatus == NoYes::No;
+    
+        return int642int(plannningObject.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAvailableCountByTreatmentUnit</Name>
+				<Source><![CDATA[
+    public static int getAvailableCountByTreatmentUnit(RecId _ouRecId)
+    {
+        HMResourceSchedulingPlanningObject      planningObject;
+    
+        select count (RecId) from planningObject
+            where planningObject.HMOrganizationalUnit == _ouRecId
+            && (planningObject.CaseType == HMCaseType::OutPatient || planningObject.CaseType == HMCaseType::Surgery)
+            && planningObject.AvailabilityStatus == NoYes::No
+            && planningObject.HMClinicStaff == 0;
+    
+        return int642int(planningObject.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>txtNotExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets the message to use when a specific record in the <c>HMResourceSchedulingPlanningObject</c> does not exist.
+    /// </summary>
+    /// <returns>
+    ///    The message that states a record does not exist.
+    /// </returns>
+    public static TxtNotExist txtNotExist()
+    {
+        return "@SYS127989";
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>HIS</ConfigurationKey>
+	<DeveloperDocumentation>@MAZ1453</DeveloperDocumentation>
+	<Label>@MAZ1452</Label>
+	<TableGroup>Main</TableGroup>
+	<TitleField1>Code</TitleField1>
+	<TitleField2>Description</TitleField2>
+	<CacheLookup>Found</CacheLookup>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<ReplacementKey>CodeIdx</ReplacementKey>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Code</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Description</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Category</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StartDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PlanningObjectStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SearchInterval</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ScheduleOnPublicHoliday</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OverbookAllowed</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMBuildingUnit</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMClinicStaff</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CaseType</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Code</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Description</Name>
+			<Label>@SYS25589</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Description</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>OverView</Name>
+			<Label>@SYS35894</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Code</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Description</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Category</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StartDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>EndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PlanningObjectStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>SearchInterval</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ScheduleOnPublicHoliday</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>OverbookAllowed</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMBuildingUnit</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMClinicStaff</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CaseType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AvailabilityStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DefaultScheduleType</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AvailabilityStatus</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>@MAZ7310</HelpText>
+			<Label>@SYS25673</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>CaseType</Name>
+			<HelpText>@MAZ1820</HelpText>
+			<EnumType>HMCaseType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Category</Name>
+			<HelpText>@MAZ1930</HelpText>
+			<Mandatory>Yes</Mandatory>
+			<EnumType>HMResourceSchedulingCategory</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Code</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>HMCode</ExtendedDataType>
+			<HelpText>@MAZ1723</HelpText>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>DefaultScheduleType</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ7791</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Description</Name>
+			<ExtendedDataType>Description</ExtendedDataType>
+			<HelpText>@MAZ1724</HelpText>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>EndDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ2089</HelpText>
+			<Label>@SYS35904</Label>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMBuildingUnit</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ1407</HelpText>
+			<Label>@MAZ1970</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMClinicStaff</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ65</HelpText>
+			<Label>@MAZ65</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMOrganizationalUnit</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ1406</HelpText>
+			<Label>@MAZ2481</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMResourceMaster</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@SYS89158</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HotSpotType</Name>
+			<Label>@MAZ12579</Label>
+			<EnumType>HmDaysWKMnth</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>HotSpotValue</Name>
+			<ExtendedDataType>Integer</ExtendedDataType>
+			<Label>@MAZ12578</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>OverbookAllowed</Name>
+			<HelpText>@MAZ2119</HelpText>
+			<Label>@MAZ1720</Label>
+			<Mandatory>Yes</Mandatory>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PlanningObjectStatus</Name>
+			<HelpText>@MAZ1949</HelpText>
+			<Label>@MAZ82</Label>
+			<Mandatory>Yes</Mandatory>
+			<EnumType>AllowanceStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ScheduleOnPublicHoliday</Name>
+			<HelpText>@MAZ2120</HelpText>
+			<Label>@MAZ2924</Label>
+			<Mandatory>Yes</Mandatory>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>SearchInterval</Name>
+			<ExtendedDataType>Integer</ExtendedDataType>
+			<HelpText>@MAZ1959</HelpText>
+			<Label>@MAZ1718</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>StartDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ2063</HelpText>
+			<Label>@SYS24050</Label>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>HMOrganizationalUnitIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMBuildingUnitIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMBuildingUnit</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMClinicStaffIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMClinicStaff</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>CodeIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>Code</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMBuildingUnit_FK</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMBuildingUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMBuildingUnit</Name>
+					<Field>HMBuildingUnit</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMClinicStaff_FK</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMClinicStaff</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMClinicStaff</Name>
+					<Field>HMClinicStaff</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMOrganizationalUnit_FK</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMOrganizationalUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMOrganizationalUnit</Name>
+					<Field>HMOrganizationalUnit</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMResourceMaster</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>CascadeRestricted</OnDelete>
+			<RelatedTable>HMResourceMaster</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMResourceMaster</Name>
+					<Field>HMResourceMaster</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMResourceSchedulingTypeCode</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMResourceSchedulingTypeCode</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>DefaultScheduleType</Name>
+					<Field>DefaultScheduleType</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

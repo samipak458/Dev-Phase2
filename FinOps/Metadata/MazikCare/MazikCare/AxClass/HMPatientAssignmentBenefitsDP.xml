@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientAssignmentBenefitsDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SRSReportParameterAttribute(classStr(HMPatientAssignmentBenefitsContract))]
+class HMPatientAssignmentBenefitsDP extends SRSReportDataProviderBase
+{
+    HMPatientAssignmentBenefitsTmp hMPatientAssignmentBenefitsTmp;
+    HMPatientAssignmentBenefitsContract contract;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMPatientAssignmentBenefitsTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute(tableStr(HMPatientAssignmentBenefitsTmp))
+    ]
+    public HMPatientAssignmentBenefitsTmp getHMPatientAssignmentBenefitsTmp()
+    {
+        select hMPatientAssignmentBenefitsTmp;
+        return hMPatientAssignmentBenefitsTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmp</Name>
+				<Source><![CDATA[
+    private void insertTmp(HMCase _hmcase)
+    {
+        HMPatient         hmPatient;
+        CustTable         custTable;
+        DirPartyTable     dirPartyTable;
+        DirPerson         dirPerson;
+        LogisticsPostalAddress logisticsPostalAddress;
+        LogisticsElectronicAddress logisticsElectronicAddress;
+        HMPatientInsurance hMPatientInsurance;
+        HMCaseInsurance hMCaseInsurance;
+    
+        select firstOnly * from hmPatient where hmPatient.RecId == _hmcase.HMPatient
+            join * from custTable where custTable.RecId == hmPatient.CustTable
+            join * from dirPartyTable where dirPartyTable.RecId == custTable.Party
+            join * from dirPerson where dirPerson.RecId == dirPartyTable.RecId;
+    
+        logisticsPostalAddress = DirParty::primaryPostalAddress(dirPartyTable.RecId);
+        logisticsElectronicAddress = DirParty::primaryElectronicAddress(dirPartyTable.RecId,LogisticsElectronicAddressMethodType::Phone);
+    
+        hMPatientAssignmentBenefitsTmp.clear();
+        hMPatientAssignmentBenefitsTmp.CaseNo = _hmcase.CaseNo;
+        hMPatientAssignmentBenefitsTmp.MRNO = custTable.AccountNum;
+        hMPatientAssignmentBenefitsTmp.Sex = enum2str(hmPatient.Gender);
+        hMPatientAssignmentBenefitsTmp.DOB = strFmt("%1",hmPatient.BirthDate);
+        hMPatientAssignmentBenefitsTmp.PatientName = hmPatient.patientNameWithSalutation();
+        hMPatientAssignmentBenefitsTmp.Physician = HMResourceMaster::find(_hmcase.HMResourceMaster).Description;
+    
+    
+        hMPatientAssignmentBenefitsTmp.insert();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        Query query;
+        QueryRun qRun;
+        HMCase hmcase;
+        contract = this.parmDataContract() as hMPatientAssignmentBenefitsContract;
+    
+        select firstOnly hmcase
+            where hmcase.CaseNo == contract.parmCaseNo();
+    
+        this.insertTmp(hmcase);
+    
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

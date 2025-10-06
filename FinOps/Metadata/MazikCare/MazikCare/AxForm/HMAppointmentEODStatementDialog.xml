@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMAppointmentEODStatementDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMAppointmentEODStatementDialog extends FormRun
+{
+    RecId                       organizationalLocationRecId,serviceLocationRecId;
+    NumberSeq                   num;
+    NumberSequenceReference     numberSeqReferenceNum;
+    NumberSequenceTable         numberSeqTableNum;
+    NumberSeq                   numberSeqNum;
+    Num                         lastNumber;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    public void close()
+    {
+        super();
+        numberSeqNum.abort();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    public void closeOk()
+    {
+        Args args;
+        HMAppointmentEODStatement statementRecord;
+        if(HMAppointmentEODStatementClass::insertHeaderFromDialog(StatementNumber.text(),organizationalLocationRecId,serviceLocationRecId,StartDateTime.dateTimeValue(), EndDateTime.dateTimeValue()))
+        {
+            numberSeqNum.used();
+            select * from statementRecord where statementRecord.StatementNumber == StatementNumber.text();
+            if(element.args().parm() == 'ListPage')
+            {
+                args = new Args();
+                args.record(statementRecord);
+                args.copyCallerQuery(CopyCallerQuery::Yes);
+                new MenuFunction(menuitemDisplayStr(HMAppointmentEODStatementDetails),MenuItemType::Display).run(args);
+            }
+            else if(element.args().parm() == 'Details')
+            {
+                element.args().caller().refreshRecord(statementRecord);
+            }
+            super();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        SysLastValue    nextNumSeq;
+        HMOrganizationalUnit    orgUnit;
+        super();
+        StartDateTime.dateTimeValue(DateTimeUtil::newDateTime(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),0));
+        EndDateTime.dateTimeValue(DateTimeUtil::newDateTime(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),timeMax()));
+        numberSeqReferenceNum  = NumberSeqReference::findReference(extendedtypenum(HMAppointmentEODStatementNumber));
+        numberSeqTableNum      = NumberSequenceTable::find(numberSeqReferenceNum.NumberSequenceId);
+        if(numberSeqTableNum)
+        {
+            numberSeqNum = NumberSeq::newGetNumFromId(numberSeqTableNum.RecId, true);
+            StatementNumber.text(numberSeqNum.num());
+            StatementNumber.allowEdit(numberSeqTableNum.numAllowEdit());
+        }
+        element.storeOrganizationalUnit(HMOrganizationalUnitHelper::getWorkerOU());
+        if(organizationalLocationRecId)
+        {
+            select Description from orgUnit
+            where orgUnit.recid == organizationalLocationRecId;
+            LocationId.text(orgUnit.Description);
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeOrganizationalUnit</Name>
+				<Source><![CDATA[
+    public void storeOrganizationalUnit(recId _recId)
+    {
+        organizationalLocationRecId = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeOrganizationalUnitRecId</Name>
+				<Source><![CDATA[
+    public void storeOrganizationalUnitRecId(RecId _serviceLocationRecId)
+    {
+        serviceLocationRecId = _serviceLocationRecId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>LocationId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal;
+            FormRun itemLookUp;
+        
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMMedisyClinicLookup));
+            argsLocal.parm('SubClinic');
+            argsLocal.caller(element);
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            RecId locationRecId;
+        
+            ret = super();
+            if(ret)
+            {
+                if(this.text() == '')
+                {
+                    element.storeOrganizationalUnit(0);
+                }
+                else
+                {
+                    locationRecId = HMResourceSchedulingHelper::getLocationRecId(this.text());
+                    if(!locationRecId)
+                    {
+                        warning("@MAZ11529");
+                        this.text('');
+                    }
+                    element.storeOrganizationalUnit(locationRecId);
+                }
+                ServiceLocation.text('');
+                element.storeOrganizationalUnitRecId(0);
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ServiceLocation</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args    args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMOrganizationalUnitFileTrackerLookup));
+            args.caller(element);
+            //args.parmEnum(HMFileLocationType::ServiceLocation);
+            args.parm(con2Str(['ShowFromParent', organizationalLocationRecId],";"));
+        
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            RecId serviceLocationId;
+        
+            ret = super();
+            if(ret)
+            {
+                if(this.text() == '')
+                {
+                    element.storeOrganizationalUnitRecId(0);
+                }
+                else
+                {
+                    //serviceLocationId = HMResourceSchedulingHelper::getServiceLocationRecId(this.text(),organizationalLocationRecId );
+                    //if(!serviceLocationId)
+                    //{
+                        //warning("@MAZ12030");
+                        //this.text('');
+                    //}
+                    //element.storeOrganizationalUnitRecId(serviceLocationId);
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ11718</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStaticTextControl">
+						<Name>MainInstruction</Name>
+						<ElementPosition>715827882</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>StaticText</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<FontSize>13</FontSize>
+						<ForegroundColor>ScrollBar</ForegroundColor>
+						<Style>MainInstruction</Style>
+						<Text>@MAZ12274</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>StatementNumber</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741823</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMAppointmentEODStatementNumber</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>LocationId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ5981</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ServiceLocation</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612734</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ12031</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ11675</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>TransactionInterval</Name>
+						<ElementPosition>1789569705</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateTimeControl">
+								<Name>StartDateTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11715</HelpText>
+								<Type>DateTime</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS342157</Label>
+								<Mandatory>Yes</Mandatory>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateTimeControl">
+								<Name>EndDateTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11714</HelpText>
+								<Type>DateTime</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS342159</Label>
+								<Mandatory>Yes</Mandatory>
+							</AxFormControl>
+						</Controls>
+						<Caption>Transaction interval</Caption>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CancelButton</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

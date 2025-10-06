@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMChangeSequence</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMChangeSequence extends FormRun
+{
+    #OCCRetryCount
+    CustCollectionsPool custCollectionsPoolGlobal;
+   
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateManualResequencing</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method is used to update manual sequence number on a desired sequence number.
+    /// </summary>
+    /// <param name = "_fieldIdToCheck">_fieldIdToCheck</param>
+    public void updateManualResequencing(CustCollectionsPool _custCollectionsPool)
+    {
+        DialogButton        diagBut;
+        str                 strMessage = "@Optum:DialogBoxMessage";
+        str                 strTitle = "Title";
+
+        CustCollectionsPool custCollectionsPoolCur, custCollectionsPool;
+        real                oldValue = _custCollectionsPool.HMSequenceNumber;
+        real                newValue = HMSequenceNumber.realValue();
+        boolean             sequenceUpdated;
+
+        custCollectionsPoolCur = _custCollectionsPool;
+
+        if (newValue < 1 )
+        {
+            newValue = oldValue;
+            throw warning("@Optum:wrongInputWarning");
+        }
+
+        else
+        {
+            select RecId from custCollectionsPool
+                where custCollectionsPool.HMSequenceNumber == newValue;
+
+            if (custCollectionsPool.RecId != 0)
+            {
+                diagBut = Box::yesNo(strFmt(strMessage, newValue), DialogButton::No, strTitle);
+
+                if (diagBut == DialogButton::Yes)
+                {
+                    HMCustCollectionsPoolSequencing::updateSequencing(newValue, oldValue);
+                }
+                else
+                {
+                    return;
+                }
+
+                try
+                {
+                    ttsbegin;
+                    custCollectionsPoolCur.HMSequenceNumber = newValue;
+                    custCollectionsPoolCur.update();
+                    ttscommit;
+                }
+
+                catch (Exception::Deadlock)
+                {
+                    retry;
+                }
+                catch (Exception::UpdateConflict)
+                {
+                    if (appl.ttsLevel() ==  0)
+                    {
+                        if (xSession::currentRetryCount() >= #RetryNum)
+                        {
+                            throw Exception::UpdateConflictNotRecovered;
+                        }
+                        else
+                        {
+                            retry;
+                        }
+                    }
+                    else
+                    {
+                        throw Exception::UpdateConflict;
+                    }
+
+                }
+
+            }
+
+            else
+            {
+                try
+                {
+                    ttsbegin;
+                    custCollectionsPoolCur.HMSequenceNumber = newValue;
+                    custCollectionsPoolCur.update();
+                    ttscommit;
+                }
+
+                catch (Exception::Deadlock)
+                {
+                    retry;
+                }
+                catch (Exception::UpdateConflict)
+                {
+                    if (appl.ttsLevel() ==  0)
+                    {
+                        if (xSession::currentRetryCount() >= #RetryNum)
+                        {
+                            throw Exception::UpdateConflictNotRecovered;
+                        }
+                        else
+                        {
+                            retry;
+                        }
+                    }
+                    else
+                    {
+                        throw Exception::UpdateConflict;
+                    }
+
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    ///// <summary>
+    /////
+    ///// </summary>
+    public void closeOk()
+    {
+        FormRun                 formRun = element.args().caller();
+        formDataSource          fds;
+        RecId                   custCollectionsPoolRecId;
+        CustCollectionsPool     custCollectionsPoolRecord;
+        int                     position;
+
+        if(HMSequenceNumber.realValue() <= 0)
+        {
+            error(strFmt("@Optum:MAZOPT0090","@MAZ:HMSequenceNumberLabel"));
+            return;
+        }
+
+        element.updateManualResequencing(custCollectionsPoolGlobal);
+
+        fds = formRun.dataSource(1);
+        custCollectionsPoolRecord       = fds.Cursor();
+        custCollectionsPoolRecId        = custCollectionsPoolRecord.RecId;
+
+        super();
+
+        fds.refresh();
+        fds.research();
+
+        fds.findValue(fieldNum(CustCollectionsPool, recId), int642str(custCollectionsPoolRecId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        super();
+        custCollectionsPoolGlobal = element.args().record();
+        HMSequenceNumber.realValue(custCollectionsPoolGlobal.HMSequenceNumber);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@Optum:HMChangeSequence</Caption>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>HMSequenceNumber</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMSequenceNumber</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+						<ShowZero>No</ShowZero>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandOK</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<AutoRefreshData>Yes</AutoRefreshData>
+						<ButtonDisplay>TextOnly</ButtonDisplay>
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@MAZ6110</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

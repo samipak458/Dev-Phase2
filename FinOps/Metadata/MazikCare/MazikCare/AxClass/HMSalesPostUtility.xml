@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSalesPostUtility</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMSalesPostUtility
+{
+    Set                 sSalesTable;
+    Set                 sSalesLine;
+    CustInvoiceJour     custInvoiceJour;
+    container           cSalesLine;
+
+    DocumentStatus      documentStatus;
+    SalesUpdate         specQty;
+    TransDate           transDate;
+    AccountOrder        sumBy;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createSalesParmLine</Name>
+				<Source><![CDATA[
+    public void createSalesParmLine(salesParmTable    _salesParmTable,
+                                    salesParmUpdate   _salesParmUpdate)
+    {
+        salesParmLine           salesParmLine;
+        SalesLine               salesLine;
+        salesParmSubTable       salesParmSubTable,salesParmSubTableNew,salesParmSubTableOrig;
+        SalesTable              salesTable;
+        SalesQuantity           salesQuantity;
+    
+        ;
+    
+        while select salesLine
+            where salesLine.SalesId   == _salesParmTable.SalesId
+        {
+            if(! sSalesLine.in(salesLine.RecId))
+                continue;
+    
+            salesQuantity = SalesQuantity::construct(_salesParmUpdate.DocumentStatus);
+    
+            salesParmLine.clear();
+            salesParmLine.initValue();
+            salesParmLine.ParmId        = _salesParmTable.ParmId;
+            salesParmLine.TableRefId    = _salesParmTable.TableRefId;
+    
+            salesParmLine.initFromSalesLine(salesLine);
+    
+            [salesParmLine.DeliverNow, salesParmLine.RemainBefore      , salesParmLine.RemainAfter      ]   = salesQuantity.qtySales  (salesLine,_salesParmUpdate.SpecQty);
+            [salesParmLine.InventNow , salesParmLine.RemainBeforeInvent, salesParmLine.RemainAfterInvent]   = salesQuantity.qtyInvent (salesLine,_salesParmUpdate.SpecQty);
+    
+            salesParmLine.setLineAmount();
+    
+            salesParmLine.calcPackingUnitQty();
+    
+            select firstOnly salesParmSubTable
+            where salesParmSubTable.OrigSalesId == SalesParmLine.OrigSalesId
+               && salesParmSubTable.ParmId == SalesParmLine.ParmId;
+    
+            if(!salesParmSubTable)
+            {
+                select firstOnly salesParmSubTableOrig
+                where salesParmSubTableOrig.ParmId == SalesParmLine.ParmId;
+    
+                salesParmSubTableNew.clear();
+                salesParmSubTableNew.data(salesParmSubTableOrig);
+                salesParmSubTableNew.OrigSalesId = SalesParmLine.OrigSalesId;
+                salesParmSubTableNew.insert();
+            }
+    
+            salesParmLine.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSalesParmTable</Name>
+				<Source><![CDATA[
+    public salesParmTable createSalesParmTable(SalesTable           _SalesTable,
+                                               ParmId               _ParmId
+                                               )
+    {
+        salesParameters             salesParameters;
+        salesParmUpdate             salesParmUpdate;
+        salesParmTable              salesParmTable;
+        SalesParmSubTable           salesParmSubTable;
+        CustInvoiceId               preInvoiceId;
+        ;
+    
+        select firstonly salesParmUpdate
+            where salesParmUpdate.ParmId == _ParmId;
+    
+        salesParmTable.clear();
+        salesParmTable.initFromSalesTable(_SalesTable);
+    
+        salesParmTable.Transdate            = transDate;
+        salesParmTable.ParmId               = _ParmId;
+        salesParmTable.Ordering             = salesParmUpdate.DocumentStatus;
+        salesParmTable.ParmJobStatus        = ParmJobStatus::Waiting;
+        salesParmTable.CustBankAccountId    = _salesTable.custTable_InvoiceAccount().BankAccount;
+    
+        salesParmTable.calcCashDiscBaseDate();
+        //todo: ax7 Field Remove form default
+        //salesParmTable.DocRegister_LT = _salesTable.InvoiceRegister_LT;
+        salesParmTable.FixedDueDate         = dateNull();
+        salesParmTable.insert();
+    
+        return salesParmTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSalesParmUpdate</Name>
+				<Source><![CDATA[
+    public salesParmUpdate createSalesParmUpdate()
+    {
+        salesParameters     salesParameters;
+        salesParmUpdate     salesParmUpdate;
+        ;
+    
+        salesParmUpdate.clear();
+        salesParmUpdate.initValue();
+        salesParmUpdate.initFromSalesParameters(false);
+    
+        salesParmUpdate.ParmId                  = formletterParmData::getNewParmId();
+        salesParmUpdate.DocumentStatus          = documentStatus;
+        salesParmUpdate.CheckCreditMax          = TypeOfCreditmaxCheck::None; //TypeOfCreditmaxCheck::BalanceAll;
+        salesParmUpdate.Storno                  = NoYes::Yes;
+        salesParmUpdate.LateSelection           = NoYes::No;
+        salesParmUpdate.SumBy                   = sumBy;
+    
+        salesParmUpdate.ReduceOnHand             = salesParameters::find().reduceOnHand(salesParmUpdate.DocumentStatus);
+        salesParmUpdate.CreditRemaining          = NoYes::No;
+        salesParmUpdate.Proforma                 = NoYes::No;
+        salesParmUpdate.SpecQty                  = specQty;
+    
+        salesParmUpdate.insert();
+    
+        return salesParmUpdate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>defineRecords</Name>
+				<Source><![CDATA[
+    private void defineRecords()
+    {
+        salesTable              salesTable;
+        SalesLine               salesLine;
+        int                     i;
+        ;
+    
+         if(conLen(cSalesLine) == 0)
+                throw error("No Sales line record defined");
+    
+            //Define unique salesIds
+            for(i=1;i<=conLen(cSalesLine);i++)
+            {
+                salesLine = SalesLine::findRecId(conPeek(cSalesLine,i));
+                if(salesLine)
+                {
+                    sSalesTable.add(salesLine.salesTable());
+                    sSalesLine.add(salesLine.RecId);
+                }
+            }
+    
+            if(sSalesTable.empty())
+                 throw error("No Sales Table record defined");
+    
+             if(sSalesLine.empty())
+                 throw error("No Sales Line record defined");
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    public void new()
+    {;
+    
+        sSalesTable = new Set(Types::Record);
+        sSalesLine  = new Set(Types::Int64);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCustInvoiceJournal</Name>
+				<Source><![CDATA[
+    public CustInvoiceJour parmCustInvoiceJournal(CustInvoiceJour _custInvoiceJour = custInvoiceJour)
+    {
+        custInvoiceJour = _custInvoiceJour;
+        return custInvoiceJour;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmDocumentStatus</Name>
+				<Source><![CDATA[
+    public DocumentStatus parmDocumentStatus(DocumentStatus _documentStatus = documentStatus)
+    {
+        documentStatus = _documentStatus;
+    
+        return documentStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesLine</Name>
+				<Source><![CDATA[
+    public Container parmSalesLine(Container _cSalesLine = cSalesLine)
+    {
+        cSalesLine = _cSalesLine;
+    
+        return cSalesLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSpecQty</Name>
+				<Source><![CDATA[
+    public SalesUpdate parmSpecQty(SalesUpdate _specQty = specQty)
+    {
+        specQty = _specQty;
+    
+        return specQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSumBy</Name>
+				<Source><![CDATA[
+    public AccountOrder parmSumBy(AccountOrder _sumBy = sumBy)
+    {
+        sumBy = _sumBy;
+    
+        return sumBy;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTransDate</Name>
+				<Source><![CDATA[
+    public TransDate parmTransDate(TransDate _transDate = transDate)
+    {
+        transDate = _transDate;
+    
+        return transDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    private void run()
+    {
+        SetEnumerator   setEnumerator;
+        SalesTable      salesTable;
+        HMResourceSchedulingAppointmentSalesTbl apptSalesTable;
+        HMSalesInvoiceCreateFormHandler         salesInvoiceClass = new HMSalesInvoiceCreateFormHandler();
+        ;
+        this.defineRecords();
+        this.startOperation();
+        setEnumerator = sSalesTable.getEnumerator();
+        while(setEnumerator.moveNext())
+        {
+            salesTable = setEnumerator.current();
+            salesTable = salesTable::find(salesTable.SalesId);
+            if(salesTable.SalesStatus == SalesStatus::Invoiced)
+            {
+                select forUpdate apptSalesTable
+                where apptSalesTable.SalesTable == salesTable.SalesId;
+                if(apptSalesTable)
+                {
+                    apptSalesTable.Invoiced = NoYes::Yes;
+                    apptSalesTable.update();
+                }
+                salesInvoiceClass.updateAppointmentExamAsInvoiced(salesTable.SalesId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startOperation</Name>
+				<Source><![CDATA[
+    private void startOperation()
+    {
+        SalesFormLetter         salesFormLetter;
+        salesParmUpdate         salesParmUpdate;
+        SalesParmTable          salesParmTable;
+        salesParmLine           salesParmLine;
+        SalesTable              salesTable;
+    
+        SetEnumerator           se;
+        ;
+        try
+        {
+    
+            se = sSalesTable.getEnumerator();
+            while (se.moveNext())
+            {
+                    salesTable = se.current();
+    
+                    if(!salesParmUpdate)
+                    {
+                        salesParmUpdate = this.createSalesParmUpdate();
+                    }
+    
+                    salesParmTable  = this.createSalesParmTable(salesTable,salesParmUpdate.ParmId);
+                    this.createSalesParmLine(salesParmTable,salesParmUpdate);
+            }
+    
+            salesFormLetter = SalesFormLetter::construct(salesParmUpdate.DocumentStatus);
+    
+            select firstonly salesParmLine
+            where salesParmLine.ParmId == salesParmUpdate.ParmId;
+    
+            if(salesParmLine && salesParmTable)
+            {
+                salesFormLetter.salesParmUpdate(salesParmUpdate);
+                salesFormLetter.specQty(specQty);
+                salesFormLetter.sumBy(sumBy);
+                salesFormLetter.reArrangeNow(true);
+                salesFormLetter.parmId(salesParmUpdate.ParmId);
+                salesFormLetter.run();
+            }
+            this.parmCustInvoiceJournal(salesFormLetter.getOutputContract().parmJournal());
+    
+        }
+        catch
+        {
+            throw error(strFmt("An error occurred during %1  process for Sales %2. Process cancelled!.",documentStatus,salesTable.SalesId));
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>newPostParameters</Name>
+				<Source><![CDATA[
+    public static CustInvoiceJour newPostParameters(container       _salesLineRecId,
+                                         DocumentStatus  _documentStatus,
+                                         SalesUpdate     _specQty    = SalesUpdate::All,
+                                         AccountOrder    _sumBy      = AccountOrder::Auto,
+                                         TransDate       _transDate  = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        HMSalesPostUtility     HMSalesPostUtility;
+    
+        ;
+    
+        try
+        {
+            HMSalesPostUtility = new HMSalesPostUtility();
+    
+            HMSalesPostUtility.parmSalesLine(_salesLineRecId);
+            HMSalesPostUtility.parmDocumentStatus(_documentStatus);
+            HMSalesPostUtility.parmSpecQty(_specQty);
+            HMSalesPostUtility.parmSumBy(_sumBy);
+            HMSalesPostUtility.parmTransDate(_transDate);
+            HMSalesPostUtility.run();
+    
+            info("Posting successful!");
+            return HMSalesPostUtility.parmCustInvoiceJournal();
+        }
+        catch
+        {
+            throw error(strFmt("An error occured during process %1, please study error message details", _documentStatus));
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

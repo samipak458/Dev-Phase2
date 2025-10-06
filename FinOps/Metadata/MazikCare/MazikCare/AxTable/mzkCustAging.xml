@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>mzkCustAging</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class mzkCustAging extends common
+{
+}
+
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>consistencyCheckFix</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Removes orphaned <c>CustAging</c> records.
+    /// </summary>
+    /// <param name="_consistencyCheck">
+    ///    An instance of the <c>CustConsistencyCheck</c> class.
+    /// </param>
+    /// <remarks>
+    ///    Any <c>CustAging</c> records that reference an invalid aging period definition or customer.
+    /// </remarks>
+    public void consistencyCheckFix(CustConsistencyCheck _consistencyCheck)
+    {
+        CustAging custAging;
+        StatRepInterval agingPeriodDef;
+        CustTable custTable;
+
+        if (CheckFix::Fix == _consistencyCheck.checkFix())
+        {
+            custAging.selectForUpdate(true);
+
+            // Remove snapshots that refer to non-existent aging period definitions
+            select firstonly custAging
+                where custAging.RecId == this.RecId
+                notexists join agingPeriodDef
+                    where agingPeriodDef.Name == custAging.StatRepInterval;
+
+            if (custAging)
+            {
+                ttsbegin;
+                custAging.delete();
+                ttscommit;
+            }
+
+            // Remove snapshots that refer to non-existent customers
+            select firstonly custAging
+                where custAging.RecId == this.RecId
+                notexists join custTable
+                    where custTable.AccountNum == custAging.CustTable;
+
+            if (custAging)
+            {
+                ttsbegin;
+                custAging.delete();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayAgingDate</Name>
+				<Source><![CDATA[
+    public str displayAgingDate()
+    {
+        return this.AgingDate ? date2StrUsr(this.AgingDate, DateFlags::None) : "@SYS303270";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkExist</Name>
+				<Source><![CDATA[
+    public static boolean checkExist(
+        CustAccount _accountNum,
+        CustVendReportName _agingBucketDefinition)
+    {
+        boolean ret = true;
+
+        if (!CustAging::exist(_accountNum, _agingBucketDefinition))
+        {
+            ret = checkFailed(strFmt(CustAging::txtNotExist(), _accountNum, _agingBucketDefinition));
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    public static boolean exist(
+        CustAccount _accountNum,
+        CustVendReportName _agingBucketDefinition)
+    {
+        boolean found;
+
+        found = (select firstonly RecId from custAging
+                    where custAging.CustTable == _accountNum &&
+                        custAging.StatRepInterval == _agingBucketDefinition).RecId != 0;
+
+        return found;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    public static CustAging find(
+        CustAccount _accountNum,
+        CustVendReportName _agingBucketDescription,
+        boolean _forupdate = false,
+        ConcurrencyModel _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        CustAging custAging;
+
+        custAging.selectForUpdate(_forupdate);
+        if (_forupdate && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            custAging.concurrencyModel(_concurrencyModel);
+        }
+
+        select firstonly custAging
+            where custAging.CustTable == _accountNum &&
+                custAging.StatRepInterval == _agingBucketDescription;
+
+        return custAging;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>txtNotExist</Name>
+				<Source><![CDATA[
+    public static TxtNotExist txtNotExist()
+    {
+        return "@SYS132589";
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>Collections</ConfigurationKey>
+	<DeveloperDocumentation>@SYS132577</DeveloperDocumentation>
+	<Label>Claim customer aging snapshot header</Label>
+	<TableGroup>Group</TableGroup>
+	<TitleField1>CustTable</TitleField1>
+	<TitleField2>StatRepInterval</TitleField2>
+	<CacheLookup>Found</CacheLookup>
+	<ClusteredIndex>CustAging</ClusteredIndex>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<Modules>AccountsReceivable</Modules>
+	<PrimaryIndex>RecId</PrimaryIndex>
+	<ReplacementKey>CustAging</ReplacementKey>
+	<DeleteActions>
+		<AxTableDeleteAction>
+			<Name>CustAgingLegalEntity</Name>
+			<DeleteAction>Cascade</DeleteAction>
+			<Relation></Relation>
+			<Table>CustAgingLegalEntity</Table>
+		</AxTableDeleteAction>
+	</DeleteActions>
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatRepInterval</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgedBy</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatRepInterval</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatRepInterval</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>All</Name>
+			<Label>@SYS80094</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>CustTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>StatRepInterval</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgedBy</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod1</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod3</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod4</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod5</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod6</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>FirstNonzeroBalancePeriod</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod1ReportingCurrency</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod2ReportingCurrency</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod3ReportingCurrency</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod4ReportingCurrency</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod5ReportingCurrency</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AgingPeriod6ReportingCurrency</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AgedBy</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<EnumType>DateTransactionDuedate</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>AgingDate</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>CustAgingDate</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod1</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>@SYS4003253</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod2</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>@SYS4003254</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod3</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>@SYS4003255</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod4</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>@SYS4003256</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod5</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>@SYS4003267</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod6</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>@SYS4003268</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CustTable</Name>
+			<AssetClassification>Customer Content </AssetClassification>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>FirstNonzeroBalancePeriod</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>CustAgingFirstNonzeroBalancePeriod</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>StatRepInterval</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>CustVendReportName</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod1ReportingCurrency</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMSTSecondary</ExtendedDataType>
+			<Label>@AccountsReceivable:ReportingCurrencyAgingPeriodBalance1</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod2ReportingCurrency</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMSTSecondary</ExtendedDataType>
+			<Label>@AccountsReceivable:ReportingCurrencyAgingPeriodBalance2</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod3ReportingCurrency</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMSTSecondary</ExtendedDataType>
+			<Label>@AccountsReceivable:ReportingCurrencyAgingPeriodBalance3</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod4ReportingCurrency</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMSTSecondary</ExtendedDataType>
+			<Label>@AccountsReceivable:ReportingCurrencyAgingPeriodBalance4</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod5ReportingCurrency</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMSTSecondary</ExtendedDataType>
+			<Label>@AccountsReceivable:ReportingCurrencyAgingPeriodBalance5</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AgingPeriod6ReportingCurrency</Name>
+			<AssetClassification>Customer Content</AssetClassification>
+			<ExtendedDataType>AmountMSTSecondary</ExtendedDataType>
+			<Label>@AccountsReceivable:ReportingCurrencyAgingPeriodBalance6</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>CustAging</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>CustTable</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>StatRepInterval</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>StatRepInterval</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>StatRepInterval</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation>
+			<Name>CustTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>CustTable</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>CustAging</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>CustTable</Name>
+					<SourceEDT>CustAccount</SourceEDT>
+					<Field>CustTable</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>StatRepInterval</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>StatRepInterval</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>StatRepInterval</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>CustAging</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>StatRepInterval</Name>
+					<SourceEDT>CustVendReportName</SourceEDT>
+					<Field>StatRepInterval</Field>
+					<RelatedField>Name</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

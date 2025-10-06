@@ -1,0 +1,1509 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPurchaseOrderInvoiceClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPurchaseOrderInvoiceClass
+{
+    HMHourlyPaidInvoiceTmp  HMHourlyPaidInvoiceTmpMain;
+    str                     logError;
+    real                    guranteedInvoiceLineAmount;
+    HMOrganizationalUnit    HMOrganizationalUnit;
+    PurchId                 purchId;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addVendorPurchLog</Name>
+				<Source><![CDATA[
+    private void addVendorPurchLog(VendAccount _vendAccount, PurchId _purchId, int _calendarMonth, int _calendarYear, str _log, NoYes _poGenerated, HMVendorPaymentType _vendorPaymentType, RecId _apptRecId = 0 )
+    {
+        HMVendorPurchaseOrderLog            HMVendorPurchaseOrderLog;
+        ttsBegin;
+        HMVendorPurchaseOrderLog.VendAccount = _vendAccount;
+        HMVendorPurchaseOrderLog.PurchId = _purchId;
+        HMVendorPurchaseOrderLog.CalendarMonth = _calendarMonth;
+        HMVendorPurchaseOrderLog.CalendarYear = _calendarYear;
+        HMVendorPurchaseOrderLog.Log = _log;
+        HMVendorPurchaseOrderLog.POGenerated = _poGenerated;
+        HMVendorPurchaseOrderLog.HMResourceSchedulingAppointment = _apptRecId;
+        HMVendorPurchaseOrderLog.PaymentType = _vendorPaymentType;
+        HMVendorPurchaseOrderLog.insert();
+        ttsCommit;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createGuranteedInvoice</Name>
+				<Source><![CDATA[
+    public void createGuranteedInvoice(date _startDate)
+    {
+        Query                                   query;
+        date                                    firstDate,lastDate;
+        utcDateTime                             firstDateUtc, lastDateUtc;
+        QueryRun                                queryRun;
+        VendTable                               vendTable;
+        real                                    duration;
+        vendTable                               vendTableAppt;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject,hmResourceSchedulingPlanningObjectMain;
+        HMResourceSchedulingAppointment         hmResourceSchedulingAppointment;
+        HMResourceSchedulingAppointmentInvent   HMResourceSchedulingAppointmentInvent;
+        HMVendorPurchaseOrderLog                HMVendorPurchaseOrderLog,HMVendorPurchaseOrderLogDelete;
+        InventDim                               inventDim;
+        real                                    chargeCodePrice;
+        str                                     log;
+        boolean                                 isFirst;
+        HMResourceSchedulingOpenTimeSlotsTmp    HMResourceSchedulingOpenTimeSlotsTmp;
+        hmResourceSchedulingOpenTimeSlotsSearch hmResourceSchedulingOpenTimeSlotsSearch;
+        HMResourceMaster                        hmResourceMaster;
+        QueryBuildRange                         qbrAppointmentDate,qbrPlanningobject;
+        boolean                                 error;
+        date                                    apptDate;
+        HMPurchaseOrderGuranteedInvoiceDetails  HMPurchaseOrderGuranteedInvoiceDetails;
+        HMPurchaseOrderGuranteedInvoiceAppt     HMPurchaseOrderGuranteedInvoiceAppt;
+        boolean                                 apptExist,tradeAgreementExist;
+        HMResourceSchedulingTypeCode            HMResourceSchedulingTypeCode;
+        container                               conPrice;
+    
+        _startDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        query = new query(queryStr(HMAppointmentFeeForServiceGuranteedInv));
+        firstDate = mkdate(01,  mthOfYr(_startDate), year(_startDate));
+        lastDate = endmth(firstDate);
+    
+        firstDateUtc = DateTimeUtil::newDateTime(firstDate,0);
+        lastDateUtc = DateTimeUtil::newDateTime(lastDate,86400);
+        isFirst = true;
+    
+        while select AccountNum, InventSiteId, InventLocation,RecId from vendTable
+            where vendTable.PaymentType == HMVendorPaymentType::GuaranteedRate
+            notExists join HMVendorPurchaseOrderLog
+            where HMVendorPurchaseOrderLog.VendAccount == vendTable.AccountNum
+            && HMVendorPurchaseOrderLog.CalendarMonth == mthOfYr(_startDate)
+            && HMVendorPurchaseOrderLog.CalendarYear == year(_startDate)
+            && HMVendorPurchaseOrderLog.POGenerated == NoYes::Yes
+            && HMVendorPurchaseOrderLog.PaymentType == HMVendorPaymentType::GuaranteedRate
+            && vendTable.Blocked == CustVendorBlocked::No
+        {
+            delete_from HMVendorPurchaseOrderLogDelete
+                where HMVendorPurchaseOrderLogDelete.CalendarMonth == mthOfYr(_startDate)
+                && HMVendorPurchaseOrderLogDelete.CalendarYear == year(_startDate)
+                && HMVendorPurchaseOrderLogDelete.VendAccount == vendTable.AccountNum
+                && HMVendorPurchaseOrderLogDelete.PaymentType == HMVendorPaymentType::GuaranteedRate ;
+    
+            error = false;
+            purchId = '';
+            query = new query(queryStr(HMAppointmentFeeForServiceGuranteedInv));
+            qbrAppointmentDate = query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate));
+            query.dataSourceTable(tableNum(VendTable)).addRange(fieldNum(VendTable,AccountNum)).value(SysQuery::value(vendTable.AccountNum));
+            qbrPlanningobject = query.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,RecId));
+    
+            while select RecId from hmResourceMaster
+                    join RecId, HMOrganizationalUnit from hmResourceSchedulingPlanningObjectMain
+                    where hmResourceSchedulingPlanningObjectMain.HMResourceMaster == hmResourceMaster.RecId
+                    && (hmResourceSchedulingPlanningObjectMain.StartDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmResourceSchedulingPlanningObjectMain.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                    && hmResourceMaster.type == HMResourceType::Vendor
+                    && hmResourceMaster.RefRecId == vendTable.RecId
+            {
+                apptExist = false;
+                isFirst = true;
+                qbrPlanningobject.value(SysQuery::value(hmResourceSchedulingPlanningObjectMain.RecId));
+                apptDate = firstDate;
+                HMPurchaseOrderGuranteedInvoiceDetails.clear();
+                error = false;
+                purchId = '';
+               select InventLocation from hmOrganizationalUnit
+                    where hmOrganizationalUnit.recid == hmResourceSchedulingPlanningObjectMain.HMOrganizationalUnit;
+    
+                    inventDim.InventLocationId = hmOrganizationalUnit.InventLocation;
+                    inventDim.InventSiteId = InventLocation::find(inventDim.InventLocationId).InventSiteId;
+                    inventDim = InventDim::findOrCreate(inventDim);
+    
+                if(inventDim.InventLocationId == '' || inventDim.InventSiteId == '')
+                {
+                    log = "@MAZ11782" + "@MAZ12092" ;
+                    ttsAbort;
+                    this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::GuaranteedRate);
+                    error = true;
+                    continue;
+                }
+                conPrice = this.getItemPrice(HMBillParameters::find().InventTable_GuaranteedInvoice,VendTable.AccountNum,InventDim.inventDimId);
+                tradeAgreementExist = conPeek(conPrice,6);
+                chargeCodePrice = conPeek(conPrice,1);
+                if(!tradeAgreementExist)
+                {
+                    logError = strFmt("@MAZ12137",VendTable::find(vendTable.AccountNum).name(), hmOrganizationalUnit.inventLocation);
+                    warning(logError);
+                    ttsAbort;
+                    this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::GuaranteedRate);
+                    error = true;
+                    continue;
+                }
+                ttsBegin;
+                while(apptDate != lastDate)
+                {
+                    apptExist = false;
+                    qbrAppointmentDate.value(SysQuery::value(apptdate));
+                    queryRun = new QueryRun(query);
+                    if(!this.fetchGuaranteedAppointmentDetails(queryRun,vendTable,_startDate, chargeCodePrice, inventDim,apptDate,hmResourceSchedulingPlanningObjectMain,hmResourceMaster, isFirst))
+                    {
+                        error = true;
+                        break;
+                    }
+                    if(isFirst && purchId != '')
+                    {
+                        isFirst = false;
+                    }
+                    apptdate = apptdate + 1;
+                }
+                if(!error)
+                {
+                    select sum(DifferenceAmount) from HMPurchaseOrderGuranteedInvoiceDetails
+                    where HMPurchaseOrderGuranteedInvoiceDetails.PurchId == purchId
+                    && HMPurchaseOrderGuranteedInvoiceDetails.DifferenceAmount > 0;
+    
+                    if(HMPurchaseOrderGuranteedInvoiceDetails.DifferenceAmount > 0)
+                    {
+                        if(!this.createPurchaseLine(purchId, VendTable.AccountNum, HMBillParameters::find().InventTable_GuaranteedInvoice, InventDim.inventDimId, 0 , HMVendorPaymentType::GuaranteedRate,null,HMPurchaseOrderGuranteedInvoiceDetails.DifferenceAmount))
+                        {
+                            log = "@MAZ11782" + logError;
+                            this.addVendorPurchLog(Vendtable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No,HMVendorPaymentType::GuaranteedRate);
+                            ttsAbort;
+                            continue;
+                        }
+                        log = "@MAZ11783";
+                        this.addVendorPurchLog(Vendtable.AccountNum,purchId,mthOfYr(_startDate),year(_startDate), log, NoYes::Yes,HMVendorPaymentType::GuaranteedRate);
+                        ttsCommit;
+                    }
+                }
+                else
+                {
+                    log = "@MAZ11781";
+                    this.addVendorPurchLog(Vendtable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No,HMVendorPaymentType::GuaranteedRate);
+                    ttsAbort;
+                }
+            }
+        }
+    
+    
+       // query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate)).value(SysQuery::range(firstDate,lastDate));
+    
+        /*while select * from HMVendorPurchaseOrderLog
+            where HMVendorPurchaseOrderLog.CalendarMonth == mthOfYr(_startDate)
+            && HMVendorPurchaseOrderLog.CalendarYear == year(_startDate)
+            && HMVendorPurchaseOrderLog.POGenerated == NoYes::Yes
+            && HMVendorPurchaseOrderLog.GuranteedInvoice == NoYes::Yes
+        {
+             query.dataSourceTable(tableNum(VendTable)).addRange(fieldNum(VendTable,AccountNum)).value(SysQuery::valueNot(HMVendorPurchaseOrderLog.VendAccount));
+        }
+    
+        queryRun = new QueryRun(query);
+        while(queryRun.next())
+        {
+            vendTableAppt                       = queryRun.get(tableNum(VendTable));
+            hmResourceSchedulingPlanningObject  = queryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+            hmResourceSchedulingAppointment     = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+            HMResourceSchedulingAppointmentInvent = queryRun.get(tableNum(HMResourceSchedulingAppointmentInvent));
+    
+            if(HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation == 0)
+            {
+                select InventLocation from hmOrganizationalUnit
+                where hmOrganizationalUnit.recid == hmResourceSchedulingPlanningObject.HMOrganizationalUnit;
+            }
+            else
+            {
+                select InventLocation from hmOrganizationalUnit
+                where hmOrganizationalUnit.recid == HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation;
+            }
+    
+            inventDim.InventLocationId = hmOrganizationalUnit.InventLocation;
+            inventDim.InventSiteId = InventLocation::find(inventDim.InventLocationId).InventSiteId;
+            inventDim = InventDim::findOrCreate(inventDim);
+    
+            HMHourlyPaidInvoiceTmp.AccountNum = vendTableAppt.AccountNum;
+            HMHourlyPaidInvoiceTmp.LineAmount = conPeek(this.getItemPrice(HMResourceSchedulingAppointmentInvent.InventTable,vendTableAppt.AccountNum,inventDim.inventDimId),1);
+            HMHourlyPaidInvoiceTmp.InventDim = inventDim.inventDimId;
+            HMHourlyPaidInvoiceTmp.AppointmentRecid = hmResourceSchedulingAppointment.RecId;
+            HMHourlyPaidInvoiceTmp.insert();
+        }
+    
+        this.parmHMHourlyPaidInvoiceTmpMain(HMHourlyPaidInvoiceTmp);
+    
+        while select sum(LineAmount), AccountNum,InventDim
+        from HMHourlyPaidInvoiceTmp
+            group by AccountNum,InventDim
+        {
+            guranteedInvoiceLineAmount = 0;
+            HMVendorPurchaseOrderLog.clear();
+            ttsBegin;
+    
+            HMPurchaseOrderGuranteedInvoiceDetails.clear();
+    
+            delete_from HMVendorPurchaseOrderLog
+            where HMVendorPurchaseOrderLog.CalendarMonth == mthOfYr(_startDate)
+            && HMVendorPurchaseOrderLog.CalendarYear == year(_startDate)
+            && HMVendorPurchaseOrderLog.VendAccount == HMHourlyPaidInvoiceTmp.AccountNum
+            && HMVendorPurchaseOrderLog.GuranteedInvoice == NoYes::Yes;
+    
+    
+            chargeCodePrice = conPeek(this.getItemPrice(HMBillParameters::find().InventTable_GuaranteedInvoice,HMHourlyPaidInvoiceTmp.AccountNum,HMHourlyPaidInvoiceTmp.InventDim),1);
+    
+            HMPurchaseOrderGuranteedInvoiceDetails.VendTable = HMHourlyPaidInvoiceTmp.AccountNum;
+            HMPurchaseOrderGuranteedInvoiceDetails.ActualInvoice = HMHourlyPaidInvoiceTmp.LineAmount;
+            HMPurchaseOrderGuranteedInvoiceDetails.MonthlyRate = chargeCodePrice;
+    
+            if(HMHourlyPaidInvoiceTmp.LineAmount < chargeCodePrice)
+            {
+                purchId = this.createPurchaseOrder(HMHourlyPaidInvoiceTmp.AccountNum,HMVendorPaymentType::GuaranteedRate);
+    
+                guranteedInvoiceLineAmount = chargeCodePrice - HMHourlyPaidInvoiceTmp.LineAmount;
+                HMPurchaseOrderGuranteedInvoiceDetails.DifferenceAmount = guranteedInvoiceLineAmount;
+                if(!purchId)
+                {
+                    log = "@MAZ11781";
+                    this.addVendorPurchLog(HMHourlyPaidInvoiceTmp.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No);
+                    continue;
+                }
+                HMVendorPurchaseOrderLog.VendAccount = HMHourlyPaidInvoiceTmp.AccountNum;
+    
+                if(!this.createPurchaseLine(purchId, HMHourlyPaidInvoiceTmp.AccountNum, HMBillParameters::find().InventTable_GuaranteedInvoice, HMHourlyPaidInvoiceTmp.InventDim, HMHourlyPaidInvoiceTmp.Duration/60, HMVendorPaymentType::GuaranteedRate))
+                {
+                    log = "@MAZ11782" + logError;
+                    this.addVendorPurchLog(HMHourlyPaidInvoiceTmp.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No);
+                    ttsAbort;
+                    continue;
+                }
+                log = "@MAZ11783";
+                this.addVendorPurchLog(HMHourlyPaidInvoiceTmp.AccountNum,purchId,mthOfYr(_startDate),year(_startDate), log, NoYes::Yes, NoYes::Yes);
+                HMPurchaseOrderGuranteedInvoiceDetails.insert();
+            }
+            else
+            {
+                log = "@MAZ11865";
+                this.addVendorPurchLog(HMHourlyPaidInvoiceTmp.AccountNum,purchId,mthOfYr(_startDate),year(_startDate), log, NoYes::Yes);
+            }
+            ttsCommit;
+    
+        }
+        */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createHourlyPaidInvoices</Name>
+				<Source><![CDATA[
+    public void createHourlyPaidInvoices(date _startDate)
+    {
+        Query                                   query;
+        date                                    firstDate,lastDate;
+        QueryRun                                queryRun;
+        VendTable                               vendTable;
+        real                                    duration;
+        HMResourceSchedulingTypeCode            HMResourceSchedulingTypeCode;
+        vendTable                               vendTableAppt;
+        HMHourlyPaidInvoiceDetails              hmHourlyPaidInvoiceDetails;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject,hmResourceSchedulingPlanningObjectMain ;
+        HMResourceSchedulingAppointment         hmResourceSchedulingAppointment;
+        InventDim                               inventDim;
+        HMVendorPurchaseOrderLog                HMVendorPurchaseOrderLog,HMVendorPurchaseOrderLogDelete;
+        int64                                   minutes;
+        str                                     log;
+        HMResourceSchedulingOpenTimeSlotsTmp    HMResourceSchedulingOpenTimeSlotsTmp;
+        hmResourceSchedulingOpenTimeSlotsSearch hmResourceSchedulingOpenTimeSlotsSearch;
+        HMResourceMaster                        hmResourceMaster;
+        QueryBuildRange                         qbrPlanningobject;
+        HMAppointmentReserveSLot                HMAppointmentReserveSLot;
+        HMResourceMasterScheduleType            HMResourceMasterScheduleType;
+        boolean                                 isFirst, error;
+    
+    
+    
+        query = new query(queryStr(HMAppointmentHourlyPaidInvoice));
+    
+        firstDate = mkdate(01,  mthOfYr(_startDate), year(_startDate));
+        lastDate = endmth(firstDate);
+    
+    
+        while select AccountNum, InventSiteId, InventLocation,RecId from vendTable
+            where vendTable.PaymentType == HMVendorPaymentType::HourlyRate
+            notExists join HMVendorPurchaseOrderLog
+            where HMVendorPurchaseOrderLog.VendAccount == vendTable.AccountNum
+            && HMVendorPurchaseOrderLog.CalendarMonth == mthOfYr(_startDate)
+            && HMVendorPurchaseOrderLog.CalendarYear == year(_startDate)
+            && HMVendorPurchaseOrderLog.POGenerated == NoYes::Yes
+            && HMVendorPurchaseOrderLog.PaymentType == HMVendorPaymentType::HourlyRate
+            && vendTable.Blocked == CustVendorBlocked::No
+        {
+            delete_from HMVendorPurchaseOrderLogDelete
+                where HMVendorPurchaseOrderLogDelete.CalendarMonth == mthOfYr(_startDate)
+                && HMVendorPurchaseOrderLogDelete.CalendarYear == year(_startDate)
+                && HMVendorPurchaseOrderLogDelete.VendAccount == vendTable.AccountNum
+                && HMVendorPurchaseOrderLogDelete.PaymentType == HMVendorPaymentType::HourlyRate ;
+    
+    
+            error = false;
+            purchId = '';
+            query = new query(queryStr(HMAppointmentHourlyPaidInvoice));
+            query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate)).value(SysQuery::range(firstDate,lastDate));
+            query.dataSourceTable(tableNum(VendTable)).addRange(fieldNum(VendTable,AccountNum)).value(SysQuery::value(vendTable.AccountNum));
+    
+            qbrPlanningobject = query.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,RecId));
+    
+            while select RecId from hmResourceMaster
+                    join RecId, HMOrganizationalUnit,hmResourceMaster from hmResourceSchedulingPlanningObjectMain
+                    where hmResourceSchedulingPlanningObjectMain.HMResourceMaster == hmResourceMaster.RecId
+                    && (hmResourceSchedulingPlanningObjectMain.StartDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmResourceSchedulingPlanningObjectMain.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                    && hmResourceMaster.type == HMResourceType::Vendor
+                    && hmResourceMaster.RefRecId == vendTable.RecId
+            {
+                isFirst = true;
+                qbrPlanningobject.value(SysQuery::value(hmResourceSchedulingPlanningObjectMain.RecId));
+                queryRun = new QueryRun(query);
+                select InventLocation from hmOrganizationalUnit
+                    where hmOrganizationalUnit.recid == hmResourceSchedulingPlanningObjectMain.HMOrganizationalUnit;
+    
+                inventDim.InventLocationId = hmOrganizationalUnit.InventLocation;
+                inventDim.InventSiteId = InventLocation::find(inventDim.InventLocationId).InventSiteId;
+                inventDim = InventDim::findOrCreate(inventDim);
+    
+                if(inventDim.InventLocationId == '' || inventDim.InventSiteId == '')
+                {
+                    log = "@MAZ11782" + "@MAZ12092" ;
+                    ttsAbort;
+                    this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::HourlyRate);
+                    continue;
+                }
+                while(queryRun.next())
+                {
+                    HMResourceSchedulingPlanningObject  = queryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+                    hmResourceSchedulingAppointment     = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+                    hmHourlyPaidInvoiceDetails.clear();
+                    if(isFirst)
+                    {
+                        ttsBegin;
+                        purchId = this.createPurchaseOrder(vendTable.AccountNum,HMVendorPaymentType::HourlyRate,0,inventDim);
+                        if(!purchId)
+                        {
+                            log = "@MAZ11781";
+                            error = true;
+                            ttsAbort;
+                            this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::HourlyRate);
+                            break;
+                        }
+                        isFirst = false;
+                    }
+    
+                    //Appointments slots
+                    minutes = DateTimeUtil::getDifference(DateTimeUtil::newDateTime(HMResourceSchedulingAppointment.AppointmentEndDate,HMResourceSchedulingAppointment.AppointmentEndTime),(DateTimeUtil::newDateTime(HMResourceSchedulingAppointment.AppointmentDate,HMResourceSchedulingAppointment.AppointmentTime)))/60;
+    
+                    hmHourlyPaidInvoiceDetails.Date         = hmResourceSchedulingAppointment.AppointmentDate;
+                    hmHourlyPaidInvoiceDetails.Time         = hmResourceSchedulingAppointment.AppointmentTime;
+                    hmHourlyPaidInvoiceDetails.VendAccount  = vendTable.AccountNum;
+                    hmHourlyPaidInvoiceDetails.PurchId      = purchId;
+                    hmHourlyPaidInvoiceDetails.Duration     = minutes;
+                    hmHourlyPaidInvoiceDetails.insert();
+    
+                }
+                if(!error)
+                {
+                    hmResourceSchedulingOpenTimeSlotsSearch = new hmResourceSchedulingOpenTimeSlotsSearch();
+                    HMResourceSchedulingOpenTimeSlotsTmp = hmResourceSchedulingOpenTimeSlotsSearch.searchOpenTimeSlotMultiPO(firstDate,
+                                                lastDate,
+                                                true, 0, false, [true,true,true,true,true,true,true], HMResourceSchedulingPlanningObjectMain.recid, hmResourceMaster.RecId,
+                                                0, 0, HMResourceSchedulingPlanningObjectMain.HMOrganizationalUnit,0, 0, HMIncludeExclude::Include, false, '');
+    
+                    while select * from HMResourceSchedulingOpenTimeSlotsTmp
+                        join HMResourceSchedulingTypeCode
+                        where HMResourceSchedulingTypeCode.RecId == HMResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode
+                        && HMResourceSchedulingTypeCode.IsBreak == NoYes::No
+                    {
+                        if(isFirst)
+                        {
+                            ttsBegin;
+                            purchId = this.createPurchaseOrder(vendTable.AccountNum,HMVendorPaymentType::HourlyRate,0,inventDim);
+                            if(!purchId)
+                            {
+                                log = "@MAZ11781";
+                                error = true;
+                                ttsAbort;
+                                this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::HourlyRate);
+                                break;
+                            }
+                            isFirst = false;
+                        }
+                        hmHourlyPaidInvoiceDetails.clear();
+                        hmHourlyPaidInvoiceDetails.Date         = HMResourceSchedulingOpenTimeSlotsTmp.Date;
+                        hmHourlyPaidInvoiceDetails.Time         = HMResourceSchedulingOpenTimeSlotsTmp.Time;
+                        hmHourlyPaidInvoiceDetails.VendAccount  = vendTable.AccountNum;
+                        hmHourlyPaidInvoiceDetails.PurchId      = purchId;
+                        minutes = HMResourceMasterHelper::getDurationInMinutes(HMResourceSchedulingOpenTimeSlotsTmp.HMResourceMaster, HMResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode);
+                        hmHourlyPaidInvoiceDetails.Duration     = minutes;
+                        hmHourlyPaidInvoiceDetails.insert();
+                    }
+    
+                    while select * from HMAppointmentReserveSLot
+                        join RecId from HMResourceSchedulingTypeCode
+                        where HMResourceSchedulingTypeCode.RecId == HMAppointmentReserveSLot.HMResourceSchedulingTypeCode
+                        && HMResourceSchedulingTypeCode.IsBreak == NoYes::No
+                        && HMAppointmentReserveSLot.HMResourceSchedulingPlanningObject == HMResourceSchedulingPlanningObjectMain.RecId
+                        && HMAppointmentReserveSLot.HMResourceMaster == HMResourceSchedulingPlanningObjectMain.HMResourceMaster
+                        && HMAppointmentReserveSLot.SlotReserveBlock == HMAppointmentSlotReserveBlock::Added
+                    {
+                        if(isFirst)
+                        {
+                            ttsBegin;
+                            purchId = this.createPurchaseOrder(vendTable.AccountNum,HMVendorPaymentType::HourlyRate,0,inventDim);
+                            if(!purchId)
+                            {
+                                log = "@MAZ11781";
+                                error = true;
+                                ttsAbort;
+                                this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::HourlyRate);
+                                break;
+                            }
+                            isFirst = false;
+                        }
+                        hmHourlyPaidInvoiceDetails.clear();
+                        hmHourlyPaidInvoiceDetails.Date         = HMAppointmentReserveSLot.Date;
+                        hmHourlyPaidInvoiceDetails.Time         = HMAppointmentReserveSLot.StartTime;
+                        hmHourlyPaidInvoiceDetails.VendAccount  = vendTable.AccountNum;
+                        hmHourlyPaidInvoiceDetails.PurchId      = purchId;
+    
+                        select duration, DurationUNit from HMResourceMasterScheduleType
+                        where HMResourceMasterScheduleType.HMResourceMaster == HMResourceSchedulingPlanningObjectMain.HMResourceMaster
+                        && HMResourceMasterScheduleType.HMResourceSchedulingTypeCode == HMResourceSchedulingTypeCode.RecId;
+    
+                        minutes = HMResourceMasterScheduleType.DurationUnit == HMMinHrs::Minutes ? HMResourceMasterScheduleType.Duration : HMResourceMasterScheduleType.Duration*60;
+                        hmHourlyPaidInvoiceDetails.Duration     = minutes;
+                        hmHourlyPaidInvoiceDetails.insert();
+                    }
+                }
+    
+    
+                if(purchId)
+                {
+                    select sum(duration) from hmHourlyPaidInvoiceDetails
+                        where hmHourlyPaidInvoiceDetails.purchid == purchId;
+    
+    
+    
+                    if(!this.createPurchaseLine(purchId, vendTable.AccountNum, HMBillParameters::find().InventTable_HourlyPaidInvoice, inventDim.inventDimId, hmHourlyPaidInvoiceDetails.Duration/60, HMVendorPaymentType::HourlyRate))
+                    {
+                        log = "@MAZ11782" + logError;
+                        ttsAbort;
+                        this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::HourlyRate);
+                        continue;
+                    }
+                    log = "@MAZ11783";
+                    ttsCommit;
+                    this.addVendorPurchLog(vendTable.AccountNum,purchId,mthOfYr(_startDate),year(_startDate), log, NoYes::Yes,HMVendorPaymentType::HourlyRate);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createMonthlyPO</Name>
+				<Source><![CDATA[
+    /* obsolete now
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate)).value(SysQuery::range(firstDate,lastDate));
+    
+        while select * from HMVendorPurchaseOrderLog
+            where HMVendorPurchaseOrderLog.CalendarMonth == mthOfYr(_startDate)
+            && HMVendorPurchaseOrderLog.CalendarYear == year(_startDate)
+            && HMVendorPurchaseOrderLog.POGenerated == NoYes::Yes
+        {
+             query.dataSourceTable(tableNum(VendTable)).addRange(fieldNum(VendTable,AccountNum)).value(SysQuery::valueNot(HMVendorPurchaseOrderLog.VendAccount));
+        }
+    
+        queryRun = new QueryRun(query);
+    
+        while(queryRun.next())
+        {
+            HMResourceSchedulingTypeCode        = queryRun.get(tableNum(HMResourceSchedulingTypeCode));
+            vendTableAppt                       = queryRun.get(tableNum(VendTable));
+            hmResourceSchedulingPlanningObject  = queryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+            hmResourceSchedulingAppointment     = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+    
+            select InventLocation from hmOrganizationalUnit
+            where hmOrganizationalUnit.recid == hmResourceSchedulingPlanningObject.HMOrganizationalUnit;
+    
+            inventDim.InventLocationId = hmOrganizationalUnit.InventLocation;
+            inventDim.InventSiteId = InventLocation::find(inventDim.InventLocationId).InventSiteId;
+            inventDim = InventDim::findOrCreate(inventDim);
+    
+            duration = HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingPlanningObject.HMResourceMaster, HMResourceSchedulingTypeCode.RecId);
+    
+            HMHourlyPaidInvoiceTmp.AccountNum = vendTableAppt.AccountNum;
+            HMHourlyPaidInvoiceTmp.Duration = duration;
+            HMHourlyPaidInvoiceTmp.InventDim = inventDim.inventDimId;
+            HMHourlyPaidInvoiceTmp.AppointmentRecid = hmResourceSchedulingAppointment.RecId;
+            HMHourlyPaidInvoiceTmp.insert();
+        }
+    
+        this.parmHMHourlyPaidInvoiceTmpMain(HMHourlyPaidInvoiceTmp);
+    
+        while select sum(duration), AccountNum,InventDim
+        from HMHourlyPaidInvoiceTmp
+            group by AccountNum,InventDim
+        {
+            HMVendorPurchaseOrderLog.clear();
+            ttsBegin;
+    
+            delete_from HMVendorPurchaseOrderLog
+            where HMVendorPurchaseOrderLog.CalendarMonth == mthOfYr(_startDate)
+            && HMVendorPurchaseOrderLog.CalendarYear == year(_startDate)
+            && HMVendorPurchaseOrderLog.VendAccount == HMHourlyPaidInvoiceTmp.AccountNum;
+    
+            purchId = this.createPurchaseOrder(HMHourlyPaidInvoiceTmp.AccountNum,HMVendorPaymentType::HourlyRate);
+    
+            if(!purchId)
+            {
+                log = "@MAZ11781";
+                this.addVendorPurchLog(HMHourlyPaidInvoiceTmp.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No);
+                continue;
+            }
+            HMVendorPurchaseOrderLog.VendAccount = HMHourlyPaidInvoiceTmp.AccountNum;
+    
+            if(!this.createPurchaseLine(purchId, HMHourlyPaidInvoiceTmp.AccountNum, HMBillParameters::find().InventTable_HourlyPaidInvoice, HMHourlyPaidInvoiceTmp.InventDim, HMHourlyPaidInvoiceTmp.Duration/60, HMVendorPaymentType::HourlyRate))
+            {
+                log = "@MAZ11782" + logError;
+                this.addVendorPurchLog(HMHourlyPaidInvoiceTmp.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No);
+                ttsAbort;
+                continue;
+            }
+            log = "@MAZ11783";
+            this.addVendorPurchLog(HMHourlyPaidInvoiceTmp.AccountNum,purchId,mthOfYr(_startDate),year(_startDate), log, NoYes::Yes);
+            ttsCommit;
+    
+        }
+        */
+    
+    public boolean createMonthlyPO(date _startDate)
+    {
+        ItemId                      monthlyChargeCodeId;
+        VendAccount                 vendAccount;
+        VendTable                   vendTable;
+        HMVendorPurchaseOrderLog    HMVendorPurchaseOrderLog,HMVendorPurchaseOrderLogDelete;
+        HMPurchaseOrderInvoiceClass objClass;
+        InventDim                   inventDim;
+        str                         log;
+        PriceDiscTable              priceDiscTable;
+    
+        try
+        {
+            ttsBegin;
+            monthlyChargeCodeId = HMBillParameters::find().InventTable_MonthChargeCode;
+            if(monthlyChargeCodeId == '')
+            {
+                log = "@MAZ10734";
+                throw warning("@MAZ10734");
+            }
+    
+            objClass = new HMPurchaseOrderInvoiceClass();
+    
+            while select AccountNum, InventSiteId, InventLocation,RecId from vendTable
+            where vendTable.PaymentType == HMVendorPaymentType::FixedMonthlyRate
+            notExists join HMVendorPurchaseOrderLog
+            where HMVendorPurchaseOrderLog.VendAccount == vendTable.AccountNum
+            && HMVendorPurchaseOrderLog.CalendarMonth == mthOfYr(_startDate)
+            && HMVendorPurchaseOrderLog.CalendarYear == year(_startDate)
+            && HMVendorPurchaseOrderLog.POGenerated == NoYes::Yes
+            && HMVendorPurchaseOrderLog.PaymentType == HMVendorPaymentType::FixedMonthlyRate
+            && vendTable.Blocked == CustVendorBlocked::No
+            {
+                delete_from HMVendorPurchaseOrderLogDelete
+                where HMVendorPurchaseOrderLogDelete.CalendarMonth == mthOfYr(_startDate)
+                && HMVendorPurchaseOrderLogDelete.CalendarYear == year(_startDate)
+                && HMVendorPurchaseOrderLogDelete.VendAccount == vendTable.AccountNum
+                && HMVendorPurchaseOrderLogDelete.PaymentType == HMVendorPaymentType::FixedMonthlyRate ;
+    
+                while select RecId,Amount,InventDimId from priceDiscTable
+                where priceDiscTable.Relation           == PriceType::PricePurch
+                && priceDiscTable.ItemCode           == PriceDiscProductCodeType::Table
+                && priceDiscTable.ItemRelation       == monthlyChargeCodeId
+                && priceDiscTable.AccountCode ==  PriceDiscPartyCodeType::Table
+                && priceDiscTable.AccountRelation ==  vendTable.AccountNum
+                && ((priceDiscTable.FromDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+                && priceDiscTable.ToDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                || priceDiscTable.FromDate == dateNull()
+                || priceDiscTable.ToDate == dateNull())
+                {
+                    inventDim = inventDim::find(priceDiscTable.inventDimId);
+                    purchId = objClass.createPurchaseOrder(vendTable.AccountNum, HMVendorPaymentType::FixedMonthlyRate, 0, inventDim::find(priceDiscTable.InventDimId));
+                    if(!purchId)
+                    {
+                        ttsAbort;
+                        log = "@MAZ11781";
+                        this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No,0,HMVendorPaymentType::FixedMonthlyRate);
+                        return false;
+                    }
+                    if(!objClass.createPurchaseLine(purchId,vendTable.AccountNum,monthlyChargeCodeId,inventDim.inventDimId,0,HMVendorPaymentType::FixedMonthlyRate, null, priceDiscTable.Amount))
+                    {
+                        ttsAbort;
+                        log = "@MAZ11782" + logError;
+                        this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No,0,HMVendorPaymentType::FixedMonthlyRate);
+                        return false;
+                    }
+                    log = "@MAZ11783";
+                    this.addVendorPurchLog(vendTable.AccountNum,purchId,mthOfYr(_startDate),year(_startDate), log, NoYes::Yes,0,HMVendorPaymentType::FixedMonthlyRate);
+                }
+            }
+    
+            ttsCommit;
+    
+            return true;
+        }
+        catch
+        {
+            //warning("@MAZ10735");
+            ttsAbort;
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPurchaseLine</Name>
+				<Source><![CDATA[
+    private boolean createPurchaseLine(PurchId _purchId, VendAccount _vendAccount, ItemId _itemId, InventDimId _inventDim = '',
+                                        real _scheduleHours = 0.00, HMVendorPaymentType _vendorPaymentType = HMVendorPaymentType::None,
+                                        HMResourceSchedulingAppointmentInvent _apptInvent = null, Amount _priceAmount = 0)
+    {
+        PurchLine                                   purchLine;
+        ItemId                                      itemId;
+        AxPurchLine                                 axPurchLine;
+        HMResourceSchedulingAppointmentPurchLine    HMResourceSchedulingAppointmentPurchLine;
+        PurchTable                                  purchTable;
+        boolean                                     tradeAgreementExist;
+        container                                   conPrice;
+        try
+        {
+            logError = '';
+            if(_purchId == '' || _vendAccount == '' || _itemId == '')
+            {
+                return false;
+            }
+            itemId = _itemId;
+            purchLine.clear();
+            purchTable = PurchTable::find(_purchId);
+            purchLine.initFromPurchTable(purchTable);
+            purchLine.AppointmentScheduleHours = _scheduleHours;
+            purchLine.HMResourceSchedulingAppointmentInvent = _apptInvent.HMResourceSchedulingAppointment;
+            axPurchLine = AxPurchLine::newPurchLine(purchLine);
+            axpurchLine.parmItemId(itemId);
+            axPurchLine.parmPurchQty(1);
+            axPurchLine.parmInventDimId(_inventDim);
+            axPurchLine.parmDefaultDimension(purchTable.DefaultDimension != 0 ? purchTable.DefaultDimension : this.setDimensionAccount(HMServiceTypeDimension::getDimensionByServiceType(this.getAppointmentOU(_apptInvent.HMResourceSchedulingAppointment).ServiceType),_apptInvent.HMResourceSchedulingAppointment));
+            axPurchLine.parmTaxGroup(purchTable.TaxGroup);
+            if(_priceAmount == 0)
+            {
+                conPrice = this.getItemPrice(itemId,_vendAccount,_inventDim);
+                tradeAgreementExist = conPeek(conPrice,6);
+    
+                if(_vendorPaymentType == HMVendorPaymentType::GuaranteedRate)
+                {
+                    axPurchLine.parmPurchPrice(guranteedInvoiceLineAmount);
+                }
+                if(axPurchLine.parmPurchPrice() == 0)
+                {
+                    axPurchLine.parmPurchPrice(conPeek(conPrice,1));
+                }
+    
+                if(!tradeAgreementExist && _vendorPaymentType != HMVendorPaymentType::OnInvoice)
+                {
+                    logError = strFmt("@MAZ10737",VendTable::find(_vendAccount).name(), itemId);
+                    warning(logError);
+                    return false;
+                }
+            }
+            else
+            {
+                axPurchLine.parmPurchPrice(_priceAmount);
+            }
+            axPurchLine.save();
+            if(_apptInvent)
+            {
+                if(_apptInvent.selectForUpdate())
+                {
+                    _apptInvent.PurchLine = axPurchLine.purchLine().InventTransId;
+                    _apptInvent.update();
+                }
+            }
+    
+            if(axPurchLine.parmRecId())
+            {
+                if (_vendorPaymentType == HMVendorPaymentType::GuaranteedRate)
+                {
+                    while select * from HMHourlyPaidInvoiceTmpMain
+                        where HMHourlyPaidInvoiceTmpMain.AccountNum == _vendAccount
+                        && HMHourlyPaidInvoiceTmpMain.InventDim == _inventDim
+                    {
+                        HMResourceSchedulingAppointmentPurchLine.clear();
+                        HMResourceSchedulingAppointmentPurchLine.HMResourceSchedulingAppointment = HMHourlyPaidInvoiceTmpMain.AppointmentRecid;
+                        HMResourceSchedulingAppointmentPurchLine.PurchLine = axPurchLine.parmRecId();
+                        HMResourceSchedulingAppointmentPurchLine.insert();
+                    }
+                }
+    
+                return true;
+            }
+            return false;
+        }
+        catch
+        {
+            warning("@MAZ10730");
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPurchaseOrder</Name>
+				<Source><![CDATA[
+    private PurchId createPurchaseOrder(str _doctorAccount, HMVendorPaymentType _paymentType, RecId _schedTypeRecId = 0, InventDim _inventDim = null,
+                                        RecId _apptRecId = 0)
+    {
+        PurchTable purchTable;
+        NumberSeq numberseq;
+        HMResourceSchedulingApptPurchtable  HMResourceSchedulingApptPurchtable;
+        RecId                               defaultDimension;
+        HMResourceSchedulingAppointment     appt, appointmentBuffer;
+        HMResourceSchedulingPlanningObject  planObj;
+        HMOrganizationalUnit                orgUnit;
+    
+    
+        try
+        {
+            if(_apptRecId!=0)
+            {
+                orgUnit = this.getAppointmentOU(_apptRecId);
+                defaultDimension = this.setDimensionAccount(HMServiceTypeDimension::getDimensionByServiceType(orgUnit.ServiceType),_apptRecId);
+            }
+    
+            numberseq = NumberSeq::newGetNum(PurchParameters::numRefPurchId());
+    
+            purchTable.clear();
+    
+            purchTable.PurchId = numberSeq.num();
+            purchTable.initValue();
+            purchTable.OrderAccount = _doctorAccount;
+            purchTable.InvoiceAccount = _doctorAccount;
+            purchTable.initFromVendTable();
+            purchTable.PaymentType = _paymentType;
+            purchTable.DefaultDimension = defaultDimension;
+            purchTable.InvoiceDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            if(orgUnit)
+            {
+                purchTable.TaxGroup = orgUnit.TaxGroup;
+            }
+            if(_schedTypeRecId)
+            {
+                purchTable.HMResourceSchedulingTypeCode = _schedTypeRecId;
+            }
+            if(_inventDim != null)
+            {
+                purchTable.InventLocationId = _inventDim.InventLocationId;
+                purchTable.InventSiteId = _inventDim.InventSiteId;
+            }
+            if(!purchTable.validateWrite())
+            {
+                throw warning("@MAZ10730");
+            }
+    
+            //MazikCare-Defaulting Appointment Number-Start
+            if (_apptRecId)
+            {
+                appointmentBuffer = HMResourceSchedulingAppointment::find(_apptRecId);
+                purchTable.HMAppointmentNumber = appointmentBuffer.AppointmentNumber;
+            }
+            //MazikCare-Defaulting Appointment Number-End
+    
+            purchTable.insert();
+    
+            numberSeq.used();
+    
+            if(!purchTable.PurchId)
+            {
+                throw warning("@MAZ10730");
+            }
+            HMResourceSchedulingApptPurchtable.clear();
+            HMResourceSchedulingApptPurchtable.HMResourceSchedulingAppointment = _apptRecId;
+            HMResourceSchedulingApptPurchtable.PurchTable = purchTable.PurchId;
+            HMResourceSchedulingApptPurchtable.insert();
+            return purchTable.PurchId;
+        }
+        catch
+        {
+            throw warning("@MAZ10730");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fetchGuaranteedAppointmentDetails</Name>
+				<Source><![CDATA[
+    private boolean fetchGuaranteedAppointmentDetails(QueryRun queryRun, VendTable vendTable, date _startDate, real chargeCodePrice, InventDim inventDim, date apptDate, HMResourceSchedulingPlanningObject HMResourceSchedulingPlanningObjectMain, HMResourceMaster hmResourceMaster, boolean isFirst)
+    {
+        boolean apptExist;
+        HMPurchaseOrderGuranteedInvoiceAppt     HMPurchaseOrderGuranteedInvoiceAppt;
+        HMResourceSchedulingPlanningObject      HMResourceSchedulingPlanningObject;
+        HMResourceSchedulingAppointment         HMResourceSchedulingAppointment;
+        HMPurchaseOrderGuranteedInvoiceDetails  HMPurchaseOrderGuranteedInvoiceDetails;
+        HMResourceSchedulingAppointmentInvent   HMResourceSchedulingAppointmentInvent;
+        HMHourlyPaidInvoiceTmp                  HMHourlyPaidInvoiceTmp;
+        hmResourceSchedulingOpenTimeSlotsSearch hmResourceSchedulingOpenTimeSlotsSearch;
+        HMResourceSchedulingOpenTimeSlotsTmp    HMResourceSchedulingOpenTimeSlotsTmp;
+        HMResourceSchedulingTypeCode            HMResourceSchedulingTypeCode;
+        boolean                                 error,tradeAgreementExist;
+        container                               conPrice;
+        str                                     log;
+    
+        while(queryRun.next())
+        {
+            apptExist = true;
+            HMResourceSchedulingPlanningObject  = queryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+            hmResourceSchedulingAppointment     = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+            if(isFirst)
+            {
+    
+                purchId = this.createPurchaseOrder(vendTable.AccountNum,HMVendorPaymentType::GuaranteedRate,0,inventDim);
+                if(!purchId)
+                {
+                    log = "@MAZ11781";
+                    error = true;
+                    ttsAbort;
+                    this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::GuaranteedRate);
+                    return false;
+                }
+            }
+    
+            while select InventTable,VEndTable FROM HMResourceSchedulingAppointmentInvent
+                where HMResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == HMResourceSchedulingAppointment.RecId
+                && HMResourceSchedulingAppointmentInvent.VendTable == vendTable.AccountNum
+            {
+                HMHourlyPaidInvoiceTmp.AccountNum = vendTable.AccountNum;
+                conPrice = this.getItemPrice(HMResourceSchedulingAppointmentInvent.InventTable,vendTable.AccountNum,inventDim.inventDimId);
+                tradeAgreementExist = conPeek(conPrice,6);
+                if(!tradeAgreementExist)
+                {
+                    logError = strFmt("@MAZ12153",VendTable::find(vendTable.AccountNum).name(), HMResourceSchedulingAppointmentInvent.InventTable, inventDim.inventLocationId);
+                    warning(logError);
+                    ttsAbort;
+                    this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::GuaranteedRate);
+                    error = true;
+                    return false;
+                }
+                HMHourlyPaidInvoiceTmp.LineAmount = conPeek(conPrice,1);
+                HMHourlyPaidInvoiceTmp.AppointmentRecid = HMResourceSchedulingAppointment.RecId;
+                HMHourlyPaidInvoiceTmp.insert();
+            }
+        }
+        if(apptExist)
+        {
+            select sum(LineAmount), sum(GuaranteedAmount)
+            from HMHourlyPaidInvoiceTmp;
+    
+            HMPurchaseOrderGuranteedInvoiceDetails.clear();
+    
+            HMPurchaseOrderGuranteedInvoiceDetails.PurchId = purchId;
+            HMPurchaseOrderGuranteedInvoiceDetails.TransDate = apptDate;
+            HMPurchaseOrderGuranteedInvoiceDetails.GuaranteedRate = chargeCodePrice;
+            HMPurchaseOrderGuranteedInvoiceDetails.ActualInvoice = HMHourlyPaidInvoiceTmp.LineAmount;
+            HMPurchaseOrderGuranteedInvoiceDetails.DifferenceAmount = HMPurchaseOrderGuranteedInvoiceDetails.GuaranteedRate - HMPurchaseOrderGuranteedInvoiceDetails.ActualInvoice;
+            HMPurchaseOrderGuranteedInvoiceDetails.insert();
+    
+            while select AppointmentRecid, sum(LineAmount) from HMHourlyPaidInvoiceTmp
+                group by AppointmentRecid
+            {
+                HMPurchaseOrderGuranteedInvoiceAppt.clear();
+                HMPurchaseOrderGuranteedInvoiceAppt.HMResourceSchedulingAppointment = HMHourlyPaidInvoiceTmp.AppointmentRecid;
+                HMPurchaseOrderGuranteedInvoiceAppt.HMPurchaseOrderGuranteedInvoiceDetails = HMPurchaseOrderGuranteedInvoiceDetails.RecId;
+                HMPurchaseOrderGuranteedInvoiceAppt.LineAmount = HMHourlyPaidInvoiceTmp.LineAmount;
+                HMPurchaseOrderGuranteedInvoiceAppt.insert();
+            }
+        }
+        if(!apptExist)
+        {
+            hmResourceSchedulingOpenTimeSlotsSearch = new hmResourceSchedulingOpenTimeSlotsSearch();
+            HMResourceSchedulingOpenTimeSlotsTmp = hmResourceSchedulingOpenTimeSlotsSearch.searchOpenTimeSlotMultiPO(apptdate,
+                                    apptdate,
+                                    true, 0, false, [true,true,true,true,true,true,true], HMResourceSchedulingPlanningObjectMain.recid, hmResourceMaster.RecId,
+                                    0, 0, HMResourceSchedulingPlanningObjectMain.HMOrganizationalUnit,0, 0, HMIncludeExclude::Include, false, '');
+    
+            select count(RecId) from HMResourceSchedulingOpenTimeSlotsTmp
+            join HMResourceSchedulingTypeCode
+            where HMResourceSchedulingTypeCode.RecId == HMResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode
+            && HMResourceSchedulingTypeCode.IsBreak == NoYes::No;
+    
+            if(HMResourceSchedulingOpenTimeSlotsTmp.Recid > 0)
+            {
+                if(isFirst)
+                {
+    
+                    purchId = this.createPurchaseOrder(vendTable.AccountNum,HMVendorPaymentType::GuaranteedRate,0,inventDim);
+                    if(!purchId)
+                    {
+                        log = "@MAZ11781";
+                        error = true;
+                        ttsAbort;
+                        this.addVendorPurchLog(vendTable.AccountNum,'',mthOfYr(_startDate),year(_startDate), log, NoYes::No, HMVendorPaymentType::GuaranteedRate);
+                        return false;
+    
+                    }
+                    isFirst = false;
+                }
+                HMPurchaseOrderGuranteedInvoiceDetails.PurchId = purchId;
+                HMPurchaseOrderGuranteedInvoiceDetails.TransDate = apptDate;
+                HMPurchaseOrderGuranteedInvoiceDetails.GuaranteedRate = chargeCodePrice;
+                HMPurchaseOrderGuranteedInvoiceDetails.ActualInvoice = HMHourlyPaidInvoiceTmp.LineAmount;
+                HMPurchaseOrderGuranteedInvoiceDetails.DifferenceAmount = HMPurchaseOrderGuranteedInvoiceDetails.GuaranteedRate - HMPurchaseOrderGuranteedInvoiceDetails.ActualInvoice;
+                HMPurchaseOrderGuranteedInvoiceDetails.insert();
+            }
+        }
+        if(error)
+        {
+            return false;
+        }
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentOU</Name>
+				<Source><![CDATA[
+    private HMOrganizationalUnit getAppointmentOU(RecId _appointmentRecId)
+    {
+        HMResourceSchedulingPlanningObject  HMResourceSchedulingPlanningObject;
+        HMResourceSchedulingAppointment     HMResourceSchedulingAppointment;
+        if(HMOrganizationalUnit)
+        {
+            return  HMOrganizationalUnit;
+        }
+    
+        select LocationDimension_Medisys,InventLocation, defaultDimensionPO,DefaultDimensionServiceType,RecId,TaxGroup, ServiceType from HMOrganizationalUnit
+        join HMResourceSchedulingAppointment where HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation == HMOrganizationalUnit.REcId
+        && HMResourceSchedulingAppointment.recid == _appointmentRecId;
+    
+        if(HMOrganizationalUnit.RecId)
+        {
+            return HMOrganizationalUnit;
+        }
+    
+        select LocationDimension_Medisys,InventLocation,DefaultDimensionServiceType,defaultDimensionPO,TaxGroup, ServiceType from HMOrganizationalUnit
+        join HMResourceSchedulingPlanningObject where HMResourceSchedulingPlanningObject.HMOrganizationalUnit == HMOrganizationalUnit.RecId
+        join HMResourceSchedulingAppointment where HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == HMResourceSchedulingPlanningObject.REcId
+        && HMResourceSchedulingAppointment.recid == _appointmentRecId;
+    
+        return HMOrganizationalUnit;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemPrice</Name>
+				<Source><![CDATA[
+    public container getItemPrice(ItemId _itemId, VendAccount _accountNum,InventDimId _inventDim = '')
+    {
+        InventDim   inventDim;
+        container   conPrice;
+        Price       price;
+        PriceDisc   priceDisc;
+        InventTable inventTable = InventTable::find(_itemId);
+    
+        inventDim = inventDim::find(_inventDim);
+        if(!inventDim)
+        {
+            inventDim.initFromInventTable(inventTable);
+            inventDim = InventDim::findOrCreate(inventDim);
+        }
+
+        priceDisc = new PriceDisc(ModuleInventPurchSales::Purch,
+            inventTable.ItemId, 
+            inventDim,
+            inventTable.purchUnitId(),
+            DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+            1,
+            _accountNum,
+            VendTable::find(_accountNum).Currency);
+
+        priceDisc.price();
+    
+        //conPrice = PriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Purch
+        //,InventTable.ItemId
+        //,InventDim
+        //, InventTable.purchUnitId()
+        //,DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        //,1
+        //,_accountNum
+        //,VendTable::find(_accountNum).Currency
+        //,'');
+        return conPrice;
+        //price = conPeek(conPrice,1);
+    //
+        //return price;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>openPO</Name>
+				<Source><![CDATA[
+    private void openPO(PurchId _purchId = '')
+    {
+        Args args = new Args();
+        args.record(PurchTable::find(_purchId));
+        new MenuFunction(menuitemDisplayStr(PurchTable),MenuItemType::Display).run(args);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMHourlyPaidInvoiceTmpMain</Name>
+				<Source><![CDATA[
+    public HMHourlyPaidInvoiceTmp parmHMHourlyPaidInvoiceTmpMain(HMHourlyPaidInvoiceTmp _hMHourlyPaidInvoiceTmpMain = hMHourlyPaidInvoiceTmpMain)
+    {
+        hMHourlyPaidInvoiceTmpMain = _hMHourlyPaidInvoiceTmpMain;
+    
+        return hMHourlyPaidInvoiceTmpMain;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDimensionAccount</Name>
+				<Source><![CDATA[
+    private RecId setDimensionAccount(RecId _dimensionAccountRecId, RecId _appointmentRecId)
+    {
+        str                                     locationDimension;
+        DimensionAttributeValueSetStorage       dimStorage;
+        Counter                                 i;
+        DimensionDefault                        result;
+        DimensionAttribute                      dimensionAttribute;
+        DimensionAttributeValue                 dimensionAttributeValue;
+        container                               conAttr ;
+        container                               conValue ;
+        str                                     dimValue;
+        DimensionAttributeValueSetStorage       valueSetStorage = new DimensionAttributeValueSetStorage();
+        boolean                                 _createIfNotFound = true;
+        if(_dimensionAccountRecId)
+        {
+            locationDimension = this.getAppointmentOU(_appointmentRecId).LocationDimension_Medisys;
+            dimStorage = DimensionAttributeValueSetStorage::find(_dimensionAccountRecId);
+            if(strLen(locationDimension) > 0)
+            {
+                for (i=1 ; i<= dimStorage.elements() ; i++)
+                {
+                    conattr = conIns(conattr,i,(DimensionAttribute::find(dimStorage.getAttributeByIndex(i)).Name));
+                    conValue = conIns(conValue,i,dimStorage.getDisplayValueByIndex(i));
+                }
+                if(DimensionAttribute::findByName('D40Location'))
+                {
+                    conattr = conIns(conAttr,conLen(conAttr),'D40Location');
+                    conValue = conIns(conValue,conLen(conValue),locationDimension);
+                    for (i = 1; i <= conLen(conAttr); i++)
+                    {
+                        dimensionAttribute = dimensionAttribute::findByName(conPeek(conAttr,i));
+    
+                        if (dimensionAttribute.RecId == 0)
+                        {
+                            continue;
+                        }
+    
+                        dimValue = conPeek(conValue,i);
+    
+                        if (dimValue != "")
+                        {
+                            // _createIfNotFound is "true". A dimensionAttributeValue record will be created if not found.
+                            dimensionAttributeValue = dimensionAttributeValue::findByDimensionAttributeAndValue(dimensionAttribute,dimValue,false,_createIfNotFound);
+    
+                            // Add the dimensionAttibuteValue to the default dimension
+                            valueSetStorage.addItem(dimensionAttributeValue);
+                        }
+                    }
+                    result = valueSetStorage.save();
+                    return result;
+                }
+            }
+        }
+        return _dimensionAccountRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>tradeAgreementExist</Name>
+				<Source><![CDATA[
+    public boolean tradeAgreementExist(ItemId _itemId, VendAccount _accountNum,InventDimId _inventDim = '')
+    {
+        InventDim inventDim;
+        container  conPrice;
+        Price      price;
+        InventTable inventTable = InventTable::find(_itemId);
+    
+        inventDim = inventDim::find(_inventDim);
+        if(!inventDim)
+        {
+            inventDim.initFromInventTable(inventTable);
+            inventDim = InventDim::findOrCreate(inventDim);
+        }
+        return PriceDiscTable::existAccountItemDateRelation(PriceType::PricePurch,_accountNum,'',_itemId,'',DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),-1,inventDim);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAndPostCreditNote</Name>
+				<Source><![CDATA[
+    public static boolean createAndPostCreditNote(VendInvoiceJour _vendInvoiceJour)
+    {
+        TmpFrmVirtual                           tmpFrmVirtualHeader;
+        TmpFrmVirtual                           tmpFrmVirtualLines;
+        PurchTable                              purchTable;
+        PurchFormLetter                         purchFormLetter;
+        //TODO: PurchCopying::contruct has be deprecated. Use purchcopyingbase instead
+        //PurchCopying                            purchCopying = PurchCopying::construct(SalesPurchCopy::CreditNoteLines);
+        VendInvoiceTrans                        vendInvoiceTrans;
+        List                                    tmpFrmVirtualLinesList = new List(Types::Record);
+        List                                    tmpFrmVirtualHeaderList = new List(Types::Record);
+        HMResourceSchedulingAppointmentInvent   apptInvent;
+        PurchCopyingPurchTableContract          contract;
+        HMResourceSchedulingApptPurchtable      apptPurchTable;
+        boolean                                 hasLines = false;
+        try
+        {
+            if(Box::yesNo("@MAZ10600",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+            {
+                ttsBegin;
+                while select TableId, RecId, PurchId, LineNum, InvoiceDate, Qty, InventTransId from vendInvoiceTrans
+                where vendInvoiceTrans.purchId == _vendInvoiceJour.PurchId
+                && vendInvoiceTrans.InvoiceId == _vendInvoiceJour.InvoiceId
+                && vendInvoiceTrans.InvoiceDate == _vendInvoiceJour.InvoiceDate
+                && vendInvoiceTrans.numberSequenceGroup == _vendInvoiceJour.numberSequenceGroup
+                {
+                    hasLines = true;
+                    tmpFrmVirtualHeader.clear();
+                    tmpFrmVirtualLines.clear();
+                    tmpFrmVirtualLines.TableNum = vendInvoiceTrans.TableId;
+                    tmpFrmVirtualLines.RecordNo = vendInvoiceTrans.RecId;
+                    tmpFrmVirtualLines.Id = vendInvoiceTrans.PurchID;
+                    tmpFrmVirtualLines.LineNum = vendInvoiceTrans.LineNum;
+                    tmpFrmVirtualLines.ItemId = vendInvoiceTrans.ItemId;
+                    tmpFrmVirtualLines.TransDate = vendInvoiceTrans.InvoiceDate;
+                    tmpFrmVirtualLines.Qty = vendInvoiceTrans.Qty;
+                    tmpFrmVirtualLines.insert();
+                    tmpFrmVirtualLinesList.addEnd(tmpFrmVirtualLines);
+                    select forupdate apptInvent
+                    where apptInvent.PurchLine == vendInvoiceTrans.InventTransId;
+                    if(apptInvent)
+                    {
+                        apptInvent.PurchLine = '';
+                        apptInvent.POPosted = NoYes::No;
+                        apptInvent.update();
+                    }
+                }
+                if(hasLines)
+                {
+    
+                    contract = PurchCopyingPurchTableContract::construct();
+                    contract.parmCallingTable(PurchTable::find(_vendInvoiceJour.PurchId,true));
+                    contract.parmPackedTmpFrmVirtualLines(tmpFrmVirtualLinesList.pack());
+                    contract.parmPackedTmpFrmVirtualHeader(tmpFrmVirtualHeaderList.pack());
+                    contract.parmQtyFactor(1);
+                    contract.parmReverseSign(1);
+                    contract.parmRecalculateAmount(1);
+                    contract.parmCopyMarkup(1);
+                    contract.parmCopyPrecisely(1);
+                    contract.parmDeleteLines(0);
+                    //Zain
+                    //purchCopying.initParameters(contract);
+                    //purchCopying.parmAllowCopyingInTransaction(true);
+                    //purchCopying.copy();
+                    //Zain
+    
+                    purchTable = purchTable::find(_vendInvoiceJour.purchId);
+                    purchFormLetter = PurchFormLetter::construct(DocumentStatus::PurchaseOrder);
+                    purchFormLetter.update(purchTable, strFmt('InvCreditNote_%1', purchTable.PurchId), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+    
+                    purchFormLetter = purchFormLetter::construct(DocumentStatus::Invoice);
+                    purchFormLetter.update(purchtable, strFmt('InvCreditNote_%1',purchTable.PurchId), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                    if (PurchTable::find(purchTable.PurchId).DocumentStatus == DocumentStatus::Invoice)
+                    {
+                        HMPurchaseOrderInvoiceClass::settleInvoice(purchTable);
+                        info(strfmt("@MAZ10765",purchTable.PurchId));
+                    }
+                    select forupdate Posted from apptPurchTable
+                    where apptPurchTable.PurchTable == _vendInvoiceJour.PurchId;
+                    apptPurchTable.CreditNote = NoYes::Yes;
+                    apptPurchTable.update();
+                    ttsCommit;
+                    info("@MAZ10599");
+                    return true;
+                }
+                warning("@MAZ11886");
+                return false;
+            }
+            return false;
+    
+        }
+        catch
+        {
+            ttsAbort;
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPOFromChargeEntry</Name>
+				<Source><![CDATA[
+    public static boolean createPOFromChargeEntry(RecId _appointmentRecid, HMVendorPaymentType _paymentType = HMVendorPaymentType::None, VendAccount _doctorAccount = '', boolean _postInvoice = false)
+    {
+        PurchLine                               purchLine, purchLineCheck;
+        HMResourceSchedulingAppointmentInvent   apptInvent;
+        VendTable                               vendTable;
+        Map                                     vendPOMap;
+        PurchId                                 purchId;
+        HMPurchaseOrderInvoiceClass             objclass;
+        RecId                                   scheduleTypeRecId = 0;
+        HMResourceSchedulingAppointment         appt;
+        InventDim                               inventDim;
+        //HMOrganizationalUnit                    orgUnit;
+        InventLocationId                        inventLocationId;
+        InventSiteId                            inventSiteId;
+        HMResourceSchedulingPlanningObject      planningObject;
+        MapEnumerator                           mapEnumerator;
+        PurchTable                              purchTable;
+        PurchFormLetter                         purchFormLetter;
+        HMResourceSchedulingApptPurchtable      HMResourceSchedulingApptPurchtable;
+        HMOrganizationalUnit                    HMOrganizationalUnit;
+        try
+        {
+            // payment type fee for service & on invoice handles here
+            objclass = new HMPurchaseOrderInvoiceClass();
+            vendPOMap = new Map(Types::String,Types::String);
+    
+            if(_paymentType == HMVendorPaymentType::None)
+            {
+                while select * from HMResourceSchedulingApptPurchtable
+                    where HMResourceSchedulingApptPurchtable.HMResourceSchedulingAppointment == _appointmentRecid
+                    && HMResourceSchedulingApptPurchtable.Posted == NoYes::No
+                    && HMResourceSchedulingApptPurchtable.CreditNote == NoYes::No
+                {
+                    delete_from PurchLine where purchLine.PurchId == HMResourceSchedulingApptPurchtable.PurchTable;
+                    vendPOMap.insert(purchTable::find(HMResourceSchedulingApptPurchtable.PurchTable).InvoiceAccount,HMResourceSchedulingApptPurchtable.PurchTable);
+                }
+            }
+    
+            HMOrganizationalUnit = objclass.getAppointmentOU(_appointmentRecid);
+    
+            if(!HMOrganizationalUnit.InventLocation)
+            {
+                return checkfailed("@MAZ10763");
+            }
+            InventLocationId = HMOrganizationalUnit.InventLocation;
+            inventSiteId = InventLocation::find(inventLocationId).InventSiteId;
+            inventDim.initValue();
+            inventDim.InventLocationId = inventLocationId;
+            inventDim.InventSiteId = inventSiteId;
+            inventDim = inventDim::findOrCreate(inventDim);
+    
+            while select AccountNum,PaymentType from vendTable
+            where vendTable.PaymentType == HMVendorPaymentType::FeesForService
+                || vendTable.PaymentType == HMVendorPaymentType::GuaranteedRate
+                || vendTable.PaymentType == HMVendorPaymentType::OnInvoice
+            join InventTable,RecId,PurchLine,HMResourceSchedulingAppointment from apptInvent
+            where apptInvent.VendTable == vendTable.AccountNum
+                && apptInvent.HMResourceSchedulingAppointment == _appointmentRecid
+                && apptInvent.POPosted == NoYes::No
+            {
+                purchId = '';
+                select count(RecId) from purchLineCheck
+                where purchLineCheck.HMResourceSchedulingAppointmentInvent == apptInvent.RecId;
+                if(purchLineCheck.recid > 0)
+                {
+                    continue;
+                }
+                if(vendPOMap.exists(vendTable.AccountNum))
+                {
+                    purchId = vendPOMap.lookup(vendTable.AccountNum);
+                    if(!objclass.createPurchaseLine(purchId,vendTable.AccountNum,apptInvent.InventTable,inventDim.inventDimId,0,vendTable.PaymentType,apptInvent))
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    purchId = objclass.createPurchaseOrder(vendTable.AccountNum,vendTable.paymentType,scheduleTypeRecId,inventDim, _appointmentRecid) ;
+                    if(!purchId)
+                    {
+                        return false;
+                    }
+    
+                    vendPOMap.insert(vendTable.AccountNum,purchId);
+                    if(!objclass.createPurchaseLine(purchId,vendTable.AccountNum,apptInvent.InventTable,inventDim.inventDimId, 0,vendTable.PaymentType, apptInvent))
+                    {
+                        return false;
+                    }
+                }
+            }
+            if(_postInvoice)
+            {
+                mapEnumerator = vendPOMap.getEnumerator();
+    
+                while(mapEnumerator.moveNext())
+                {
+                    purchId = mapEnumerator.currentValue();
+                    purchTable = purchTable::find(purchId);
+                    purchFormLetter = PurchFormLetter::construct(DocumentStatus::PurchaseOrder);
+                    purchFormLetter.update(purchTable, strFmt('Inv_%1', purchTable.PurchId), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+    
+                    purchFormLetter = purchFormLetter::construct(DocumentStatus::Invoice);
+                    purchFormLetter.update(purchtable, strFmt('Inv_%1',purchTable.PurchId), DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                    if (PurchTable::find(purchTable.PurchId).DocumentStatus == DocumentStatus::Invoice)
+                    {
+                        objclass.addVendorPurchLog(purchTable.InvoiceAccount,purchTable.PurchId,mthOfYr(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())),year(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())), "@MAZ11783", NoYes::Yes, _appointmentRecid);
+                        info(strfmt("@MAZ10765",purchTable.PurchId));
+                    }
+                }
+            }
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMResourceSchedulingAppointmentSalesTbl HMResourceSchedulingAppointmentSalesTbl;
+        if(_args.menuItemName() == menuitemActionStr(HMPurchaseOrderInvoiceClassOnInvoice))
+        {
+            HMPurchaseOrderInvoiceClass::createPOFromChargeEntry(_args.record().RecId, HMVendorPaymentType::OnInvoice,_args.caller().getVendAccount());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPurchaseOrderInvoiceClass_CreditNote))
+        {
+            HMPurchaseOrderInvoiceClass::createAndPostCreditNote(_args.record());
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postPO</Name>
+				<Source><![CDATA[
+    public static boolean postPO(HMResourceSchedulingApptPurchtable _apptPurchTable, boolean _postVendorInvoice = false)
+    {
+        HMResourceSchedulingApptPurchtable  apptPurchTable;
+        PurchTable                          purchTable;
+        PurchFormLetter                     purchFormLetter;
+        HMPurchaseOrderInvoiceClass         objclass;
+        PurchLine                           purchLine;
+        HMResourceSchedulingAppointmentInvent   apptInvent;
+        objclass = new HMPurchaseOrderInvoiceClass();
+        try
+        {
+            select forupdate apptPurchTable
+            where apptPurchTable.recid == _apptPurchTable.recid
+            && apptPurchTable.Posted == NoYes::No
+            && apptPurchTable.CreditNote == NoYes::No;
+            if(apptPurchTable)
+            {
+                purchTable = purchTable::find(apptPurchTable.purchTable);
+                if(purchTable.PaymentType == HMVendorPaymentType::OnInvoice && !_postVendorInvoice)
+                {
+                    //restricting not to post vendor invoice having payment type on invoice
+                    return true;
+                }
+                purchFormLetter = PurchFormLetter::construct(DocumentStatus::PurchaseOrder);
+                purchFormLetter.update(purchTable, strFmt('Inv_%1', purchTable.PurchId), purchTable.InvoiceDate);
+    
+                purchFormLetter = purchFormLetter::construct(DocumentStatus::Invoice);
+                purchFormLetter.update(purchtable, strFmt('Inv_%1',purchTable.PurchId), purchTable.InvoiceDate);
+                if (PurchTable::find(purchTable.PurchId).DocumentStatus == DocumentStatus::Invoice)
+                {
+                    //objclass.addVendorPurchLog(purchTable.InvoiceAccount,purchTable.PurchId,mthOfYr(today()),year(today()), "@MAZ11783", NoYes::Yes, _apptPurchTable.HMResourceSchedulingAppointment);
+                    apptPurchTable.Posted = NoYes::Yes;
+                    apptPurchTable.update();
+    
+                    update_recordSet apptInvent
+                    setting POPosted = NoYes::Yes
+                    join purchLine
+                    where purchLine.InventTransId == apptInvent.PurchLine
+                    && purchLine.PurchId == purchTable.PurchId;
+    
+                    info(strfmt("@MAZ10765",purchTable.PurchId,purchTable.InvoiceAccount));
+                }
+                else
+                {
+                    throw warning("@MAZ11981");
+                }
+            }
+            return true;
+        }
+        catch
+        {
+            throw warning("@MAZ11981");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>settleInvoice</Name>
+				<Source><![CDATA[
+    public static void settleInvoice(PurchTable purchTable)
+    {
+        boolean first = true;
+        VendInvoiceJour VendInvoiceJour;
+        VendTrans VendTrans1,VendTrans2;
+        VendTable VendTable;
+        VendTable = VendTable::find(purchTable.InvoiceAccount);
+    
+        while select VendInvoiceJour
+            where VendInvoiceJour.PurchId == purchTable.PurchId
+        {
+            if(first)
+            {
+    
+                VendTrans1 = VendTrans::findAccountVoucherDate(purchTable.InvoiceAccount,VendInvoiceJour.LedgerVoucher,VendInvoiceJour.InvoiceDate);
+                first = false;
+            }
+            else
+            {
+                VendTrans2 = VendTrans::findAccountVoucherDate(purchTable.InvoiceAccount,VendInvoiceJour.LedgerVoucher,VendInvoiceJour.InvoiceDate);
+            }
+        }
+    
+        VendTrans1.transData().markForSettlement(VendTable);
+        VendTrans2.transData().markForSettlement(VendTable);
+        VendTrans::settleTransact(VendTable);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

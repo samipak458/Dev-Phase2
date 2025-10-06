@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>CustCollectionsAgentPoolTableHM_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(tableStr(CustCollectionsAgentPool))]
+final class CustCollectionsAgentPoolTableHM_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    boolean validateDelete()
+    {
+        boolean ret = true;
+      
+        Args                        args = new Args();
+        HMClaimTable                hmClaimTable;
+        HMBillParameters            hmBillParameters;
+        CustCollectionsPool         custCollectionsPool;
+        
+        select firstonly RestrictAgentDeletionFromPool from HMBillParameters;
+
+        if (HMBillParameters.RestrictAgentDeletionFromPool == NoYes::Yes)
+        {
+            select firstonly RecId from hmClaimTable
+                where hmClaimTable.ClaimAgent == this.CustCollectionsAgent
+                join custCollectionsPool
+                   where custCollectionsPool.RecId == hmClaimTable.ClaimPool
+                      && custCollectionsPool.Name == this.CustomerPoolId;
+
+            if (hmClaimTable.RecId)
+            {
+                ret =  checkFailed("Cannot remove agent from the pool as the agent has active claims in this pool");
+            }
+        }
+        else
+        {
+            update_recordSet hmClaimTable
+            setting
+                ClaimAgent = 0,
+                AgentName = ""
+            where hmClaimTable.ClaimAgent == this.CustCollectionsAgent
+            join custCollectionsPool
+                where custCollectionsPool.RecId == hmClaimTable.ClaimPool
+                    && custCollectionsPool.Name == this.CustomerPoolId;
+        }
+
+        next validateDelete();   
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

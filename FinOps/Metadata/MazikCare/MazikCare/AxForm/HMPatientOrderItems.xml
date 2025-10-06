@@ -1,0 +1,5013 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientOrderItems</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPatientOrderItems extends FormRun
+{
+    EcoResCategoryTreeDatasourceHM        mHierarchyTree;
+    EcoResCategoryHierarchy             mCategoryHierarchy;
+
+
+    RetailInventDimCtrl_Frm_AddProducts inventDimFormSetup;
+    EcoResCategoryLookupParameters      lookupParameters;
+    EcoResCategoryHierarchy             selectedHierarchy;
+    EcoResCategory                      callerEcoResCategory;
+    boolean                             isMultiHierarchy;
+    boolean                             calledFromSpecialHierarchyForm;
+    boolean                             selectedHierachyIsSpecial;
+    boolean                             showQty;
+    TableId                             callerTableId;
+    MenuItemName                        callerMenuItemName;
+
+    HMOrderType                         orderType;
+    [FormObservable]
+    RecId                               patientRecId;
+    RecId                               patientEncounterRecId, organizationalUnitRecId;
+    [FormObservable]
+    RecId                               serviceLocationRecId;
+    [FormObservable]
+    HMPatientOrderItemsHelperClass      formHelperClass;
+    HMMemo seacrhtext;
+    System.Windows.Forms.TextBox        txtSearch;
+    QueryBuildRange                     qbrItemSearch,qbrProtocolSearch;
+    boolean                             forEdit;
+    SysLookupMultiSelectCtrl            msCtrlDiagnosis;
+    RecId                               clinicStaffRecid,ENNclinicStaffRecid;
+    HMOrganizationalUnit                currentDept;
+    container                           physicianRecIdCon;
+    boolean                             checkUniqueItemOnTmpTable;
+    // add by daniyall aslam for service category as in Appointment FDD
+    RecId                               ouRecId;
+    HMOrganizationServiceCategory       hmOrganizationServiceCategoryGlobal;
+    int                                 taskId;
+    ItemId                              itemIdGlob;
+    boolean                             isModified;
+    boolean                             formOpenFirstTime;
+    boolean                             isENNClinic;
+    QueryBuildRange                     protocolRange;
+    [FormObservable]
+    HMClientAccount                     clientAccount;
+    RecId                               apptRecId;
+    RecId                               resourceRecId;
+    RecId                               hmPatientInsuranceRecId;
+    HMResourceSchedulingHelper          HMResourceSchedulingHelper;
+    str                                 patientMRN;
+    InventDimId                         inventDimId;
+    QueryBuildRange                     qbrLangRange;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>applyCategoryRanges</Name>
+				<Source><![CDATA[
+    public void applyCategoryRanges()
+    {
+        RetailCategoryHelper::categorySelectionChanged(
+            ecoResCategory,
+            ecoResCategoryDescendents_ds,
+            retailCategoryContainmentLookup_ds,
+            selectedHierachyIsSpecial);
+        // add by daniyal alsam
+        // skip if check for appointment services and emergenncy case procedures/services
+       /* if (orderType != HMOrderType::Appointment)
+        {
+            EcoResProductCategory_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+            EcoResCategoryDescendents_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+    
+        }*/
+    
+       /* if (orderType != HMOrderType::Appointment
+            && (HMPatientEncounter::find(patientEncounterRecId).HMCaseType == HMCaseType::Emergency && orderType != HMOrderType::Service)
+            || (HMPatientEncounter::find(patientEncounterRecId).HMCaseType != HMCaseType::Emergency && orderType != HMOrderType::Appointment))
+        {
+            EcoResProductCategory_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+            EcoResCategoryDescendents_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+    
+        }
+       */
+    
+            if (orderType == HMOrderType::Appointment)
+            {
+    
+                    EcoResProductCategory_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+                    EcoResCategoryDescendents_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+    
+            }
+        /*
+        if (orderType != HMOrderType::Appointment)
+        {
+            if (HMPatientEncounter::find(patientEncounterRecId).HMCaseType == HMCaseType::InPatient)
+            {
+                EcoResProductCategory_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+                EcoResCategoryDescendents_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+            }
+            else if (!(HMPatientEncounter::find(patientEncounterRecId).HMCaseType == HMCaseType::Emergency
+                        && HMPatientEncounter::find(patientEncounterRecId).ParentEncounter == 0 && orderType == HMOrderType::Service))
+            {
+                EcoResProductCategory_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+                EcoResCategoryDescendents_ds.queryBuildDataSource().enabled(TreeGroup.visible());
+            }
+    
+        }
+        */
+        //if(orderType == HMOrderType::Medication || orderType == HMOrderType::OUService || orderType == HMOrderType::Service|| orderType == HMOrderType::Therapy)
+        //{
+            //EcoResProduct_ds.query().dataSourceTable(tableNum(HMInventTable)).enabled(true);
+        //}
+        //else
+        //{
+            //EcoResProduct_ds.query().dataSourceTable(tableNum(HMInventTable)).enabled(false);
+        //}
+        ecoResProduct_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canClose</Name>
+				<Source><![CDATA[
+    public boolean canClose()
+    {
+        boolean ret;
+    
+        if (taskId != 1313) // if escape is not pressed
+        {
+            if (HMPatientOrderTableTmp)
+            {
+                if (HMPatientOrderTableTmp_ds.validateWrite())
+                {
+                    HMPatientOrderTableTmp_DS.write();
+                    if (element.validateOrderLines())
+                    {
+                        element.createOrderLine();
+    
+                        ret = super();
+                    }
+                }
+            }
+            else
+            {
+                ret = super();
+            }
+        }
+        else
+        {
+            ret = super();
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAndAddHierarchy</Name>
+				<Source><![CDATA[
+    // Sets the field 'Category' visible ON for multi hierarchy and add the hierarchy names into combo box
+    public void checkAndAddHierarchy()//EcoResCategoryLookupParameters _lookupParameters, EcoResCategoryHierarchy _selectedCategoryHierarchy )
+    {
+        EcoResCategoryHierarchyRole ecoResCategoryHierarchyRoleLocal;
+        EcoResCategoryHierarchy     ecoResCategoryHierarchyLocal;
+        QueryRun                    queryRun;
+        RecId                       selectedHierarchyId;
+    
+        container roles = lookupParameters.parmMultiRoleSelectionSet();
+    
+        selectedHierarchy = element.initializeCategoryHierarchy();//EcoResCategoryHierarchy::findByName(HierarchySelector.valueStr());
+    
+        // if multiple role lookup wasn't set, use the first role found on the selected hierarchy
+        if (conLen(roles) == 0)
+        {
+            select NamedCategoryHierarchyRole from ecoResCategoryHierarchyRoleLocal
+                where ecoResCategoryHierarchyRoleLocal.CategoryHierarchy == selectedHierarchy.RecId;
+            roles = [ecoResCategoryHierarchyRoleLocal.NamedCategoryHierarchyRole];
+        }
+    
+        // if more than 1 hierarchy matches the roles given, enable hierarchy picker
+        queryRun = new QueryRun(this.queryHierarchiesByRoles(roles, true));
+        if (queryRun.next())
+        {
+            ecoResCategoryHierarchyRoleLocal = queryRun.get(tableNum(EcoResCategoryHierarchyRole));
+            if (ecoResCategoryHierarchyRoleLocal.RecId > 1)
+            {
+                isMultiHierarchy = true;
+            }
+        }
+        else
+        {
+            isMultiHierarchy = false;
+        }
+    
+        if (isMultiHierarchy)
+        {
+            hierarchySelector.visible(true);
+    
+            queryRun = new QueryRun(this.queryHierarchiesByRoles(roles));
+    
+            while (queryRun.next())
+            {
+                ecoResCategoryHierarchyRoleLocal = queryRun.get(tableNum(EcoResCategoryHierarchyRole));
+                ecoResCategoryHierarchyLocal = queryRun.get(tableNum(EcoResCategoryHierarchy));
+                // check args and see if we have currently selected hierarchy as parm
+                if (this.args() && Global::isInteger(this.args().parm()))
+                {
+                    selectedHierarchyId = str2int64(this.args().parm());
+                }
+                if (ecoResCategoryHierarchyLocal.RecId != selectedHierarchyId)
+                {
+                    hierarchySelector.add(ecoResCategoryHierarchyLocal.Name); // Add the hierarchy names into category list.
+                }
+            }
+            hierarchySelector.selectText(selectedHierarchy.Name);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAppointmenttItemAlreadyExist</Name>
+				<Source><![CDATA[
+    private boolean checkAppointmenttItemAlreadyExist(ItemId _itemId)
+    {
+        return formHelperClass.checkAppointmenttItemAlreadyExist(_itemId,apptRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkItemAlreadyExist</Name>
+				<Source><![CDATA[
+    public boolean checkItemAlreadyExist(ItemId _ItemId)
+    {
+        HMPatientOrderTableTmp hmPatientOrderTableTmpLocal;
+    
+        hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getFirst(false);
+    
+        while(hmPatientOrderTableTmpLocal)
+        {
+            if(hmPatientOrderTableTmpLocal.ItemId == _ItemId)
+            {
+                return true;
+            }
+            hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getNext();
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkItemAlreadyExistUpdate</Name>
+				<Source><![CDATA[
+    public boolean checkItemAlreadyExistUpdate(ItemId _ItemId,RecId _patientOrderRecid)
+    {
+        HMPatientOrderTableTmp hmPatientOrderTableTmpLocal;
+    
+        hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getFirst(false);
+    
+        while(hmPatientOrderTableTmpLocal)
+        {
+            if(hmPatientOrderTableTmpLocal.ItemId == _ItemId && hmPatientOrderTableTmpLocal.RecId != _patientOrderRecid)
+            {
+                return true;
+            }
+            hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getNext();
+        }
+    
+    
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    public void close()
+    {
+        #Task
+        FormRun formRun;
+        Object object;
+        formRun = element.args().caller();
+        super();
+    
+        if(formHasMethod(formRUn,'refreshOrderDataSources'))
+        {
+    
+            object = formRun;
+            if(!formRun.closed())
+            {
+                object.refreshOrderDataSources(orderType);
+            }
+        }
+        else if(formHasMethod(formRun,'refreshAppointmentOrder'))
+        {
+            object = formRun;
+            if(!formRun.closed())
+            {
+                object.refreshAppointmentOrder(formHelperClass.parmHMAppointmentInventTmp());
+            }
+        }
+        else
+        {
+            formRun = element.args().caller();
+            formRun.task(#taskF5);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createOrderLine</Name>
+				<Source><![CDATA[
+    void createOrderLine()
+    {
+        formHelperClass.createUpdateOrders();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>enableCategoryHierarchy</Name>
+				<Source><![CDATA[
+    private void enableCategoryHierarchy()
+    {
+        this.initializeCategoryHierarchy();
+        this.initializeCategoryTree();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCategoryHierarchy</Name>
+				<Source><![CDATA[
+    private EcoResCategoryHierarchy getCategoryHierarchy()
+    {
+        return mCategoryHierarchy;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMPatientInsuranceRecId</Name>
+				<Source><![CDATA[
+    public RefRecId getHMPatientInsuranceRecId()
+    {
+        return hmPatientInsuranceRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMPatientOrderTmpByRecId</Name>
+				<Source><![CDATA[
+    public void getHMPatientOrderTmpByRecId(RecId _patientOrderTmpRecId)
+    {
+        HMPatientOrderTableTmp hmPatientOrderTableTmpLocal;
+    
+        hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getFirst(false);
+    
+        while(hmPatientOrderTableTmpLocal)
+        {
+            if(hmPatientOrderTableTmpLocal.RecId == _patientOrderTmpRecId)
+            {
+               // HMPatientOrderTableTmp_ds.index(
+               // HMPatientOrderTableTmp_ds.findRecord(hmPatientOrderTableTmpLocal);
+                break;
+            }
+            hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getNext();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMPatientOrderTmpByRefRecId</Name>
+				<Source><![CDATA[
+    public void getHMPatientOrderTmpByRefRecId(RecId _patientOrderRecId)
+    {
+        HMPatientOrderTableTmp hmPatientOrderTableTmpLocal;
+    
+        hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getFirst(false);
+    
+        while(hmPatientOrderTableTmpLocal)
+        {
+            if(hmPatientOrderTableTmpLocal.RefRecId == _patientOrderRecId)
+            {
+               // HMPatientOrderTableTmp_ds.findRecord(hmPatientOrderTableTmpLocal);
+                break;
+            }
+            hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getNext();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>hmPatientOrderTableTmp</Name>
+				<Source><![CDATA[
+    public HMPatientOrderTableTmp hmPatientOrderTableTmp()
+    {
+        return HMPatientOrderTableTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        Object              formRunObject;
+        container           con;
+        str                 languageId;
+        ContainerClass      conClass;
+    
+        FormGroupControl    groupVisible;
+    
+        FormRun callerForm = element.args().caller();
+    
+        conClass            = element.args().parmObject();
+        callerTableId       = element.args().dataset();
+        callerMenuItemName  = element.args().menuItemName();
+        orderType           = element.args().parmEnum();
+        ouRecId             = str2int64(element.args().parm());
+        checkUniqueItemOnTmpTable = true;
+        formHelperClass  = new HMPatientOrderItemsHelperClass();
+    
+        if (callerTableId == tableNum(HMPatient))
+        {
+            patientRecId = element.args().record().RecId;
+            patientEncounterRecId = 0;
+        }
+    
+        else if (callerTableId == tableNum(HMOrganizationalUnit))
+        {
+            organizationalUnitRecId = element.args().record().RecId;
+        }
+        else if (callerTableId == tableNum(HMAppointmentInventTmp))
+        {
+            formHelperClass.parmHMAppointmentInventTmp(element.args().record());
+        }
+        else if (callerTableId == tableNum(HMResourceSchedulingAppointment))
+        {
+            apptRecId = element.args().record().RecId;
+        }
+        // ENN  requirment add default service for doctors
+        else if (callerTableId == tableNum(HMClinicStaff))
+        {
+            ENNclinicStaffRecid = element.args().record().RecId;
+            isENNClinic = true;
+            formHelperClass.paramENNClinicStaff(true);
+            formHelperClass.paramENNClinicStaffRecId(ENNclinicStaffRecid);
+        }
+        else
+        {
+            forEdit = true;
+        }
+    
+        if(conClass != null)
+        {
+            con                     = conClass.value();
+            resourceRecId           = conPeek(con, 1);
+            hmpatientInsuranceRecId = conPeek(con, 2);
+        }
+    
+        super();
+    
+        languageId = HMParameters::find().LanguageId_1;
+        if(languageId != '')
+        {
+            LanguageRadioButton.add(languageId);
+        }
+        languageId = HMParameters::find().LanguageId_2;
+        if(languageId != '')
+        {
+            LanguageRadioButton.add(languageId);
+        }
+        //Initialize splitter
+        if(formHasMethod(callerForm, identifierStr(getclient)))
+        {
+            clientAccount = element.args().caller().getClient();
+        }
+        if(!clientAccount && apptRecId)
+        {
+            clientAccount = HMResourceSchedulingAppointment::find(apptRecId,false,ConcurrencyModel::Auto).Client;//find(apptRecId).Client;
+        }
+        //element.updateDesign(InventDimFormDesignUpdate::Init);
+        element.enableCategoryHierarchy();
+    
+        inventItemGroupItem_ds.query().dataSourceTable(tableNum(InventItemGroupItem)).enabled(false);
+    
+        showQty = true;
+    
+        formHelperClass.parmHmPatientOrderTableTmp(HMPatientOrderTableTmp);
+        formHelperClass.parmPatientRecId(patientRecId);
+        formHelperClass.parmPatientEncounterRecId(patientEncounterRecId);
+        formHelperClass.parmOrganizationalUnitRecId(organizationalUnitRecId);
+        formHelperClass.parmOrderType(orderType);
+        formHelperClass.parmPatientInsuranceId(hmpatientInsuranceRecId);
+        formHelperClass.loadOrdersFromCaller(clientAccount);
+        //todo: ax7 textchange
+        /*
+        txtSearch = ManagedHost.control();
+        ManagedHost.setFocus();
+    
+        txtSearch.add_TextChanged(new ManagedEventHandler(this,'textChanged'));
+        qbrItemSearch = EcoResProductTranslation_DS.queryBuildDataSource().addRange(fieldNum(EcoResProductTranslation,Name));
+    */
+        groupVisible = element.design().controlName(enum2str(orderType));
+    
+        if (groupVisible != null)
+        {
+            groupVisible.visible(true);
+        }
+        this.setControlNames();
+        switch(orderType)
+        {
+            case HMOrderType::OUService:
+                GroupProcedureCPT.visible(true);
+                GroupProcedureCPTTMP.visible(true);
+                HMPatientOrderTableTmp_ds.queryBuildDataSource().clearDynalinks();
+                break;
+    
+        }
+    
+        ItemTypeRadioButton.selectionChange();
+        HMResourceSchedulingHelper = new HMResourceSchedulingHelper();
+    
+    
+    
+        if(apptRecId)
+        {
+            serviceLocationRecId = HMResourceSchedulingAppointment::find(apptRecId,false, ConcurrencyModel::Auto).HMOrganizationalUnitServiceLocation;
+            patientRecId = HMResourceSchedulingAppointment::find(apptRecId, false, ConcurrencyModel::Auto).HMPatient;
+        }
+        else
+        {
+            if(!serviceLocationRecId)
+            {
+                formRunObject = callerForm;
+                if(formHasMethod(formRunObject,identifierStr(getServiceLocationRecId)))
+                {
+                    serviceLocationRecId = formRunObject.getServiceLocationRecId();
+                }
+            }
+        }
+        if(!patientRecId)
+        {
+            formRunObject = callerForm;
+            if(formHasMethod(formRunObject,identifierStr(getHMPatientRecId)))
+            {
+                patientRecId = formRunObject.getHMPatientRecId();
+            }
+        }
+        patientMRN = HMPatient::find(patientRecId).patientChartNum();
+        inventDimId = HMResourceSchedulingHelper::getInventDimFromOU(serviceLocationRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeCategoryHierarchy</Name>
+				<Source><![CDATA[
+    private EcoResCategoryHierarchy initializeCategoryHierarchy()
+    {
+        EcoResCategoryHierarchyRole retailHierarchyRole =
+            EcoResCategoryHierarchyRole::getHierarchiesByRole(EcoResCategoryNamedHierarchyRole::Sales);
+    
+        return EcoResCategoryHierarchy::find(retailHierarchyRole.CategoryHierarchy);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initializeCategoryTree</Name>
+				<Source><![CDATA[
+    ///  Initializes the hierarchy for Retail product, Special hierarchy & procurement.
+    public void initializeCategoryTree()
+    {
+        selectedHierarchy = this.getCategoryHierarchy();
+    
+        lookupParameters = new EcoResCategoryLookupParameters(
+                                                        false,
+                                                        false,
+                                                        false,
+                                                        true,
+                                                        '' ,
+                                                        null,
+                                                        0,
+                                                        0,
+                                                        ProcCategoryOrganizationOption::BuyingLegalEntity,
+                                                        0,
+                                                        [EcoResCategoryNamedHierarchyRole::Sales]);
+    
+        element.checkAndAddHierarchy();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoTmpProductsToAdd</Name>
+				<Source><![CDATA[
+    public HMPatientOrderTableTmp insertIntoTmpProductsToAdd(RefRecId _productRecId,
+                                        RefRecId _variantId,
+                                        Qty      _quantity)
+    {
+        boolean                     recordMatched;
+        EcoResProduct   product;
+        HMClientProtocol    hmClientProtocolLocal;
+        InventTable         inventTableLocal;
+        boolean         alreadyExist;
+        HMPatientOrderTableTmp hmPatientOrderTableTmpEmpty;
+    
+        HMProtocolAttributeAptitude             hmProtocolAttributeAptitude;
+        HMResourceMasterAptitudeAttribute       hmResourceMasterAptitudeAttribute;
+    
+        product = EcoResProduct::find(_productRecId);
+        inventTableLocal = InventTable::findByProduct(product.RecId);
+        if(inventTableLocal.PmfProductType == PmfProductType::BOM)
+        {
+            if(checkUniqueItemOnTmpTable)
+            {
+                if(this.checkItemAlreadyExist(inventTableLocal.ItemId))
+                {
+                    warning(strFmt("@MAZ10347",inventTableLocal.ItemId));
+    
+                    return hmPatientOrderTableTmpEmpty;
+                }
+                else if(apptRecId)
+                {
+                    if(this.checkAppointmenttItemAlreadyExist(inventTableLocal.ItemId))
+                    {
+                        warning(strFmt("@MAZ10347",inventTableLocal.ItemId));
+    
+                        return hmPatientOrderTableTmpEmpty;
+                    }
+                }
+                if(!this.protocolIsActivated(inventTableLocal.ItemId))
+                {
+                    warning(strFmt("@MAZ12311",inventTableLocal.ItemId));
+                    return hmPatientOrderTableTmpEmpty;
+                }
+            }
+            if(HMResourceSchedulingHelper.expandApptProtcol(inventTableLocal.ItemId,clientAccount,patientRecId,serviceLocationRecId) == 0)
+            {
+                if(Box::yesNo(strFmt("@MAZ12275",inventTableLocal.ItemId), DialogButton::No, "@MAZ7757") == DialogButton::No)
+                {
+                    return hmPatientOrderTableTmpEmpty;
+                }
+            }
+        }
+    
+    
+        if(resourceRecId && ItemTypeRadioButton.selection() == HMItemType::Protocol)
+        {
+            recordMatched = true;
+    
+            while select ResourceAptitudeAttribute from hmProtocolAttributeAptitude
+                where hmProtocolAttributeAptitude.ItemId == inventTableLocal.ItemId
+            {
+                select count(RecId) from hmResourceMasterAptitudeAttribute
+                    where hmResourceMasterAptitudeAttribute.HMResourceAptitudeAttribute == hmProtocolAttributeAptitude.ResourceAptitudeAttribute
+                    && hmResourceMasterAptitudeAttribute.HMResourceMaster == resourceRecId;
+    
+                if(hmResourceMasterAptitudeAttribute.RecId == 0)
+                {
+                    recordMatched = false;
+                    break;
+                }
+            }
+    
+            if(!recordMatched)
+            {
+                warning(strFmt("@MAZ12123"));
+    
+                return hmPatientOrderTableTmpEmpty;
+            }
+    
+        }
+    
+        HMPatientOrderTableTmp.clear();
+        HMPatientOrderTableTmp.EcoResProduct        = product.RecId;
+        if(clientAccount)
+        {
+            select * from hmClientProtocolLocal
+            where hmClientProtocolLocal.ClientAccount == clientAccount
+            && hmClientProtocolLocal.ItemId == inventTableLocal.ItemId;
+        }
+    
+        HMPatientOrderTableTmp.EcoResProductName    = hmClientProtocolLocal.itemAlias() != '' ? hmClientProtocolLocal.itemAlias() : product.productName();
+    
+        HMPatientOrderTableTmp.PatientResponsibility = HMPatientPaymentResponsibility::Patient;
+        HMPatientOrderTableTmp.ItemId  = InventTable::findByProduct(HMPatientOrderTableTmp.EcoResProduct).ItemId;
+    
+        if(!alreadyExist)
+        {
+            try
+            {
+                HMPatientOrderTableTmp.insert();
+            }
+            catch
+            {
+                return HMPatientOrderTableTmp;
+            }
+    
+            HMPatientOrderTableTmp.update();
+        }
+    
+    
+        return HMPatientOrderTableTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>inventDimSetupObject</Name>
+				<Source><![CDATA[
+    RetailInventDimCtrl_Frm_AddProducts inventDimSetupObject()
+    {
+        if (!inventDimFormSetup)
+        {
+            inventDimFormSetup  = RetailInventDimCtrl_Frm_AddProducts::newFromForm(element);
+            inventDimFormSetup.parmLargeRightClickForm(NoYes::Yes);
+        }
+        return inventDimFormSetup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmEcoResCategory</Name>
+				<Source><![CDATA[
+    // Returns form caller selected EcoResCategory record
+    public EcoResCategory parmEcoResCategory(EcoResCategory _ecoResCategory = callerEcoResCategory)
+    {
+        callerEcoResCategory = _ecoResCategory;
+    
+        return callerEcoResCategory;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSpecialHierarchyForm</Name>
+				<Source><![CDATA[
+    public boolean parmSpecialHierarchyForm(boolean _calledFromSpecialHierarchyForm = calledFromSpecialHierarchyForm)
+    {
+        calledFromSpecialHierarchyForm = _calledFromSpecialHierarchyForm;
+    
+        return calledFromSpecialHierarchyForm;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>productName</Name>
+				<Source><![CDATA[
+    display EcoResProductName productName()
+    {
+        return EcoResProductTranslation::findByProductLanguage(HMPatientOrderTableTmp.EcoResProduct, SystemParameters::getSystemLanguageId()).Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>protocolIsActivated</Name>
+				<Source><![CDATA[
+    private boolean protocolIsActivated(Itemid _itemid)
+    {
+        BOMVersion bomVersion;
+        select Active from bomVersion
+        where bomVersion.ItemId == _itemid;
+        return bomVersion.Active;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryHierarchiesByRoles</Name>
+				<Source><![CDATA[
+    private Query queryHierarchiesByRoles(container _roles, boolean _countOnly = false)
+    {
+        Query query = new Query();
+        QueryBuildDataSource qbds = query.addDataSource(tableNum(EcoResCategoryHierarchyRole));
+        int i;
+    
+        qbds.addDataSource(tableNum(EcoResCategoryHierarchy))
+            .addLink(fieldNum(EcoResCategoryHierarchy, RecId),
+                     fieldNum(EcoResCategoryHierarchyRole, CategoryHierarchy));
+    
+        for (i=1; i<=conLen(_roles); i++)
+        {
+            qbds.addRange(fieldNum(EcoResCategoryHierarchyRole, NamedCategoryHierarchyRole))
+                .value(queryValue( conPeek(_roles,i) ));
+        }
+    
+        if (_countOnly)
+        {
+            qbds.fields().clearFieldList();
+            qbds.addSelectionField(fieldNum(EcoResCategoryHierarchyRole, RecId), SelectionField::Count);
+        }
+    
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshDS</Name>
+				<Source><![CDATA[
+    public void refreshDS()
+    {
+        HMPatientOrderTableTmp_DS.research(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        EcoResCategory  root;
+        HMInventType        inventType;
+        Object              formRun;
+        QueryBuildDataSource qbds;
+        formOpenFirstTime = true;
+    
+        super();
+    
+        element.applyCategoryRanges();
+        if(isMultiHierarchy)
+        {
+            selectedHierarchy = EcoResCategoryHierarchy::findByName(hierarchySelector.valueStr());
+        }
+    
+        root = EcoResCategory::getRoot(selectedHierarchy.RecId);
+    
+        if(selectedHierarchy.RecId)
+        {
+            selectedHierachyIsSpecial = EcoResCategoryHierarchyRole::existRoleHierarchyPair(EcoResCategoryNamedHierarchyRole::RetailSpecialGroup, selectedHierarchy.RecId);
+    
+            if (selectedHierachyIsSpecial)
+            {
+                // this may have issues with performance.
+                // We will try to make sure that by the time we reach this point this was already done.
+                RetailCategoryContainmentLookup::synchronizeAllRetailCategories();
+            }
+    
+            mHierarchyTree = new EcoResCategoryTreeDatasourceHM( ecoResCategory_ds,
+                                                               hierarchyTreeCtrl,
+                                                               fieldNum(EcoResCategory, RecId),
+                                                               fieldNum(EcoResCategory, ParentCategory),
+                                                               fieldNum(EcoResCategory, Name),
+                                                               false /* No ID in description */,
+                                                               true,
+                                                               fieldNum(EcoResCategory, Code),
+                                                               selectedHierarchy,
+                                                               null,
+                                                               lookupParameters,
+                                                               fieldNum(EcoResCategory, NestedSetLeft) /* for tree sort order */
+                                                               );
+    
+            if(mHierarchyTree)
+            {
+                switch(orderType)
+                {
+                    case HMOrderType::Laboratory:
+                        inventType = HMInventType::Laboratory;
+                        break;
+                    case HMOrderType::Medication:
+                        inventType = HMInventType::Medication;
+                        GroupCode.visible(true);
+                        GroupStrength.visible(true);
+                        break;
+                    case HMOrderType::Service:
+                    case HMOrderType::Therapy:
+                    case HMOrderType::Appointment:
+                        OUService.visible(true);
+                        HMPatientOrderTableTmp_HMTreatmentClassification.visible(false);
+                        inventType = HMInventType::HCPCS;
+                        break;
+                    case HMOrderType::OUService:
+                        OUService.visible(!isENNClinic);
+                        inventType = HMInventType::HCPCS;
+                        break;
+                    case HMOrderType::Physiotherapy:
+                        inventType = HMInventType::Phsyiotherapy;
+                        break;
+                    case HMOrderType::Radiology:
+                        inventType = HMInventType::Radiology;
+                        break;
+                }
+    
+                mHierarchyTree.setMazikCareFields(inventType);
+            }
+    
+            if(root.RecId)
+            {
+                mHierarchyTree.initRoot(root.Name, root.RecId, mHierarchyTree.image(root) );
+            }
+            if (mHierarchyTree)
+            {
+                mHierarchyTree.setFocusOnFirstMatch();
+            }
+        }
+    
+        if(forEdit)
+        {
+            element.getHMPatientOrderTmpByRefRecId(element.args().record().RecId);
+            GroupItems.visible(false);
+            VSplitterAddProducts.visible(false);
+        }
+        qbrLangRange.value(HMParameters::find().LanguageId_1);
+        qbds = InventTable_ds.query().dataSourceTable(tableNum(HMInventTable));
+        if(!qbds)
+        {
+            qbds = InventTable_ds.query().dataSourceTable(tableNum(InventTable)).addDataSource(tableNum(HMInventTable));
+            qbds.relations(true);
+    
+        }
+        qbds.clearRanges();
+        qbds.addRange(fieldNum(HMInventTable, HMIsAppointmentOnly)).value(SysQuery::value(1));
+        EcoResProduct_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setControlNames</Name>
+				<Source><![CDATA[
+    private void setControlNames()
+    {
+        switch(orderType)
+        { ///<Medisys updte lable for Medisys appointment>
+            case HMOrderType::Appointment:
+    
+                InventTable_ItemId.label(SysLabel::labelId2String2('@MAZ1522'));//@SYS335193");
+                InventTable_ItemId.helpText(SysLabel::labelId2String2('@MAZ11045'));//@MAZ9428");
+                ItemName.label(SysLabel::labelId2String2('@REX4160372'));//@MAZ7948");
+                ItemName.helpText(SysLabel::labelId2String2("@MAZ11046"));//@MAZ9429");
+                ProductName.label(SysLabel::labelId2String2('@REX4160372'));//@MAZ7948");
+                ProductName.helpText(SysLabel::labelId2String2('@MAZ11046'));//@MAZ9429");
+                TreeFilterInstruction.text(SysLabel::labelId2String2('@MAZ11047'));//@MAZ7953");
+                AvailableProducts.text(SysLabel::labelId2String2('@MAZ11048'));//"@MAZ7957");
+                ProductsToAdd.text(SysLabel::labelId2String2('@MAZ11049'));//"@MAZ7960");
+                RightGroupGrid.caption(SysLabel::labelId2String2('@MAZ11050'));//"@MAZ7961");
+                AddProductsVariantsGroup.caption(SysLabel::labelId2String2('@MAZ11051'));//@MAZ7968");
+            break;
+            case HMOrderType::Service:
+            case HMOrderType::Therapy:
+            case HMOrderType::OUService:
+            case HMOrderType::Physiotherapy:
+            case HMOrderType::CarePlanServices:
+            case HMOrderType::InPatientService:
+                InventTable_ItemId.label("@SYS335193");
+                InventTable_ItemId.helpText("@MAZ9428");
+                ItemName.label("@MAZ7948");
+                ItemName.helpText("@MAZ9429");
+                ProductName.label("@MAZ7948");
+                ProductName.helpText("@MAZ9429");
+                TreeFilterInstruction.text("@MAZ7953");
+                AvailableProducts.text("@MAZ7957");
+                ProductsToAdd.text("@MAZ7960");
+                RightGroupGrid.caption("@MAZ7961");
+                AddProductsVariantsGroup.caption("@MAZ7968");
+                break;
+            case HMOrderType::Immunization:
+                InventTable_ItemId.label("@MAZ7949");
+                ItemName.label("@MAZ7950");
+                ProductName.label("@MAZ7950");
+                TreeFilterInstruction.text("@MAZ7954");
+                AvailableProducts.text("@MAZ7958");
+                ProductsToAdd.text("@MAZ7962");
+                RightGroupGrid.caption("@MAZ7963");
+                AddProductsVariantsGroup.caption("@MAZ7969");
+                break;
+            case HMOrderType::Medication:
+            case HMOrderType::InPatientMedication:
+                InventTable_ItemId.label("@MAZ7951");
+                InventTable_ItemId.helpText("@MAZ9424");
+                ItemName.label("@MAZ7952");
+                ItemName.helpText("@MAZ9425");
+                ProductName.label("@MAZ7952");
+                ProductName.helpText("@MAZ9425");
+                TreeFilterInstruction.text("@MAZ7955");
+                AvailableProducts.text("@MAZ7959");
+                ProductsToAdd.text("@MAZ7964");
+                RightGroupGrid.caption("@MAZ7965");
+                AddProductsVariantsGroup.caption("@MAZ7970");
+                break;
+            case HMOrderType::Laboratory:
+            case HMOrderType::Radiology:
+                InventTable_ItemId.label("@MAZ2979");
+                InventTable_ItemId.helpText("@MAZ9426");
+                ItemName.label("@MAZ3503");
+                ItemName.helpText("@MAZ9427");
+                ProductName.label("@MAZ3503");
+                ProductName.helpText("@MAZ9427");
+                TreeFilterInstruction.text("@MAZ7956");
+                AvailableProducts.text("@MAZ7959");
+                ProductsToAdd.text("@MAZ7966");
+                RightGroupGrid.caption("@MAZ7967");
+                AddProductsVariantsGroup.caption("@MAZ7971");
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setInventDim</Name>
+				<Source><![CDATA[
+    void setInventDim(HMPatientOrderTableTmp _patientOrderTableTmp)
+    {
+        InventItemOrderSetupType setupType;
+    
+        if (callerTableId == tableNum(PurchTable))
+        {
+            setupType = InventItemOrderSetupType::Purch;
+        }
+        else if (callerTableId == tableNum(SalesTable))
+        {
+            setupType = InventItemOrderSetupType::Sales;
+        }
+        else
+        {
+            setupType = InventItemOrderSetupType::Invent;
+        }
+    
+        //_productsToAdd.initFromInventTable(InventTable::findByProduct(_productsToAdd.EcoResProduct),
+                                            //setupType,
+                                            //inventDim,
+                                            //element.args().record());
+    //
+        //inventDim.data(InventDim::find(_productsToAdd.InventDim));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showHideQtyColumn</Name>
+				<Source><![CDATA[
+    // this method checks whether Quantity column need to display on the Matrix pivot form.
+    public boolean showHideQtyColumn()
+    {
+        return showQty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeItem</Name>
+				<Source><![CDATA[
+    public void storeItem(ItemId _itemId)
+    {
+        boolean ret = true;
+        ret =element.updateOrderItem(_itemId);
+        itemIdGlob = _itemId;
+        if (ret)
+        {
+            HMPatientOrderTableTmp.ItemId = _itemId;
+    
+            //ttsBegin;
+            //HMPatientOrderTableTmp_DS.write();
+            //ttsCommit;
+            // HMPatientOrderTableTmp_ds.executeQuery();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>task</Name>
+				<Source><![CDATA[
+    public int task(int _taskId)
+    {
+        int ret;
+    
+        taskId = _taskId;
+    
+        ret = super(_taskId);
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>textChanged</Name>
+				<Source><![CDATA[
+    public void textChanged(System.Object obj, System.EventArgs args)
+    {
+        str text = txtSearch.get_Text();
+        if(clientAccount != '' && ItemTypeRadioButton.selection() == HMItemType::Protocol)
+        {
+            qbrProtocolSearch.value(SysQuery::valueLike(text));
+        }
+        else
+        {
+            qbrItemSearch.value(SysQuery::valueLike(text));
+        }
+    
+        EcoResProduct_ds.executeQuery();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDaysSupply</Name>
+				<Source><![CDATA[
+    public void updateDaysSupply()
+    {
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateOrderItem</Name>
+				<Source><![CDATA[
+    public boolean updateOrderItem(ItemId  _itemId)
+    {
+        EcoResProduct   EcoResProductLocal;
+        boolean     ret= true;
+    
+        EcoResProductLocal = EcoResProduct::find(InventTable::find(_itemId).Product);
+        if(this.checkItemAlreadyExistUpdate(_itemId,HMPatientOrderTableTmp.RecId))
+        {
+            warning(strFmt("@MAZ10347",_itemId));
+            ret = false;
+        }
+        if(ret)
+        {
+        HMPatientOrderTableTmp.EcoResProduct        = EcoResProductLocal.RecId;
+        HMPatientOrderTableTmp.EcoResProductName    = EcoResProductLocal.productName();
+    
+            HMPatientOrderTableTmp.update();
+        }
+            return ret;
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateOrderLines</Name>
+				<Source><![CDATA[
+    public boolean validateOrderLines()
+    {
+    
+        HMPatientOrderTableTmp hmPatientOrderTableTmpLocal;
+        boolean validated = true;
+        boolean ret = true;
+        hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getFirst(false);
+        while(hmPatientOrderTableTmpLocal)
+        {
+            validated = formHelperClass.validateOrders(hmPatientOrderTableTmpLocal);
+            if(validated == false)
+            {
+                ret = false;
+            }
+            hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getNext();
+        }
+        if(ret)
+        {
+            hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getFirst(true);
+            while(hmPatientOrderTableTmpLocal)
+            {
+                validated = formHelperClass.validateOrders(hmPatientOrderTableTmpLocal);
+                if(validated == false)
+                {
+                    ret = false;
+                }
+                hmPatientOrderTableTmpLocal = HMPatientOrderTableTmp_ds.getNext();
+            }
+        }
+        return ret;
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>InventTable</Name>
+				<Methods>
+					<Method>
+						<Name>getPrice</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display AmountMST getPrice(InventTable _inventTable)
+        {
+            if(_inventTable.PmfProductType == PmfProductType::BOM)
+            {
+                return HMResourceSchedulingHelper.expandApptProtcol(_inventTable.ItemId,clientAccount,patientRecId,serviceLocationRecId);
+            }
+            else
+            {
+        
+               if (InventTableModule::exist(_inventTable.ItemId, ModuleInventPurchSales::Sales))
+                {
+                    return InventTableModule::find(_inventTable.ItemId, ModuleInventPurchSales::Sales).Price;
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+        
+        
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>isProcotol</Name>
+						<Source><![CDATA[
+        //[SysClientCacheDataMethodAttribute(true)]
+        public display boolean isProcotol(InventTable _inventTable)
+        {
+            if(_inventTable.PmfProductType == PmfProductType::BOM)
+            {
+                return true;
+            }
+            return false;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            switch(orderType)
+            {
+                case HMOrderType::Laboratory:
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::Laboratory));
+                    break;
+                case HMOrderType::Medication:
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::Medication));
+                    break;
+                case HMOrderType::OUService:
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::HCPCS));
+                    break;
+                case HMOrderType::Radiology:
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::Radiology));
+                    break;
+                case HMOrderType::Service:
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::HCPCS));
+                    break;
+                case HMOrderType::Therapy:
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::HCPCS));
+                    break;
+                case HMOrderType::Physiotherapy:
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::Phsyiotherapy));
+                    break;
+                case HMOrderType::Appointment:
+                    ///<Medisys Coment below code for Medisys>
+                   // this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::Phsyiotherapy));
+                    /// <Medisys>
+                    this.queryBuildDataSource().addRange(fieldNum(InventTable, HMProducttype)).value(SysQuery::value(HMInventType::HCPCS));
+        
+            }
+            this.queryBuildDataSource().addDataSource(tableNum(BOMVersion)).relations(true);
+            this.query().dataSourceTable(tableNum(BOMVersion)).addRange(fieldNum(BOMVersion,Active)).value(SysQuery::value(NoYes::Yes));
+            this.query().dataSourceTable(tableNum(BOMVersion)).enabled(true);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+        
+           // element.updateDesign(InventDimFormDesignUpdate::Active);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            this.query().dataSourceTable(tableNum(InventTable)).clearRanges();
+            this.query().dataSourceTable(tableNum(InventTable)).addRange(fieldNum(InventTable, ItemBuyerGroupId)).value(buyersGroup.valueStr());
+            this.query().dataSourceTable(tableNum(InventTable)).addRange(fieldNum(InventTable, PrimaryVendorId)).value(vendor.valueStr());
+        
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>EcoResProduct</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+        
+            if (element.args().parm() != 'HideVariantColumn'    &&
+                EcoResProductMaster::find(ecoResProduct.RecId)  &&
+                EcoResProductMaster::find(ecoResProduct.RecId).hasProductVariants()  &&
+                callerTableId != tableNum(RetailMassUpdateWorksheetTable))
+            {
+                addVariantsButton.enabled(true);
+            }
+            else
+            {
+                addVariantsButton.enabled(false);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>EcoResCategory</Name>
+				<Methods>
+					<Method>
+						<Name>selectionChanged</Name>
+						<Source><![CDATA[
+        public void selectionChanged()
+        {
+            super();
+        
+            if(formOpenFirstTime)
+            {
+                formOpenFirstTime = false;
+                return;
+            }
+            element.applyCategoryRanges();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>EcoResCategoryDescendents</Name>
+				<Methods>
+					<Method>
+						<Name>buildQueryRangeHM</Name>
+						<Source><![CDATA[
+        public void buildQueryRangeHM()
+        {
+            boolean ret = false;
+            ///<Medisys Change != from == >
+            if (orderType != HMOrderType::Appointment || (orderType == HMOrderType::Service))
+            {
+        
+                while select * from hmOrganizationServiceCategoryGlobal
+                    where hmOrganizationServiceCategoryGlobal.HMOrganizationalUnit == ouRecId
+                {
+                    ret = true;
+                    this.queryBuildDataSource().addRange(fieldNum(EcoResCategory,RecId)).value(SysQuery::value(hmOrganizationServiceCategoryGlobal.EcoResCategory));
+        
+                }
+                if(!ret)
+                {
+        
+                    this.queryBuildDataSource().addRange(fieldNum(EcoResCategory,RecId)).value(SysQuery::value(0));
+        
+                    ret = false;
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            // load only those services that are related to the specified OU
+            // intially work for appointmetns later same logic is used for emergency main case procedures     
+            super();
+            this.buildQueryRangeHM();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>InventItemGroupItem</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            this.query().dataSourceTable(tableNum(InventItemGroupItem)).clearRanges();
+        
+            if(itemGroup.valueStr())
+            {
+                this.query().dataSourceTable(tableNum(InventItemGroupItem)).addRange(fieldNum(InventItemGroupItem, ItemGroupId)).value(itemGroup.valueStr());
+            }
+        
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>InventDim</Name>
+				<Methods>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+        //    super();
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>EcoResProductTranslation</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            qbrLangRange = EcoResProductTranslation_ds.queryBuildDataSource().addRange(fieldNum(EcoResProductTranslation,LanguageId));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMPatientOrderTableTmp</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+            InventTable inventTableLocal;
+            BOM         bomTable;
+            BOMVersion  bomVersion;
+            HMAppointmentInventTmp HHMAppointmentInventTmpDetailsLocal;
+            ret = super();
+            if(ret)
+            {
+                inventTableLocal = inventTable::find(HMPatientOrderTableTmp.ItemId);
+                if(inventTableLocal.PmfProductType == PmfProductType::BOM)
+                {
+                    select firstonly bomVersion
+                    where bomVersion.ItemId == inventTableLocal.ItemId
+                    && bomVersion.Active
+                    && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+                    && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+                    if (bomVersion.RecId)
+                    {
+                        While select bomTable
+                            where bomTable.BOMId == bomVersion.BOMId
+                            join inventTableLocal
+                            where bomTable.ItemId == inventTableLocal.ItemId
+                        {
+                            HHMAppointmentInventTmpDetailsLocal.initValue();
+                            HHMAppointmentInventTmpDetailsLocal.ItemId = bomTable.ItemId;
+                            HHMAppointmentInventTmpDetailsLocal.ItemName = inventTableLocal.itemName();
+                            HHMAppointmentInventTmpDetailsLocal.BOMQty = BOMTable.BOMQty;
+                            HHMAppointmentInventTmpDetailsLocal.insert();
+                        }
+                    }
+                }
+                HMAppointmentInventTmp_Services.setTmpData(HHMAppointmentInventTmpDetailsLocal);
+                HMAppointmentInventTmp_Services_ds.executeQuery();
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            HMPatientOrderTableTmp.Recordversion = HMPatientOrderTableTmp.recVersion;
+            HMPatientOrderTableTmp.IsUpdate = NoYes::Yes;
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>inventDim</Name>
+						<Source><![CDATA[
+        InventDim inventDim()
+        {
+            return inventDim;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>FromDate</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+            
+                if(HMPatientOrderTableTmp.ItemId && HMInventTable::findByItemId(HMPatientOrderTableTmp.ItemId).ChargeType == HMChargetype::Immediate)
+                {
+                   HMPatientOrderTableTmp.ToTime = HMPatientOrderTableTmp.FromTime;
+                }
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>FromTime</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+            
+                if(HMPatientOrderTableTmp.ItemId && HMInventTable::findByItemId(HMPatientOrderTableTmp.ItemId).ChargeType == HMChargetype::Immediate)
+                {
+                   HMPatientOrderTableTmp.ToTime = HMPatientOrderTableTmp.FromTime;
+                }
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>HMOrganizationalUnitInternal</DataField>
+						<Methods>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                Common ret;
+            
+                SysReferenceTableLookup sysReferenceTableLookup;
+                QueryBuildDataSource    queryBuildDataSource;
+                Query                   query = new Query();
+                sysReferenceTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMOrganizationalUnit), _formReferenceControl, true);
+            
+                queryBuildDataSource = query.addDataSource(tableNum(HMOrganizationalUnit));
+            
+                switch(orderType)
+                {
+                    case HMOrderType::Medication:
+                        queryBuildDataSource.addRange(fieldNum(HMOrganizationalUnit, HMOrganizationalUnitIndicators)).value(SysQuery::value(HMOrganizationalUnitIndicators::Pharmacy));
+                        break;
+                    case HMOrderType::Laboratory:
+                        queryBuildDataSource.addRange(fieldNum(HMOrganizationalUnit, HMOrganizationalUnitIndicators)).value(SysQuery::value(HMOrganizationalUnitIndicators::PathologyAndClinicalLaboratory));
+                        break;
+                    case HMOrderType::Radiology:
+                        queryBuildDataSource.addRange(fieldNum(HMOrganizationalUnit, HMOrganizationalUnitIndicators)).value(SysQuery::value(HMOrganizationalUnitIndicators::DiagnosticImaging));
+                    break;
+                }
+            
+            
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationalUnit, IsBlocked)).value(SysQuery::value(NoYes::No));
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationalUnit, FromDate)).value(strFmt('((FromDate <= %1) && (ToDate >= %1))',date2StrXpp(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))));
+            
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMOrganizationalUnit, Code));
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMOrganizationalUnit, Description));
+                sysReferenceTableLookup.parmQuery(query);
+            
+                ret = sysReferenceTableLookup.performFormLookup();
+            
+                return ret;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>HMPerformingDepartment</DataField>
+						<Methods>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                Common ret;
+                SysReferenceTableLookup sysReferenceTableLookup;
+                QueryBuildDataSource    queryBuildDataSource,queryBuildDataSourceParent;
+                Query                   query = new Query();
+            
+                sysReferenceTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMOrganizationalUnit), _formReferenceControl, true);
+            
+                queryBuildDataSourceParent = query.addDataSource(tableNum(HMOrganizationalUnit));
+                queryBuildDataSource = queryBuildDataSourceParent.addDataSource(tableNum(HMOrganizationaCategory));
+                queryBuildDataSource.relations(true);
+            
+                queryBuildDataSourceParent.addRange(fieldNum(HMOrganizationalUnit,IsBlocked)).value(SysQuery::value(NoYes::No));
+                queryBuildDataSourceParent.addRange(fieldNum(HMOrganizationalUnit,FromDate)).value(strFmt('((FromDate <= %1) && (ToDate >= %1))',date2StrXpp(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))));
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationaCategory, Indicator)).value(SysQuery::value(HMOrganizationalCategoryIndicator::DepartmentalUnit));
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationaCategory, Indicator)).value(SysQuery::value(HMOrganizationalCategoryIndicator::NursingAssignments));
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationaCategory, Indicator)).value(SysQuery::value(HMOrganizationalCategoryIndicator::TreatmentUnit));
+            
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMOrganizationalUnit, Code));
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMOrganizationalUnit, Description));
+                sysReferenceTableLookup.parmQuery(query);
+            
+                ret = sysReferenceTableLookup.performFormLookup();
+            
+                return ret;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>HMRequestingDepartment</DataField>
+						<Methods>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                Common ret;
+                SysReferenceTableLookup sysReferenceTableLookup;
+                QueryBuildDataSource    queryBuildDataSource,queryBuildDataSourceParent;
+                Query                   query = new Query();
+            
+                sysReferenceTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMOrganizationalUnit), _formReferenceControl, true);
+            
+                queryBuildDataSourceParent = query.addDataSource(tableNum(HMOrganizationalUnit));
+                queryBuildDataSource = queryBuildDataSourceParent.addDataSource(tableNum(HMOrganizationaCategory));
+                queryBuildDataSource.relations(true);
+            
+                queryBuildDataSourceParent.addRange(fieldNum(HMOrganizationalUnit,IsBlocked)).value(SysQuery::value(NoYes::No));
+                queryBuildDataSourceParent.addRange(fieldNum(HMOrganizationalUnit,FromDate)).value(strFmt('((FromDate <= %1) && (ToDate >= %1))',date2StrXpp(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))));
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationaCategory, Indicator)).value(SysQuery::value(HMOrganizationalCategoryIndicator::DepartmentalUnit));
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationaCategory, Indicator)).value(SysQuery::value(HMOrganizationalCategoryIndicator::NursingAssignments));
+                queryBuildDataSource.addRange(fieldNum(HMOrganizationaCategory, Indicator)).value(SysQuery::value(HMOrganizationalCategoryIndicator::TreatmentUnit));
+            
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMOrganizationalUnit, Code));
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMOrganizationalUnit, Description));
+                sysReferenceTableLookup.parmQuery(query);
+            
+                ret = sysReferenceTableLookup.performFormLookup();
+            
+                return ret;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>HMResourceSchedulingPlanningObject</DataField>
+						<Methods>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                Common ret;
+                SysReferenceTableLookup sysReferenceTableLookup;
+            
+                QueryBuildDataSource    queryBuildDataSource;
+                Query                   query = new Query();
+                sysReferenceTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMResourceSchedulingPlanningObject), _formReferenceControl, true);
+            
+                queryBuildDataSource = query.addDataSource(tableNum(HMResourceSchedulingPlanningObject));
+                queryBuildDataSource.addRange(fieldNum(HMResourceSchedulingPlanningObject, CaseType)).value(SysQuery::value(HMCaseType::Physiotherapy));
+                queryBuildDataSource.addRange(fieldNum(HMResourceSchedulingPlanningObject, StartDate)).value(strfmt('%1>=%2',fieldstr(HMResourceSchedulingPlanningObject,StartDate),queryValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))));
+                queryBuildDataSource.addRange(fieldNum(HMResourceSchedulingPlanningObject, EndDate)).value(strfmt('%1<=%2',fieldstr(HMResourceSchedulingPlanningObject,EndDate),queryValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))));
+            
+            
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMResourceSchedulingPlanningObject, Code));
+                sysReferenceTableLookup.addLookupfield(fieldNum(HMResourceSchedulingPlanningObject, Description));
+                sysReferenceTableLookup.parmQuery(query);
+            
+                ret = sysReferenceTableLookup.performFormLookup();
+            
+            
+                return ret;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+			<DataSource>
+				<Name>RetailCategoryContainmentLookup</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            RetailCategoryContainmentLookup::synchronizeAllRetailCategories();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMClientProtocol</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            qbrProtocolSearch = this.queryBuildDataSource().addRange(fieldNum(HMClientProtocol,HMProtocolAlias));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>ShowTreeButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            TreeGroup.visible(!TreeGroup.visible());
+            element.applyCategoryRanges();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HierarchySelector</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            //if(FormTreeSelect::Unknown)
+            element.run();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HierarchyTreeCtrl</Name>
+				<Type>Tree</Type>
+				<Methods>
+					<Method>
+						<Name>expanded</Name>
+						<Source><![CDATA[
+        public void expanded(int _idx, FormTreeExpand _action, anytype _data)
+        {
+            super(_idx, _action, _data);
+        
+            if ((FormTreeExpand::Expand == _action) && mHierarchyTree)
+            {
+                mHierarchyTree.updateTree(_idx);
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>expanding</Name>
+						<Source><![CDATA[
+        public boolean expanding(int _idx, FormTreeExpand _action, anytype _data)
+        {
+            boolean ret;
+        
+            ret = super(_idx, _action, _data);
+        
+            if (mHierarchyTree)
+            {
+                mHierarchyTree.expanding(_idx, _action, _data);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>selectionChanged</Name>
+						<Source><![CDATA[
+        public void selectionChanged(FormTreeItem _oldItem, FormTreeItem _newItem, FormTreeSelect _how)
+        {
+            int root = this.getRoot();
+        
+            super(_oldItem, _newItem, _how);
+        
+            if (mHierarchyTree)
+            {
+                mHierarchyTree.selectionChanged(_oldItem, _newItem);
+            }
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>selectionChanging</Name>
+						<Source><![CDATA[
+        public boolean selectionChanging(FormTreeItem _oldItem, FormTreeItem _newItem, FormTreeSelect _how)
+        {
+            boolean ret;
+        
+            ret = super(_oldItem, _newItem, _how);
+        
+            if (!ret && mHierarchyTree)
+            {
+                ret = mHierarchyTree.selectionChanging(_oldItem, _newItem, _how);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ItemGroup</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(itemGroup.valueStr())
+            {
+                inventItemGroupItem_ds.query().dataSourceTable(tableNum(InventItemGroupItem)).enabled(true);
+            }
+            else
+            {
+                inventItemGroupItem_ds.query().dataSourceTable(tableNum(InventItemGroupItem)).enabled(false);
+            }
+            inventTable_ds.executeQuery();
+            inventItemGroupItem_ds.executeQuery();
+            ecoResProduct_ds.executeQuery();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>BuyersGroup</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            inventTable_ds.executeQuery();
+            ecoResProduct_ds.executeQuery();
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Vendor</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            inventTable_ds.executeQuery();
+            ecoResProduct_ds.executeQuery();
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>LanguageRadioButton</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+            ret = super();
+            if(ret)
+            {
+                qbrLangRange.value(LanguageRadioButton.valueStr());
+                EcoResProduct_ds.executeQuery();
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Select_</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            RecId  patientOrderTmpRecId;
+            EcoResProduct   ecoResProductLocal;
+            FormDataSource  fds;
+        
+            super();
+        
+            fds = FormDataUtil::getFormDataSource(ecoResProduct);
+        
+            for (ecoResProductLocal = fds.getFirst(true) ? fds.getFirst(true) :
+                    fds.cursor(); ecoResProductLocal;
+                    ecoResProductLocal = fds.getNext())
+            {
+                patientOrderTmpRecId = element.insertIntoTmpProductsToAdd(ecoResProductLocal.RecId,
+                                                    0,
+                                                    0).RecId;
+            HMPatientOrderTableTmp_DS.research(true);
+            }
+        
+            if(patientOrderTmpRecId)
+            {
+                HMPatientOrderTableTmp_DS.research(true);
+        
+                element.getHMPatientOrderTmpByRecId(patientOrderTmpRecId);
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AddVariantsButton</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            //super();
+        
+            Args    args;
+            EcoResProductMaster master;
+        
+            args = new Args();
+        
+            select * from master where master.RecId == ecoResProduct.RecId;
+            args.record(master);
+            args.caller(element);
+            new MenuFunction(menuitemDisplayStr(RetailMatrixPivot), MenuItemType::Display).run(args);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ViewPrice</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            info(strFmt('@MAZ12310',InventTable.ItemId,InventTable_ds.getPrice(InventTable)));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ItemTypeRadioButton</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+        
+            int ret;
+        
+            ret = super();
+            if(ret)
+            {
+                HMClientProtocol_ds.queryBuildDataSource().enabled(false);
+                if(this.selection()== HMItemType::Exams)
+                {
+                    InventTable_ds.queryBuildDataSource().clearRange(fieldNum(InventTable,PmfProductType));
+                    InventTable_ds.queryBuildDataSource().addRange(fieldNum(InventTable,PmfProductType)).value(SysQuery::value(PmfProductType::None));
+                    ItemName.visible(true);
+                    InventTable_ds.query().dataSourceTable(tableNum(BOMVersion)).enabled(false);
+                    HMClientProtocol_HMProtocolAlias.visible(false);
+                }
+                else if(this.selection() == HMItemType::Protocol)
+                {
+        
+                    InventTable_ds.queryBuildDataSource().clearRange(fieldNum(InventTable,PmfProductType));
+                    InventTable_ds.queryBuildDataSource().addRange(fieldNum(InventTable,PmfProductType)).value(SysQuery::value(PmfProductType::BOM));
+                    InventTable_ds.query().dataSourceTable(tableNum(BOMVersion)).enabled(true);
+                    if(clientAccount)
+                    {
+                        HMClientProtocol_ds.queryBuildDataSource().enabled(true);
+                        HMClientProtocol_ds.queryBuildDataSource().addRange(fieldNum(HMClientProtocol,ClientAccount)).value(SysQuery::value(clientAccount));
+                        ItemName.visible(false);
+                        HMClientProtocol_HMProtocolAlias.visible(true);
+                    }
+                    else
+                    {
+                        ItemName.visible(true);
+                        HMClientProtocol_HMProtocolAlias.visible(false);
+                    }
+        
+                }
+        
+                Grid.update();
+                EcoResProduct_ds.executeQuery();
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Button</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            HMOrganizationalUnitService     hmOrganizationalUnitService;
+            HMAppointmentInventTmp          hmAppointmentInventTmp;
+            HMPatientOrderTableTmp          HMPatientOrderTableTmpLocal ;
+            FormDataSource ds;
+            HMPatientOrderTableTmp hmPatientOrderTableTmp_local;
+        
+            super();
+        
+            hmPatientOrderTableTmp_local.setTmpData(HMPatientOrderTableTmpLocal);
+            ds = FormDataUtil::getFormDataSource(HMPatientOrderTableTmpLocal);
+        
+            for (HMPatientOrderTableTmpLocal = ds.getFirst(true) ? ds.getFirst(true) : ds.cursor(); HMPatientOrderTableTmpLocal; HMPatientOrderTableTmpLocal = ds.getNext())
+            {
+                ttsBegin;
+                if(orderType == HMOrderType::OUService)
+                {
+                    if(HMPatientOrderTableTmpLocal.RefRecId)
+                    {
+                        hmOrganizationalUnitService = HMOrganizationalUnitService::findbyOUandService(HMPatientOrderTableTmpLocal.RefRecId, HMPatientOrderTableTmpLocal.ItemId, true);
+                        hmOrganizationalUnitService.delete();
+                    }
+                }
+                else if(orderType == HMOrderType::Appointment)
+                {
+                    HMPatientOrderTableTmpLocal.delete();
+                }
+        
+                delete_from hmPatientOrderTableTmp_local
+                    where hmPatientOrderTableTmp_local.EcoResProduct == HMPatientOrderTableTmpLocal.EcoResProduct &&
+                        hmPatientOrderTableTmp_local.EcoResDistinctProductVariant == HMPatientOrderTableTmpLocal.EcoResDistinctProductVariant &&
+                        hmPatientOrderTableTmp_local.InventDimId == HMPatientOrderTableTmpLocal.InventDimId;
+        
+                ttsCommit;
+            }
+        
+            ds.research(true);
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>InventTable</Name>
+			<Table>InventTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ABCContributionMargin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCRevenue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCTieUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ABCValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholManufacturerId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholProductionTypeId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlcoholStrength_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltInventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AltItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ApproxTaxValue_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetGroupId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AutoReportFinished</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BatchMergeDateCalculationMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BatchNumGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMCalcGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMManualReceipt</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMUnitId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Chargable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissionGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CostGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CostModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomsExportTariffCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustomsImportTariffCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DAXIntegrationKey</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Density</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Depth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DSA_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EPCManager</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExceptionCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExciseRecordType_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExciseTariffCodes_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EximProductGroupTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFOAvoidCalc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFONormalValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalLIFONormalValueCalc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForecastDMPInclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossDepth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossHeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>grossWidth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMIsExported</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMFGItemNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ICMSOnService_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Intracode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatExclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntrastatProcId_CZ</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntraUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventFiscalLIFOGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProductType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemBuyerGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemDimCostPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemPriceToleranceGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemTaggingLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkupCode_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MatchingPolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRPackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MinimumPalletQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NameAlias</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NetWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NGPCodesTable_FR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NRTaxGroup_LV</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigCountryRegionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigCountyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrigStateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackagingGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Packing_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PalletTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAAutoStart</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAHideApproval</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAHideDialog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAInventItemGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAItemAutoGenerated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAItemConfigurable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PBAMandatoryConfig</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSBaseAttributeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsBestBefore</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSMinimumPalletQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSQtyPerLayer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWWMSStandardPalletQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsFreightAllocationGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsItemRebateGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSPotencyAttribRecording</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsShelfAdvice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsShelfLife</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PDSTargetFactor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsVendorCheckItem</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Phantom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PKWiUCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfPlanningItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PmfYieldPct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryVendorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdFlushingPrincip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProdPoolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Product</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>projCategoryId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PropertyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>qtyPerLayer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReqGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SADRateCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesContributionRatio</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesModel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPercentMarkup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPriceModelBasic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapConst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScrapVar</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SerialNumGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceCodeTable_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SkipIntraCompanySync_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>sortCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardConfigId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StandardInventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>standardPalletQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatisticsFactor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaraWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxationOrigin_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxFiscalClassification_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxPackagingQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxServiceCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnitVolume</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseAltItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Width</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSArrivalHandlingTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSPalletTypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSPickingQtyTime</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>EcoResProduct</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>EcoResProduct</Name>
+			<Table>EcoResProduct</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DisplayProductNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWProduct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>relationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SearchName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<CounterField>DisplayProductNumber</CounterField>
+			<Index>DisplayProductNumberIdx</Index>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources>
+				<AxFormDataSourceDerived>
+					<Name>EcoResProduct_EcoResProductMaster</Name>
+					<Table>EcoResProductMaster</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>IsProductVariantUnitConversionEnabled</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RetailColorGroupId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RetailSizeGroupId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RetailStyleGroupId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>VariantConfigurationTechnology</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources />
+				</AxFormDataSourceDerived>
+				<AxFormDataSourceDerived>
+					<Name>EcoResProduct_EcoResDistinctProduct</Name>
+					<Table>EcoResDistinctProduct</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources>
+						<AxFormDataSourceDerived>
+							<Name>EcoResProduct_EcoResDistinctProductVariant</Name>
+							<Table>EcoResDistinctProductVariant</Table>
+							<Fields>
+								<AxFormDataSourceField>
+									<DataField>ProductMaster</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>RecId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>RetaiTotalWeight</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>TableId</DataField>
+								</AxFormDataSourceField>
+							</Fields>
+							<ReferencedDataSources />
+							<DerivedDataSources />
+						</AxFormDataSourceDerived>
+					</DerivedDataSources>
+				</AxFormDataSourceDerived>
+			</DerivedDataSources>
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>EcoResCategory</Name>
+			<Table>EcoResCategory</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CategoryHierarchy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChangeStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultProjectGlobalCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultThreshold_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCategoryType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsCategoryAttributesInherited</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsTangible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Level</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NestedSetLeft</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NestedSetRight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PKWiUCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>relationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources>
+				<AxFormDataSourceDerived>
+					<Name>EcoResCategory_PCClass</Name>
+					<Table>PCClass</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ReuseEnabled</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources />
+				</AxFormDataSourceDerived>
+			</DerivedDataSources>
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>EcoResProductCategory</Name>
+			<Table>EcoResProductCategory</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Category</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CategoryHierarchy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Product</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>EcoResProduct</JoinSource>
+			<LinkType>ExistJoin</LinkType>
+			<OnlyFetchActive>Yes</OnlyFetchActive>
+			<AllowCheck>No</AllowCheck>
+			<AllowCreate>No</AllowCreate>
+			<AllowEdit>No</AllowEdit>
+			<Index>CategoryProductRecId</Index>
+			<InsertAtEnd>No</InsertAtEnd>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>EcoResCategoryDescendents</Name>
+			<Table>EcoResCategory</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CategoryHierarchy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChangeStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultProjectGlobalCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultThreshold_PSN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCategoryType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsCategoryAttributesInherited</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsTangible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Level</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NestedSetLeft</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NestedSetRight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PKWiUCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>relationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>EcoResProductCategory</JoinSource>
+			<LinkType>ExistJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<Index>NameIdx</Index>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources>
+				<AxFormDataSourceDerived>
+					<Name>EcoResCategoryDescendents_PCClass</Name>
+					<Table>PCClass</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ReuseEnabled</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources />
+				</AxFormDataSourceDerived>
+			</DerivedDataSources>
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>InventItemGroupItem</Name>
+			<Table>InventItemGroupItem</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemGroupDataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>InventTable</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<OnlyFetchActive>Yes</OnlyFetchActive>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<Index>ItemIdx</Index>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>InventDim</Name>
+			<Table>InventDim</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>configId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventBatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventColorId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventGtdId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventOwnerId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>inventSerialId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSizeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStatusId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventStyleId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LicensePlateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SHA1Hash</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSLocationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>wMSPalletId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<LinkType>OuterJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>EcoResProductTranslation</Name>
+			<Table>EcoResProductTranslation</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LanguageId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Product</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DelayActive>No</DelayActive>
+			<JoinSource>EcoResProduct</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<OnlyFetchActive>Yes</OnlyFetchActive>
+			<Index>SurrogateKey</Index>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>EcoResDistinctProductVariant</Name>
+			<Table>EcoResDistinctProductVariant</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DisplayProductNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCWProduct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProductMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProductType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>relationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RetaiTotalWeight</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SearchName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>EcoResProduct</JoinSource>
+			<LinkType>NotExistJoin</LinkType>
+			<OnlyFetchActive>Yes</OnlyFetchActive>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<Index>EcoResProductMasterIdx</Index>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientOrderTableTmp</Name>
+			<Table>HMPatientOrderTableTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DaysSupply</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DispenseQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DurationPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EcoResDistinctProductVariant</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EcoResProduct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EcoResProductName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExpectedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExpectedTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FrequencyPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FrequencyTimes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Friday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMDoseQuantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMLabCondDispSpecimen</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMLaboratories</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMLabRadiologyOrderType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMLabSpecimenSource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMedDosageUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMedicationForm</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMedicationRoute</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMeDispenseUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMedUsageFrequency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMovementRequest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrderType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitInternal</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPerformingDepartment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPharmacy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPhysiotherapyCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPhysiotherapyDuration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPhysiotherapyFrequency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPhysiotherapyOrderPriority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPhysiotherapyTreatment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRequestingDepartment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMServiceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Importance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDimId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPRN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsUpdate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Monday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NotesToPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NotesToPharmacist</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Origin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformedTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysioDuration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysioFrequency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProductNDCCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProtocolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Quantity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonTablePhysiotherapy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Recordversion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Refills</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RxNormCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Saturday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceDeclinedReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StartDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Strength</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Sunday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Thursday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Tuesday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VariantId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Wednesday</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>RetailCategoryContainmentLookup</Name>
+			<Table>RetailCategoryContainmentLookup</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Category</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContainedCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDirty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>EcoResProductCategory</JoinSource>
+			<LinkType>ExistJoin</LinkType>
+			<OnlyFetchActive>Yes</OnlyFetchActive>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMAppointmentInventTmp_Services</Name>
+			<Table>HMAppointmentInventTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AppointmentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentTableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CoPay</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DurationPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EcoResProduct</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EcoResProductName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FrequencyPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FrequencyTimes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCondition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointmentInvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMServiceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Instruction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsProtcol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackageValidityDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysioDuration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysioFrequency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidityDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Price</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProtocolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProtocolName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResourceDescription</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceDeclinedReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMClientProtocol</Name>
+			<Table>HMClientProtocol</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CalculationMethod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInternalInstructions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProtocolAlias</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultHandlingNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>InventTable</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@SYS132109</Caption>
+		<ColumnSpace xmlns="">30</ColumnSpace>
+		<ColumnSpaceMode xmlns="">Fixed</ColumnSpaceMode>
+		<DialogSize xmlns="">Full</DialogSize>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<StatusBarStyle xmlns="">Simple</StatusBarStyle>
+		<Style xmlns="">Dialog</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>MainGroup</Name>
+				<ElementPosition>805306366</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>GroupItems</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>986251746</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>ShowTreeButton</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>858993458</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Border>Flat</Border>
+								<Text>Show tree</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>TreeGroup</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1288490187</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupTree</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStaticTextControl">
+												<Name>TreeFilterInstruction</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>345131298</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>StaticText</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DisplayLength>50</DisplayLength>
+												<DisplayLengthMode>Fixed</DisplayLengthMode>
+												<Text>@RET5928</Text>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormComboBoxControl">
+												<Name>HierarchySelector</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>517696947</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>ComboBox</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS41044</Label>
+												<Items />
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormTreeControl">
+												<Name>HierarchyTreeCtrl</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>690262599</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>Tree</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<FormControlExtension
+													i:nil="true" />
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>GroupFilters</Name>
+												<ElementPosition>1418873122</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ItemGroup</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>858993458</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ExtendedDataType>ItemGroupId</ExtendedDataType>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>BuyersGroup</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1288490187</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ExtendedDataType>ItemBuyerGroupId</ExtendedDataType>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Vendor</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1717986916</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ExtendedDataType>VendAccount</ExtendedDataType>
+													</AxFormControl>
+												</Controls>
+												<Columns>2</Columns>
+											</AxFormControl>
+										</Controls>
+										<Caption>@RET5132</Caption>
+									</AxFormControl>
+								</Controls>
+								<Columnspace>2</Columnspace>
+								<ColumnspaceMode>Fixed</ColumnspaceMode>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>AddProductsVariantsGroup</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1717986916</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>SizeToAvailable</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormRadioButtonControl">
+										<Name>LanguageRadioButton</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>477218588</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>RadioButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Caption>Search language</Caption>
+										<Columns>2</Columns>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>FilterGroup</Name>
+										<ElementPosition>715827882</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStaticTextControl">
+												<Name>StaticText</Name>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>StaticText</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Text>@SYS81048</Text>
+											</AxFormControl>
+											<AxFormControl>
+												<Name>QuickFilterControl1</Name>
+												<FormControlExtension>
+													<Name>QuickFilterControl</Name>
+													<ExtensionComponents />
+													<ExtensionProperties>
+														<AxFormControlExtensionProperty>
+															<Name>targetControlName</Name>
+															<Type>String</Type>
+															<Value>Grid</Value>
+														</AxFormControlExtensionProperty>
+														<AxFormControlExtensionProperty>
+															<Name>placeholderText</Name>
+															<Type>String</Type>
+														</AxFormControlExtensionProperty>
+														<AxFormControlExtensionProperty>
+															<Name>defaultColumnName</Name>
+															<Type>String</Type>
+														</AxFormControlExtensionProperty>
+													</ExtensionProperties>
+												</FormControlExtension>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStaticTextControl">
+										<Name>AvailableProducts</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741823</ElementPosition>
+										<Enabled>No</Enabled>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>StaticText</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DisplayLength>50</DisplayLength>
+										<DisplayLengthMode>Fixed</DisplayLengthMode>
+										<Text></Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneControl">
+										<Name>AddProductsVariantsActionPane</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPane</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormActionPaneTabControl">
+												<Name>CopyOfActionPaneTab</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ActionPaneTab</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonGroupControl">
+														<Name>AddProducts</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ButtonGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormButtonControl">
+																<Name>Select_</Name>
+																<ElementPosition>1073741822</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@RET5926</HelpText>
+																<Type>Button</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>75</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+																<MultiSelect>Yes</MultiSelect>
+																<NormalImage>New</NormalImage>
+																<Text>@RET5134</Text>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormButtonControl">
+																<Name>AddVariantsButton</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1610612733</ElementPosition>
+																<Enabled>No</Enabled>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@RET5929</HelpText>
+																<Type>Button</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>75</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+																<MultiSelect>Yes</MultiSelect>
+																<NormalImage>New</NormalImage>
+																<Text>@RET260149</Text>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormButtonControl">
+																<Name>ViewPrice</Name>
+																<ElementPosition>1879048189</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>Button</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@MAZ12309</Text>
+															</AxFormControl>
+														</Controls>
+														<ArrangeMethod>Vertical</ArrangeMethod>
+														<Columns>2</Columns>
+													</AxFormControl>
+												</Controls>
+												<AlignChild>No</AlignChild>
+												<AlignChildren>No</AlignChildren>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<Columns>2</Columns>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+										<Style>Strip</Style>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>Group_</Name>
+										<ElementPosition>1670265058</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormRadioButtonControl">
+												<Name>ItemTypeRadioButton</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>RadioButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Columns>3</Columns>
+												<EnumType>HMItemType</EnumType>
+												<Items />
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGridControl">
+										<Name>Grid</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1908874352</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<Type>Grid</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToContent</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>GroupProcedureCPT</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>318145724</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMInventTable_HMProcedureMasterCode</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+													</AxFormControl>
+												</Controls>
+												<BackgroundColor>WindowBackground</BackgroundColor>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>InventTable_ItemId</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>477218588</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@GLS63983</HelpText>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>ItemId</DataField>
+												<DataSource>InventTable</DataSource>
+												<Label>@MAZ1522</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>ItemName</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>715827882</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Name</DataField>
+												<DataSource>EcoResProductTranslation</DataSource>
+												<Label>@MAZ5418</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>HMClientProtocol_HMProtocolAlias</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>894784852</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ11046</HelpText>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>HMProtocolAlias</DataField>
+												<DataSource>HMClientProtocol</DataSource>
+												<Label>@MAZ5418</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormCheckBoxControl">
+												<Name>IsProtocol</Name>
+												<ElementPosition>1163220308</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>CheckBox</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<BackgroundColor>WindowBackground</BackgroundColor>
+												<DataMethod>isProcotol</DataMethod>
+												<DataSource>InventTable</DataSource>
+												<Label>@RET4040005</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>GroupStrength</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMInventTable_Strength</Name>
+														<ElementPosition>715827882</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>HMInventTable_HMMedicationForm</Name>
+														<ElementPosition>1073741823</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<ReplacementFieldGroup>DescriptionGroup</ReplacementFieldGroup>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMInventTable_RxNormCode</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMInventTable_ProductNDCCode</Name>
+														<ElementPosition>1789569705</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+													</AxFormControl>
+												</Controls>
+												<BackgroundColor>WindowBackground</BackgroundColor>
+											</AxFormControl>
+										</Controls>
+										<DataSource>EcoResProduct</DataSource>
+									</AxFormControl>
+								</Controls>
+								<Caption>@RET5927</Caption>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>VSplitterAddProducts</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1479377620</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls />
+						<Style>SplitterVerticalContainer</Style>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>RightGroup</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1813430633</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>RightGroupGrid</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1113510038</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStaticTextControl">
+										<Name>ProductsToAdd</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>715827880</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>StaticText</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DisplayLength>50</DisplayLength>
+										<DisplayLengthMode>Fixed</DisplayLengthMode>
+										<Text>@RET5925</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneControl">
+										<Name>ActionPane</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPane</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormActionPaneTabControl">
+												<Name>ActionPaneTab</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ActionPaneTab</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonGroupControl">
+														<Name>RemoveButton</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ButtonGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormButtonControl">
+																<Name>Button</Name>
+																<ElementPosition>1073741822</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@SYS328874</HelpText>
+																<Type>Button</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+																<MultiSelect>Yes</MultiSelect>
+																<NormalImage>Delete</NormalImage>
+																<Text>@RET5135</Text>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormMenuFunctionButtonControl">
+																<Name>MenuItemDimensions</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1610612734</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>MenuFunctionButton</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Visible>No</Visible>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<MenuItemName>InventDimParmFixed</MenuItemName>
+																<SaveRecord>No</SaveRecord>
+																<Text>@SYS5951</Text>
+															</AxFormControl>
+														</Controls>
+														<ArrangeMethod>Vertical</ArrangeMethod>
+														<Columns>2</Columns>
+													</AxFormControl>
+												</Controls>
+												<AlignChild>No</AlignChild>
+												<AlignChildren>No</AlignChildren>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<Columns>2</Columns>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+										<Style>Strip</Style>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGridControl">
+										<Name>Grid1</Name>
+										<ElementPosition>1610612734</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<Type>Grid</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>GroupProcedureCPTTMP</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>548055720</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>CopyOfHMInventTable_HMProcedureMasterCode</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataMethod>CPTCode</DataMethod>
+														<DataSource>HMPatientOrderTableTmp</DataSource>
+														<Label>@MAZ4681</Label>
+													</AxFormControl>
+												</Controls>
+												<BackgroundColor>WindowBackground</BackgroundColor>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>ProductName</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1233125373</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>EcoResProductName</DataField>
+												<DataSource>HMPatientOrderTableTmp</DataSource>
+												<Label>@MAZ5418</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormReferenceGroupControl">
+												<Name>TmpInventTable_EcoResDistinctProductVariant</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1644167165</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ReferenceGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>HMPatientOrderTableTmp</DataSource>
+												<ReferenceField>InventDimId</ReferenceField>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>GroupCode</Name>
+												<AllowEdit>No</AllowEdit>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1707081725</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMPatientOrderTableTmp_Strength</Name>
+														<ElementPosition>536870910</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>Strength</DataField>
+														<DataSource>HMPatientOrderTableTmp</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>HMPatientOrderTableTmp_HMMedicationForm</Name>
+														<ElementPosition>805306365</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<DataSource>HMPatientOrderTableTmp</DataSource>
+														<ReferenceField>HMMedicationForm</ReferenceField>
+														<ReplacementFieldGroup>DescriptionGroup</ReplacementFieldGroup>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMPatientOrderTableTmp_RxNormCode</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>RxNormCode</DataField>
+														<DataSource>HMPatientOrderTableTmp</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMPatientOrderTableTmp_ProductNDCCode</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>ProductNDCCode</DataField>
+														<DataSource>HMPatientOrderTableTmp</DataSource>
+													</AxFormControl>
+												</Controls>
+												<BackgroundColor>WindowBackground</BackgroundColor>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>PhysioGroup</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1769996285</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>HMInventTable_HMPhysiotherapyCategory</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>HMInventTable_HMPhysiotherapyTreatment</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+													</AxFormControl>
+												</Controls>
+												<BackgroundColor>WindowBackground</BackgroundColor>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>InventoryDimensions</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1895825405</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_configId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>configId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventSizeId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventSizeId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventColorId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventColorId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventStyleId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventStyleId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventSiteId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventSiteId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventLocationId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventLocationId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_inventBatchId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>inventBatchId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_wMSLocationId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>wMSLocationId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_wMSPalletId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>wMSPalletId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_inventSerialId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>inventSerialId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventStatusId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventStatusId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_LicensePlateId</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>LicensePlateId</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventOwnerId_RU</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventOwnerId_RU</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventProfileId_RU</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventProfileId_RU</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>InventoryDimensions_InventGtdId_RU</Name>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>InventGtdId_RU</DataField>
+														<DataSource>InventDim</DataSource>
+													</AxFormControl>
+												</Controls>
+												<BackgroundColor>WindowBackground</BackgroundColor>
+												<DataGroup>InventoryDimensions</DataGroup>
+												<DataSource>InventDim</DataSource>
+											</AxFormControl>
+										</Controls>
+										<DataSource>HMPatientOrderTableTmp</DataSource>
+										<VisibleRows>5</VisibleRows>
+										<VisibleRowsMode>Fixed</VisibleRowsMode>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Auto</ArrangeMethod>
+								<Caption>@RET5926</Caption>
+								<DataSource>HMPatientOrderTableTmp</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>HSplitterFilter</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1670265058</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<Style>SplitterHorizontalContainer</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>OrderFieldsGroup</Name>
+								<ElementPosition>1908874352</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>SizeToAvailable</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>OUService</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormReferenceGroupControl">
+												<Name>HMPatientOrderTableTmp_HMTreatmentClassification</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ReferenceGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>HMPatientOrderTableTmp</DataSource>
+												<ReferenceField>HMTreatmentClassification</ReferenceField>
+												<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGridControl">
+												<Name>ProtocolServices</Name>
+												<AllowEdit>No</AllowEdit>
+												<ElementPosition>1610612734</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Grid</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMAppointmentInventTmp_ItemId</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>ItemId</DataField>
+														<DataSource>HMAppointmentInventTmp_Services</DataSource>
+														<Label>@MAZ10590</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMAppointmentInventTmp_ItemName</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>ItemName</DataField>
+														<DataSource>HMAppointmentInventTmp_Services</DataSource>
+														<Label>@MAZ5207</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRealControl">
+														<Name>HMAppointmentInventTmp_Services_BOMQty</Name>
+														<ElementPosition>1879048189</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Real</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>BOMQty</DataField>
+														<DataSource>HMAppointmentInventTmp_Services</DataSource>
+														<NoOfDecimals>-1</NoOfDecimals>
+													</AxFormControl>
+												</Controls>
+												<DataSource>HMAppointmentInventTmp_Services</DataSource>
+											</AxFormControl>
+										</Controls>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Auto</ArrangeMethod>
+								<Caption>@PSA10973</Caption>
+							</AxFormControl>
+						</Controls>
+						<DataSource>HMPatientOrderTableTmp</DataSource>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>Auto</ArrangeMethod>
+				<Columns>3</Columns>
+				<FrameType>None</FrameType>
+				<OptionValue>2</OptionValue>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>CommitButtonGroup</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OK</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<Text>@RET5137</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>Cancel</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+						<Text>@RET5138</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

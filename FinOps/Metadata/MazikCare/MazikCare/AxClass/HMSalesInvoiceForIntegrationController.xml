@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSalesInvoiceForIntegrationController</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMSalesInvoiceForIntegrationController extends SrsReportRunController
+{
+    CustInvoiceJour         custInvoiceJour;
+    CustTable               custTable;
+    Filename                attachmentFileName;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getAttachmentFileName</Name>
+				<Source><![CDATA[
+    private str getAttachmentFileName()
+    {
+        return attachmentFileName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmShowDialog</Name>
+				<Source><![CDATA[
+    public boolean parmShowDialog(boolean _showDialog = showDialog)
+    {
+        return super(false);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prePromptModifyContract</Name>
+				<Source><![CDATA[
+    protected void prePromptModifyContract()
+    {
+        //define object for report contract
+        HMSalesInvoiceDataContract contract;
+    
+        //get the reference of the current contract object
+        contract = this.parmReportContract().parmRdpContract() as HMSalesInvoiceDataContract;
+    
+    
+        custInvoiceJour = this.parmArgs().record();
+        custTable = CustTable::find(custInvoiceJour.InvoiceAccount);
+    
+        contract.parmIsReceipt(custTable.CustType == CustType::Patient);
+    
+        if(contract.parmIsReceipt())
+        {
+            contract.parmClientInvoicePrint(HMClientInvoicePrint::Detail);
+        }
+        else
+        {
+            contract.parmClientInvoicePrint(custTable.HMClientInvoicePrint);
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>preRunModifyContract</Name>
+				<Source><![CDATA[
+    protected void preRunModifyContract()
+    {
+        HMSalesInvoiceDataContract contract;
+    
+        //get the reference of the current contract object
+        contract = this.parmReportContract().parmRdpContract() as HMSalesInvoiceDataContract;
+    
+        //modify the parameter value of the contract
+        contract.parmInvoiceId(custInvoiceJour.InvoiceId);
+    
+    
+        new InteropPermission(InteropKind::ClrInterop).assert();
+        this.saveFile();
+    
+        //System.IO.File::Delete(attachmentFileName);
+    
+        CodeAccessPermission::revertAssert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveFile</Name>
+				<Source><![CDATA[
+    private void saveFile()
+    {
+        guid myGuid;
+        str myGuidStr;
+    
+        SRSPrintDestinationSettings printDestinationSetting;
+        FolderName      filePath = @"C:\Emails";
+        myGuid = newguid();
+        myGuidStr = guid2str(myGuid);
+    
+        attachmentFileName = filePath + @'\InvoicePrint' + myGuidStr + '.html';
+    
+        printDestinationSetting = new SRSPrintDestinationSettings();
+        printDestinationSetting.printMediumType(SRSPrintMediumType::File);
+        printDestinationSetting.fileName(attachmentFileName);
+        printDestinationSetting.fileFormat(SRSReportFileFormat::HTML4_0);
+        printDestinationSetting.overwriteFile(true);
+        //TODO: cannot create extension of Application Platform model
+        //printDestinationSetting.parmSuppressInfoLogs(true);
+    
+        this.parmReportContract().parmPrintSettings(printDestinationSetting);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendEmail</Name>
+				<Source><![CDATA[
+    private void sendEmail()
+    {
+        Map mapping = new Map(Types::String, Types::String);
+        HMBillParameters        hmBillParameters = HMBillParameters::find();
+        #define.Name('Name')
+    
+        if(!hmBillParameters.SysEmailTableInvoicePrint)
+        {
+            throw error("@MAZ12082");
+        }
+    
+    
+    
+        try
+        {
+            new InteropPermission(InteropKind::ClrInterop).assert();
+    
+            mapping.insert(#Name, custTable.name());
+    
+            this.saveFile();
+    
+            SysEmailTable::sendMail(
+            hmBillParameters.SysEmailTableInvoicePrint,
+            SysEmailTable::find(hmBillParameters.SysEmailTableInvoicePrint).DefaultLanguage,
+            custInvoiceJour.HMInvoiceEmail,
+            mapping,
+            attachmentFileName,
+            "",
+            true,
+            curUserId(),
+            true);
+    
+            System.IO.File::Delete(attachmentFileName);
+        }
+        catch
+        {
+            error("@MAZ12084");
+        }
+    
+        CodeAccessPermission::revertAssert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showPrintSettings</Name>
+				<Source><![CDATA[
+    public boolean showPrintSettings()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQuerySelectButton</Name>
+				<Source><![CDATA[
+    public  boolean   showQuerySelectButton(str name)
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQueryValues</Name>
+				<Source><![CDATA[
+    public  boolean   showQueryValues(str name)
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static str main(Args args)
+    {
+    
+        str pdfStr;
+        //define the new object for controller class
+        HMSalesInvoiceForIntegrationController  hmSalesInvoiceController;
+    
+        hmSalesInvoiceController = new HMSalesInvoiceForIntegrationController();
+    
+        //pass the caller args to the controller
+        hmSalesInvoiceController.parmArgs(args);
+        //hmSalesInvoiceController.parmShowDialog(true);
+    
+        //set the report name and report design to run
+        hmSalesInvoiceController.parmReportName(ssrsReportStr(HMSalesInvoice,DesignENFR));
+    
+        //execute the report
+    
+        hmSalesInvoiceController.startOperation();
+        pdfStr = hmSalesInvoiceController.getAttachmentFileName();
+    
+        return pdfStr;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

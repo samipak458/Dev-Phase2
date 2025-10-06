@@ -1,0 +1,1229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMEducationalResourceDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMEducationalResourceDialog extends FormRun
+{
+
+    HMDiagnosisDictionary   HMDiagnosisDictionaryMain;
+    InventTable             inventTableLocal;
+
+    HMMemo          selectedFile;
+    boolean         isNewRec;
+    HMEducatioalResourceType    parmameter;
+    Description                 selectedURL;
+    boolean fileModified;
+
+    str companyId;
+    RecId  recordId;
+
+    boolean notesModified;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    public void close()
+    {
+    
+        // if documnet is changed only then calling write method explicitly because the filename field is not binded
+    
+      /*  if(AttachemntType.selection() == 0  && fileModified  && !notesModified)
+        {
+             Docuref_ds.write();
+        }
+    */
+        if(AttachemntType.selection() == 0  && Filename.text() != "" )
+        {
+    
+             Docuref_ds.write();
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>enableControls</Name>
+				<Source><![CDATA[
+    public void enableControls()
+    {
+        if(AttachemntType.selection() == 0)
+        {
+            filename.visible(true);
+            Comments.label("@SYS40182");
+            URL.visible(false);
+        }
+        else
+        {
+            filename.visible(false);
+            Comments.label("@SYS328923");
+            URL.visible(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSelectedDocuTypeId</Name>
+				<Source><![CDATA[
+    public DocuTypeId getSelectedDocuTypeId()
+    {
+        DocuType        docuType;
+    
+        if(AttachemntType.selection() == HMEducationalResources::EducationalDocument)
+        {
+            docutype = DocuType::find(hmParameters::getEducationalDocumentsDocuTypeId());
+        }
+        else if(AttachemntType.selection() == HMEducationalResources::EducationalURL)
+        {
+            docutype = DocuType::find(hmParameters::getEducationalURLDocuTypeId());
+        }
+    
+        return docuType.TypeId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        parmameter = element.args().parmEnum();
+    
+        if (parmameter == HMEducatioalResourceType::Diagnosis)
+        {
+            HMDiagnosisDictionaryMain = HMDiagnosisDictionary::find(element.args().record().RecId);
+        }
+        else if (parmameter == HMEducatioalResourceType::Medication || parmameter == HMEducatioalResourceType::LabRadiology)
+        {
+            inventTableLocal = InventTable::findRecId(element.args().record().RecId);
+        }
+    
+        isNewRec        = false;
+        fileModified    = false;
+        notesModified   = false;
+    
+        super();
+    
+        element.enableControls();
+        NewButton.enabled(false);
+    
+        if (parmameter == HMEducatioalResourceType::Diagnosis)
+        {
+            Code.text(HMDiagnosisDictionaryMain.Code);
+            Description.text(HMDiagnosisDictionaryMain.Description);
+        }
+        else if (parmameter == HMEducatioalResourceType::Medication || parmameter == HMEducatioalResourceType::LabRadiology)
+        {
+            Code.text(inventTableLocal.ItemId);
+            Description.text(HMInventTableClass::showDescription(inventTableLocal.ItemId));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isFileNameOk</Name>
+				<Source><![CDATA[
+    public boolean isFileNameOk()
+    {
+        Filename    onlyname;
+        str 1       dummy;
+        str         ext;
+    
+        [dummy, onlyname, ext] = fileNameSplit(Filename.text());
+    
+        return onlyname != '' && ext != '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isFileTypeOk</Name>
+				<Source><![CDATA[
+    public boolean isFileTypeOk()
+    {
+        DocuFileTypes   docuFileTypes;
+        Filename        onlyname;
+        str 1           dummy;
+        str             ext;
+    
+        [dummy, onlyname, ext] = fileNameSplit(Filename.text());
+    
+        return !docuFileTypes.isEnabled(Global::strReplace(ext, '.', ''));
+    
+        //return onlyname != '' && ext != '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateValue</Name>
+				<Source><![CDATA[
+    public boolean updateValue()
+    {
+    
+        boolean  ret = false;
+        DocuRef     docuRefUpdate;
+        Notes         notes;
+    
+        if (AttachemntType.selection() == 0)    // if attachment is a document
+        {
+            ttsBegin;
+            docuRefUpdate = DocuRef::findRecId(docuRef.recId,true);
+            docuRefUpdate.delete();
+            notes = Comments.text();
+            Docuref.clear();
+            ttsCommit;
+            Docuref_ds.create();
+    
+            docuRef.Notes = notes;
+           // Docuref_ds.validateWrite();
+    
+            if (Docuref_ds.validateWrite())
+            {
+                ret = true;
+            }
+    
+            isNewRec = true;
+            fileModified =false;
+    
+        }
+        else   // if attachment is a url
+        {
+            ret = true;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>DocuRef</Name>
+				<Methods>
+					<Method>
+						<Name>initValue</Name>
+						<Source><![CDATA[
+        public void initValue()
+        {
+            super();
+        
+            if (parmameter == HMEducatioalResourceType::Diagnosis)
+            {
+                docuRef.RefTableId = tableNum(HMDiagnosisDictionary); //TableId, for which the attachement should be attached.
+                docuRef.RefRecId = HMDiagnosisDictionaryMain.RecId; //RecId, for which the attachement should be attached.
+                docuRef.RefCompanyId = HMDiagnosisDictionaryMain.dataAreaId; //CompanyId
+                companyId =  HMDiagnosisDictionaryMain.dataAreaId;
+                recordId = HMDiagnosisDictionaryMain.RecId;
+            }
+            else if (parmameter == HMEducatioalResourceType::Medication || parmameter == HMEducatioalResourceType::LabRadiology)
+            {
+                docuRef.RefTableId = tableNum(InventTable); //TableId, for which the attachement should be attached.
+                docuRef.RefRecId = inventTableLocal.RecId; //RecId, for which the attachement should be attached.
+                docuRef.RefCompanyId = inventTableLocal.dataAreaId; //CompanyId
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            boolean ret = true;
+        
+            DocuType    docuType;
+        
+        
+            if(DocuRef.isNewRecord())   // for a new record
+            {
+                isNewRec = true;
+        
+                // if attachment is a document
+                if (AttachemntType.selection() == 0)
+                {
+                    if(ret && Filename.text() == "")
+                    {
+                        warning("@MAZ2962");
+                        ret = false;
+                    }
+        
+                    if(ret && !(element.isFileNameOk()))
+                    {
+                        warning("@MAZ2963");
+                        ret = false;
+                    }
+        
+                    if(ret && !(element.isFileTypeOk()))
+                    {
+                        warning("@MAZ1317");
+                        ret = false;
+                    }
+        
+                    if(ret)
+                    {
+                        docuRef.HMAttachmentType = HMAttachmentDocType::EducationalDocument;
+                        docuRef.TypeId = element.getSelectedDocuTypeId();
+        
+                        ret = super();
+        
+                        if(ret)
+                        {
+                            docuType = DocuType::find(docuRef.TypeId);
+        
+                            if(docuType.FilePlace == DocuFilePlace::Archive)
+                            { //todo: ax7 DocuAction
+                                /*
+                                if(!HMDocuAction::checkDirectoryPermission(docuType.getArchivePath()))
+                                {
+                                    warning("@MAZ3859");
+                                    ret = false;
+                                }
+                                */
+                            }
+                        }
+                    }
+                }
+                // if attachment is a URL
+                else
+                {
+                    if (ret && Comments.text() == "")
+                    {
+                        warning('URL must be filled in');
+                        ret = false;
+                    }
+        
+                    if(ret)
+                    {
+                        docuRef.HMAttachmentType = HMAttachmentDocType::EducationalURL;
+                        docuRef.TypeId = element.getSelectedDocuTypeId();
+        
+                        ret = super();
+                    }
+                }
+            }
+            else  // for  updating record
+            {
+                if (fileModified)  // if new document is replaced with old one
+                {
+                    //element.updateValue();
+                    if (element.updateValue())
+                    {
+                        ret = true;
+                    }
+                    else
+                    {
+                        ret = false;
+                    }
+                }
+        
+                if (AttachemntType.selection() == 1) // if URL is updated only
+                {
+                    ret = super();
+        
+                    if (ret && Comments.text() == "")
+                    {
+                        warning('URL must be filled in');
+                        ret = false;
+                    }
+        
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>create</Name>
+						<Source><![CDATA[
+        public void create(boolean _append = false)
+        {
+            DocuRef     DocuRefLocal;
+        
+            if (parmameter == HMEducatioalResourceType::Diagnosis)
+            {
+                select count (RecId) from DocuRefLocal
+                where DocuRefLocal.RefCompanyId == HMDiagnosisDictionaryMain.dataAreaId
+                    && DocuRefLocal.RefTableId == HMDiagnosisDictionaryMain.TableId
+                    && DocuRefLocal.RefRecId == HMDiagnosisDictionaryMain.RecId;
+            }
+            else if (parmameter == HMEducatioalResourceType::Medication || parmameter == HMEducatioalResourceType::LabRadiology)
+            {
+                select count (RecId) from DocuRefLocal
+                where DocuRefLocal.RefCompanyId == inventTableLocal.dataAreaId
+                    && DocuRefLocal.RefTableId == inventTableLocal.TableId
+                    && DocuRefLocal.RefRecId == inventTableLocal.RecId;
+            }
+        
+            if (DocuRefLocal.RecId == 0)
+            {
+                super(_append);
+        
+            }
+        
+        
+            Filename.allowEdit(true);
+            //   AttachemntType.selection(HMEducationalResources::EducationalDocument);
+          //  element.enableControls();
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+        
+            DocuActionArchive                   docuActionArchive;// Class that handles file attachment and archiving
+            DocuRef                             docuRefUpdate;
+        
+        
+            ttsBegin;
+            super();
+        
+            if(isNewRec)
+            {
+                docuRef.Restriction = DocuRestriction::Internal;
+                docuRef.smmTable = boolean::true;
+        
+                docuRefUpdate = DocuRef::findRecId(docuRef.RecId, true);
+                // if attachment is a document
+                if (AttachemntType.selection() == 0)
+                {
+                    docuActionArchive = new DocuActionArchive();
+                    // This action first displays a file selection dialog.
+                    // After the file is selected designates a number sequence and stores the file to document archive.
+                    docuActionArchive.setDocuType(docuRefUpdate.TypeId);
+                    docuActionArchive.add(docuRefUpdate, selectedFile);
+                }
+        
+                isNewRec = false;
+                fileModified = false;
+        
+                ttsCommit;
+            }
+            else
+            {
+                ttsCommit;
+            }
+        
+            docuRef_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (DocuRef.RecId)
+                {
+                    ButtonOpen.enabled(true);
+                   // AttachemntType.allowEdit(false);
+                    if(DocuRef.TypeId == 'File')
+                    {
+                       // filename.allowEdit(false);
+                        filename.text(DocuRef.Name);
+                        filename.visible(true);
+                        Comments.allowEdit(true);
+                        Comments.label("@SYS40182");
+                        URL.visible(false);
+                        AttachemntType.selection(HMEducationalResources::EducationalDocument);
+                    }
+                    else if (DocuRef.TypeId == 'URL')
+                    {
+                        filename.visible(false);
+                       // Comments.allowEdit(false);
+                        Comments.label("@SYS328923");
+                        URL.visible(true);
+                        AttachemntType.selection(HMEducationalResources::EducationalURL);
+                    }
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            if (parmameter == HMEducatioalResourceType::Diagnosis)
+            {
+                this.query().dataSourceTable(tableNum(DocuRef)).addRange(fieldNum(DocuRef,RefTableId)).value(SysQuery::value(tableNum(HMDiagnosisDictionary)));
+                this.query().dataSourceTable(tableNum(DocuRef)).addRange(fieldNum(DocuRef,RefRecId)).value(SysQuery::value(HMDiagnosisDictionaryMain.RecId));
+            }
+            else if (parmameter == HMEducatioalResourceType::Medication || parmameter == HMEducatioalResourceType::LabRadiology)
+            {
+                this.query().dataSourceTable(tableNum(DocuRef)).addRange(fieldNum(DocuRef,RefTableId)).value(SysQuery::value(tableNum(InventTable)));
+                this.query().dataSourceTable(tableNum(DocuRef)).addRange(fieldNum(DocuRef,RefRecId)).value(SysQuery::value(inventTableLocal.RecId));
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>NewButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+        
+            NewButton.enabled(false);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DeleteButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            DialogButton                        dialogButton;
+            DocuRef                             docuRefDelete;
+            DocuRef                             docuRefLocal;
+        
+            boolean                             isMarked = false;
+        
+            super();
+        
+        
+            dialogButton = Box::yesNo("@MAZ2964",DialogButton::No);
+        
+        
+            if(dialogButton == DialogButton::Yes)
+            {
+                docuRefLocal = DocuRef_DS.getFirst(1);
+        
+                ttsbegin;
+                while (docuRefLocal)
+                {
+                    isMarked = true;
+        
+                    docuRefDelete=DocuRef::findRecId(docuRefLocal.recId,true);
+                    docuRefDelete.delete();
+                    docuRefLocal = DocuRef_DS.getNext();
+                }
+                ttsCommit;
+        
+                if(DocuRef.RecId && !(isMarked))
+                {
+                    ttsbegin;
+                    docuRefDelete=DocuRef::findRecId(DocuRef.recId,true);
+                    docuRefDelete.delete();
+                    ttsCommit;
+                }
+            }
+        
+            DocuRef_DS.executeQuery();
+            NewButton.enabled(true);
+            Filename.allowEdit(false);
+            Filename.text("");
+            selectedFile = "";
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ButtonOpen</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            DocuRef         docuRefLocal    = DocuRef::findRecId(DocuRef.RecId);
+            DocuAction      docuActionLocal = DocuAction::newDocuType(docuRefLocal.docuType());
+            Args            args            = new Args();
+        
+            args.record(docuRef);
+            args.parmEnumType(enumNum(DocuCode));
+            args.parmEnum(DocuCode::Open);
+            //todo: ax7 DocuAction
+        /*
+            docuActionLocal.findDocuTable(docuRefLocal.RefTableId);
+            docuActionLocal.run(args);
+        */
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AttachemntType</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+            DialogButton                        dialogButton;
+             DocuRef     docuRefUpdate;
+        
+            ret = super();
+        
+            if (ret)
+            {
+               // element.enableControls();
+                if (DocuRef.isNewRecord())
+                {
+                    element.enableControls();
+                }
+                else  // if chnage the reference type
+                {
+                    if (DocuRef.RecId)
+                    {
+                        dialogButton = Box::yesNo("@MAZ4234",DialogButton::No);
+        
+                        if(dialogButton == DialogButton::Yes)
+                        {
+                            ttsbegin;
+                            docuRefUpdate = DocuRef::findRecId(docuRef.recId,true);
+                            docuRefUpdate.delete();
+                            ttsCommit;
+                            DocuRef.clear();
+                            Filename.text("");
+                            DocuRef_ds.create();
+        
+                            element.enableControls();
+                        }
+                        else
+                        {
+                            if (AttachemntType.selection() == 1)
+                            {
+                                AttachemntType.selection(0);
+                            }
+                            else
+                            {
+                                AttachemntType.selection(1);
+                            }
+                        }
+                    }
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Filename</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            //FilenameFilter      filter=['All Files', '*.*'];
+            FilenameFilter      filter=['Word & Pdf Files', '*.docx;*.doc;*.pdf'];
+            str                 onlyname = WinAPI::getOpenFileName(element.hWnd(), filter, '', "@SYS319534"); //Select documents;
+        
+            super();
+        
+            Filename.text(onlyname);
+            Filename.modified();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            selectedFile = Filename.text();
+            fileModified = true;
+        
+           /* if (selectedFile != "")
+            {
+                docuRef.HMAttachmentType = HMAttachmentDocType::EducationalDocument;
+                docuRef.Notes = 'No Notes';
+                docuRef.Notes = "";
+            }
+         */
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Comments</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                notesModified = true;
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>URL</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+               selectedURL =  this.text();
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>DocuRef</Name>
+			<Table>DocuRef</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActualCompanyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Author</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuTemplate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EncyclopediaItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAttachmentType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMHashValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanySkipUpdate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Party</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefCompanyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+					<Mandatory>Yes</Mandatory>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefTableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Restriction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmEMailEntryID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmEMailStoreID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TypeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ValueRecId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ4189</Caption>
+		<ColumnSpace xmlns="">0</ColumnSpace>
+		<ColumnSpaceMode xmlns="">Fixed</ColumnSpaceMode>
+		<Columns xmlns="">3</Columns>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Scrollbars xmlns="">No</Scrollbars>
+		<SetCompany xmlns="">No</SetCompany>
+		<StatusBarStyle xmlns="">Simple</StatusBarStyle>
+		<WindowResize xmlns="">Fixed</WindowResize>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>GridGroup</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>536870911</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<Visible>No</Visible>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>Grid</Name>
+						<AllowEdit>No</AllowEdit>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DocuRef_Name</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Name</DataField>
+								<DataSource>DocuRef</DataSource>
+								<Label>@SYS53125</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DocuRef_TypeId</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>TypeId</DataField>
+								<DataSource>DocuRef</DataSource>
+							</AxFormControl>
+						</Controls>
+						<DataSource>DocuRef</DataSource>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>VSplitter</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<Visible>No</Visible>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<FramePosition>Inside</FramePosition>
+				<Style>SplitterVerticalContainer</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Group_</Name>
+				<ElementPosition>1610612733</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneControl">
+						<Name>ActionPane</Name>
+						<ElementPosition>858993458</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPane</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneTabControl">
+								<Name>ActionPaneTab</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ActionPaneTab</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonGroupControl">
+										<Name>NewDelete</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ButtonGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormCommandButtonControl">
+												<Name>NewButton</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>858993458</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>CommandButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+												<Command>New</Command>
+												<NormalImage>New</NormalImage>
+												<Primary>Yes</Primary>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormCommandButtonControl">
+												<Name>DeleteButton</Name>
+												<ElementPosition>1288490187</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>CommandButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+												<MultiSelect>Yes</MultiSelect>
+												<NeedsRecord>Yes</NeedsRecord>
+												<NormalImage>Delete</NormalImage>
+												<Text>@SYS14425</Text>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonControl">
+												<Name>ButtonOpen</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1717986916</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ2293</HelpText>
+												<Type>Button</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+												<ImageLocation>AOTResource</ImageLocation>
+												<NeedsRecord>Yes</NeedsRecord>
+												<NormalImage>HM_Open_document_16x16_png</NormalImage>
+												<Text>@SYS80095</Text>
+											</AxFormControl>
+										</Controls>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+										<DataSource>DocuRef</DataSource>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>Strip</Style>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Diagnosis</Name>
+						<ElementPosition>1288490187</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Code</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS6908</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Description</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS25589</Label>
+								<MultiLine>Yes</MultiLine>
+							</AxFormControl>
+						</Controls>
+						<Caption>@MAZ130</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>DialogContent</Name>
+						<ElementPosition>1717986916</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupMain</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>AttachemntType</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ4190</HelpText>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<EnumType>HMEducationalResources</EnumType>
+										<Label>@SYS24406</Label>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>Group1</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Filename</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>858993458</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ExtendedDataType>Filename</ExtendedDataType>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Comments</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1288490187</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Notes</DataField>
+												<DataSource>DocuRef</DataSource>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>URL</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1717986916</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>Name</DataField>
+												<DataSource>DocuRef</DataSource>
+												<Label>@SYS81105</Label>
+											</AxFormControl>
+										</Controls>
+									</AxFormControl>
+								</Controls>
+								<Columns>0</Columns>
+								<Caption>@MAZ4189</Caption>
+							</AxFormControl>
+						</Controls>
+						<FrameType>None</FrameType>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCustCollectionsHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCustCollectionsHandler
+{
+    
+  
+
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>HMClaimStatusSubmit_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormControlEventHandler(formControlStr(CustCollections, HMClaimStatusSubmit), FormControlEventType::Clicked)]
+    public static void HMClaimStatusSubmit_OnClicked(FormControl sender, FormControlEventArgs e)
+    { 
+        MenuFunction    menuFunction;
+        Args            args = new Args();
+        HMClaimTable    hmClaimTable;
+        HMPatientChargeEntryTable    hmPatientChargeEntryTable;
+        HMCase          hmCase;
+        HMClaimChargeLine  hmClaimChargeLine;
+        CustInvoiceTrans    CustInvoiceTransLocal;
+        CustTransOpenLine   CustTransOpenLine;
+        CustTransOpen       CustTransOpen;
+
+        FormDataSource fds = sender.formRun().dataSource("CustTrans");
+        CustTrans custTrans = fds.cursor();
+
+        select * from hmClaimTable
+            join hmPatientChargeEntryTable
+                where hmPatientChargeEntryTable.RecId == hmClaimTable.HMPatientChargeEntryTable
+                join hmCase
+                    where hmCase.RecId == hmPatientChargeEntryTable.HMCase
+                       && hmCase.RecId == custTrans.HMCase;
+
+        if(hmClaimTable)
+        {
+            //args.record(hmClaimTable);
+            //args.caller(sender.formRun());
+            //menuFunction = new MenuFunction(menuItemActionStr(HMClaimStatusSubmit), MenuItemType::Action);
+            //MenuFunction.run(args);
+            HMCustCollectionsHandler::updateClaimStatus(hmClaimTable, HMClaimStatus::Submitted);
+            
+            ttsBegin;
+
+            while select * from CustTransOpenLine
+                join CustTransOpen
+                    where CustTransOpenLine.CustTransOpen == CustTransOpen.RecId
+                    && CustTransOpen.RefRecId == custTrans.RecId
+                    && CustTransOpen.AccountNum == custTrans.AccountNum
+                join CustInvoiceTransLocal
+                    where CustInvoiceTransLocal.CustInvoiceLineIdRef == CustTransOpenLine.CustInvoiceLineIdRef
+            {
+                select forupdate * from hmClaimChargeLine
+                    where hmClaimChargeLine.HMCaseTrans == CustInvoiceTransLocal.HMCaseTrans;
+
+                if(hmClaimChargeLine)
+                {
+                    hmClaimChargeLine.Disputed = Noyes::Yes;
+                    hmClaimChargeLine.update();
+                }
+            }           
+
+            ttscommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateClaimStatus</Name>
+				<Source><![CDATA[
+    private static Recid updateClaimStatus(HMClaimTable _claimTable, HMClaimStatus _status)
+    {
+        HMClaimVersion hmClaimVersionLocal, hmClaimVersionCount;
+        HMClaimChargeLine chargeLine;
+        HMClaimTable hmClaimTable;
+        RecId claimRecIdLocal;
+        date dateFrom, dateTo;
+    
+        try
+        {
+            ttsBegin;
+
+            hmClaimTable = _claimTable;//_fds.getFirst(true);
+            if (hmClaimTable)
+            {
+                claimRecIdLocal = hmClaimTable.RecId;
+              
+                if(claimRecIdLocal != 0)
+                {
+                    HMX12EDIMessage::generateERA(hmClaimTable.RecId);
+    
+                    hmClaimVersionlocal.validTimeStateUpdateMode(ValidTimeStateUpdate::CreateNewTimePeriod);
+                    hmClaimVersionlocal.initValue();
+                    hmClaimVersionlocal.HMClaimTable = claimRecIdLocal;
+                    hmClaimVersionlocal.ValidFrom = DateTimeUtil::utcNow();
+                    hmClaimVersionlocal.ValidTo = DateTimeUtil::maxValue();
+                    hmClaimVersionlocal.Status = _status;
+
+                    if(_status == HMClaimStatus::Submitted)
+                    {
+                        dateFrom = dateNull();
+                        dateTo   = dateMax();
+
+                        select validTimeState(dateFrom, dateTo) count(recId) from hmClaimVersionCount
+                            where hmClaimVersionCount.HMClaimTable == claimRecIdLocal
+                            && hmClaimVersionCount.Status == HMClaimStatus::Submitted;
+
+                        hmClaimVersionlocal.ClaimSubmissionId = hmClaimTable.ClaimID + "-" + int2Str(hmClaimVersionCount.RecId + 1);
+                        hmClaimVersionLocal.AfterDIsputed = NOyes::Yes;
+                    }
+
+                    hmClaimVersionlocal.insert();
+    
+                }
+                //hasRecord =true;
+                if (_status == HMClaimStatus::Denied || _status == HMClaimStatus::Rejected)
+                {
+    
+                    while select forUpdate chargeLine
+                    where chargeLine.HMClaimTable == claimRecIdLocal
+                    {
+                        chargeLine.IsRejected = NoYes::Yes;
+                        chargeLine.update();
+    
+                    }
+                }
+                //hmClaimTable =_fds.getNext();
+            }
+            ttsCommit;
+            //if(!hasRecord)
+            //{
+            //    throw warning(strfmt("No records marked for claims status updated to %1",enum2str(_status)));
+            //}
+        }
+        catch
+        {
+            error("@MAZ7630");
+        }
+        info(strFmt("Claim %1 has been submitted successfully.", hmClaimVersionlocal.ClaimSubmissionId));
+        return hmClaimVersionlocal.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ViewClaimDetails_OnClicked</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    [FormControlEventHandler(formControlStr(CustCollections, ViewClaimDetails), FormControlEventType::Clicked)]
+    public static void ViewClaimDetails_OnClicked(FormControl sender, FormControlEventArgs e)
+    {
+        MenuFunction    menuFunction;
+        Args            args = new Args();
+        HMClaimTable    hmClaimTable;
+        HMPatientChargeEntryTable    hmPatientChargeEntryTable;
+        HMCase          hmCase;
+
+        FormDataSource fds = sender.formRun().dataSource("CustTrans");
+        CustTrans custTrans = fds.cursor();
+
+        select * from hmClaimTable
+            join hmPatientChargeEntryTable
+                where hmPatientChargeEntryTable.RecId == hmClaimTable.HMPatientChargeEntryTable
+                join hmCase
+                    where hmCase.RecId == hmPatientChargeEntryTable.HMCase
+                       && hmCase.RecId == custTrans.HMCase;
+
+        if(hmClaimTable)
+        {
+            args.record(hmClaimTable);
+            args.caller(sender.formRun());
+            menuFunction = new MenuFunction(menuItemDisplayStr(HMClaimTableView), MenuItemType::Display);
+            MenuFunction.run(args);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

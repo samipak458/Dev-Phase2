@@ -1,0 +1,835 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAmendmentRequestClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMAmendmentRequestClass
+{
+    Args args;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>acceptRequest</Name>
+				<Source><![CDATA[
+    public void acceptRequest()
+    {
+        if (Box::yesNo("@MAZ10431",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+        {
+            this.updateRequest(HMAmendmentRequestStatus::Accepted);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>acceptRequestOld</Name>
+				<Source><![CDATA[
+    public void acceptRequestOld()
+    {
+        HMAmendmentRequest      hmAmendmentRequest = this.parmArgs().record();
+        HMAmendmentRequestLine  hmAmendmentRequestLineParent,hmAmendmentRequestLineChild;
+        HMAmendment             hmAmendmentParent,hmAmendmentChild;
+        Common                  common,updateRecord;
+        DictTable               dictTable;
+        FieldId                 fieldId;
+        DictField               dictField;
+        DictEnum                dictEnum;
+        DictRelation            dictRelation;
+        TableId                 relatedTableId;
+        HMAgeHelper             hmAgeHelper;
+        container               con;
+        HMPatient               HMPatientUpdate;
+    
+    // not used now
+        try
+        {
+            if (Box::yesNo("@MAZ10425",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+            {
+                ttsBegin;
+    
+                // fetch unique tables
+                while select RecId, AmendedValue from hmAmendmentRequestLineParent
+                    where hmAmendmentRequestLineParent.HMAmendmentRequest == hmAmendmentRequest.RecId
+                    join RecId, TableName, FieldName from hmAmendmentParent
+                    group by hmAmendmentParent.TableName
+                    where hmAmendmentRequestLineParent.HMAmendment == hmAmendmentParent.RecId
+                {
+                    switch (hmAmendmentParent.TableName)
+                    {
+                        case tableId2Name(tableNum(HMPatient)):
+                            dictTable       = new DictTable(tableNum(HMPatient));
+                            updateRecord    = HMPatient::find(hmAmendmentRequest.HMPatient);
+                            break;
+    
+                        case tableId2Name(tableNum(CustTable)):
+                            dictTable       = new DictTable(tableNum(CustTable));
+                            updateRecord    = CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable);
+                            break;
+    
+                        case tableId2Name(tableNum(DirPerson)):
+                            dictTable       = new DictTable(tableNum(DirPerson));
+                            updateRecord    = DirPerson::find(CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable).Party);
+                            break;
+    
+                        case tableId2Name(tableNum(DirPersonName)):
+                            dictTable       = new DictTable(tableNum(DirPersonName));
+                            updateRecord    = DirPersonName::find(DirPerson::find(DirPartyTable::findRec(CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable).Party).RecId).RecId);
+                            break;
+    
+                        case tableId2Name(tableNum(LogisticsPostalAddress)):  // employment address
+                            dictTable       = new DictTable(tableNum(LogisticsPostalAddress));
+                            updateRecord    = LogisticsPostalAddress::findByLocation(HMPatient::find(hmAmendmentRequest.HMPatient).EmploymentLogisticsLocation);
+                            break;
+                    }
+    
+                    common = dictTable.makeRecord();
+                    common.selectForUpdate(true);
+    
+                    select common where common.RecId == updateRecord.RecId;
+    
+                    // fetch table fields
+                    while select RecId, AmendedValue from hmAmendmentRequestLineChild
+                        where hmAmendmentRequestLineChild.HMAmendmentRequest == hmAmendmentRequest.RecId
+                        join RecId, TableName, FieldName from hmAmendmentChild
+                        where hmAmendmentRequestLineChild.HMAmendment == hmAmendmentChild.RecId
+                        && hmAmendmentChild.TableName == hmAmendmentParent.TableName
+                    {
+    
+                        fieldId         = dictTable.fieldName2Id(hmAmendmentChild.FieldName);
+                        dictField       = dictTable.fieldObject(fieldId);
+                        dictRelation    = new DictRelation(dictTable.id());
+                        relatedTableId  = dictRelation.loadFieldRelation(fieldId);
+    
+                        if (relatedTableId)  // if a relation field
+                        {
+                            switch (relatedTableId)
+                            {
+                                case tableNum(HcmLanguageCode):
+                                    Common.(fieldId) = HcmLanguageCode::findByLanguageCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+    
+                                case tableNum(HcmEthnicOrigin):
+                                    Common.(fieldId) = HcmEthnicOrigin::findByEthnicOrigin(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+    
+                                case tableNum(HMRaceCode):
+                                    Common.(fieldId) = HMRaceCode::findByRaceCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+    
+                                case tableNum(HMProfession):
+                                    Common.(fieldId) = HMProfession::findByProfession(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+                                case tableNum(HMPharmacy):
+                                    Common.(fieldId) = HMPharmacy::findByCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+                                case tableNum(LogisticsAddressCountryRegion):
+                                    if (fieldId == fieldNum(HMPatient,LogisticsAddressCountryRegion))
+                                    {
+                                        Common.(fieldId) = LogisticsAddressCountryRegion::find(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    }
+                                    else
+                                    {
+                                        Common.(fieldId) = hmAmendmentRequestLineChild.AmendedValue;
+                                    }
+                                    break;
+    
+                                case tableNum(LogisticsAddressState):
+                                case tableNum(LogisticsAddressCounty):
+                                case tableNum(LogisticsAddressCity):
+                                case tableNum(LogisticsAddressDistrict):
+                                case tableNum(LogisticsAddressZipCode):
+                                    Common.(fieldId) = hmAmendmentRequestLineChild.AmendedValue;
+                                    break;
+    
+    
+                            }
+                        }
+                        else
+                        {
+                            if (dictField.baseType() == Types::Enum)
+                            {
+                                dictEnum            = new DictEnum(dictField.enumId());
+                                Common.(fieldId)    = dictEnum.name2Value(hmAmendmentRequestLineChild.AmendedValue);
+                            }
+                            else if (dictField.baseType() == Types::Date)
+                            {
+                                Common.(fieldId)    =  str2DateDMY(hmAmendmentRequestLineChild.AmendedValue);
+                            }
+                            else
+                            {
+                                Common.(fieldId)    =  hmAmendmentRequestLineChild.AmendedValue;
+                            }
+                        }
+    
+                        // Update age in days, month, year if DOB is changed
+                        if (hmAmendmentParent.TableName == tableId2Name(tableNum(DirPerson))
+                            && (fieldId == fieldNum(DirPerson,BirthDay) || fieldId == fieldNum(DirPerson,BirthMonth) || fieldId == fieldNum(DirPerson,BirthYear)))
+                        {
+                            hmAgeHelper                 = new HMAgeHelper();
+                            con                         = hmAgeHelper.getYearsMonthsDaysFromDate(mkDate(Common.(fieldNum(DirPerson,BirthDay)),Common.(fieldNum(DirPerson,BirthMonth)),Common.(fieldNum(DirPerson,BirthYear))));
+                            HMPatientUpdate             = HMPatient::find(hmAmendmentRequest.HMPatient,true);
+                            HMPatientUpdate.HMAgeValue  = conPeek(con,1);
+                            HMPatientUpdate.AgeInMonths = conPeek(con,2);
+                            HMPatientUpdate.AgeInDays   = conPeek(con,3);
+                            HMPatientUpdate.update();
+                        }
+    
+                    }
+    
+                    if (hmAmendmentParent.TableName == tableId2Name(tableNum(DirPersonName)) || hmAmendmentParent.TableName == tableId2Name(tableNum(LogisticsPostalAddress)))
+                    {
+                        Common.validTimeStateUpdateMode(ValidTimeStateUpdate::CreateNewTimePeriod);
+                    }
+    
+                    Common.update();
+                }
+    
+                this.updateRequest(HMAmendmentRequestStatus::Accepted);
+                ttsCommit;
+            }
+            else
+            {
+                ttsBegin;
+                this.updateRequest(HMAmendmentRequestStatus::Accepted);
+                ttsCommit;
+            }
+    
+        }
+        catch
+        {
+            info("@MAZ10427");
+            ttsAbort;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>acceptRequestOneToMany</Name>
+				<Source><![CDATA[
+    public void acceptRequestOneToMany()
+    {
+        HMAmendmentRequest      hmAmendmentRequest = this.parmArgs().record();
+        HMAmendmentRequestLine  hmAmendmentRequestLineParent,hmAmendmentRequestLineChild;
+        HMAmendment             hmAmendmentParent,hmAmendmentChild;
+        Common                  common,updateRecord;
+        DictTable               dictTable;
+        FieldId                 fieldId;
+        DictField               dictField;
+        DictEnum                dictEnum;
+        DictRelation            dictRelation;
+        TableId                 relatedTableId;
+        HMAgeHelper             hmAgeHelper;
+        container               con;
+        HMPatient               HMPatientUpdate;
+    
+    
+        try
+        {
+            if (Box::yesNo("@MAZ10425",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+            {
+                ttsBegin;
+    
+                // fetch unique tables -- one to one link
+                while select RecId, AmendedValue from hmAmendmentRequestLineParent
+                    where hmAmendmentRequestLineParent.HMAmendmentRequest == hmAmendmentRequest.RecId
+                    join RecId, TableName, FieldName from hmAmendmentParent
+                    group by hmAmendmentParent.TableName
+                    where hmAmendmentRequestLineParent.HMAmendment == hmAmendmentParent.RecId
+                    && hmAmendmentRequestLineParent.ReferenceRecId == 0
+                {
+                    switch (hmAmendmentParent.TableName)
+                    {
+                        case tableId2Name(tableNum(HMPatient)):
+                            dictTable       = new DictTable(tableNum(HMPatient));
+                            updateRecord    = HMPatient::find(hmAmendmentRequest.HMPatient);
+                            break;
+    
+                        case tableId2Name(tableNum(CustTable)):
+                            dictTable       = new DictTable(tableNum(CustTable));
+                            updateRecord    = CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable);
+                            break;
+    
+                        case tableId2Name(tableNum(DirPerson)):
+                            dictTable       = new DictTable(tableNum(DirPerson));
+                            updateRecord    = DirPerson::find(CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable).Party);
+                            break;
+    
+                        case tableId2Name(tableNum(DirPersonName)):
+                            dictTable       = new DictTable(tableNum(DirPersonName));
+                            updateRecord    = DirPersonName::find(DirPerson::find(DirPartyTable::findRec(CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable).Party).RecId).RecId);
+                            break;
+    
+                        case tableId2Name(tableNum(LogisticsPostalAddress)):  // employment address
+                            dictTable       = new DictTable(tableNum(LogisticsPostalAddress));
+                            updateRecord    = LogisticsPostalAddress::findByLocation(HMPatient::find(hmAmendmentRequest.HMPatient).EmploymentLogisticsLocation);
+                            break;
+                    }
+    
+                    common = dictTable.makeRecord();
+                    common.selectForUpdate(true);
+    
+                    select common where common.RecId == updateRecord.RecId;
+    
+                    // fetch table fields
+                    while select RecId, AmendedValue from hmAmendmentRequestLineChild
+                        where hmAmendmentRequestLineChild.HMAmendmentRequest == hmAmendmentRequest.RecId
+                        join RecId, TableName, FieldName from hmAmendmentChild
+                        where hmAmendmentRequestLineChild.HMAmendment == hmAmendmentChild.RecId
+                        && hmAmendmentChild.TableName == hmAmendmentParent.TableName
+                        && hmAmendmentRequestLineChild.ReferenceRecId == 0
+                    {
+    
+                        fieldId         = dictTable.fieldName2Id(hmAmendmentChild.FieldName);
+                        dictField       = dictTable.fieldObject(fieldId);
+                        dictRelation    = new DictRelation(dictTable.id());
+                        relatedTableId  = dictRelation.loadFieldRelation(fieldId);
+    
+                        if (relatedTableId)  // if a relation field
+                        {
+                            switch (relatedTableId)
+                            {
+                                case tableNum(HcmLanguageCode):
+                                    Common.(fieldId) = HcmLanguageCode::findByLanguageCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+    
+                                case tableNum(HcmEthnicOrigin):
+                                    Common.(fieldId) = HcmEthnicOrigin::findByEthnicOrigin(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+    
+                                case tableNum(HMRaceCode):
+                                    Common.(fieldId) = HMRaceCode::findByRaceCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+    
+                                case tableNum(HMProfession):
+                                    Common.(fieldId) = HMProfession::findByProfession(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+    
+                                case tableNum(HMPharmacy):
+                                    Common.(fieldId) = HMPharmacy::findByCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    break;
+                                case tableNum(LogisticsAddressCountryRegion):
+                                    if (fieldId == fieldNum(HMPatient,LogisticsAddressCountryRegion))
+                                    {
+                                        Common.(fieldId) = LogisticsAddressCountryRegion::find(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                    }
+                                    else
+                                    {
+                                        Common.(fieldId) = hmAmendmentRequestLineChild.AmendedValue;
+                                    }
+                                    break;
+    
+                                case tableNum(LogisticsAddressState):
+                                case tableNum(LogisticsAddressCounty):
+                                case tableNum(LogisticsAddressCity):
+                                case tableNum(LogisticsAddressDistrict):
+                                case tableNum(LogisticsAddressZipCode):
+                                    Common.(fieldId) = hmAmendmentRequestLineChild.AmendedValue;
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            if (dictField.baseType() == Types::Enum)
+                            {
+                                dictEnum            = new DictEnum(dictField.enumId());
+                                Common.(fieldId)    = dictEnum.name2Value(hmAmendmentRequestLineChild.AmendedValue);
+                            }
+                            else if (dictField.baseType() == Types::Date)
+                            {
+                                Common.(fieldId)    =  str2DateDMY(hmAmendmentRequestLineChild.AmendedValue);
+                            }
+                            else
+                            {
+                                Common.(fieldId)    =  hmAmendmentRequestLineChild.AmendedValue;
+                            }
+                        }
+    
+                        // Update age in days, month, year if DOB is changed
+                        if (hmAmendmentParent.TableName == tableId2Name(tableNum(DirPerson))
+                            && (fieldId == fieldNum(DirPerson,BirthDay) || fieldId == fieldNum(DirPerson,BirthMonth) || fieldId == fieldNum(DirPerson,BirthYear)))
+                        {
+                            hmAgeHelper                 = new HMAgeHelper();
+                            con                         = hmAgeHelper.getYearsMonthsDaysFromDate(mkDate(Common.(fieldNum(DirPerson,BirthDay)),Common.(fieldNum(DirPerson,BirthMonth)),Common.(fieldNum(DirPerson,BirthYear))));
+                            HMPatientUpdate             = HMPatient::find(hmAmendmentRequest.HMPatient,true);
+                            HMPatientUpdate.HMAgeValue  = conPeek(con,1);
+                            HMPatientUpdate.AgeInMonths = conPeek(con,2);
+                            HMPatientUpdate.AgeInDays   = conPeek(con,3);
+                            HMPatientUpdate.update();
+                        }
+                    }
+    
+                    if (hmAmendmentParent.TableName == tableId2Name(tableNum(DirPersonName)) || hmAmendmentParent.TableName == tableId2Name(tableNum(LogisticsPostalAddress)))
+                    {
+                        Common.validTimeStateUpdateMode(ValidTimeStateUpdate::CreateNewTimePeriod);
+                    }
+    
+                    Common.update();
+                }
+    
+                // fetch unique tables -- one to many link
+                while select RecId, AmendedValue from hmAmendmentRequestLineParent
+                    where hmAmendmentRequestLineParent.HMAmendmentRequest == hmAmendmentRequest.RecId
+                    join RecId, TableName, FieldName from hmAmendmentParent
+                    group by hmAmendmentParent.TableName, hmAmendmentRequestLineParent.ReferenceRecId
+                    where hmAmendmentRequestLineParent.HMAmendment == hmAmendmentParent.RecId
+                    && hmAmendmentRequestLineParent.ReferenceRecId != 0
+                {
+                    switch (hmAmendmentParent.TableName)
+                    {
+                        case tableId2Name(tableNum(LogisticsElectronicAddress)): // patient contacts
+                            dictTable       = new DictTable(tableNum(LogisticsElectronicAddress));
+                            updateRecord    = LogisticsElectronicAddress::findRecId(hmAmendmentRequestLineParent.ReferenceRecId);
+                            break;
+    
+                        case tableId2Name(tableNum(LogisticsPostalAddress)):  // patient addresse
+                            dictTable       = new DictTable(tableNum(LogisticsPostalAddress));
+                            updateRecord    = LogisticsPostalAddress::findRecId(hmAmendmentRequestLineParent.ReferenceRecId);
+                            break;
+                    }
+    
+                    common = dictTable.makeRecord();
+                    common.selectForUpdate(true);
+    
+                    select common where common.RecId == updateRecord.RecId;
+    
+                    // fetch table fields
+                    while select RecId, AmendedValue, ReferenceRecId from hmAmendmentRequestLineChild
+                        where hmAmendmentRequestLineChild.HMAmendmentRequest == hmAmendmentRequest.RecId
+                        join RecId, TableName, FieldName from hmAmendmentChild
+                        where hmAmendmentRequestLineChild.HMAmendment == hmAmendmentChild.RecId
+                        && hmAmendmentChild.TableName == hmAmendmentParent.TableName
+                        && hmAmendmentRequestLineChild.ReferenceRecId == hmAmendmentRequestLineParent.ReferenceRecId
+                        && hmAmendmentRequestLineChild.ReferenceRecId != 0
+                    {
+                        fieldId         = dictTable.fieldName2Id(hmAmendmentChild.FieldName);
+                        dictField       = dictTable.fieldObject(fieldId);
+                        dictRelation    = new DictRelation(dictTable.id());
+                        relatedTableId  = dictRelation.loadFieldRelation(fieldId);
+    
+                       /* if (relatedTableId)  // if a relation field
+                        {
+                            switch (relatedTableId)
+                            {
+                                case tableNum(LogisticsAddressState):
+                                    Common.(fieldId) = hmAmendmentRequestLineChild.AmendedValue;
+                                    break;
+                            }
+    
+                        }
+                        else */
+                        {
+                            if (dictField.baseType() == Types::Enum)
+                            {
+                                dictEnum            = new DictEnum(dictField.enumId());
+                                Common.(fieldId)    = dictEnum.name2Value(hmAmendmentRequestLineChild.AmendedValue);
+                            }
+                            else
+                            {
+                                Common.(fieldId)    =  hmAmendmentRequestLineChild.AmendedValue;
+                            }
+                        }
+                    }
+    
+                    if (hmAmendmentParent.TableName == tableId2Name(tableNum(LogisticsPostalAddress)))
+                    {
+                        Common.validTimeStateUpdateMode(ValidTimeStateUpdate::CreateNewTimePeriod);
+                    }
+    
+                    Common.update();
+                }
+    
+                this.updateRequest(HMAmendmentRequestStatus::Accepted);
+                ttsCommit;
+            }
+            else
+            {
+                ttsBegin;
+                this.updateRequest(HMAmendmentRequestStatus::Accepted);
+                ttsCommit;
+            }
+    
+        }
+        catch
+        {
+            info("@MAZ10427");
+            ttsAbort;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>appendAmendments</Name>
+				<Source><![CDATA[
+    public void appendAmendments()
+    {
+        HMAmendmentRequest      hmAmendmentRequest = this.parmArgs().record();
+        HMAmendmentRequestLine  hmAmendmentRequestLineParent,hmAmendmentRequestLineChild;
+        HMAmendment             hmAmendmentParent,hmAmendmentChild;
+        Common                  common,updateRecord;
+        DictTable               dictTable;
+        FieldId                 fieldId;
+        DictField               dictField;
+        DictEnum                dictEnum;
+        DictRelation            dictRelation;
+        TableId                 relatedTableId;
+        HMAgeHelper             hmAgeHelper;
+        container               con;
+        HMPatient               HMPatientUpdate;
+    
+    
+        try
+        {
+            ttsBegin;
+    
+            // fetch unique tables -- one to one link
+            while select RecId, AmendedValue from hmAmendmentRequestLineParent
+                where hmAmendmentRequestLineParent.HMAmendmentRequest == hmAmendmentRequest.RecId
+                join RecId, TableName, FieldName from hmAmendmentParent
+                group by hmAmendmentParent.TableName
+                where hmAmendmentRequestLineParent.HMAmendment == hmAmendmentParent.RecId
+                && hmAmendmentRequestLineParent.ReferenceRecId == 0
+            {
+                switch (hmAmendmentParent.TableName)
+                {
+                    case tableId2Name(tableNum(HMPatient)):
+                        dictTable       = new DictTable(tableNum(HMPatient));
+                        updateRecord    = HMPatient::find(hmAmendmentRequest.HMPatient);
+                        break;
+    
+                    case tableId2Name(tableNum(CustTable)):
+                        dictTable       = new DictTable(tableNum(CustTable));
+                        updateRecord    = CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable);
+                        break;
+    
+                    case tableId2Name(tableNum(DirPerson)):
+                        dictTable       = new DictTable(tableNum(DirPerson));
+                        updateRecord    = DirPerson::find(CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable).Party);
+                        break;
+    
+                    case tableId2Name(tableNum(DirPersonName)):
+                        dictTable       = new DictTable(tableNum(DirPersonName));
+                        updateRecord    = DirPersonName::find(DirPerson::find(DirPartyTable::findRec(CustTable::findRecId(HMPatient::find(hmAmendmentRequest.HMPatient).CustTable).Party).RecId).RecId);
+                        break;
+    
+                    case tableId2Name(tableNum(LogisticsPostalAddress)):  // employment address
+                        dictTable       = new DictTable(tableNum(LogisticsPostalAddress));
+                        updateRecord    = LogisticsPostalAddress::findByLocation(HMPatient::find(hmAmendmentRequest.HMPatient).EmploymentLogisticsLocation);
+                        break;
+                }
+    
+                common = dictTable.makeRecord();
+                common.selectForUpdate(true);
+    
+                select common where common.RecId == updateRecord.RecId;
+    
+                // fetch table fields
+                while select RecId, AmendedValue from hmAmendmentRequestLineChild
+                    where hmAmendmentRequestLineChild.HMAmendmentRequest == hmAmendmentRequest.RecId
+                    join RecId, TableName, FieldName from hmAmendmentChild
+                    where hmAmendmentRequestLineChild.HMAmendment == hmAmendmentChild.RecId
+                    && hmAmendmentChild.TableName == hmAmendmentParent.TableName
+                    && hmAmendmentRequestLineChild.ReferenceRecId == 0
+                {
+    
+                    fieldId         = dictTable.fieldName2Id(hmAmendmentChild.FieldName);
+                    dictField       = dictTable.fieldObject(fieldId);
+                    dictRelation    = new DictRelation(dictTable.id());
+                    relatedTableId  = dictRelation.loadFieldRelation(fieldId);
+    
+                    if (relatedTableId)  // if a relation field
+                    {
+                        switch (relatedTableId)
+                        {
+                            case tableNum(HcmLanguageCode):
+                                Common.(fieldId) = HcmLanguageCode::findByLanguageCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                break;
+    
+                            case tableNum(HcmEthnicOrigin):
+                                Common.(fieldId) = HcmEthnicOrigin::findByEthnicOrigin(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                break;
+    
+                            case tableNum(HMRaceCode):
+                                Common.(fieldId) = HMRaceCode::findByRaceCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                break;
+    
+                            case tableNum(HMProfession):
+                                Common.(fieldId) = HMProfession::findByProfession(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                break;
+                            case tableNum(HMPharmacy):
+                                Common.(fieldId) = HMPharmacy::findByCode(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                break;
+    
+    
+                            case tableNum(LogisticsAddressCountryRegion):
+                                if (fieldId == fieldNum(HMPatient,LogisticsAddressCountryRegion))
+                                {
+                                    Common.(fieldId) = LogisticsAddressCountryRegion::find(hmAmendmentRequestLineChild.AmendedValue).RecId;
+                                }
+                                else
+                                {
+                                    Common.(fieldId) = hmAmendmentRequestLineChild.AmendedValue;
+                                }
+                                break;
+    
+                            case tableNum(LogisticsAddressState):
+                            case tableNum(LogisticsAddressCounty):
+                            case tableNum(LogisticsAddressCity):
+                            case tableNum(LogisticsAddressDistrict):
+                            case tableNum(LogisticsAddressZipCode):
+                                Common.(fieldId) = hmAmendmentRequestLineChild.AmendedValue;
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        if (dictField.baseType() == Types::Enum)
+                        {
+                            dictEnum            = new DictEnum(dictField.enumId());
+                            Common.(fieldId)    = dictEnum.name2Value(hmAmendmentRequestLineChild.AmendedValue);
+                        }
+                        else if (dictField.baseType() == Types::Date)
+                        {
+                            Common.(fieldId)    =  str2DateDMY(hmAmendmentRequestLineChild.AmendedValue);
+                        }
+                        else
+                        {
+                            Common.(fieldId)    =  hmAmendmentRequestLineChild.AmendedValue;
+                        }
+                    }
+    
+                    // Update age in days, month, year if DOB is changed
+                    if (hmAmendmentParent.TableName == tableId2Name(tableNum(DirPerson))
+                        && (fieldId == fieldNum(DirPerson,BirthDay) || fieldId == fieldNum(DirPerson,BirthMonth) || fieldId == fieldNum(DirPerson,BirthYear)))
+                    {
+                        hmAgeHelper                 = new HMAgeHelper();
+                        con                         = hmAgeHelper.getYearsMonthsDaysFromDate(mkDate(Common.(fieldNum(DirPerson,BirthDay)),Common.(fieldNum(DirPerson,BirthMonth)),Common.(fieldNum(DirPerson,BirthYear))));
+                        HMPatientUpdate             = HMPatient::find(hmAmendmentRequest.HMPatient,true);
+                        HMPatientUpdate.HMAgeValue  = conPeek(con,1);
+                        HMPatientUpdate.AgeInMonths = conPeek(con,2);
+                        HMPatientUpdate.AgeInDays   = conPeek(con,3);
+                        HMPatientUpdate.update();
+                    }
+                }
+    
+                if (hmAmendmentParent.TableName == tableId2Name(tableNum(DirPersonName)) || hmAmendmentParent.TableName == tableId2Name(tableNum(LogisticsPostalAddress)))
+                {
+                    Common.validTimeStateUpdateMode(ValidTimeStateUpdate::CreateNewTimePeriod);
+                }
+    
+                Common.update();
+            }
+    
+            // fetch unique tables -- one to many link
+            while select RecId, AmendedValue from hmAmendmentRequestLineParent
+                where hmAmendmentRequestLineParent.HMAmendmentRequest == hmAmendmentRequest.RecId
+                join RecId, TableName, FieldName from hmAmendmentParent
+                group by hmAmendmentParent.TableName, hmAmendmentRequestLineParent.ReferenceRecId
+                where hmAmendmentRequestLineParent.HMAmendment == hmAmendmentParent.RecId
+                && hmAmendmentRequestLineParent.ReferenceRecId != 0
+            {
+                switch (hmAmendmentParent.TableName)
+                {
+                    case tableId2Name(tableNum(LogisticsElectronicAddress)): // patient contacts
+                        dictTable       = new DictTable(tableNum(LogisticsElectronicAddress));
+                        updateRecord    = LogisticsElectronicAddress::findRecId(hmAmendmentRequestLineParent.ReferenceRecId);
+                        break;
+    
+                    case tableId2Name(tableNum(LogisticsPostalAddress)):  // patient addresse
+                        dictTable       = new DictTable(tableNum(LogisticsPostalAddress));
+                        updateRecord    = LogisticsPostalAddress::findRecId(hmAmendmentRequestLineParent.ReferenceRecId);
+                        break;
+    
+                    case tableId2Name(tableNum(HMPatient)):  // next to kin
+                        dictTable       = new DictTable(tableNum(HMPatient));
+                        updateRecord    = HMPatient::find(hmAmendmentRequest.HMPatient);
+                        break;
+                }
+    
+                common = dictTable.makeRecord();
+                common.selectForUpdate(true);
+    
+                select common where common.RecId == updateRecord.RecId;
+    
+                // fetch table fields
+                while select RecId, AmendedValue, ReferenceRecId from hmAmendmentRequestLineChild
+                    where hmAmendmentRequestLineChild.HMAmendmentRequest == hmAmendmentRequest.RecId
+                    join RecId, TableName, FieldName from hmAmendmentChild
+                    where hmAmendmentRequestLineChild.HMAmendment == hmAmendmentChild.RecId
+                    && hmAmendmentChild.TableName == hmAmendmentParent.TableName
+                    && hmAmendmentRequestLineChild.ReferenceRecId == hmAmendmentRequestLineParent.ReferenceRecId
+                    && hmAmendmentRequestLineChild.ReferenceRecId != 0
+                {
+                    fieldId         = dictTable.fieldName2Id(hmAmendmentChild.FieldName);
+                    dictField       = dictTable.fieldObject(fieldId);
+                    dictRelation    = new DictRelation(dictTable.id());
+                    relatedTableId  = dictRelation.loadFieldRelation(fieldId);
+    
+                    if (relatedTableId)  // if a relation field
+                    {
+                        switch (relatedTableId)
+                        {
+                            case tableNum(DirPartyRelationship):
+                            case tableNum(HMClinicStaff):
+                            case tableNum(HMReferringPhysician):
+                                Common.(fieldId) = hmAmendmentRequestLineChild.ReferenceRecId;
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        if (dictField.baseType() == Types::Enum)
+                        {
+                            dictEnum            = new DictEnum(dictField.enumId());
+                            Common.(fieldId)    = dictEnum.name2Value(hmAmendmentRequestLineChild.AmendedValue);
+                        }
+                        else
+                        {
+                            Common.(fieldId)    =  hmAmendmentRequestLineChild.AmendedValue;
+                        }
+                    }
+                }
+    
+                if (hmAmendmentParent.TableName == tableId2Name(tableNum(LogisticsPostalAddress)))
+                {
+                    Common.validTimeStateUpdateMode(ValidTimeStateUpdate::CreateNewTimePeriod);
+                }
+    
+                Common.update();
+            }
+    
+            ttsCommit;
+        }
+        catch
+        {
+            info("@MAZ10427");
+            ttsAbort;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteRequest</Name>
+				<Source><![CDATA[
+    public void deleteRequest()
+    {
+         HMAmendmentRequest  hmAmendmentRequest;
+    
+        if (Box::yesNo("@MAZ10439",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+        {
+            ttsBegin;
+    
+            delete_from hmAmendmentRequest
+                where hmAmendmentRequest.RecId == this.parmArgs().record().RecId;
+    
+            hmAmendmentRequest.delete();
+    
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>denyRequest</Name>
+				<Source><![CDATA[
+    public void denyRequest()
+    {
+        if (Box::yesNo("@MAZ10426",DialogButton::No,"@MAZ7757") == DialogButton::Yes)
+        {
+            this.updateRequest(HMAmendmentRequestStatus::Denied);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmArgs</Name>
+				<Source><![CDATA[
+    public Args parmArgs(Args _args = args)
+    {
+        args = _args;
+    
+        return args;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshCallerForm</Name>
+				<Source><![CDATA[
+    public void refreshCallerForm()
+    {
+        //#task
+        FormRun formRun = this.parmArgs().caller();
+        Object formRunObject = formRun;
+    
+        if (formHasMethod(formRun, identifierstr(refreshAmendmendsGrid)))
+        {
+            formRunObject.refreshAmendmendsGrid();
+        }
+    
+       // formRun.task(#taskRefresh);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRequest</Name>
+				<Source><![CDATA[
+    public void updateRequest(HMAmendmentRequestStatus _requestStatus)
+    {
+        HMAmendmentRequest  hmAmendmentRequest;
+    
+        ttsBegin;
+        select forUpdate RecId, Status, ActionDate, ActionTime from hmAmendmentRequest
+            where hmAmendmentRequest.RecId == this.parmArgs().record().RecId;
+    
+        hmAmendmentRequest.Status       = _requestStatus;
+        hmAmendmentRequest.ActionDate   = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        hmAmendmentRequest.ActionTime   = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+        hmAmendmentRequest.update();
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMAmendmentRequestClass  HMAmendmentRequestClassObj = new HMAmendmentRequestClass();
+    
+        HMAmendmentRequestClassObj.parmArgs(_args);
+    
+        if (_args.parmEnumType() == enumNum(HMAmendmentRequestStatus))
+        {
+            if (_args.parmEnum() == HMAmendmentRequestStatus::Accepted)
+            {
+               // HMAmendmentRequestClassObj.acceptRequestOld();
+               // HMAmendmentRequestClassObj.acceptRequestOneToMany();
+                HMAmendmentRequestClassObj.acceptRequest();
+                HMAmendmentRequestClassObj.refreshCallerForm();
+            }
+            else if (_args.parmEnum() == HMAmendmentRequestStatus::Denied)
+            {
+                HMAmendmentRequestClassObj.denyRequest();
+                HMAmendmentRequestClassObj.refreshCallerForm();
+            }
+        }
+        if (_args.menuItemName() == menuitemActionStr(HMAmendmentRequestDelete))
+        {
+            HMAmendmentRequestClassObj.deleteRequest();
+            HMAmendmentRequestClassObj.refreshCallerForm();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMCaseTransDetail</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMCaseTransDetail extends FormRun
+{
+
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        HMCaseTrans         caseTrans;
+        HMCaseTransDetail   caseTransDetail;
+        Query                   query;
+        QueryBuildDataSource    qbds;
+        CustTrans custTrans;
+        CustTable custTable;
+        LedgerJournalTrans ledgerJournalTrans;
+        CustInvoiceLine    invoiceLine;
+        CustInvoiceTable   invoiceTable;
+        InventJournalTrans inventJournalTrans;
+        TableName tableName;
+        HMCase    hmCase;
+        RefRecId    caseId;
+        HMClaimTable    hmClaimTable;
+        HMPatientChargeEntryTable   hmPatientChargeEntryTable;
+
+        super();
+
+        if (element.args().dataset() == tableNum(HMCase))
+        {
+            hmCase = element.args().record();
+            caseId = hmcase.RecId;
+        }
+        else
+        {
+            error("Unable to open form without arguments");
+        }
+
+        HMCaseEventsDetailTmp.clear();
+        HMCaseEventsDetailTmp.EventType = HMCaseTransDetailTransactionType::CaseCreated;
+        HMCaseEventsDetailTmp.EventDate = DateTimeUtil::date(hmCase.CreatedDateTime);
+        HMCaseEventsDetailTmp.RefNumber = hmCase.CaseNo;
+        //HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+        HMCaseEventsDetailTmp.insert();
+        
+
+        while select SUM(Value), TransactionType from caseTransDetail group by caseTransDetail.TransactionType, ledgerJournalTrans.TransDate, ledgerJournalTrans.JournalNum
+            where (caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::WriteOff
+               || caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::InsurancePayment
+               || caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::PatientPayment)
+            join caseTrans  where caseTrans.RecId == caseTransDetail.HMCaseTrans
+            join hmCase     where caseTrans.HMCase == hmcase.RecId && hmcase.RecId == caseId
+            join ledgerJournalTrans where caseTransDetail.RefRecId == ledgerJournalTrans.RecId
+        {
+            HMCaseEventsDetailTmp.clear();
+            HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+            HMCaseEventsDetailTmp.EventDate = ledgerJournalTrans.TransDate;
+            HMCaseEventsDetailTmp.RefNumber = ledgerJournalTrans.JournalNum;
+            HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+            HMCaseEventsDetailTmp.insert();
+        }
+
+        while select SUM(Value), TransactionType from caseTransDetail group by caseTransDetail.TransactionType, invoiceTable.InvoiceDate, invoiceTable.InvoiceId
+            where caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::InsuranceCreditNote
+               || caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::PatientInvoice
+               || caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::InsuranceInvoice
+            join caseTrans  where caseTrans.RecId == caseTransDetail.HMCaseTrans
+            join hmCase     where caseTrans.HMCase == hmcase.RecId && hmcase.RecId == caseId
+            join invoiceLine where caseTransDetail.RefRecId == invoiceLine.RecId
+            join invoiceTable where invoiceLine.ParentRecId == invoiceTable.RecId
+        {
+            HMCaseEventsDetailTmp.clear();
+            HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+            HMCaseEventsDetailTmp.EventDate = invoiceTable.InvoiceDate;
+            HMCaseEventsDetailTmp.RefNumber = invoiceTable.InvoiceId;
+            HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+            HMCaseEventsDetailTmp.insert();
+        }
+
+        select * from hmClaimTable 
+            join TotalCaseAmount, HMCase from hmPatientChargeEntryTable
+            where hmPatientChargeEntryTable.RecId ==  hmClaimTable.HMPatientChargeEntryTable
+            && hmPatientChargeEntryTable.HMCase == caseId;
+        
+        HMCaseEventsDetailTmp.clear();
+        HMCaseEventsDetailTmp.EventType = HMCaseTransDetailTransactionType::ClaimGenerated;
+        HMCaseEventsDetailTmp.EventDate = DateTimeUtil::date(hmClaimTable.CreatedDateTime);
+        HMCaseEventsDetailTmp.RefNumber = hmClaimTable.ClaimID;
+        HMCaseEventsDetailTmp.Amount    = hmPatientChargeEntryTable.getTotalAmount();
+        HMCaseEventsDetailTmp.insert();
+        
+
+       /* while select SUM(Value), TransactionType from caseTransDetail group by caseTransDetail.TransactionType, inventJournalTrans.TransDate, inventJournalTrans.JournalId
+            where caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::AccrueRevenue
+               || caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::AccrueRevenueReturned
+               || caseTransDetail.TransactionType == HMCaseTransDetailTransactionType::MovemetJournal
+            join caseTrans  where caseTrans.RecId == caseTransDetail.HMCaseTrans
+            join hmCase     where caseTrans.HMCase == hmcase.RecId && hmcase.RecId == caseId
+            join inventJournalTrans where caseTransDetail.RefRecId == inventJournalTrans.RecId
+        {
+            HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+            HMCaseEventsDetailTmp.EventDate = inventJournalTrans.TransDate;
+            HMCaseEventsDetailTmp.RefNumber = inventJournalTrans.JournalId;
+            HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+            HMCaseEventsDetailTmp.insert();
+        }*/
+
+        //while select * from caseTransDetail
+        //{
+        //    tableName = caseTransDetail.getTableNameFromRef(caseTransDetail.RefTableId);
+
+        //    if (tableName == tableStr(CustTrans))
+        //    {
+        //        select * from custTrans
+        //            where custTrans.RecId == caseTransDetail.RefRecId;
+
+        //        HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+        //        HMCaseEventsDetailTmp.EventDate = custTrans.TransDate;
+        //        HMCaseEventsDetailTmp.RefNumber = custTrans.Invoice;
+        //        HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+        //        HMCaseEventsDetailTmp.insert();
+        //    }
+        //    else if (tableName == tableStr(CustTable))
+        //    {
+        //        select * from custTable
+        //            where custTable.RecId == caseTransDetail.RefRecId;
+
+        //        HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+        //        //HMCaseEventsDetailTmp.EventDate = custTable.TransDate;
+        //        HMCaseEventsDetailTmp.RefNumber = custTable.AccountNum;
+        //        HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+        //        HMCaseEventsDetailTmp.insert();
+        //    }
+        //    else if (tableName == tableStr(LedgerJournalTrans))
+        //    {
+        //        select * from ledgerJournalTrans
+        //            where ledgerJournalTrans.RecId == caseTransDetail.RefRecId;
+
+        //        HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+        //        HMCaseEventsDetailTmp.EventDate = ledgerJournalTrans.TransDate;
+        //        HMCaseEventsDetailTmp.RefNumber = ledgerJournalTrans.JournalNum;
+        //        HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+        //        HMCaseEventsDetailTmp.insert();
+        //    }
+        //    else if (tableName == tableStr(CustInvoiceLine))
+        //    {
+        //        select * from invoiceLine
+        //            where invoiceLine.RecId == caseTransDetail.RefRecId;
+
+        //        HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+        //        //HMCaseEventsDetailTmp.EventDate = invoiceLine.TransDate;
+        //        //HMCaseEventsDetailTmp.RefNumber = invoiceLine.Invoice;
+        //        HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+        //        HMCaseEventsDetailTmp.insert();
+        //    }
+        //    else if (tableName == tableStr(InventJournalTrans))
+        //    {
+        //        select * from inventJournalTrans
+        //            where inventJournalTrans.RecId == caseTransDetail.RefRecId;
+
+        //        HMCaseEventsDetailTmp.EventType = caseTransDetail.TransactionType;
+        //        HMCaseEventsDetailTmp.EventDate = inventJournalTrans.TransDate;
+        //        HMCaseEventsDetailTmp.RefNumber = inventJournalTrans.JournalId;
+        //        HMCaseEventsDetailTmp.Amount    = caseTransDetail.Value;
+        //        HMCaseEventsDetailTmp.insert();
+        //    }
+        //}
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMCaseEventsDetailTmp</Name>
+				<Methods>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void executeQuery()
+        {
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMCaseEventsDetailTmp</Name>
+			<Table>HMCaseEventsDetailTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Amount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EventDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EventType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">Case transactions</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<ShowDeleteButton xmlns="">No</ShowDeleteButton>
+		<ShowNewButton xmlns="">No</ShowNewButton>
+		<Style xmlns="">SimpleList</Style>
+		<ViewEditMode xmlns="">View</ViewEditMode>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<Type>ActionPane</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FilterGroup</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilter</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>MainGrid</Name>
+				<AllowEdit>No</AllowEdit>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>HMCaseEventsDetailTmp_EventType</Name>
+						<Type>ComboBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>EventType</DataField>
+						<DataSource>HMCaseEventsDetailTmp</DataSource>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>HMCaseEventsDetailTmp_EventDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>EventDate</DataField>
+						<DataSource>HMCaseEventsDetailTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMCaseEventsDetailTmp_RefNumber</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>RefNumber</DataField>
+						<DataSource>HMCaseEventsDetailTmp</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>HMCaseEventsDetailTmp_Amount</Name>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Amount</DataField>
+						<DataSource>HMCaseEventsDetailTmp</DataSource>
+					</AxFormControl>
+				</Controls>
+				<DataSource>HMCaseEventsDetailTmp</DataSource>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

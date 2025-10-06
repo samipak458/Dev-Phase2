@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCalculateZeroClaimPoolBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used to implement the business logic for assignment of pool batch job for $0 denied claims
+/// </summary>
+class HMCalculateZeroClaimPoolBusinessLogic extends HMCalculateClaimPoolBusinessLogic
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMCalculateZeroClaimPoolBusinessLogic construct()
+    {
+        return new HMCalculateZeroClaimPoolBusinessLogic();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPool</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///  Get all the pools having Is Consider For Zero Denied Claims is set to Yes
+    /// </summary>
+    public void getPool()
+    {
+        QueryBuildDataSource    qbdsHMClaimQualifiedForPoolAssignment;
+        HMClaimTable            claimTable;
+        QueryRun                qryRun;
+        CustCollectionsPool     custCollectionsPool;
+        Query                   qry;
+
+        this.setJobType();
+
+        while select custCollectionsPool
+            order by custCollectionsPool.HMSequenceNumber asc
+                where custCollectionsPool.ClaimQueryPacked != conNull() 
+                   && custCollectionsPool.HMIsConsiderForZeroDeniedClaims == NoYes::Yes
+        {
+            qry = new Query(custCollectionsPool.ClaimQueryPacked);
+
+            if(qry != null)
+            {
+                qbdsHMClaimQualifiedForPoolAssignment = qry.dataSourceTable(tableNum(HMClaimTable)).addDataSource(tableNum(HMClaimQualifiedForPoolAssignment));
+                qbdsHMClaimQualifiedForPoolAssignment.joinMode(JoinMode::ExistsJoin);
+                qbdsHMClaimQualifiedForPoolAssignment.relations(true);
+                qbdsHMClaimQualifiedForPoolAssignment.addRange(fieldNum(HMClaimQualifiedForPoolAssignment, TaskNumberForDataPreparation)).value(queryValue(taskNumber));
+                qbdsHMClaimQualifiedForPoolAssignment.addRange(fieldNum(HMClaimQualifiedForPoolAssignment, HMClaimBatchJobLogsHeader)).value(queryValue(hmClaimBatchJobLogsHeaderDataPrep));
+                
+                qry = this.addRanges(qry, custCollectionsPool);
+
+                qryRun = new QueryRun(qry);
+
+                while(qryRun.next())
+                {
+                    claimTable = qryRun.get(tableNum(HMClaimTable));
+
+                    this.updatePoolOnClaims(custCollectionsPool.RecId, claimTable, custCollectionsPool.Name);
+
+                }
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setJobType</Name>
+				<Source><![CDATA[
+    public void setJobType()
+    {
+        this.jobType = HMClaimJobType::PoolZeroBalance;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,3308 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResourceSchedulingAppointment</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMResourceSchedulingAppointment extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>attachmentIndicator</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display RGBint attachmentIndicator()
+    {
+        RGBint retColor;
+        DocuRef docuRef;
+    
+        select count(RecId) from docuRef
+            where docuRef.RefRecId == this.RecId
+            && docuRef.RefCompanyId == this.dataAreaId
+            && docuRef.RefTableId == this.TableId;
+    
+        if(docuRef.RecId)
+        {
+            retColor = 10442;
+        }
+    
+        return retColor;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cancellationDeadlineDays</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Integer cancellationDeadlineDays()
+    {
+        HMOrganizationalUnit                    hmOrganizationalUnit;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+    
+        select firstOnly CancellationDeadlineDays from hmOrganizationalUnit
+            join RecId from hmResourceSchedulingPlanningObject
+                where hmResourceSchedulingPlanningObject.RecId == this.HMResourceSchedulingPlanningObject
+                && hmResourceSchedulingPlanningObject.HMOrganizationalUnit == hmOrganizationalUnit.RecId;
+    
+        return hmOrganizationalUnit.CancellationDeadlineDays;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkinNotes</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Notes checkinNotes()
+    {
+        HMAppoinmentLog                 apptLog;
+    
+        select firstOnly HMAppointLogNote from apptLog
+        order by CreatedDateTime desc
+        where apptLog.HMResScheduleAppointment == this.RecId
+        && apptLog.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedIn;
+    
+        return apptLog.HMAppointLogNote;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkinTime</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String30 checkinTime()
+    {
+        HMAppoinmentLog  hmAppoinmentLog;
+        String30        retVal;
+    
+        select firstOnly RecId, HMAppointLogTime from hmAppoinmentLog
+            where hmAppoinmentLog.HMResScheduleAppointment == this.RecId
+            && hmAppoinmentLog.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedIn;
+    
+        if(hmAppoinmentLog.RecId)
+        {
+            retVal = strDel(time2str(hmAppoinmentLog.HMAppointLogTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+        }
+    
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkoutNotes</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Notes checkoutNotes()
+    {
+        HMAppoinmentLog                 apptLog;
+    
+        select firstOnly HMAppointLogNote from apptLog
+        order by CreatedDateTime desc
+        where apptLog.HMResScheduleAppointment == this.RecId
+        && apptLog.HMAppointLogStatus == HMResourceSchedulingAppointmentStatus::CheckedOut;
+    
+        return apptLog.HMAppointLogNote;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clientName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display Name clientName()
+    {
+        CustTable custTable;
+    
+        select AccountNum,Party from custTable
+        where custTable.AccountNum == this.Client;
+    
+        return custTable.name();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>delete</Name>
+				<Source><![CDATA[
+    public void delete()
+    {
+        if(true)
+        {
+            warning("@MAZ12655");
+        }
+        else
+        {
+            super();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayArrivalTime</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display String30 displayArrivalTime()
+    {
+        return strDel(time2str(this.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayRelatedArrivalTime</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public TimeOFDay displayRelatedArrivalTime()
+    {
+        HMResourceSchedulingAppointment         hmResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        HMResourceMaster                        hmResourceMaster;
+    
+        if(this.PrimaryAppointment == YesNo::Yes)
+        {
+            select RecId from hmResourceSchedulingPlanningObject
+                join VendorType from hmResourceMaster
+                where hmResourceSchedulingPlanningObject.RecId == this.HMResourceSchedulingPlanningObject
+                && hmResourceSchedulingPlanningObject.HMResourceMaster == hmResourceMaster.RecId;
+    
+            if(hmResourceMaster.VendorType == HMVendorType::External)
+            {
+                return this.ArrivalTime >= 0 ? this.ArrivalTime : this.AppointmentTime;
+            }
+            else
+            {
+                 select firstOnly ArrivalTime,RecId, AppointmentTime from HMResourceSchedulingAppointment
+                 order by HMResourceSchedulingAppointment.ArrivalTime, HMResourceSchedulingAppointment.AppointmentTime
+                    join RecId from hmResourceSchedulingPlanningObject
+                    join RecId from hmResourceMaster
+                    where HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                    && hmResourceSchedulingPlanningObject.HMResourceMaster == hmResourceMaster.RecId
+                    && HMResourceSchedulingAppointment.HMPatientVisit == this.HMPatientVisit
+                    && HMResourceSchedulingAppointment.AppointmentDate == this.AppointmentDate
+                    && HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                    && hmResourceMaster.VendorType == HMVendorType::Internal;
+    
+                return HMResourceSchedulingAppointment.ArrivalTime >= 0 ? HMResourceSchedulingAppointment.ArrivalTime : HMResourceSchedulingAppointment.AppointmentTime;
+            }
+        }
+        else
+        {
+            return this.ArrivalTime >= 0 ? this.ArrivalTime : this.AppointmentTime;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayTime</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display String30 displayTime()
+    {
+        return time2str(this.AppointmentTime, TimeSeparator::Colon, TimeFormat::AMPM);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>displayTimeWithoutSec</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display String30 displayTimeWithoutSec()
+    {
+        return strDel(time2str(this.AppointmentTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentDurationStr</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display str getAppointmentDurationStr()
+    {
+        HMResourceMasterScheduleType        HMResourceMasterScheduleType;
+        HMResourceSchedulingPlanningObject  HMResourceSchedulingPlanningObject;
+    
+        select Duration,DurationUnit from HMResourceMasterScheduleType
+        join HMResourceSchedulingPlanningObject
+        where HMResourceSchedulingPlanningObject.RecId == this.HMResourceSchedulingPlanningObject
+        && HMResourceMasterScheduleType.HMResourceMaster == HMResourceSchedulingPlanningObject.HMResourceMaster
+        && HMResourceMasterScheduleType.HMResourceSchedulingTypeCode == this.HMResourceSchedulingTypeCode;
+    
+        return strfmt('%1 %2',HMResourceMasterScheduleType.Duration,enum2str(HMResourceMasterScheduleType.DurationUnit));
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentPhysician</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getAppointmentPhysician()
+    {
+    
+        return  HMClinicStaff::find(HMResourceSchedulingPlanningObject::find(this.HMResourceSchedulingPlanningObject).HMClinicStaff).getPhysicianName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentResource</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getAppointmentResource()
+    {
+        return HMResourceMasterHelper::getResourceName(HMResourceSchedulingPlanningObject::find(this.HMResourceSchedulingPlanningObject).HMResourceMaster);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentResourceRecId</Name>
+				<Source><![CDATA[
+    public RecId getAppointmentResourceRecId()
+    {
+        return HMResourceSchedulingPlanningObject::find(this.HMResourceSchedulingPlanningObject).HMResourceMaster;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentStatus</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String255 getAppointmentStatus()
+    {
+        return  enum2str(this.AppointmentStatus);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentTypeDescription</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display Description getAppointmentTypeDescription()
+    {
+        HMResourceSchedulingTypeCode        HMResourceSchedulingTypeCode;
+    
+        select Description from HMResourceSchedulingTypeCode
+        where HMResourceSchedulingTypeCode.recid == this.HMResourceSchedulingTypeCode;
+    
+        return HMResourceSchedulingTypeCode.Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClientName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getClientName()
+    {
+        return  CustTable::find(this.Client).name();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClinicRecId</Name>
+				<Source><![CDATA[
+    public RecId getClinicRecId()
+    {
+        HMResourceSchedulingPlanningObject  HMResourceSchedulingPlanningObject;
+        select HMOrganizationalUnit from HMResourceSchedulingPlanningObject
+        where HMResourceSchedulingPlanningObject.recid == this.HMResourceSchedulingPlanningObject;
+    
+        return HMResourceSchedulingPlanningObject.HMOrganizationalUnit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCreatedByName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Name getCreatedByName()
+    {
+        UserInfo userInfo;
+    
+        select * from userInfo where userInfo.id == this.createdBy;
+    
+        return userInfo.name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMPatientInsuranceExpiration</Name>
+				<Source><![CDATA[
+    public display date getHMPatientInsuranceExpiration()
+    {
+        HMPatientInsurance patientInsurance;
+    
+        patientInsurance = HMPatientInsurance::find(this.HMPatientInsurance);
+    
+        return patientInsurance.EndDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInsuranceCarrierName</Name>
+				<Source><![CDATA[
+    public display Name getInsuranceCarrierName()
+    {
+        HMPatientInsurance                      patientInsurance;
+        HMInsuranceContractClassOrPlans         plan;
+        HMInsuranceContract                     contract;
+        HMInsuranceCarrier                      carrier;
+        HMInsuranceContractCarrierCombination   carrierCombination;
+    
+        patientInsurance    = HMPatientInsurance::find(this.HMPatientInsurance);
+    
+        plan                = HMInsuranceContractClassOrPlans::find(patientInsurance.HMInsuranceContractClassOrPlans);
+        contract            = HMInsuranceContract::find(plan.HMInsuranceContract);
+        carrierCombination  = HMInsuranceContractCarrierCombination::find(contract.HMInsuranceContractCarrierCombination);
+        carrier             = HMInsuranceCarrier::find(carrierCombination.HMInsuranceCarrier);
+    
+        return carrier.Name;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getLatestArrivalTime</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display HMTime getLatestArrivalTime()
+    {
+        HMResourceSchedulingAppointment HMResourceSchedulingAppointmentLocal;
+    
+        select firstOnly ArrivalTime from HMResourceSchedulingAppointmentLocal
+        order by HMResourceSchedulingAppointmentLocal.ArrivalTime asc
+        where HMResourceSchedulingAppointmentLocal.HMPatientVisit == this.HMPatientVisit
+        && HMResourceSchedulingAppointmentLocal.AppointmentDate == this.AppointmentDate;
+    
+        return HMResourceSchedulingAppointmentLocal.ArrivalTime;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getModifiedByName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display UserName getModifiedByName()
+    {
+        UserInfo userInfo;
+    
+        select name from userInfo where userInfo.id == this.modifiedBy;
+    
+        return userInfo.name;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNetwork</Name>
+				<Source><![CDATA[
+    public display Name getNetwork()
+    {
+        HMPatientInsurance              patientInsurance;
+        HMInsuranceContractClassOrPlans plan;
+    
+        patientInsurance    = HMPatientInsurance::find(this.HMPatientInsurance);
+    
+        plan                = HMInsuranceContractClassOrPlans::find(patientInsurance.HMInsuranceContractClassOrPlans);
+    
+        return plan.HMContractClassNetwork;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientAge</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String255 getPatientAge()
+    {
+        return  HMPatient::find(this.HMPatient).patientAgeNew();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientChartNum</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String255 getPatientChartNum()
+    {
+        return  HMPatient::find(this.HMPatient).patientChartNum();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientChartNumByPatientRecId</Name>
+				<Source><![CDATA[
+    public String255 getPatientChartNumByPatientRecId(RecId _hmPatientRecid)
+    {
+        return  HMPatient::find(_hmPatientRecid).patientChartNum();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientGender</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String255 getPatientGender()
+    {
+        return  HMPatient::find(this.HMPatient).patientGender();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientInformation</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String255 getPatientInformation()
+    {
+        return  HMPatient::find(this.HMPatient).patientInformation();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientLanguage</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String255 getPatientLanguage()
+    {
+        return  HMPatient::find(this.HMPatient).patientLanguage();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getPatientName()
+    {
+        if(this.HMPatient == 0)
+        {
+            return this.PatientName;
+        }
+        else
+        {
+            return  HMPatient::find(this.HMPatient).patientName();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientNamebyPatientRecId</Name>
+				<Source><![CDATA[
+    public Description getPatientNamebyPatientRecId(RecId _hmpatientRecid)
+    {
+        return HMPatient::find(_hmpatientRecid).patientName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientPFN</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display AccountNum getPatientPFN()
+    {
+        str patientAccount;
+        HMPatient hmPatient;
+        hmPatient = HMPatient::find(this.HMPatient);
+        if(hmPatient.PhysicalChartNumber)
+        {
+            return hmPatient.PhysicalChartNumber;
+        }
+        return  hmPatient.patientChartNum();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPhysicianName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getPhysicianName()
+    {
+        return  HMPatient::find(this.HMPatient).getphysicianName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPrimaryPatientInsurance</Name>
+				<Source><![CDATA[
+    public HMPatientInsurance getPrimaryPatientInsurance()
+    {
+        HMPatientInsurance  hmPatientInsurance;
+    
+        hmPatientInsurance = HMPatient::find(this.HMPatient).getPrimaryPatientInsurance();
+    
+        return hmPatientInsurance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPriorAuthorizationNumber</Name>
+				<Source><![CDATA[
+    public HMPriorAuthorizationNumber getPriorAuthorizationNumber()
+    {
+        HMPatientInsurance  hmPatientInsurance;
+    
+        select firstOnly RecId,InsuranceCarrier,PriorAuthorizationNumber from hmPatientInsurance
+        order by Priority
+        where hmPatientInsurance.HMPatient == this.RecId
+        && hmPatientInsurance.HMPayerType == HMPayerType::InsuranceCarrier
+        && hmPatientInsurance.InsuranceStatus == HMInsuranceStatus::Active
+        && (hmPatientInsurance.EffectiveDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmPatientInsurance.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+        return hmPatientInsurance.PriorAuthorizationNumber;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredBirthDay</Name>
+				<Source><![CDATA[
+    public String10 getSecondaryInsuredBirthDay()
+    {
+        DirPerson   person;
+        HMPatientInsurance  hmPatientInsurance;
+        RecId   patientRecId;
+    
+        hmPatientInsurance = this.getSecondaryPatientInsurance();
+    
+        if(hmPatientInsurance.HMPatientSubscriber)
+        {
+            patientRecId = hmPatientInsurance.HMPatientSubscriber;
+        }
+        else
+        {
+            patientRecId = hmPatientInsurance.HMPatient;
+        }
+    
+        person = DirPerson::find(CustTable::findRecId(HMPatient::find(patientRecId).CustTable).Party);
+    
+        if(person.BirthDay == 0)
+        {
+            return '';
+        }
+        else
+        {
+            return int2str(person.BirthDay);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredBirthMonth</Name>
+				<Source><![CDATA[
+    public String10 getSecondaryInsuredBirthMonth()
+    {
+        DirPerson   person;
+        HMPatientInsurance  hmPatientInsurance;
+        RecId   patientRecId;
+    
+        hmPatientInsurance = this.getSecondaryPatientInsurance();
+    
+        if(hmPatientInsurance.HMPatientSubscriber)
+        {
+            patientRecId = hmPatientInsurance.HMPatientSubscriber;
+        }
+        else
+        {
+            patientRecId = hmPatientInsurance.HMPatient;
+        }
+    
+        person = DirPerson::find(CustTable::findRecId(HMPatient::find(patientRecId).CustTable).Party);
+    
+        if(person.BirthMonth == 0)
+        {
+            return '';
+        }
+        else
+        {
+            return int2str(person.BirthMonth);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredBirthYear</Name>
+				<Source><![CDATA[
+    public String10 getSecondaryInsuredBirthYear()
+    {
+        DirPerson   person;
+        HMPatientInsurance  hmPatientInsurance;
+        RecId   patientRecId;
+    
+        hmPatientInsurance = this.getSecondaryPatientInsurance();
+    
+        if(hmPatientInsurance.HMPatientSubscriber)
+        {
+            patientRecId = hmPatientInsurance.HMPatientSubscriber;
+        }
+        else
+        {
+            patientRecId = hmPatientInsurance.HMPatient;
+        }
+    
+        person = DirPerson::find(CustTable::findRecId(HMPatient::find(patientRecId).CustTable).Party);
+    
+        if(person.BirthYear == 0)
+        {
+            return '';
+        }
+        else
+        {
+            return int2str(person.BirthYear);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredEmployeeName</Name>
+				<Source><![CDATA[
+    public Name getSecondaryInsuredEmployeeName()
+    {
+        HMPatientInsurance  hmPatientInsurance;
+    
+        hmPatientInsurance = this.getSecondaryPatientInsurance();
+    
+        if(hmPatientInsurance.HMPatientSubscriber)
+        {
+            return HMPatient::find(hmPatientInsurance.HMPatientSubscriber).Employer;
+        }
+        else
+        {
+            return HMPatient::find(hmPatientInsurance.HMPatient).Employer;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredGender</Name>
+				<Source><![CDATA[
+    public HcmPersonGender getSecondaryInsuredGender()
+    {
+        HMPatientInsurance  hmPatientInsurance;
+    
+        hmPatientInsurance = this.getSecondaryPatientInsurance();
+    
+        if(hmPatientInsurance.HMPatientSubscriber)
+        {
+            return HMPatient::find(hmPatientInsurance.HMPatientSubscriber).Gender;
+        }
+        else
+        {
+            return HMPatient::find(hmPatientInsurance.HMPatient).Gender;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredGroupNumber</Name>
+				<Source><![CDATA[
+    public HMInsuranceGroupNumber getSecondaryInsuredGroupNumber()
+    {
+        return this.getSecondaryPatientInsurance().GroupNumber;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredName</Name>
+				<Source><![CDATA[
+    public Name getSecondaryInsuredName()
+    {
+        HMPatientInsurance  hmPatientInsurance;
+    
+        hmPatientInsurance = this.getSecondaryPatientInsurance();
+    
+        if(hmPatientInsurance.HMPatientSubscriber)
+        {
+            return HMPatient::find(hmPatientInsurance.HMPatientSubscriber).patientLastFirstMiddleName();
+        }
+        else
+        {
+            return HMPatient::find(hmPatientInsurance.HMPatient).patientLastFirstMiddleName();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredPlanName</Name>
+				<Source><![CDATA[
+    public HMPolicyGroup getSecondaryInsuredPlanName()
+    {
+        return this.getSecondaryPatientInsurance().PolicyGroup;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryInsuredPolicyNumber</Name>
+				<Source><![CDATA[
+    public HMPolicyNumber getSecondaryInsuredPolicyNumber()
+    {
+        return this.getSecondaryPatientInsurance().PolicyNumber;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSecondaryPatientInsurance</Name>
+				<Source><![CDATA[
+    public HMPatientInsurance getSecondaryPatientInsurance()
+    {
+        HMPatientInsurance  hmPatientInsurance;
+    
+        hmPatientInsurance = HMPatient::find(this.HMPatient).getSecondaryPatientInsurance();
+    
+        return hmPatientInsurance;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getVisitPhysicianRecId</Name>
+				<Source><![CDATA[
+    public RecId getVisitPhysicianRecId()
+    {
+        return HMResourceSchedulingPlanningObject::find(this.HMResourceSchedulingPlanningObject).HMClinicStaff;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getVisitPrimaryInsurance</Name>
+				<Source><![CDATA[
+    public recid getVisitPrimaryInsurance()
+    {
+        HMInsuranceCarrier  hmInsuranceCarrier;
+        CustTable           custTable;
+    
+        return HMPatient::find(this.HMPatient).getPrimaryInsurance();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        HcmWorker        hcmWorker;
+        
+        ExecutePermission   perm;
+    
+        super();
+        this.insertServiceAppointmentLog();
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertServiceAppointmentLog</Name>
+				<Source><![CDATA[
+    private void insertServiceAppointmentLog()
+    {
+        HMProtocolServiceAppointmentLog HMProtocolServiceAppointmentLog;
+        delete_from HMProtocolServiceAppointmentLog
+        where HMProtocolServiceAppointmentLog.HMResourceSchedulingAppointment == this.RecId;
+        if(this.BOMVersion)
+        {
+            HMProtocolServiceAppointmentLog.BOMVersion = this.BOMVersion;
+            HMProtocolServiceAppointmentLog.HMPatient = this.HMPatient;
+            HMProtocolServiceAppointmentLog.HMResourceSchedulingAppointment = this.RecId;
+            HMProtocolServiceAppointmentLog.AppointmentDateTime = DateTimeUtil::newDateTime(this.AppointmentDate,this.AppointmentTime,DateTimeUtil::getCompanyTimeZone());
+            HMProtocolServiceAppointmentLog.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isPatientSelf</Name>
+				<Source><![CDATA[
+    display public HMNoYes isPatientSelf()
+    {
+        return (!this.HMPatientInsurance);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isVisitSecondaryInsuranceExist</Name>
+				<Source><![CDATA[
+    public NoYes isVisitSecondaryInsuranceExist()
+    {
+        NoYes               result;
+    
+        result = HMPatient::find(this.HMPatient).isSecondaryInsuranceExist();
+    
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>patientPaymentExist</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display HMNoYes patientPaymentExist()
+    {
+        HMPatient       hmPatient;
+        CustTransOpen   custTransOpen;
+        CustTrans       custTrans;
+        CustAccount     custAccount;
+    
+        select CustTable from hmPatient where hmPatient.RecId == this.HMPatient;
+        custAccount = hmPatient.getMRN();
+        if(custAccount)
+        {
+            select count(RecId) from custTransOpen
+            join custTrans
+            where custTransOpen.AccountNum == custTrans.AccountNum
+            && custTransOpen.RefRecId == custTrans.RecId
+            && custTrans.AccountNum == custAccount;
+    
+            if(custTransOpen.RecId > 0)
+            {
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>patientTotalAdvancePayments</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountCur patientTotalAdvancePayments()
+    {
+        CustTransOpen   custTransOpen;
+        custTrans       custTrans;
+        CustTransIdRef  custTransIdRef;
+    
+        select sum(AmountCur) from custTransOpen
+        join custtrans where custTrans.recid == custTransOpen.RefRecId
+        && custTrans.AccountNum == CustTransOpen.AccountNum
+        && custTrans.AccountNum == this.getPatientChartNum()
+        && custTrans.amountCur < 0
+        join custTransIdRef where custTransIdRef.TransRecId == custTrans.RecId
+        && custTransIdRef.TransRefType == CustTransRefType::Payment;
+    
+        return abs(custTransOpen.AmountCur);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>patientTotalAvlblAmount</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountCur patientTotalAvlblAmount()
+    {
+        return this.patientTotalInvoiceAmount() - this.patientTotalAdvancePayments();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>patientTotalInvoiceAmount</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountCur patientTotalInvoiceAmount()
+    {
+        CustTransOpen   custTransOpen;
+        custTrans       custTrans;
+        CustTransIdRef  custTransIdRef;
+    
+        select sum(AmountCur) from custTransOpen
+        join custtrans where custTrans.recid == custTransOpen.RefRecId
+        && custTrans.AccountNum == CustTransOpen.AccountNum
+        && custTrans.AccountNum == this.getPatientChartNum()
+        join custTransIdRef where custTransIdRef.TransRecId == custTrans.RecId
+        && custTransIdRef.TransRefType == CustTransRefType::Invoice;
+    
+        return custTransOpen.AmountCur;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>physicalChartNumber</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String20 physicalChartNumber()
+    {
+        String20 retVal;
+        HMPhysicalChartNumberStatus status = this.physicalChartNumberRequiredStatus();
+        HMPatient hmPatient;
+    
+        if(status == HMPhysicalChartNumberStatus::Assigned)
+        {
+            select PhysicalChartNumber from hmPatient
+                where hmPatient.RecId == this.HMPatient;
+    
+            retVal = hmPatient.PhysicalChartNumber;
+        }
+        else
+        {
+            retVal = enum2str(status);
+        }
+    
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>physicalChartNumberRequiredStatus</Name>
+				<Source><![CDATA[
+    public HMPhysicalChartNumberStatus physicalChartNumberRequiredStatus()
+    {
+        HMPhysicalChartNumberStatus retVal;
+        HMPatient hmPatient;
+    
+        select PhysicalChartNumber from hmPatient
+            where hmPatient.RecId == this.HMPatient;
+    
+        if(hmPatient.PhysicalChartNumber)
+        {
+            retVal = HMPhysicalChartNumberStatus::Assigned;
+        }
+        else if(this.PhysicalChartRequired)
+        {
+            retVal = HMPhysicalChartNumberStatus::Required;
+        }
+        else
+        {
+            retVal = HMPhysicalChartNumberStatus::NotRequired;
+        }
+    
+        return retVal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>physicianNameOnClaim</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display Name physicianNameOnClaim()
+    {
+        return this.getAppointmentPhysician();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resultExpectedDate</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display TransDate resultExpectedDate()
+    {
+        HMInventTable                               hmInventTable;
+        HMResourceSchedulingAppointmentInvent       hmResourceSchedulingAppointmentInvent;
+        boolean isExternal = HMResourceMasterHelper::isResourceExternal(this.getAppointmentResourceRecId());
+        TransDate       retDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        int i;
+    
+        if(isExternal)
+        {
+            select firstOnly ExternalTAT from hmInventTable
+                order by hmInventTable.ExternalTAT desc
+                join Recid from hmResourceSchedulingAppointmentInvent
+                where hmInventTable.InventTable == hmResourceSchedulingAppointmentInvent.InventTable
+                && hmResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == this.RecId;
+    
+            i = 1;
+    
+            while(i <= hmInventTable.ExternalTAT)
+            {
+                if(HMResourceSchedulingHelper::isWeekday(retDate +1))
+                {
+                    retDate = retDate + 1;
+                    i++;
+                }
+                else
+                {
+                    retDate = retDate + 1;
+                }
+            }
+        }
+        else
+        {
+            select firstOnly TAT from hmInventTable
+                order by hmInventTable.TAT desc
+                join Recid from hmResourceSchedulingAppointmentInvent
+                where hmInventTable.InventTable == hmResourceSchedulingAppointmentInvent.InventTable
+                && hmResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == this.RecId;
+    
+            i = 1;
+    
+            while(i <= hmInventTable.TAT)
+            {
+                if(HMResourceSchedulingHelper::isWeekday(retDate +1))
+                {
+                    retDate = retDate + 1;
+                    i++;
+                }
+                else
+                {
+                    retDate = retDate + 1;
+                }
+            }
+        }
+    
+        return retDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDimensionAccount</Name>
+				<Source><![CDATA[
+    public RecId setDimensionAccount(RecId _dimensionAccountRecId)
+    {
+        str                                     locationDimension;
+        DimensionAttributeValueSetStorage       dimStorage;
+        Counter                                 i;
+        DimensionDefault                        result;
+        DimensionAttribute                      dimensionAttribute;
+        DimensionAttributeValue                 dimensionAttributeValue;
+        container                               conAttr ;
+        container                               conValue ;
+        str                                     dimValue;
+        DimensionAttributeValueSetStorage       valueSetStorage = new DimensionAttributeValueSetStorage();
+        HMOrganizationalUnit                    hmOrganizationalUnit;
+        boolean                                 _createIfNotFound = true;
+    
+    
+        if(_dimensionAccountRecId)
+        {
+            select LocationDimension_Medisys,ServiceType from hmOrganizationalUnit
+                where hmOrganizationalUnit.recid == this.HMOrganizationalUnitServiceLocation;
+    
+            locationDimension = hmOrganizationalUnit.LocationDimension_Medisys;
+            dimStorage = DimensionAttributeValueSetStorage::find(_dimensionAccountRecId);
+            if(strLen(locationDimension) > 0)
+            {
+                for (i=1 ; i<= dimStorage.elements() ; i++)
+                {
+                    conattr = conIns(conattr,i,(DimensionAttribute::find(dimStorage.getAttributeByIndex(i)).Name));
+                    conValue = conIns(conValue,i,dimStorage.getDisplayValueByIndex(i));
+                }
+                if(DimensionAttribute::findByName('D40Location'))
+                {
+                    conattr = conIns(conAttr,conLen(conAttr),'D40Location');
+                    conValue = conIns(conValue,conLen(conValue),locationDimension);
+                    for (i = 1; i <= conLen(conAttr); i++)
+                    {
+                        dimensionAttribute = dimensionAttribute::findByName(conPeek(conAttr,i));
+    
+                        if (dimensionAttribute.RecId == 0)
+                        {
+                            continue;
+                        }
+    
+                        dimValue = conPeek(conValue,i);
+    
+                        if (dimValue != "")
+                        {
+                            // _createIfNotFound is "true". A dimensionAttributeValue record will be created if not found.
+                            dimensionAttributeValue = dimensionAttributeValue::findByDimensionAttributeAndValue(dimensionAttribute,dimValue,false,_createIfNotFound);
+    
+                            // Add the dimensionAttibuteValue to the default dimension
+                            valueSetStorage.addItem(dimensionAttributeValue);
+                        }
+                    }
+                    result = valueSetStorage.save();
+                    return result;
+                }
+            }
+        }
+        return _dimensionAccountRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showAppointmentStatus</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String30 showAppointmentStatus()
+    {
+        String30    apptStatus;
+        switch (this.AppointmentStatus)
+        {
+            case HMResourceSchedulingAppointmentStatus::Open:
+            case HMResourceSchedulingAppointmentStatus::Edited:
+                apptStatus =  SysLabel::labelId2String2('@MAZ7871');
+                break;
+    
+            default:
+                apptStatus =  enum2str(this.AppointmentStatus);
+                break;
+        }
+        return apptStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showClinic</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String30 showClinic()
+    {
+        return HMOrganizationalUnit::find(HMResourceSchedulingPlanningObject::find(this.HMResourceSchedulingPlanningObject).HMOrganizationalUnit).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showEmail</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String10 showEmail()
+    {
+        String10  status;
+        switch (SysOutgoingEmailTable::find(this.SysOutgoingEmailTable).Status)
+        {
+            case SysEmailStatus::Sent:
+                status =  "@SYS323111";
+                break;
+    
+            case SysEmailStatus::Failed:
+            case SysEmailStatus::Unsent:
+                status =  "@SYS26062";
+                break;
+        }
+        return status;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ShowMyResource</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display Integer ShowMyResource()
+    {
+        #AOT
+        ;
+        switch(this.AppointmentStatus)
+        {
+            case HMResourceSchedulingAppointmentStatus::Open:
+            return 0;
+    
+            case HMResourceSchedulingAppointmentStatus::CheckedIn:
+                return 1;
+            case HMResourceSchedulingAppointmentStatus::Examined:
+                return 2;
+            case HMResourceSchedulingAppointmentStatus::CheckedOut:
+                return 3;
+            case HMResourceSchedulingAppointmentStatus::Tentative:
+                return 5;
+            default:
+                return 4;
+        }
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showServiceType</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String30 showServiceType()
+    {
+        return enum2str(HMOrganizationalUnit::find(this.HMOrganizationalUnitServiceLocation).ServiceType);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showSpouseProgram</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display String10 showSpouseProgram()
+    {
+        return BOMVersion::findRecId(this.BOMVersion).SpouseCovered == NoYes::Yes? SysLabel::labelId2String2('@MAZ11129'):SysLabel::labelId2String2('@SYS26062');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>totalAppointmentAdvancePayments</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountCur totalAppointmentAdvancePayments()
+    {
+        CustTransOpen   custTransOpen;
+        custTrans       custTrans;
+        CustTransIdRef  custTransIdRef;
+    
+        select sum(AmountCur) from custTransOpen
+        join custtrans where custTrans.recid == custTransOpen.RefRecId
+        && custTrans.AccountNum == CustTransOpen.AccountNum
+        && custTrans.AccountNum == this.getPatientChartNum()
+        && custTrans.amountCur < 0
+        && custTrans.HMAppointmentNumber == this.AppointmentNumber
+        join custTransIdRef where custTransIdRef.TransRecId == custTrans.RecId
+        && custTransIdRef.TransRefType == CustTransRefType::Payment;
+    
+        return abs(custTransOpen.AmountCur);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>totalAppointmentInvoiceAmount</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountCur totalAppointmentInvoiceAmount()
+    {
+        CustTransOpen   custTransOpen;
+        custTrans       custTrans;
+        CustTransIdRef  custTransIdRef;
+        AmountCur       totalAmount;
+        salesTotals     salesTotals;
+        SalesTable      salesTableLocal;
+        HMResourceSchedulingAppointmentSalesTbl HMResourceSchedulingAppointmentSalesTbl;
+        select sum(AmountCur) from custTransOpen
+        join custtrans where custTrans.recid == custTransOpen.RefRecId
+        && custTrans.AccountNum == CustTransOpen.AccountNum
+        && custTrans.HMAppointmentNumber == this.AppointmentNumber
+        && custTrans.AccountNum == this.getPatientChartNum()
+        join custTransIdRef where custTransIdRef.TransRecId == custTrans.RecId
+        && custTransIdRef.TransRefType == CustTransRefType::Invoice;
+        if(custTransOpen.AmountCur != 0)
+        {
+            totalAmount += custTransOpen.AmountCur;
+        }
+        while select SalesTable from HMResourceSchedulingAppointmentSalesTbl
+        where HMResourceSchedulingAppointmentSalesTbl.Invoiced == NoYes::No
+        && HMResourceSchedulingAppointmentSalesTbl.Responsibility == HMPatientPaymentResponsibility::Patient
+        && HMResourceSchedulingAppointmentSalesTbl.CreditNoteCreated == NoYes::No
+        && HMResourceSchedulingAppointmentSalesTbl.HMResourceSchedulingAppointment == this.RecId
+        {
+            salesTableLocal = SalesTable::find(HMResourceSchedulingAppointmentSalesTbl.SalesTable);
+            if(salesTableLocal.SalesStatus == SalesStatus::Backorder)
+            {
+                salesTotals = SalesTotals::construct(salesTableLocal);
+                totalAmount += salesTotals.totalAmount();
+            }
+    
+        }
+        if(totalAmount > 0)
+        {
+            return  totalAmount;
+        }
+    
+        return this.getAppointmentChargesForPatient();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>totalAvailableAmount</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountCur totalAvailableAmount()
+    {
+        return this.totalAppointmentInvoiceAmount() - this.totalAppointmentAdvancePayments();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        HMProtocolServiceAppointmentLog HMProtocolServiceAppointmentLog;
+        super();
+        this.insertServiceAppointmentLog();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>write</Name>
+				<Source><![CDATA[
+    public void write()
+    {
+        HMProtocolServiceAppointmentLog HMProtocolServiceAppointmentLog;
+        super();
+        delete_from HMProtocolServiceAppointmentLog
+        where HMProtocolServiceAppointmentLog.HMResourceSchedulingAppointment == this.RecId;
+        if(this.BOMVersion)
+        {
+            HMProtocolServiceAppointmentLog.BOMVersion = this.BOMVersion;
+            HMProtocolServiceAppointmentLog.HMPatient = this.HMPatient;
+            HMProtocolServiceAppointmentLog.HMResourceSchedulingAppointment = this.RecId;
+            HMProtocolServiceAppointmentLog.insert();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record is located in the <c>HMResourceSchedulingAppointment</c> table.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMResourceSchedulingAppointment</c> table record to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    /// <remarks>
+    ///    If the specified record is not located in the <c>HMResourceSchedulingAppointment</c> table, an error message is
+    ///    displayed.
+    /// </remarks>
+    public static boolean checkExist(RecId _recId)
+    {
+        boolean ret = true;
+    
+        if (!HMResourceSchedulingAppointment::exist(_recId))
+        {
+            ret = checkFailed(strfmt(HMResourceSchedulingAppointment::txtNotExist(), _recId));
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record in the <c>HMResourceSchedulingAppointment</c> table exists.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMResourceSchedulingAppointment</c> table to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    public static boolean exist(RecId _recId)
+    {
+        boolean found;
+    
+        found = (select firstonly
+                     RecId
+                 from
+                     hmResourceSchedulingAppointment
+                 where
+                     hmResourceSchedulingAppointment.RecId == _recId).RecId != 0;
+    
+        return found;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMResourceSchedulingAppointment</c> table.
+    /// </summary>
+    /// <param name="_recid">
+    ///     The record ID of the <c>HMResourceSchedulingAppointment</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMResourceSchedulingAppointment</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMResourceSchedulingAppointment find(
+    RecId               _recid,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMResourceSchedulingAppointment  hmResourceSchedulingAppointment;
+    
+        hmResourceSchedulingAppointment.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmResourceSchedulingAppointment.concurrencyModel(_concurrencyModel);
+        }
+    
+        select firstonly * from hmResourceSchedulingAppointment where hmResourceSchedulingAppointment.RecId == _recid;
+    
+        return hmResourceSchedulingAppointment;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findByReservedSlot</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///     Finds the specified record in the <c>HMResourceSchedulingAppointment</c> table.
+    /// </summary>
+    /// <param name="_recid">
+    ///     The record ID of the <c>HMResourceSchedulingAppointment</c> table to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    ///     A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    ///     The concurrency model option that will be used when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    ///     A record of the <c>HMResourceSchedulingAppointment</c> table if found; otherwise, an empty buffer.
+    /// </returns>
+    public static HMResourceSchedulingAppointment findByReservedSlot(
+    RecId               _recid,
+    boolean             _forUpdate = false,
+    ConcurrencyModel    _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMResourceSchedulingAppointment  hmResourceSchedulingAppointment;
+    
+        hmResourceSchedulingAppointment.selectForUpdate(_forUpdate);
+    
+        if(_forUpdate  && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmResourceSchedulingAppointment.concurrencyModel(_concurrencyModel);
+        }
+    
+        select firstonly * from hmResourceSchedulingAppointment where hmResourceSchedulingAppointment.RecId == _recid
+        && hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Reserved;
+    
+        return hmResourceSchedulingAppointment;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findRecIdByAppointmentNum</Name>
+				<Source><![CDATA[
+    public static RecId findRecIdByAppointmentNum(HMAppointmentNumber _apptNumber)
+    {
+        HMResourceSchedulingAppointment appt;
+        select RecId from appt
+        where appt.AppointmentNumber == _apptNumber;
+        return appt.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentAdvanceAmount</Name>
+				<Source><![CDATA[
+    public static real getAppointmentAdvanceAmount(RecId _apptRecId)
+    {
+        JournalId journalId = HMResourceSchedulingAppointment::find(_apptRecId).LedgerJournalTable_AdvancePayment;
+        LedgerJournalTrans  ledgerJournalTrans;
+        CustTrans           custTrans;
+        if(journalId)
+        {
+            if(LedgerJournalTable::find(journalId).posted == NoYes::Yes)
+            {
+                select sum(AmountCur) from CustTrans
+                join ledgerJournalTrans where ledgerJournalTrans.CustTransId == custTrans.RecId
+                && ledgerJournalTrans.JournalNum == journalId;
+                return custTrans.AmountCur;
+            }
+        }
+        return 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClientAccount</Name>
+				<Source><![CDATA[
+    public static CustAccount getClientAccount(RecId _appointmentRecId)
+    {
+        QueryRun                        queryRun;
+        Query                           query;
+        QueryBuildFieldList             fieldList;
+        HMResourceSchedulingAppointment appt;
+    
+        query = new query();
+        query.addDataSource(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,RecId)).value(SysQuery::value(_appointmentRecId));
+        fieldList = query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).fields();
+        fieldList.dynamic(0);
+        fieldList.addField(fieldNum(HMResourceSchedulingAppointment,Client));
+    
+        queryRun = new QueryRun(query);
+        queryRun.next();
+        appt = queryRun.get(tableNum(HMResourceSchedulingAppointment));
+        return appt.Client;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>txtNotExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets the message to use when a specific record in the <c>HMResourceSchedulingAppointment</c> does not exist.
+    /// </summary>
+    /// <returns>
+    ///    The message that states a record does not exist.
+    /// </returns>
+    public static TxtNotExist txtNotExist()
+    {
+        return "@SYS127989";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAnesthesiaType</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getAnesthesiaType()
+    {
+        return HMAnesthesiaType::find(this.HMAnesthesiaType).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentChargesForPatient</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountMST getAppointmentChargesForPatient()
+    {
+        Amount _amount;
+        return _amount;
+        //todo: ax7 Medisys specific Code 
+        //after uncommenct follwoing code Remove above line (Ammount_ ammoun;Return _amount);
+        /*HMChargeEntryClass_Medisys objClass = new HMChargeEntryClass_Medisys();
+        return conPeek(objClass.getPatientOutStandingBalance(this.RecId),2);
+        */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntry</Name>
+				<Source><![CDATA[
+    private HMPatientChargeEntryLine getChargeEntry(int _entryNum)
+    {
+        HMPatientChargeEntryLine        hmPatientChargeEntryLineLocal;
+        HMPatientChargeEntryTable       hmPatientChargeEntryTableLocal;
+    
+        select * from hmPatientChargeEntryTableLocal
+            where hmPatientChargeEntryTableLocal.HMResourceSchedulingAppointment == this.RecId
+            join * from hmPatientChargeEntryLineLocal
+                where hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == hmPatientChargeEntryTableLocal.RecId
+                        && hmPatientChargeEntryLineLocal.ProcedureOrder == _entryNum;
+    
+        return hmPatientChargeEntryLineLocal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryCPT</Name>
+				<Source><![CDATA[
+    public HMProcChrgCode getChargeEntryCPT(str _entryNum)
+    {
+        return this.getChargeEntry(str2int(_entryNum)).InventTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryDOSFromDay</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryDOSFromDay(str _entryNum)
+    {
+        date dt = this.getChargeEntry(str2int(_entryNum)).FromDate;
+    
+        if(dt == dateNull())
+        {
+            return '';
+        }
+        else
+        {
+            return int2str(dayOfMth(dt));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryDOSFromMonth</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryDOSFromMonth(str _entryNum)
+    {
+        date dt = this.getChargeEntry(str2int(_entryNum)).FromDate;
+    
+        if(dt == dateNull())
+        {
+            return '';
+        }
+        else
+        {
+            return int2str(mthOfYr(dt));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryDOSFromYear</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryDOSFromYear(str _entryNum)
+    {
+        date dt = this.getChargeEntry(str2int(_entryNum)).FromDate;
+    
+        if(dt == dateNull())
+        {
+            return '';
+        }
+        else
+        {
+            return subStr(int2str(year(dt)),3,2);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryDOSToMonth</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryDOSToMonth(str _entryNum)
+    {
+        date dt = this.getChargeEntry(str2int(_entryNum)).TODate;
+    
+        if(dt == dateNull())
+        {
+            return '';
+        }
+        else
+        {
+            return int2str(mthOfYr(dt));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryDOSToDay</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryDOSToDay(str _entryNum)
+    {
+        date dt = this.getChargeEntry(str2int(_entryNum)).TODate;
+    
+        if(dt == dateNull())
+        {
+            return '';
+        }
+        else
+        {
+            return int2str(dayOfMth(dt));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryDOSTOYear</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryDOSTOYear(str _entryNum)
+    {
+        date dt = this.getChargeEntry(str2int(_entryNum)).TODate;
+    
+        if(dt == dateNull())
+        {
+            return '';
+        }
+        else
+        {
+            return subStr(int2str(year(dt)),3,2);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryFee</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryFee(str _entryNum)
+    {
+        HMPatientChargeEntryLine        hmPatientChargeEntryLineLocal = this.getChargeEntry(str2int(_entryNum));
+    
+        if(hmPatientChargeEntryLineLocal.RecId)
+        {
+            return num2expstr(hmPatientChargeEntryLineLocal.Charge,DecimalSeparator::Auto,ThousandSeparator::Auto);
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryFirstModifier</Name>
+				<Source><![CDATA[
+    public HMProcedureModifierCode getChargeEntryFirstModifier(str _entryNum)
+    {
+        return HMProcedureModifier::find(this.getChargeEntry(str2int(_entryNum)).Modifier1).Code;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryFourthModifier</Name>
+				<Source><![CDATA[
+    public HMProcedureModifierCode getChargeEntryFourthModifier(str _entryNum)
+    {
+        return HMProcedureModifier::find(this.getChargeEntry(str2int(_entryNum)).Modifier4).Code;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryNPI</Name>
+				<Source><![CDATA[
+    public HMNPI getChargeEntryNPI(str _entryNum)
+    {
+        if(this.getChargeEntry(str2int(_entryNum)).RecId)
+        {
+            return HMClinicStaff::find(this.getVisitPhysicianRecId()).NPI;
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryPlaceOfService</Name>
+				<Source><![CDATA[
+    public HMCode getChargeEntryPlaceOfService(str _entryNum)
+    {
+        return HMPlaceOfService::find(this.getChargeEntry(str2int(_entryNum)).PlaceOfService).Code;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntrySecondModifier</Name>
+				<Source><![CDATA[
+    public HMProcedureModifierCode getChargeEntrySecondModifier(str _entryNum)
+    {
+        return HMProcedureModifier::find(this.getChargeEntry(str2int(_entryNum)).Modifier2).Code;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryThirdModifier</Name>
+				<Source><![CDATA[
+    public HMProcedureModifierCode getChargeEntryThirdModifier(str _entryNum)
+    {
+        return HMProcedureModifier::find(this.getChargeEntry(str2int(_entryNum)).Modifier3).Code;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getChargeEntryUnit</Name>
+				<Source><![CDATA[
+    public String10 getChargeEntryUnit(str _entryNum)
+    {
+        HMPatientChargeEntryLine        hmPatientChargeEntryLineLocal = this.getChargeEntry(str2int(_entryNum));
+    
+        if(hmPatientChargeEntryLineLocal.RecId)
+        {
+            return int2str(hmPatientChargeEntryLineLocal.Units);
+        }
+        else
+        {
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCreatedDate</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display date getCreatedDate()
+    {
+        return DateTimeUtil::date(this.createdDateTime);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCreatedTime</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display TimeOfDay getCreatedTime()
+    {
+       return DateTimeUtil::time(this.createdDateTime);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPerformingResource</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display DirPartyName getPerformingResource()
+    {
+        return HMResourceMaster::find(this.HMResourceMaster_PerformingDoctor).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalCharges</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display HMChargeEntryCharge getTotalCharges()
+    {
+        HMPatientChargeEntryTable        hmPatientChargeEntryTableLocal = HMPatientChargeEntryTable::findByAppointment(this.RecId);
+    
+        return hmPatientChargeEntryTableLocal.getTotalCharges();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isEligibleForRescheduleCancel</Name>
+				<Source><![CDATA[
+    public boolean isEligibleForRescheduleCancel()
+    {
+        HMCaseTrans hmCaseTrans;
+        int orderedCount, notOrderedCount;
+    
+        select count(RecId) from hmCaseTrans
+        where hmCaseTrans.HMResourceSchedulingAppointment == this.RecId
+        && hmCaseTrans.BillingStatus == HMBillStatus::NotPaid
+        && hmCaseTrans.ParentCaseTransId == 0;
+    
+        orderedCount = hmCaseTrans.RecId;
+    
+        select count(RecId) from hmCaseTrans
+        where hmCaseTrans.HMResourceSchedulingAppointment == this.RecId
+        && hmCaseTrans.ParentCaseTransId == 0;
+    
+        notOrderedCount = hmCaseTrans.RecId;
+    
+        if(orderedCount == notOrderedCount)
+        {
+            return true;
+        }
+        warning("All the services must be in ordered to further proceed");
+        return false;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showCancellationFee</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display RealBase showCancellationFee()
+    {
+        RealBase    fee;
+        ItemId       itemidCancelChargeCode = HMBillParameters::find().InventTable_CancellationChargeCode;
+        HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+        AccountNum invoiceAccount;
+    
+        if(itemidCancelChargeCode)
+        {
+            invoiceAccount = this.getPatientChartNum();
+    
+            select firstonly HMOrganizationalUnit from hmResourceSchedulingPlanningObject
+                where hmResourceSchedulingPlanningObject.RecId == this.HMResourceSchedulingPlanningObject;
+    
+            fee = HMSalesOrderInvoiceGenerator::getItemPricePriceByInventDim(itemidCancelChargeCode,invoiceAccount,HMResourceSchedulingHelper::getInventDimFromOU(hmResourceSchedulingPlanningObject.HMOrganizationalUnit));
+        }
+    
+        return fee;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>HIS</ConfigurationKey>
+	<DeveloperDocumentation>@MAZ1447</DeveloperDocumentation>
+	<Label>@MAZ1446</Label>
+	<TableGroup>WorksheetLine</TableGroup>
+	<TitleField1>AppointmentNumber</TitleField1>
+	<TitleField2>AppointmentStatus</TitleField2>
+	<CacheLookup>NotInTTS</CacheLookup>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPatient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PriorityNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Notes</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>IsOverBooked</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentEndTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentEndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMClinicStaff</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMRecurrentApptDetail</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WalkinPatient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMAppointmentType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PatientName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PatientContact</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentNumber</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AppointmentNumber</Name>
+			<Label>@MAZ8923</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentNumber</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS35894</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPatient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PriorityNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Notes</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>IsOverBooked</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentEndTime</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentEndDate</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMClinicStaff</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>BillStatus</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMRecurrentApptDetail</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>WalkinPatient</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PatientName</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMAppointmentType</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PatientContact</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Bed</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMWaitingList</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>IsOnlineAppointment</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>IsDelayed</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>IsSpecificConsultant</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>RescheduleWithoutConfirmation</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>AppointmentNumber</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>PrimaryAppointment</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldTime">
+			<Name>ActualArrivalTime</Name>
+			<ExtendedDataType>TimeOfDay</ExtendedDataType>
+			<HelpText>@MAZ11148</HelpText>
+			<Label>@MAZ13047</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AdmissionOrderSource</Name>
+			<EnumType>HMAdmissionOrderSource</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AppointmentConfirmationStatus</Name>
+			<EnumType>HMAppointmentConfirmationStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>AppointmentDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ1685</HelpText>
+			<Label>@SYS100104</Label>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>AppointmentDateTime</Name>
+			<ExtendedDataType>TransDateTime</ExtendedDataType>
+			<HelpText>@MAZ11133</HelpText>
+			<Label>@MAZ10944</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>AppointmentEndDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ3366</HelpText>
+			<Label>@MAZ3367</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldUtcDateTime">
+			<Name>AppointmentEndDateTime</Name>
+			<ExtendedDataType>TransDateTime</ExtendedDataType>
+			<HelpText>@MAZ11134</HelpText>
+			<Label>@MAZ10946</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldTime">
+			<Name>AppointmentEndTime</Name>
+			<ExtendedDataType>HMTime</ExtendedDataType>
+			<HelpText>@MAZ3368</HelpText>
+			<Label>@MAZ3369</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>AppointmentNumber</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>HMAppointmentNumber</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>AppointmentReason</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AppointmentStatus</Name>
+			<HelpText>@MAZ1403</HelpText>
+			<Label>@MAZ1702</Label>
+			<EnumType>HMResourceSchedulingAppointmentStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldTime">
+			<Name>AppointmentTime</Name>
+			<ExtendedDataType>HMTime</ExtendedDataType>
+			<HelpText>@MAZ1686</HelpText>
+			<Label>@SYS92604</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldTime">
+			<Name>ArrivalTime</Name>
+			<ExtendedDataType>TimeOfDay</ExtendedDataType>
+			<HelpText>@MAZ11148</HelpText>
+			<Label>@MAZ11147</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>Bed</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ8114</HelpText>
+			<Label>@MAZ2651</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>BillStatus</Name>
+			<ExtendedDataType>HMAppointmentBillStatus</ExtendedDataType>
+			<EnumType>HMBillStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>BOMVersion</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>BookingNotes</Name>
+			<HelpText>@MAZ11332</HelpText>
+			<Label>@MAZ11331</Label>
+			<StringSize>-1</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ChartPrepared</Name>
+			<Label>@MAZ11542</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldContainer">
+			<Name>ChiefComplaint</Name>
+			<HelpText>@MAZ8396</HelpText>
+			<Label>@MAZ1076</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Client</Name>
+			<Label>@MAZ11182</Label>
+			<StringSize>20</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>ClientBillingLogisticsPostalAddress</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ11599</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>ClientReportLogisticsPostalAddres</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ12144</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>CopyOfEmailSent</Name>
+			<Label>Email sent</Label>
+			<EnumType>YesNo</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CreditCardToken</Name>
+			<HelpText>@SYS4000166</HelpText>
+			<Label>@SYS4000166</Label>
+			<StringSize>50</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>CreditCardTokenRequired</Name>
+			<Label>@MAZ11825</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CriticalMedicalInformation</Name>
+			<ExtendedDataType>HMMemo</ExtendedDataType>
+			<Label>@MAZ11813</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>DefaultDimension</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DispositionComments</Name>
+			<ExtendedDataType>Notes</ExtendedDataType>
+			<Label>@MAZ13455</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DispositionFollowUp</Name>
+			<ExtendedDataType>String100</ExtendedDataType>
+			<Label>@MAZ13456</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>DocuRef</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>EmailSent</Name>
+			<Label>@SYS58551</Label>
+			<EnumType>YesNo</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>EmailStatus</Name>
+			<Label>@SYP4311250</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EmployeeNum</Name>
+			<Label>@MAZ11597</Label>
+			<StringSize>30</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>EODProcessed</Name>
+			<Label>EOD processed</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>FinanceBillingStatus</Name>
+			<HelpText>@MAZ12304</HelpText>
+			<Label>@MAZ12304</Label>
+			<EnumType>HMAppointmentBillingStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>FinanceBillingStatus_Client</Name>
+			<HelpText>@MAZ12303</HelpText>
+			<Label>@MAZ12303</Label>
+			<EnumType>HMAppointmentBillingStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ForceBookingStatus</Name>
+			<EnumType>HMForceBookingStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>FreeFollowUpAvailed</Name>
+			<Label>Free follow up availed</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>GOPNum</Name>
+			<Label>@MAZ11598</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMAppointmentType</Name>
+			<HelpText>@MAZ7341</HelpText>
+			<Label>@MAZ7340</Label>
+			<EnumType>HMAppointmentType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMBookingOrigin</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ11595</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMCancellationStatus</Name>
+			<EnumType>HMAppointmentCancellationStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMCase</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMClinicStaff</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ1907</HelpText>
+			<Label>@MAZ65</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMConfirmationStatus</Name>
+			<EnumType>HMAppointmentConfirmationStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMInsuranceContractClassOrPlans</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMOrganizationalUnitAdmissionWard</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ9115</HelpText>
+			<Label>@MAZ4112</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMOrganizationalUnitServiceLocation</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ11634</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMPatient</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMPatientInsurance</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ1253</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMPatientVisit</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMRecurrentApptDetail</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMResourceSchedulingPlanningObject</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMResourceSchedulingTypeCode</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ7340</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMScheduleType</Name>
+			<EnumType>HMScheduleType</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMTreatmentClassification</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>@MAZ9013</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMWaitingList</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<HelpText>@MAZ8110</HelpText>
+			<Label>@SYS30305</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ImportedNotes</Name>
+			<ExtendedDataType>HMAppointmentNotes</ExtendedDataType>
+			<HelpText>@MAZ12329</HelpText>
+			<Label>@MAZ12329</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InclinicNotes</Name>
+			<ExtendedDataType>HMAppointmentNotes</ExtendedDataType>
+			<HelpText>@MAZ12332</HelpText>
+			<Label>@MAZ12331</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>IncompleteInfoLog</Name>
+			<HelpText>@MAZ12246</HelpText>
+			<Label>@MAZ12245</Label>
+			<StringSize>-1</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IncompleteReserveAppointmentTaskGeneratd</Name>
+			<Label>Incomplete reserver appointment task genrated</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsDelayed</Name>
+			<ExtendedDataType>HMDelayed</ExtendedDataType>
+			<HelpText>@MAZ8356</HelpText>
+			<Label>@SYS14370</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsHotspot</Name>
+			<ConfigurationKey>MZKTemp</ConfigurationKey>
+			<HelpText>@MAZ11140</HelpText>
+			<Label>@MAZ11139</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsOnlineAppointment</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>@MAZ8278</HelpText>
+			<Label>@MAZ8273</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsOverBooked</Name>
+			<ConfigurationKey>MZKTemp</ConfigurationKey>
+			<HelpText>@MAZ3211</HelpText>
+			<Label>@MAZ3210</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsReconfirmEmailSent</Name>
+			<Label>Reconfirmation email sent</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsSpecificConsultant</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>@MAZ8359</HelpText>
+			<Label>@MAZ8360</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>LedgerJournalTable_AdvancePayment</Name>
+			<Label>Advance payment</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Notes</Name>
+			<ExtendedDataType>HMAppointmentNotes</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PatientContact</Name>
+			<ExtendedDataType>String255</ExtendedDataType>
+			<HelpText>@MAZ8243</HelpText>
+			<Label>@MAZ8244</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PatientName</Name>
+			<ExtendedDataType>Name</ExtendedDataType>
+			<HelpText>@MAZ1881</HelpText>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PatientRequestor</Name>
+			<Label>@MAZ12023</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PhysicalChartRequired</Name>
+			<Label>@MAZ11223</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PONum</Name>
+			<Label>@MAZ11596</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PreAuthorizationNumber</Name>
+			<ExtendedDataType>String30</ExtendedDataType>
+			<HelpText>@MAZ13234</HelpText>
+			<Label>@MAZ13234</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PreAuthorizationStatus</Name>
+			<EnumType>HMPreAuthorizationStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>PreAuthValidDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ13233</HelpText>
+			<Label>@MAZ13233</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PrimaryAppointment</Name>
+			<HelpText>@MAZ11506</HelpText>
+			<Label>@SYS80168</Label>
+			<EnumType>YesNo</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>PriorityNumber</Name>
+			<ExtendedDataType>Integer</ExtendedDataType>
+			<HelpText>@MAZ1688</HelpText>
+			<Label>@SYS80083</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Referral</Name>
+			<Label>@MAZ13048</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ReportSentContactPerson</Name>
+			<ExtendedDataType>ContactPersonId</ExtendedDataType>
+			<Label>@MAZ11600</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>RequestDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<Label>@MAZ2992</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>RequestorContactPerson</Name>
+			<ExtendedDataType>HMContactPersonId60</ExtendedDataType>
+			<Label>@MAZ11601</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>RescheduleWithoutConfirmation</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>@MAZ8357</HelpText>
+			<Label>@MAZ8358</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>ResultExpectedDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ12544</HelpText>
+			<Label>@SYS93538</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>ResultVisitStatus</Name>
+			<EnumType>HMResultVisitStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>SalesTable</Name>
+			<Label>@SYS40778</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SendEmailTo</Name>
+			<EnumType>HMAppointmentSendEmailTo</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>SmsSent</Name>
+			<Label>@MAZ13366</Label>
+			<EnumType>YesNo</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>SysOutgoingEmailTable</Name>
+			<Label>@SYS93332</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>WalkinPatient</Name>
+			<HelpText>@MAZ7295</HelpText>
+			<Label>@MAZ7294</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>Duration</Name>
+			<HelpText>Duration of appointment</HelpText>
+			<Label>Duration (min)</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMAnesthesiaType</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMResourceMaster_PerformingDoctor</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>HMPatientIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMPatient</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMResourceSchedulingPlanningObjectIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMResourceSchedulingTypeCodeIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMRecurrentApptDetailIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMRecurrentApptDetail</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>HMClinicStaffIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMClinicStaff</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>StatusIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>AppointmentStatus</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>DateIdx</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>AppointmentDate</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+		<AxTableIndex>
+			<Name>AppointmentNumberIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>AppointmentNumber</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>BomVersion</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>BOMVersion</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>BOMVersion</Name>
+					<Field>BOMVersion</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>ClientBillingLogisticsPostalAddress</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>LogisticsPostalAddress</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ClientBillingLogisticsPostalAddress</Name>
+					<Field>ClientBillingLogisticsPostalAddress</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>CustTable_Client</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Client_</Name>
+					<Field>Client</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>AccountIdx</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>DimensionDefault</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>DimensionAttributeValueSet</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>DefaultDimension</Name>
+					<Field>DefaultDimension</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>DocuRef</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>DocuRef</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>DocuRef</Name>
+					<Field>DocuRef</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecIdx</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMBookingOrigin</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMBookingOrigin</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMBookingOrigin</Name>
+					<Field>HMBookingOrigin</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMBuildingUnitBed</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMBuildingUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMBuildingUnitBed</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Bed</Name>
+					<Field>Bed</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMCase</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMCase</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMCase</Name>
+					<Field>HMCase</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMClinicStaff</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMClinicStaff</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMClinicStaff</Name>
+					<Field>HMClinicStaff</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMInsuranceContractClassOrPlans</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMInsuranceContractClassOrPlans</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMInsuranceContractClassOrPlans</Name>
+					<Field>HMInsuranceContractClassOrPlans</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMOrganizationalUnitServiceLocation</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMOrganizationalUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMOrganizationalUnitServiceLocation</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMOrganizationalUnitServiceLocation</Name>
+					<Field>HMOrganizationalUnitServiceLocation</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMOrganizationalUnitWard</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMOrganizationalUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMOrganizationalUnitAdmissionWard</Name>
+					<Field>HMOrganizationalUnitAdmissionWard</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatient</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMPatient</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPatient</Name>
+					<Field>HMPatient</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatientInsurance</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMPatientInsurance</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPatientInsurance</Name>
+					<Field>HMPatientInsurance</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatientVisit</Name>
+			<Cardinality>OneMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMPatientVisit</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Composition</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPatientVisit</Name>
+					<Field>HMPatientVisit</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMRecurrent</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMRecurrentApptDetail</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMRecurrentApptDetail</Name>
+					<Field>HMRecurrentApptDetail</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMResourceSchedulingPlanningObject</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMResourceSchedulingPlanningObject</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMResourceSchedulingPlanningObject</Name>
+					<Field>HMResourceSchedulingPlanningObject</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMResourceSchedulingTypeCode</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMResourceSchedulingTypeCode</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMResourceSchedulingTypeCode</Name>
+					<Field>HMResourceSchedulingTypeCode</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMTreatmentClassification_FK</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMTreatmentClassification</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMTreatmentClassification</Name>
+					<Field>HMTreatmentClassification</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMWaitingList</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMWaitingList</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMWaitingList</Name>
+					<Field>HMWaitingList</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>LedgerJournalTable_AdvancePayment</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>LedgerJournalTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>LedgerJournalTable_AdvancePayment</Name>
+					<Field>LedgerJournalTable_AdvancePayment</Field>
+					<RelatedField>JournalNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>ReportSentContactPerson</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>ContactPerson</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>ReportSentContactPerson</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ReportSentContactPerson</Name>
+					<Field>ReportSentContactPerson</Field>
+					<RelatedField>ContactPersonId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>ContactPersonId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>RequestorContactPerson</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>ContactPerson</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>RequestorContactPerson</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>RequestorContactPerson</Name>
+					<Field>RequestorContactPerson</Field>
+					<RelatedField>ContactPersonId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>ContactPersonId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>SysOutgoingEmailTable_FK</Name>
+			<Cardinality>OneMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>SysOutgoingEmailTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>SysOutgoingEmailTable</Name>
+					<Field>SysOutgoingEmailTable</Field>
+					<RelatedField>EmailItemId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMAnesthesiaType</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMAnesthesiaType</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMAnesthesiaType</Name>
+					<Field>HMAnesthesiaType</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMResourceMaster</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMResourceMaster</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>Type</Name>
+					<RelatedField>Type</RelatedField>
+					<Value>3</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>Type_1</Name>
+					<RelatedField>Type</RelatedField>
+					<Value>2</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMResourceMaster_PerformingDoctor</Name>
+					<Field>HMResourceMaster_PerformingDoctor</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

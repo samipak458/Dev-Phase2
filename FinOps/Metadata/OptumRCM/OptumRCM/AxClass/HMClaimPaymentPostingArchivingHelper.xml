@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimPaymentPostingArchivingHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClaimPaymentPostingArchivingHelper
+{
+    #OCCRetryCount
+
+    HMCLaimIdsTmp               gHMClaimIdsTmp;
+    DMFDefinitionGroupExecution dmfDefinitionGroupExecution;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// constructor to initialize the class object
+    /// </summary>
+    /// <returns></returns>
+    public server static HMClaimPaymentPostingArchivingHelper construct()
+    {
+        return new HMClaimPaymentPostingArchivingHelper();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// process the functions of the class
+    /// </summary>
+    /// <param name = "_dmfDefinitionGroupExecution"></param>
+    public void processInit(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        ttsbegin;
+
+        dmfDefinitionGroupExecution = _dmfDefinitionGroupExecution;
+
+        this.collectArchivingClaimsFromStaging();
+        this.insertIntoStagingArchive();
+        this.insertIntoHMClaimPaymentPostingArchive();
+
+        this.deleteClaimsFromStaging();
+        this.deleteClaims();
+
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>collectArchivingClaimsFromStaging</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into temporary table for bulk insertion
+    /// </summary>
+    public void collectArchivingClaimsFromStaging()
+    {
+        HMClaimPaymentPostingStagingV2    stagingTable;
+        HMClaimTable                    claimTable;
+
+        gHMClaimIdsTmp.clear();
+        gHMClaimIdsTmp.delete();
+
+        try
+        {
+            insert_recordset gHMClaimIdsTmp(ClaimId, LineNumber, ExecutionId, HMUniqueID, HMClaimTable)
+            select ClaimID, LineNumber, ExecutionId from stagingTable
+                group by ClaimID, LineNumber, ExecutionId, claimTable.HMUniqueID, claimTable.RecId
+                where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes
+                join HMUniqueID, RecId from claimTable
+                    where claimTable.ClaimID == stagingTable.ClaimID;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimIdsTmp'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimIdsTmp'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoStagingArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert HMClaimPaymentPostingStaging table into HMClaimPaymentPostingStagingArchive table
+    /// </summary>
+    public void insertIntoStagingArchive()
+    {
+        HMClaimPaymentPostingStagingV2        stagingTable;
+        HMClaimPaymentPostingStagingArchive stagingTableArchive;
+
+        try
+        {
+            insert_recordset stagingTableArchive (Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,dataAreaId
+                ,DatePosted
+                ,DefinitionGroup
+                ,ExecutionId
+                ,HMClaimPaymentDate
+                ,IsClaimDeleted
+                ,IsSelected
+                ,LineNumber
+                ,Payor
+                ,TransferStatus
+                ,TransToClaim
+                ,Type)
+            select Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,dataAreaId
+                ,DatePosted
+                ,DefinitionGroup
+                ,ExecutionId
+                ,HMClaimPaymentDate
+                ,IsClaimDeleted
+                ,IsSelected
+                ,LineNumber
+                ,Payor
+                ,TransferStatus
+                ,TransToClaim
+                ,Type
+            from stagingTable
+                where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId     == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus  == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingStagingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingStagingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMClaimPaymentPostingArchive</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// insert claims into HMClaimPaymentPostingArchive table
+    /// </summary>
+    public void insertIntoHMClaimPaymentPostingArchive()
+    {
+        HMClaimPaymentPosting           claimPaymentPosting;
+        HMClaimTable                    claimTable;
+        HMClaimPaymentPostingArchive    claimPaymentPostingArchive;
+        HMClaimPaymentPostingStagingV2    stagingTable;
+
+        try
+        {
+            insert_recordset claimPaymentPostingArchive (HMCreatedDateTime
+                ,HMModifiedDateTime
+                ,Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,DatePosted
+                ,HMClaimPaymentDate
+                ,LineNumber
+                ,Payor
+                ,TransToClaim
+                ,Type
+                ,HMCreatedBy
+                ,HMModifiedBy
+                ,HMUniqueID
+                ,ExecutionId)
+            select createdDateTime
+                ,modifiedDateTime
+                ,Amount
+                ,ChargeLineNumber
+                ,ClaimID
+                ,Code_Cheque
+                ,DatePosted
+                ,HMClaimPaymentDate
+                ,LineNumber
+                ,Payor
+                ,TransToClaim
+                ,Type
+                ,createdBy
+                ,modifiedBy
+                from claimPaymentPosting
+                join HMUniqueID, ExecutionId from gHMClaimIdsTmp
+                    where claimPaymentPosting.ClaimID == gHMClaimIdsTmp.ClaimId
+                        && claimPaymentPosting.LineNumber == gHMClaimIdsTmp.LineNumber;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", 'HMClaimPaymentPostingArchive'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaimsFromStaging</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delete claims data from HMClaimPaymentPostingStaging table
+    /// </summary>
+    public void deleteClaimsFromStaging()
+    {
+        HMClaimPaymentPostingStagingV2 stagingTable;
+
+        try
+        {
+            delete_from stagingTable
+                where stagingTable.DefinitionGroup == dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId == dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+                    && stagingTable.IsClaimDeleted == NoYes::Yes;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimPaymentPostingStaging'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimPaymentPostingStaging'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// delete claims data from HMClaimPaymentPosting table
+    /// </summary>
+    public void deleteClaims()
+    {
+        HMClaimChargeLine               claimLine;
+        HMClaimPaymentPosting           claimPaymentPosting;
+        HMClaimPaymentPostingStagingV2    stagingTable;
+
+        try
+        {
+            delete_from claimPaymentPosting
+                exists join gHMClaimIdsTmp
+                    where claimPaymentPosting.ClaimID == gHMClaimIdsTmp.ClaimId
+                        && claimPaymentPosting.LineNumber == gHMClaimIdsTmp.LineNumber;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimPaymentPosting'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@Optum:FailedToDeleteDataFromTable", 'HMClaimPaymentPosting'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>EcoResCategoryTreeDatasourceHM</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class EcoResCategoryTreeDatasourceHM extends EcoResCategoryTreeDatasource
+{
+    //<MazikCare>
+    boolean                         showCategoryByMazikCareType;
+    HMInventType                    mazikCareOrderType;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>buildSubTree</Name>
+				<Source><![CDATA[
+    //</MazikCare>
+    int buildSubTree(int _parentIdx, anytype _parentVaue, boolean _rebuild = false)
+    {
+        FormTreeItem    formTreeItem;
+        int             children;
+        int             idx, idxCurrentRecord;
+        int             hdl;
+        boolean         stateExpandedOnce, expandBranch;
+        EcoResCategory  ecoResCategory, ecoResParentCategory;
+        boolean         bold               = false;
+        int64           filterRecordsCount = 0;
+        boolean         isAMatch           = false;
+
+        tree.lockWindowUpdate(true);
+
+        if (!_rebuild)
+        {
+            formTreeItem = tree.getItem(_parentIdx);
+            if (formTreeItem)
+            {
+                stateExpandedOnce = formTreeItem.stateExpandedOnce();
+            }
+        }
+
+        if (_rebuild || !stateExpandedOnce)
+        {
+            if (filterSet)
+            {
+                filterRecordsCount = EcoResCategory::getRoot(currentSelectedCategoryHierarchy.RecId).existByNameInCategory(nameFilter,
+                                                                                                            showActiveNodesOnly,
+                                                                                                            greyOutNonLeafNodes,
+                                                                                                            organizationFilterSet?lookupParameters:null);
+
+                if (filterRecordsCount > #MaxFilterRecordsCount)
+                {
+                    Box::stop("@SYS308853");
+                    return _parentIdx;
+                }
+            }
+
+            if (_rebuild) // delete existing subtree
+            {
+                hdl = tree.getChild(_parentIdx);
+                while (hdl)
+                {
+                    tree.delete(hdl);
+                    hdl = tree.getChild(_parentIdx);
+                }
+                matchingCategoryArray   = new Array(Types::Integer);
+                currentIndexInFocus     = 0;
+            }
+            [SelectedData] = selectionStack.pop();
+
+            children = 0;
+
+            ecoResParentCategory    = EcoResCategory::find(_parentVaue);
+
+            //refresh this node
+            formTreeItem = tree.getItem(_parentIdx);
+            if (formTreeItem)
+            {
+                // BP deviation documented
+                formTreeItem.text(this.itemTextEx(ecoResParentCategory.RecId, this.itemDescription(ecoResParentCategory),  this.itemFriendlyName(ecoResParentCategory), ecoResParentCategory.IsActive));
+                tree.setItem(formTreeItem);
+            }
+
+            ecoResCategory  = this.getChildrenEcoResCategory(ecoResParentCategory);
+
+            while (ecoResCategory)
+            {
+                isAMatch     = false;
+                expandBranch = false;
+
+                if (!this.isCategoryAvailable(ecoResCategory.RecId))
+                {
+                    next ecoResCategory;
+                    continue;
+                }
+
+                bold = false;
+
+                if (filterSet)
+                {
+                    if (  (ecoResCategory.IsActive || !showActiveNodesOnly) &&
+                            (ecoResCategory.isLeaf() || !greyOutNonLeafNodes) &&
+                                (ecoResCategory.Name like nameFilter))
+                    {
+                        //if this node meets the filter criteria, then highlight this node
+                        isAMatch     = true;
+                        bold         = true;
+                    }
+                    if (ecoResCategory.existByNameInCategory(nameFilter,
+                                                                    showActiveNodesOnly,
+                                                                    greyOutNonLeafNodes, organizationFilterSet?lookupParameters:null))
+                    {
+                        //if either this node or any of its descendants meet the filter criteria
+                        //we need to expand this branch to later highlight the node
+                        expandBranch = true;
+                    }
+                }
+
+                // BP deviation documented
+                formTreeItem = new FormTreeItem(this.itemTextEx(ecoResCategory.RecId, this.itemDescription(ecoResCategory),  this.itemFriendlyName(ecoResCategory), ecoResCategory.IsActive),
+                                                this.image(),
+                                                (ecoResCategory.getChildCount(showActiveNodesOnly) != 0),
+                                                ecoResCategory.RecId);
+                if (greyOutNonLeafNodes)
+                {
+                    if (ecoResCategory.isLeaf())
+                    {
+                        bold = true;
+                    }
+                    else
+                    {
+                        formTreeItem.stateCut(true);
+                    }
+                }
+
+                if (bold)
+                {
+                    formTreeItem.stateBold(true);
+                }
+
+                idx = tree.addItem(_parentIdx,0,formTreeItem);
+
+                if (isAMatch)
+                {
+                    matchingCategoryArray.value(matchingCategoryArray.lastIndex() + 1, idx);
+                }
+
+                formTreeItem = tree.getItem(idx);
+                formTreeItem.overlayImage(this.overlayImage(ecoResCategory));
+                tree.setItem( formTreeItem );
+
+                if (basicRecId == ecoResCategory.RecId)
+                {
+                    idxCurrentRecord = idx;
+                }
+
+                children++;
+
+                if (selectionStack.qty())
+                {
+                    if (ecoResCategory.RecId == SelectedData)
+                    {
+                        tree.expand(idx, FormTreeExpand::Expand);
+                    }
+                }
+                else
+                {
+                    if (ecoResCategory.RecId == SelectedData)
+                    {
+                        selectIdx = idx;
+                    }
+                }
+
+                if (expandBranch && filterSet &&  filterRecordsCount <= #MaxFilterRecordsCount)
+                {
+                    //Expand the tree only if there are fewer records matching the filter criteria.
+                    tree.expand(idx, FormTreeExpand::Expand);
+                }
+
+                next ecoResCategory;
+            }
+
+            formTreeItem = tree.getItem(_parentIdx);
+            formTreeItem.children(children);
+            formTreeItem.stateExpandedOnce(true);
+            tree.setItem(formTreeItem);
+        }
+        tree.lockWindowUpdate(false);
+
+        return idxCurrentRecord;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setMazikCareFields</Name>
+				<Source><![CDATA[
+    public void setMazikCareFields(HMInventType _orderType)
+    {
+        showCategoryByMazikCareType = true;
+        mazikCareOrderType = _orderType;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

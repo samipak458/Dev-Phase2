@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPostPOInvoice</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMPostPOInvoice
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        PurchTable			    purchTable;
+        PurchFormLetter		    purchFormLetter;
+        HMPostPOInvoice		    postPOInvoice;
+        Num                     invoiceId;
+        str						multipleRecords;
+        MultiSelectionHelper	helper;
+        FormRun					caller;
+        FormBuildDataSource		formBuildDS;
+        FormDataSource			HMCaseTrans_ds;
+        container				con;
+        int						i;
+
+        multipleRecords = _args.parm();
+        con = str2con(multipleRecords);
+
+        for (i = 1; i <= conLen(con); i++)
+        {
+            purchTable.PurchId = conPeek(con, i);//_args.record();
+            purchTable = PurchTable::find(purchTable.PurchId);
+            purchFormLetter = PurchFormLetter::construct(DocumentStatus::Invoice);
+            purchFormLetter.update(purchTable, invoiceId, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            info(strFmt("Purchase order: %1 has been invoiced.", purchTable.PurchId));
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPOInvoice</Name>
+				<Source><![CDATA[
+    private void createPOInvoice(PurchTable _purchTable)
+    {
+        PurchFormLetter             purchFormLetter;
+        PurchFormletterParmData     purchFormLetterParmData;
+        PurchParmUpdate             purchParmUpdate;
+        PurchParmTable              purchParmTable;
+        PurchParmLine               purchParmLine;
+        PurchLine                   _purchLine;
+        PurchId                     purchId;
+        VendInvoiceInfoTable		vendInvoiceInfoTable;
+        Num                         invoiceId;
+
+
+        invoiceId = strFmt("Inv_%1", _purchTable.PurchId);
+
+        try
+        {
+            ttsBegin;
+            // Create PurchParamUpdate table
+            purchFormLetterParmData = PurchFormletterParmData::newData(DocumentStatus::Invoice,
+            VersioningUpdateType::Initial);
+    
+            purchFormLetterParmData.parmOnlyCreateParmUpdate(true);
+            //purchFormLetterParmData.createData();
+            purchParmUpdate = purchFormLetterParmData.parmParmUpdate();
+
+            // Set PurchParmTable table
+            purchParmTable.clear();
+            purchParmTable.TransDate                = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            purchParmTable.Ordering                 = DocumentStatus::Invoice;
+            purchParmTable.ParmJobStatus            = ParmJobStatus::Waiting;
+            purchParmTable.Num                      = invoiceId;
+            purchParmTable.HMCase					= _purchTable.HMCase;
+            purchParmTable.PurchId                  = _purchTable.PurchId;
+            purchParmTable.PurchName                = _purchTable.PurchName;
+            purchParmTable.DeliveryName             = _purchTable.DeliveryName;
+            purchParmTable.DeliveryPostalAddress    = _purchTable.DeliveryPostalAddress;
+            purchParmTable.OrderAccount             = _purchTable.OrderAccount;
+            purchParmTable.CurrencyCode             = _purchTable.CurrencyCode;
+            purchParmTable.InvoiceAccount           = _purchTable.InvoiceAccount;
+            purchParmTable.ParmId                   = purchParmUpdate.ParmId;
+            purchParmTable.insert();
+
+            // Set PurchParmLine table
+            while select _purchLine
+                where _purchLine.PurchId == _purchTable.purchId
+            {
+                purchParmLine.InitFromPurchLine(_purchLine);
+
+                purchParmLine.ReceiveNow    = _purchLine.PurchQty;
+                purchParmLine.ParmId        = purchParmTable.ParmId;
+                purchParmLine.TableRefId    = purchParmTable.TableRefId;
+                purchParmLine.setQty(DocumentStatus::Invoice, false, true);
+                purchParmLine.setLineAmount();
+                purchParmLine.insert();
+            }
+
+            purchFormLetter = PurchFormLetter::construct(DocumentStatus::Invoice);
+            purchFormLetter.transDate(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            purchFormLetter.proforma(false);
+            purchFormLetter.specQty(PurchUpdate::All);
+            purchFormLetter.purchTable(_purchTable);
+    
+            // This is the ID we hard code as the product receipt ID, if we do the posting via UI
+            // user would have the option to manually enter this value
+            purchFormLetter.parmParmTableNum(purchParmTable.ParmId);
+            purchFormLetter.parmId(purchParmTable.ParmId);
+            purchFormLetter.purchParmUpdate(purchFormLetterParmData.parmParmUpdate());
+            purchFormLetter.run();
+            ttsCommit;
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+        }
+
+       
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,3055 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientChargeEntryDetailsDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPatientChargeEntryDetailsDialog extends FormRun
+{
+    #define.Diagnosis1("Diagnosis1")
+    #define.Diagnosis2("Diagnosis2")
+    #define.Diagnosis3("Diagnosis3")
+    #define.Diagnosis4("Diagnosis4")
+
+    FormOpenMode                    formOpenMode;
+    RecId                           chargeTableRecId;
+    RecId                           encounterRecId;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>bindPatientNotes</Name>
+				<Source><![CDATA[
+    public void bindPatientNotes()
+    {
+        //todo: ax7 HMPatientNotesWebdata
+        /*
+        HMPatientNotesWebdata dataClass =  new HMPatientNotesWebdata() ;
+        dataClass.parmEditMode(false);
+        
+        dataClass.setPatientChargeEntryRecId(chargeTableRecId);
+        dataClass.loadPatientChargeEntryData();
+        */
+        //info(dataClass.getHTML());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>close</Name>
+				<Source><![CDATA[
+    public void close()
+    {
+        element.refreshCallerForm();
+        super();
+    
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>enableFields</Name>
+				<Source><![CDATA[
+    public void enableFields(boolean _value)
+    {
+        //HMPatientEncounterCharge_ProcedureCode1.enabled(_value);
+        DiagnosisNew1.enabled(_value);
+        DiagnosisNew2.enabled(_value);
+        DiagnosisNew3.enabled(_value);
+        DiagnosisNew4.enabled(_value);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDiagnosis</Name>
+				<Source><![CDATA[
+    public void getDiagnosis(RecId _diagnosisId, String30 _parm)
+    {
+        switch (_parm)
+        {
+            case #Diagnosis1:
+            HMPatientChargeEntryLine.Diagnosis1 = _diagnosisId;
+            DiagnosisNew1.text(HMDiagnosisDictionary::find(_diagnosisId).Code);
+            break;
+    
+            case #Diagnosis2:
+            HMPatientChargeEntryLine.Diagnosis2 = _diagnosisId;
+            DiagnosisNew2.text(HMDiagnosisDictionary::find(_diagnosisId).Code);
+            break;
+    
+            case #Diagnosis3:
+            HMPatientChargeEntryLine.Diagnosis3 = _diagnosisId;
+            DiagnosisNew3.text(HMDiagnosisDictionary::find(_diagnosisId).Code);
+            break;
+    
+            case #Diagnosis4:
+            HMPatientChargeEntryLine.Diagnosis4 = _diagnosisId;
+            DiagnosisNew4.text(HMDiagnosisDictionary::find(_diagnosisId).Code);
+            break;
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPrice</Name>
+				<Source><![CDATA[
+    /*
+    public AmountMST getPrice()
+    {
+        AmountMST               price;
+        boolean                 isValid = true;
+        HMParameters            parameters;
+        HMItemCptPcsCodes       pcsCodes;
+        HMProcedureCodeMaster   procedureCode;
+    
+        parameters = HMParameters::find();
+    
+        if (parameters.isAllowChargeCodeEditing)
+        {
+            select RecId from pcsCodes
+                where pcsCodes.ItemId == HMCaseTrans.ItemId
+                join procedureCode
+                    where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                    && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+    
+            if (pcsCodes.RecId)
+            {
+                isValid = true;
+            }
+            else
+            {
+                isValid = false;
+            }
+        }
+        else
+        {
+                isValid = true;
+        }
+    
+        if (isValid)
+        {
+            price = element.getPriceChargeFromCombination(HMPatientChargeEntryLine.RevenueCode,
+                                                                           HMPatientChargeEntryLine.CPTCodes,
+                                                                           HMPatientChargeEntryLine.Modifier1,
+                                                                           HMPatientChargeEntryLine.Modifier2,
+                                                                           HMPatientChargeEntryLine.Modifier3,
+                                                                           HMPatientChargeEntryLine.Modifier4,
+                                                                           0);
+            HMCaseTrans.SalesPrice = price;
+            if (price > 0)
+            {
+                HMCaseTrans.InsuranceAmount = price * HMCaseTrans.Qty;
+                HMCaseTrans.TotalAmount =  price * HMCaseTrans.Qty;
+                HMCaseTrans.RemainingBillAmount = HMCaseTrans.TotalAmount;
+            }
+            else
+            {
+                price = HMCaseTrans.getItemSalesPrice();
+                HMCaseTrans.SalesPrice = price;
+                HMCaseTrans.InsuranceAmount = price * HMCaseTrans.Qty;
+                HMCaseTrans.TotalAmount =  price * HMCaseTrans.Qty;
+                HMCaseTrans.RemainingBillAmount = HMCaseTrans.TotalAmount;
+            }
+        }
+    
+        return price;
+    }
+    */
+    public AmountMST getPrice()
+    {
+        AmountMST               price;
+        boolean                 isValid = true;
+        HMParameters            parameters;
+        HMItemCptPcsCodes       pcsCodes;
+        HMProcedureCodeMaster   procedureCode;
+        
+        // Marij
+        Price           myPrice;
+        container       priceContainer;
+        InventDim       inventDimLocal;
+        CustTable       custtable;
+        HMCase          hmCaseBuffer          = HMCase::find(HMCaseTrans.HMCase);
+        InventDim       inventDimBuffer       = InventDim::find(HMCaseTrans.InventDim);
+        InventTable     inventTableBuffer     = InventTable::find(HMCaseTrans.ItemId);
+        HMCaseInsurance hmCaseInsuranceBuffer = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance hmPatientInsurance = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode(hmPatientInsurance.InsuranceCarrier).RecId).RecId);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::findByContractId(hmInsuranceContract.RecId, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        container   priceAgreementContainer;
+        container   discContainer;
+        DiscAmountMST   discAmount;
+        DiscPct         discPct;
+        PriceDisc   PriceDisc;
+        // Marij
+        custtable = custtable::findRecId(hmpatient::find(hmCaseBuffer.HMPatient).CustTable);
+                parameters = HMParameters::find();
+
+        if (parameters.isAllowChargeCodeEditing)
+        {
+            select RecId from pcsCodes
+                where pcsCodes.ItemId == HMCaseTrans.ItemId
+                join procedureCode
+                    where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                    && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+
+            if (pcsCodes.RecId)
+            {
+                isValid = true;
+            }
+            else
+            {
+                isValid = false;
+            }
+        }
+        else
+        {
+            isValid = true;
+        }
+
+        if (isValid)
+        {
+            // Marij
+            if(!hmCaseInsuranceBuffer) //self-pay
+            {
+                priceDisc = new PriceDisc(ModuleInventPurchSales::Sales, inventTableBuffer.ItemId,
+                    inventDimBuffer,
+                    HMCaseTrans.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    CustTable.AccountNum,
+                    CustTable::find(CustTable.AccountNum).Currency);
+
+                if (priceDisc.findPrice(CustTable.PriceGroup))
+                    price = priceDisc.price();
+                else if (priceDisc.findItemPrice())
+                    price = priceDisc.price();
+            }
+            // Marij
+            else //insurance
+            {
+                //Zain
+                inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                //inventDimLocal.wMSLocationId = inventDimBuffer.wMSLocationId;
+                inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;//selectedInventBatchId;
+                inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                priceAgreementContainer = HMPriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Sales,
+                                                                              inventTableBuffer.ItemId,
+                                                                              inventDimLocal,//inventDimBuffer,
+                                                                              HMCaseTrans.salesUnitId(),
+                                                                              DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                              (HMCaseTrans.Qty == 0) ? 1 : HMCaseTrans.Qty,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(hmCaseBuffer.RecId).InsuranceCarrier).AccountNum,//CustTable::findRecId(HMInsuranceCarrier::findByCode(HMPatientInsurance::getPrimaryInsurance(hmPatientInsurance.HMPatient)).CustTable).AccountNum,
+                                                                              CustTable::find(CustTable.AccountNum).Currency,
+                                                                              '', //PriceGroup
+                                                                              hmInsuranceContract.RecId,
+                                                                              contractClassOrPlans.RecId,
+                                                                              insuranceNetworkBuffer.RecId,
+                                                                              hmCaseBuffer.HMCaseType,
+                                                                              HMPatientChargeEntryLine.RevenueCode,
+                                                                              HMPatientChargeEntryLine.CPTCodes,
+                                                                              HMPatientChargeEntryLine.Modifier1,
+                                                                              HMPatientChargeEntryLine.Modifier2,
+                                                                              HMPatientChargeEntryLine.Modifier3,
+                                                                              HMPatientChargeEntryLine.Modifier4);
+                                                                              
+                                                  
+                price = conPeek(priceAgreementContainer, 1);
+                //Zain
+                
+                if(price == 0)
+                {
+                    InventTable::find(hmcaseTrans.itemId).salesPcsPrice();
+                }
+                
+                HMCaseTrans.SalesPrice = price;
+            }
+
+            discContainer = element.getDiscount();
+            discAmount = conPeek(discContainer, 1);
+            discPct = conPeek(discContainer, 2);
+
+            if (discPct > 0)
+                    discAmount = price * (discPct/100);
+            else
+                    discAmount = discAmount;
+            
+            if (price > 0)
+            {
+                HMCaseTrans.DiscountAmount = discAmount;
+                //fix: Charge entry line price not updated on item change by Ammar
+                HMCaseTrans.SalesPrice = price;
+                //fix: Charge entry line price not updated on item change by Ammar
+                HMCaseTrans.InsuranceAmount = HMCaseTrans.SalesPrice * HMCaseTrans.Qty;
+                HMCaseTrans.TotalAmount =  (HMCaseTrans.SalesPrice - HMCaseTrans.DiscountAmount) * HMCaseTrans.Qty;
+                HMCaseTrans.RemainingBillAmount = HMCaseTrans.TotalAmount;
+            }
+            else
+            {
+                HMCaseTrans.DiscountAmount = discAmount;
+                price = HMCaseTrans.getItemSalesPrice();
+                HMCaseTrans.SalesPrice = price;
+                HMCaseTrans.InsuranceAmount = price * HMCaseTrans.Qty;
+                HMCaseTrans.TotalAmount =  (price - HMCaseTrans.DiscountAmount) * HMCaseTrans.Qty;
+                HMCaseTrans.RemainingBillAmount = HMCaseTrans.TotalAmount;
+            }
+
+        }
+
+        return price;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDiscount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Created by Zain
+    /// </summary>
+    /// <returns></returns>
+    public container getDiscount()
+    {
+        DiscAmountMST discValue;
+        DiscPct       discPct;
+        boolean                 isValid = true;
+        HMParameters            parameters;
+        HMItemCptPcsCodes       pcsCodes;
+        HMProcedureCodeMaster   procedureCode;
+        
+        Price           myPrice;
+        container       priceContainer;
+        InventDim       inventDimLocal;
+        CustTable       custTable;
+        HMCase          hmCaseBuffer          = HMCase::find(HMCaseTrans.HMCase);
+        InventDim       inventDimBuffer       = InventDim::find(HMCaseTrans.InventDim);
+        InventTable     inventTableBuffer     = InventTable::find(HMCaseTrans.ItemId);
+        HMCaseInsurance hmCaseInsuranceBuffer = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance hmPatientInsuranceLocal = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode	(hmPatientInsuranceLocal.InsuranceCarrier).RecId).RecId);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::find(hmPatientInsuranceLocal.HMInsuranceContractClassOrPlans, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        container   lineDiscAgreementContainer;
+        container   discountContainer;
+        HMPriceDisc priceDisc;
+
+        custTable = custtable::findRecId(hmpatient::find(hmCaseBuffer.HMPatient).CustTable);
+
+        parameters = HMParameters::find();
+
+        if (parameters.isAllowChargeCodeEditing)
+        {
+            select RecId from pcsCodes
+                where pcsCodes.ItemId == HMCaseTrans.ItemId
+                join procedureCode
+                    where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                    && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+
+            if (pcsCodes.RecId)
+            {
+                isValid = true;
+            }
+            else
+            {
+                isValid = false;
+            }
+        }
+        else
+        {
+            isValid = true;
+        }
+
+        if (isValid)
+        {
+            if (!hmCaseInsuranceBuffer)
+            {
+                inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                //inventDimLocal.wMSLocationId = inventDimBuffer.wMSLocationId;
+                inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;
+                inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                priceDisc = new HMPriceDisc(ModuleInventPurchSales::Sales, inventTableBuffer.ItemId,
+                    inventDimLocal,
+                    HMCaseTrans.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    custTable.AccountNum,
+                    CustTable::find(custTable.AccountNum).Currency);
+
+                if (priceDisc.findLineDisc(inventTableBuffer.ItemId, custTable.LineDisc, 0, 0, 0, hmCaseBuffer.HMCaseType))
+                {
+                    discValue = priceDisc.lineDiscAmount();
+                    discPct = pricedisc.lineDiscPct();
+
+                    discountContainer = [discValue, discPct];
+                }
+                else
+                    discountContainer = [0, 0];
+            }
+            else
+            {
+                inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;
+                inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                lineDiscAgreementContainer = HMPriceDisc::findItemLineDiscAgreement(ModuleInventPurchSales::Sales,
+                                                                              inventTableBuffer.ItemId,
+                                                                              inventDimLocal,//inventDimBuffer,
+                                                                              HMCaseTrans.salesUnitId(),
+                                                                              DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                              (HMCaseTrans.Qty == 0) ? 1 : HMCaseTrans.Qty,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(hmCaseBuffer.RecId).InsuranceCarrier).AccountNum,//CustTable::findRecId(HMInsuranceCarrier::findByCode(HMPatientInsurance::getPrimaryInsurance(hmPatientInsurance.HMPatient)).CustTable).AccountNum,
+                                                                              CustTable::find(custTable.AccountNum).Currency,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(hmCaseBuffer.RecId).InsuranceCarrier).AccountNum, //LineDiscGroup
+                                                                              inventTableBuffer.ItemId,
+                                                                              hmInsuranceContract.RecId,
+                                                                              contractClassOrPlans.RecId,
+                                                                              insuranceNetworkBuffer.RecId,
+                                                                              hmCaseBuffer.HMCaseType,
+                                                                              HMPatientChargeEntryLine.RevenueCode,
+                                                                              HMPatientChargeEntryLine.CPTCodes,
+                                                                              HMPatientChargeEntryLine.Modifier1,
+                                                                              HMPatientChargeEntryLine.Modifier2,
+                                                                              HMPatientChargeEntryLine.Modifier3,
+                                                                              HMPatientChargeEntryLine.Modifier4,
+                                                                              0,
+                                                                              '',
+                                                                              NoYes::Yes);
+
+                discValue = conPeek(lineDiscAgreementContainer, 1);
+                discPct = conPeek(lineDiscAgreementContainer, 2);
+                discountContainer = [discValue, discPct];
+            }
+        }
+
+        return discountContainer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPriceChargeFromCombination</Name>
+				<Source><![CDATA[
+    public AmountMST getPriceChargeFromCombination(RecId _revenueCode,
+                                         RecId _hcpcscode,
+                                         Recid _modifier1,
+                                         Recid _modifier2,
+                                         Recid _modifier3,
+                                         Recid _modifier4,
+                                         Recid _modifier5)
+    {
+        Query                       query;
+        QueryBuildDataSource        qbds;
+        QueryBuildRange             qbr;
+        QueryRun                    qr;
+        HMPatientChargeCombination  combination;
+    
+        query = new query();
+    
+        qbds  = query.addDataSource(tablenum(HMPatientChargeCombination));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, ItemId));
+        qbr.value(queryValue(HMCaseTrans.ItemId));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, RevenueCode));
+        qbr.value(queryValue(_revenueCode));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, HCPCSCode));
+        qbr.value(queryValue(_hcpcscode));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, Modifier1));
+        qbr.value(queryValue(_modifier1));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, Modifier2));
+        qbr.value(queryValue(_modifier2));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, Modifier3));
+        qbr.value(queryValue(_modifier3));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, Modifier4));
+        qbr.value(queryValue(_modifier4));
+    
+        qbr   = qbds.addRange(fieldnum(HMPatientChargeCombination, Modifier5));
+        qbr.value(queryValue(_modifier5));
+    
+        qr = new QueryRun(query);
+        qr.next();
+        combination = qr.getNo(1);
+    
+        return combination.AmountMST;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+    
+        formOpenMode = element.args().parmEnum();
+    
+        if (formOpenMode == FormOpenMode::ForEdit)
+        {
+            chargeTableRecId = HMPatientChargeEntryLine::find(element.args().record().RecId).HMPatientChargeEntryTable;
+        }
+        else
+        {
+            chargeTableRecId  = element.args().record().RecId;
+        }
+    
+        super();
+        //Initialize splitter
+        if (element.args().menuItemName() == menuitemDisplayStr(HMPatientChargeEntryDetailsDialog))
+        {
+            element.design().caption("@MAZ6405");
+        }
+        else
+        {
+            element.design().caption("@MAZ6404");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshCallerForm</Name>
+				<Source><![CDATA[
+    public void refreshCallerForm()
+    {
+        Object                              formRunObject;
+        FormRun                             formRun;
+        FormDataSource                      fds;
+    
+        formRun = element.args().caller();
+    
+        if (formHasMethod(formRun,identifierstr(refreshData)))
+        {
+             formRunObject = formRun;
+             formRunObject.refreshData();
+        }
+        /*
+        if (formHasMethod(formRun,identifierstr(getPrice)))
+        {
+            formRunObject = formRun;
+            formRunObject.getPrice();
+            //formRun.dataSource(tablenum(HMCaseTrans)).write();
+          
+        }
+        */
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshData</Name>
+				<Source><![CDATA[
+    public void refreshData()
+    {
+        HMPatientChargeEntryLine_DS.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+    
+        
+    
+        if(formOpenMode == FormOpenMode::ForEdit)
+        {
+            NewButton.enabled(false);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeItem</Name>
+				<Source><![CDATA[
+    public void storeItem(ItemId _value)
+    {
+    
+        HMChargeEntryClass          objChargeEntryClass;
+    
+    
+        HMInventTable hmInventTable = HMInventTable::findByItemId(_value);
+        objChargeEntryClass =  new HMChargeEntryClass();
+        HMPatientChargeEntryLine.InventTable = _value;
+        HMPatientEncounterCharge_ProcedureCode1.update();
+        ProcedureDescription.text(HMInventTableClass::showDescription(HMPatientChargeEntryLine.InventTable));
+    
+        HMPatientChargeEntryLine.TypeOfService  = hmInventTable.HMTypeOfService;
+        HMPatientChargeEntryLine.PlaceOfService = hmInventTable.HMPlaceOfService;
+    
+        element.updatePrice();
+    
+        //objChargeEntryClass.parmInventTable(InventTable::find( hmInventTable.InventTable));
+        //objChargeEntryClass.parmPatientId(HMPatientChargeEntryTable::find(chargeTableRecId).HMPatient);
+        //objChargeEntryClass.parmPatientEncounterId(HMPatientChargeEntryTable::find(chargeTableRecId).HMPatientEncounter);
+        //HMPatientChargeEntryLine.Fee = objChargeEntryClass.getPrice();
+        //ChargeFee.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePrice</Name>
+				<Source><![CDATA[
+    public void updatePrice()
+    {
+        HMPatientChargeEntryTable chargeEntry = HMPatientChargeEntryTable::find(chargeTableRecId);
+    
+        switch(HMPatientChargeEntryLine.PatientResponsibility)
+        {
+            case HMPatientPaymentResponsibility::Client:
+                HMPatientChargeEntryLine.Fee = HMSalesOrderInvoiceGenerator::getItemPricePrice(HMPatientChargeEntryLine.InventTable,
+                    CustTable::findRecId(HMPatient::find(chargeEntry.HMPatient).Client).AccountNum);
+                break;
+            case HMPatientPaymentResponsibility::Government:
+                HMPatientChargeEntryLine.Fee = HMSalesOrderInvoiceGenerator::getItemPricePrice(HMPatientChargeEntryLine.InventTable,
+                    CustTable::findRecId(HMInsuranceCarrier::find(HMPatient::find(chargeEntry.HMPatient).getPrimaryInsurance()).CustTable).AccountNum);
+                break;
+            case HMPatientPaymentResponsibility::Patient:
+                HMPatientChargeEntryLine.Fee = HMSalesOrderInvoiceGenerator::getItemPricePrice(HMPatientChargeEntryLine.InventTable,
+                    HMPatient::find(chargeEntry.HMPatient).patientChartNum());
+                break;
+        }
+    
+        ChargeFee.update();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMPatientChargeEntryLine</Name>
+				<Methods>
+					<Method>
+						<Name>create</Name>
+						<Source><![CDATA[
+        public void create(boolean _append = false)
+        {
+            super(_append);
+            element.enableFields(true);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>delete</Name>
+						<Source><![CDATA[
+        public void delete()
+        {
+            super();
+        
+            if (!HMPatientChargeEntryLine.RecId)
+            {
+                HMPatientEncounterCharge_ProcedureCode1.text("");
+                ProcedureDescription.text("");
+                DiagnosisNew1.text("");
+                DiagnosisNew2.text("");
+                DiagnosisNew3.text("");
+                DiagnosisNew4.text("");
+                element.enableFields(false);
+            }
+            this.reread();
+            element.refreshCallerForm();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            this.query().dataSourceTable(tableNum(HMPatientChargeEntryLine)).addSortField(fieldNum(HMPatientChargeEntryLine,ProcedureOrder));
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+            boolean flag = false;
+            HMPatientChargeEntryLine    hmPatientChargeEntryLineSearch;
+            ret = super();
+        
+            //if (HMPatientEncountercharge.RecId)
+            //{
+                //HMPatientEncounterCharge_ProcedureCode1.allowEdit(false);
+            //}
+            //else
+            //{
+                //HMPatientEncounterCharge_ProcedureCode1.allowEdit(true);
+            //}
+            //if(formOpenMode == FormOpenMode::ForEdit)
+            //{
+                //HMPatientEncounterCharge_ProcedureCode1.text(HMPatientEncountercharge.getProcedureCode());
+                ProcedureDescription.text(HMInventTableClass::showDescription(HMPatientChargeEntryLine.InventTable));
+                DiagnosisNew1.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis1).Code);
+                DiagnosisNew2.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis2).Code);
+                DiagnosisNew3.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis3).Code);
+                DiagnosisNew4.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis4).Code);
+        
+                select count(RecId) from hmPatientChargeEntryLineSearch
+                    where hmPatientChargeEntryLineSearch.HMPatientChargeEntryTable == chargeTableRecId;
+        
+                if (hmPatientChargeEntryLineSearch.RecId == 1)
+                {
+                    MoveUp.enabled(false);
+                    MoveDown.enabled(false);
+                }
+                else
+                {
+                    select maxOf(ProcedureOrder) from hmPatientChargeEntryLineSearch
+                        where hmPatientChargeEntryLineSearch.HMPatientChargeEntryTable == chargeTableRecId;
+        
+                    if (hmPatientChargeEntryLineSearch.ProcedureOrder == HMPatientChargeEntryLine.ProcedureOrder)
+                    {
+                        MoveUp.enabled(true);
+                        MoveDown.enabled(false);
+                        flag = true;
+                    }
+        
+                    select minOf(ProcedureOrder) from hmPatientChargeEntryLineSearch
+                            where hmPatientChargeEntryLineSearch.HMPatientChargeEntryTable == chargeTableRecId;
+        
+                    if (hmPatientChargeEntryLineSearch.ProcedureOrder == HMPatientChargeEntryLine.ProcedureOrder)
+                    {
+                        MoveUp.enabled(false);
+                        MoveDown.enabled(true);
+                        flag = true;
+                    }
+        
+                    if (!flag)
+                    {
+                        MoveUp.enabled(true);
+                        MoveDown.enabled(true);
+                    }
+                }
+                
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            HMPatientChargeEntryLine            record;
+        
+        
+            HMPatientChargeEntryLine.Charge = HMPatientChargeEntryLine.Units * HMPatientChargeEntryLine.Fee;
+            super();
+        
+            record = HMPatientChargeEntryLine::find(HMPatientChargeEntryLine.RecId);
+            if(formOpenMode != FormOpenMode::ForEdit)
+            {
+                element.refreshData();
+                HMPatientChargeEntryLine_DS.positionToRecord(record);
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>initValue</Name>
+						<Source><![CDATA[
+        public void initValue()
+        {
+            int counts = 0;
+        
+           // Values initialise only in Add mode so direclty use AppointmentId here
+            //appointmentId = element.args().record().RecId;
+            super();
+        
+            HMPatientChargeEntryLine.ProcedureOrder = HMPatientChargeEntryTable::getNextInventOrderNumber(chargeTableRecId);
+            HMPatientChargeEntryLine.Units          = 1;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>CPTCodes</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                element.getPrice();
+                super();
+            }
+
+]]></Source>
+							</Method>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                HMProcedureCodeMaster procedureCodeMaster;
+                Query query = new Query();
+                QueryBuildDataSource queryBuildDataSource, queryBuildDataSource2;
+                QueryBuildRange queryBuildRange;
+            
+                SysReferenceTableLookup sysTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMProcedureCodeMaster), _formReferenceControl, true);
+            
+                queryBuildDataSource = query.addDataSource(tableNum(HMProcedureCodeMaster));
+                queryBuildDataSource2 = queryBuildDataSource.addDataSource(tableNum(HMItemCptPcsCodes));
+                queryBuildDataSource2.joinMode(JoinMode::InnerJoin);
+                queryBuildDataSource2.relations(true);
+                queryBuildDataSource2.addRange(fieldNum(HMItemCptPcsCodes, ItemId)).value(queryValue(HMCaseTrans.ItemId));
+                sysTableLookup.parmQuery(query);
+                sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Code));
+                sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Description));
+            
+                return sysTableLookup.performFormLookup();
+            
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>Modifier1</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+                element.getPrice();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>Modifier2</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+                element.getPrice();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>Modifier3</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+                element.getPrice();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>Modifier4</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                
+                super();
+                element.getPrice();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>PatientResponsibility</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+            
+                element.updatePrice();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>RevenueCode</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                element.getPrice();
+                super();
+            }
+
+]]></Source>
+							</Method>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                HMProcedureCodeMaster procedureCodeMaster;
+                Query query = new Query();
+                QueryBuildDataSource queryBuildDataSource, queryBuildDataSource2;
+                QueryBuildRange queryBuildRange;
+            
+                SysReferenceTableLookup sysTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMProcedureCodeMaster), _formReferenceControl, true);
+            
+                queryBuildDataSource = query.addDataSource(tableNum(HMProcedureCodeMaster));
+                queryBuildDataSource2 = queryBuildDataSource.addDataSource(tableNum(HMItemCptPcsCodes));
+                queryBuildDataSource2.joinMode(JoinMode::InnerJoin);
+                queryBuildDataSource2.relations(true);
+                queryBuildDataSource2.addRange(fieldNum(HMItemCptPcsCodes, ItemId)).value(queryValue(HMCaseTrans.ItemId));
+                sysTableLookup.parmQuery(query);
+                sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Code));
+                sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Description));
+            
+                return sysTableLookup.performFormLookup();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+			<DataSource>
+				<Name>HMCaseTrans</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+            HMParameters parameters;
+            HMItemCptPcsCodes pcsCodes;
+            HMProcedureCodeMaster procedureCode;
+        
+            ret = super();
+        
+            parameters = HMParameters::find();
+        
+            if (parameters.isAllowChargeCodeEditing)
+            {
+                select RecId from pcsCodes
+                    where pcsCodes.ItemId == HMCaseTrans.ItemId
+                    join procedureCode
+                        where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                        && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+        
+                if (pcsCodes.RecId)
+                {
+                    HMCaseTrans_DS.object(fieldNum(HMCaseTrans, SalesPrice)).allowEdit(false);
+                }
+                else
+                {
+                    HMCaseTrans_DS.object(fieldNum(HMCaseTrans, SalesPrice)).allowEdit(true);
+                }
+            }
+            else
+            {
+                    HMCaseTrans_DS.object(fieldNum(HMCaseTrans, SalesPrice)).allowEdit(false);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void write()
+        {
+            super();
+            
+            HMCaseTrans.updateCaseTransDeductibe(0, HMCaseTrans.HMCase);
+            HMCaseTrans.doUpdate();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>Qty</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                //element.getPrice();
+                HMCaseTrans.TotalAmount = HMCaseTrans.SalesPrice * HMCaseTrans.Qty;
+                HMCaseTrans.InsuranceAmount = HMCaseTrans.SalesPrice * HMCaseTrans.Qty;
+                super();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+					<Field>
+						<DataField>SalesPrice</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                HMCaseTrans.TotalAmount = HMCaseTrans.SalesPrice * HMCaseTrans.Qty;
+                HMCaseTrans.InsuranceAmount = HMCaseTrans.SalesPrice * HMCaseTrans.Qty;
+                super();
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>HMPatientEncounterCharge_InventTable</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+            //ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CPTCode</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+            //ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DX1</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CopyOfDX1</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DX2</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CopyOfDX2</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DX3</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CopyOfDX3</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DX4</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CopyOfDX4</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>sort</Name>
+						<Source><![CDATA[
+        public int sort(SortOrder _sortDirection)
+        {
+            int ret;
+        
+           // ret = super(_sortDirection);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DeleteCommandButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            if(formOpenMode == FormOpenMode::ForEdit)
+            {
+                NewButton.enabled(true);
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>MoveUp</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            RecId movedRecordId;
+            super();
+        
+            movedRecordId = HMPatientChargeEntryLine.RecId;
+            HMPatientChargeEntryLine::find(movedRecordId).moveUp();
+            element.refreshData();
+            HMPatientChargeEntryLine_DS.positionToRecord(HMPatientChargeEntryLine::find(movedRecordId));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>MoveDown</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            RecId movedRecordId;
+            super();
+        
+            movedRecordId = HMPatientChargeEntryLine.RecId;
+            HMPatientChargeEntryLine::find(movedRecordId).moveDown();
+            element.refreshData();
+            HMPatientChargeEntryLine_DS.positionToRecord(HMPatientChargeEntryLine::find(movedRecordId));
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DiagnosisNew1</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(MenuItemDisplayStr(HMDiagnosisDictionary),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            HMDiagnosisDictionary   hmDiagnosisDictionary;
+            HMlookupClass           HMlookupClassObj = new HMlookupClass();
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.text() != "")
+                {
+                    select RecId from hmDiagnosisDictionary
+                        where hmDiagnosisDictionary.Code ==  this.text();
+                    // hmDiagnosisDictionary = HMlookupClassObj.checkValidDiagnosisName(this.text());
+        
+                    if (hmDiagnosisDictionary.RecId)
+                    {
+                        element.getDiagnosis(hmDiagnosisDictionary.RecId, #Diagnosis1);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ130"));
+                        DiagnosisNew1.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis1).Code);
+                    }
+                }
+                else
+                {
+                    element.getDiagnosis(0, #Diagnosis1);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DiagnosisNew2</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(MenuItemDisplayStr(HMDiagnosisDictionary),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            HMDiagnosisDictionary   hmDiagnosisDictionary;
+            HMlookupClass           HMlookupClassObj = new HMlookupClass();
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.text() != "")
+                {
+                   select RecId from hmDiagnosisDictionary
+                        where hmDiagnosisDictionary.Code ==  this.text();
+                    // hmDiagnosisDictionary = HMlookupClassObj.checkValidDiagnosisName(this.text());
+        
+                    if (hmDiagnosisDictionary.RecId)
+                    {
+                        element.getDiagnosis(hmDiagnosisDictionary.RecId, #Diagnosis2);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ130"));
+                        DiagnosisNew2.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis2).Code);
+                    }
+                }
+                else
+                {
+                    element.getDiagnosis(0, #Diagnosis2);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DiagnosisNew3</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(MenuItemDisplayStr(HMDiagnosisDictionary),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            HMDiagnosisDictionary   hmDiagnosisDictionary;
+            HMlookupClass           HMlookupClassObj = new HMlookupClass();
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.text() != "")
+                {
+                   select RecId from hmDiagnosisDictionary
+                        where hmDiagnosisDictionary.Code ==  this.text();
+                    // hmDiagnosisDictionary = HMlookupClassObj.checkValidDiagnosisName(this.text());
+        
+                    if (hmDiagnosisDictionary.RecId)
+                    {
+                        element.getDiagnosis(hmDiagnosisDictionary.RecId, #Diagnosis3);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ130"));
+                        DiagnosisNew3.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis3).Code);
+                    }
+                }
+                else
+                {
+                    element.getDiagnosis(0, #Diagnosis3);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DiagnosisNew4</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(MenuItemDisplayStr(HMDiagnosisDictionary),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMDiagnosisDictionary   hmDiagnosisDictionary;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.text() != "")
+                {
+                   select RecId from hmDiagnosisDictionary
+                        where hmDiagnosisDictionary.Code ==  this.text();
+        
+                    if (hmDiagnosisDictionary.RecId)
+                    {
+                        element.getDiagnosis(hmDiagnosisDictionary.RecId, #Diagnosis4);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ130"));
+                        DiagnosisNew4.text(HMDiagnosisDictionary::find(HMPatientChargeEntryLine.Diagnosis4).Code);
+                    }
+                }
+                else
+                {
+                    element.getDiagnosis(0, #Diagnosis4);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMPatientEncounterCharge_ProcedureCode1</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun formRun;
+        
+            args.caller(element);
+            args.name(formStr(HMPatientOrderItemsLookup));
+            args.parmEnum(HMOrderType::Service);
+            formRun = classFactory.formRunClass(args);
+            formRun.init();
+            this.performFormLookup(formRun);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CopyOfHMPatientChargeEntryLine_RevenueCode</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            HMProcedureCodeMaster procedureCodeMaster;
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource, queryBuildDataSource2;
+            QueryBuildRange queryBuildRange;
+        
+            SysReferenceTableLookup sysTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMProcedureCodeMaster), this, true);
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMProcedureCodeMaster));
+            queryBuildDataSource2 = queryBuildDataSource.addDataSource(tableNum(HMItemCptPcsCodes));
+            queryBuildDataSource2.joinMode(JoinMode::InnerJoin);
+            queryBuildDataSource2.relations(true);
+            queryBuildDataSource2.addRange(fieldNum(HMItemCptPcsCodes, ItemId)).value(queryValue(HMCaseTrans.ItemId));
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Code));
+            sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Description));
+        
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMPatientChargeEntryLine_CPTCodes</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            HMProcedureCodeMaster procedureCodeMaster;
+            HMItemCptPcsCodes     pcsCodes;
+            HMProcedureCodeMaster procedureCode;
+            HMParameters          parameters;
+        
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource, queryBuildDataSource2;
+            QueryBuildRange queryBuildRange;
+        
+            SysReferenceTableLookup sysTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMProcedureCodeMaster), this, true);
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMProcedureCodeMaster));
+            queryBuildDataSource2 = queryBuildDataSource.addDataSource(tableNum(HMItemCptPcsCodes));
+            queryBuildDataSource2.joinMode(JoinMode::InnerJoin);
+            queryBuildDataSource2.relations(true);
+        
+            parameters = HMParameters::find();
+        
+            if (parameters.isAllowChargeCodeEditing)
+            {
+                select RecId from pcsCodes
+                    where pcsCodes.ItemId == HMCaseTrans.ItemId
+                    join procedureCode
+                        where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                        && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+        
+                if (pcsCodes.RecId)
+                {
+                    queryBuildDataSource2.addRange(fieldNum(HMItemCptPcsCodes, ItemId)).value(queryValue(HMCaseTrans.ItemId));
+                }
+            }
+            else
+            {
+                queryBuildDataSource2.addRange(fieldNum(HMItemCptPcsCodes, ItemId)).value(queryValue(HMCaseTrans.ItemId));
+            }
+        
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Code));
+            sysTableLookup.addLookupField(fieldNum(HMProcedureCodeMaster, Description));
+        
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientChargeEntryLine</Name>
+			<Table>HMPatientChargeEntryLine</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationResponse</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Charge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CPTCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustInvoiceLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Diagnosis4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Fee</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMChargeEntryLineNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrierBatchDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientChargeEntryTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Modifier4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PerformingResource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlaceOfService</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProcedureOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RevenueCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TODate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TypeOfService</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Units</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOffReason</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<LinkType>Active</LinkType>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMCaseTrans</Name>
+			<Table>HMCaseTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AlternatDrugStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlternatePrimaryCaseTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CRMOrderId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Deductible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleActual</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleCollectionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductiblePercentage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductiblePerUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Discount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscountAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimTableSetup_PatientStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMItemCptPcsCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointmentInvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMServiceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Instructions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDim</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPPS</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderedQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentCaseTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PharmacyBatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Protocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Qty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RelatedAppointmentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RemainingBillAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportUrl</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<AllowEdit>No</AllowEdit>
+					<DataField>SalesPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TotalAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Urgency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOff</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientChargeEntryLine</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ5427</Caption>
+		<ColumnSpace xmlns="">0</ColumnSpace>
+		<ColumnSpaceMode xmlns="">Fixed</ColumnSpaceMode>
+		<Columns xmlns="">3</Columns>
+		<HeightMode xmlns="">Column</HeightMode>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Scrollbars xmlns="">No</Scrollbars>
+		<StatusBarStyle xmlns="">Simple</StatusBarStyle>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>GridGroup</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>536870911</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>Grid</Name>
+						<AllowEdit>No</AllowEdit>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>HMPatientEncounterCharge_FromDate</Name>
+								<ElementPosition>268435454</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>FromDate</DataField>
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ6400</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>HMPatientEncounterCharge_TODate</Name>
+								<ElementPosition>402653181</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>TODate</DataField>
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>DiagnosisCode</Name>
+								<ElementPosition>536870908</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6431</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>getAllProcedureDiagnosis</DataMethod>
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ130</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientEncounterCharge_InventTable</Name>
+								<ElementPosition>671088635</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6433</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>ItemId</DataField>
+								<DataSource>HMCaseTrans</DataSource>
+								<Label>Procedure</Label>
+								<Text>Procedure</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>StringEdit</Name>
+								<ElementPosition>805306362</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>getItemName</DataMethod>
+								<DataSource>HMCaseTrans</DataSource>
+								<Label>Description</Label>
+								<Text>Description</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CPTCode</Name>
+								<ElementPosition>939524089</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ10557</HelpText>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>displayCPTcode</DataMethod>
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ4681</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>DX1</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1073741816</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ6458</Label>
+								<ReferenceField>Diagnosis1</ReferenceField>
+								<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>CopyOfDX1</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1207959543</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ10559</Label>
+								<ReferenceField>Diagnosis1</ReferenceField>
+								<ReplacementFieldGroup>ICD9</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>DX2</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1342177270</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ6459</Label>
+								<ReferenceField>Diagnosis2</ReferenceField>
+								<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>CopyOfDX2</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1476394997</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ10560</Label>
+								<ReferenceField>Diagnosis2</ReferenceField>
+								<ReplacementFieldGroup>ICD9</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>DX3</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1610612724</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ6460</Label>
+								<ReferenceField>Diagnosis3</ReferenceField>
+								<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>CopyOfDX3</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1744830451</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ10561</Label>
+								<ReferenceField>Diagnosis3</ReferenceField>
+								<ReplacementFieldGroup>ICD9</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>DX4</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1879048178</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ6461</Label>
+								<ReferenceField>Diagnosis4</ReferenceField>
+								<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>CopyOfDX4</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>2013265905</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ6532</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryLine</DataSource>
+								<Label>@MAZ10562</Label>
+								<ReferenceField>Diagnosis4</ReferenceField>
+								<ReplacementFieldGroup>ICD9</ReplacementFieldGroup>
+							</AxFormControl>
+						</Controls>
+						<DataSource>HMPatientChargeEntryLine</DataSource>
+						<MultiSelect>No</MultiSelect>
+						<ShowRowLabels>No</ShowRowLabels>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>VSplitter</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<Style>SplitterVerticalContainer</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Group_</Name>
+				<ElementPosition>1610612733</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneControl">
+						<Name>ActionPane</Name>
+						<ElementPosition>858993458</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPane</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneTabControl">
+								<Name>ActionPaneTab</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ActionPaneTab</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonGroupControl">
+										<Name>ButtonGroup1</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ButtonGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormCommandButtonControl">
+												<Name>NewButton</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>613566756</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<NeededPermission>Create</NeededPermission>
+												<Type>CommandButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+												<Command>New</Command>
+												<NormalImage>New</NormalImage>
+												<Primary>Yes</Primary>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormCommandButtonControl">
+												<Name>DeleteCommandButton</Name>
+												<ElementPosition>920350134</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>CommandButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+												<Command>DeleteRecord</Command>
+												<MultiSelect>Yes</MultiSelect>
+												<NeedsRecord>Yes</NeedsRecord>
+												<NormalImage>Delete</NormalImage>
+												<Primary>Yes</Primary>
+												<SaveRecord>No</SaveRecord>
+												<Text>@SYS14425</Text>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonControl">
+												<Name>MoveUp</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1227133512</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6467</HelpText>
+												<Type>Button</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+												<NeedsRecord>Yes</NeedsRecord>
+												<NormalImage>Up</NormalImage>
+												<Text>@MAZ954</Text>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonControl">
+												<Name>MoveDown</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1533916890</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6468</HelpText>
+												<Type>Button</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+												<NeedsRecord>Yes</NeedsRecord>
+												<NormalImage>Down</NormalImage>
+												<Text>@MAZ956</Text>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormMenuFunctionButtonControl">
+												<Name>ReOrder</Name>
+												<ElementPosition>1840700268</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>MenuFunctionButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<AutoRefreshData>Yes</AutoRefreshData>
+												<DataSource>HMPatientChargeEntryLine</DataSource>
+												<MenuItemName>HMProcedureDiagnosisReorder</MenuItemName>
+												<NeedsRecord>Yes</NeedsRecord>
+											</AxFormControl>
+										</Controls>
+										<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>Strip</Style>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>DialogContent</Name>
+						<ElementPosition>1288490187</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>Group1</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>DiagnosisNew</Name>
+										<ElementPosition>780903144</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>DiagnosisNew1</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>715827882</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6532</HelpText>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ6458</Label>
+												<Mandatory>Yes</Mandatory>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>DiagnosisNew2</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741823</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6532</HelpText>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ6459</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>DiagnosisNew3</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6532</HelpText>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ6460</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>DiagnosisNew4</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1789569705</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6532</HelpText>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ6461</Label>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<Columns>2</Columns>
+										<Caption>@MAZ1104</Caption>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormIntegerControl">
+										<Name>HMPatientEncounterCharge_Units</Name>
+										<ElementPosition>1366580502</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Integer</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Units</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>ChargeFee</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1561806288</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Fee</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>Diagnosis</Name>
+										<ElementPosition>1757032074</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormReferenceGroupControl">
+												<Name>Diagnosis1</Name>
+												<ElementPosition>715827882</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ReferenceGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>HMPatientChargeEntryLine</DataSource>
+												<Label>@MAZ6456</Label>
+												<ReferenceField>Diagnosis1</ReferenceField>
+												<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormReferenceGroupControl">
+												<Name>Diagnosis2</Name>
+												<ElementPosition>1073741823</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ReferenceGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>HMPatientChargeEntryLine</DataSource>
+												<Label>@SYS24274</Label>
+												<ReferenceField>Diagnosis2</ReferenceField>
+												<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormReferenceGroupControl">
+												<Name>Diagnosis3</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ReferenceGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>HMPatientChargeEntryLine</DataSource>
+												<Label>@SYS24275</Label>
+												<ReferenceField>Diagnosis3</ReferenceField>
+												<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormReferenceGroupControl">
+												<Name>Diagnosis4</Name>
+												<ElementPosition>1789569705</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ReferenceGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls />
+												<DataSource>HMPatientChargeEntryLine</DataSource>
+												<Label>@SYS24276</Label>
+												<ReferenceField>Diagnosis4</ReferenceField>
+												<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+											</AxFormControl>
+										</Controls>
+										<Columns>4</Columns>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMPatientEncounterCharge_Fee</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1952257860</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ6355</HelpText>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@SYS9154</Label>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>DiagnosiDetailGroup</Name>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMPatientEncounterCharge_ProcedureCode1</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>182933790</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ6433</HelpText>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ItemId</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<Label>@MAZ672</Label>
+										<Mandatory>Yes</Mandatory>
+										<Text>Procedure</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ProcedureDescription</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>274400685</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ6434</HelpText>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>getItemName</DataMethod>
+										<DataSource>HMCaseTrans</DataSource>
+										<Label>@SYS25589</Label>
+										<MultiLine>Yes</MultiLine>
+										<Text>Description</Text>
+										<ViewEditMode>Edit</ViewEditMode>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDateControl">
+										<Name>HMPatientEncounterCharge_FromDate1</Name>
+										<ElementPosition>365867580</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Date</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>FromDate</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Label>Date</Label>
+										<Mandatory>Yes</Mandatory>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormInt64Control">
+										<Name>HMPatientChargeEntryLine_RevenueCode</Name>
+										<ElementPosition>457334475</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Int64</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>RevenueCode</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>CopyOfHMPatientChargeEntryLine_RevenueCode</Name>
+										<ElementPosition>503054668</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<ReferenceField>RevenueCode</ReferenceField>
+										<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientChargeEntryLine_CPTCodes</Name>
+										<ElementPosition>548774861</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Label>HCPCS Code</Label>
+										<ReferenceField>CPTCodes</ReferenceField>
+										<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>Modifier1</Name>
+										<ElementPosition>594495055</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Label>Modifier 1</Label>
+										<ReferenceField>Modifier1</ReferenceField>
+										<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>Modifier2</Name>
+										<ElementPosition>616327805</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Label>Modifier 2</Label>
+										<ReferenceField>Modifier2</ReferenceField>
+										<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>Modifier3</Name>
+										<ElementPosition>638160555</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Label>Modifier 3</Label>
+										<ReferenceField>Modifier3</ReferenceField>
+										<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>Modifier4</Name>
+										<ElementPosition>659993305</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Label>Modifier 4</Label>
+										<ReferenceField>Modifier4</ReferenceField>
+										<ReplacementFieldGroup>Code</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>Modifier</Name>
+										<ElementPosition>681826057</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<AlignChild>No</AlignChild>
+										<Columns>2</Columns>
+										<Caption>@MAZ6357</Caption>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormIntegerControl">
+										<Name>HMPatientChargeEntryLine_Units</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>754601891</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Integer</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<Width>100</Width>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Units</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_Qty</Name>
+										<ElementPosition>827377725</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Qty</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>RealEdit</Name>
+										<ElementPosition>918347519</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Width>100</Width>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>SalesPrice</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormRealControl">
+										<Name>HMCaseTrans_TotalAmount</Name>
+										<ElementPosition>1009317313</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Real</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Width>100</Width>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>TotalAmount</DataField>
+										<DataSource>HMCaseTrans</DataSource>
+										<NoOfDecimals>-1</NoOfDecimals>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMPatientChargeEntryLine_PatientResponsibility</Name>
+										<ElementPosition>1118481065</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PatientResponsibility</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientEncounterCharge_TypeOfService</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1342177278</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<ReferenceField>TypeOfService</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMPatientEncounterCharge_PlaceOfService</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1565873491</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<ReferenceField>PlaceOfService</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMPatientEncounterCharge_Notes</Name>
+										<ElementPosition>1789569705</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Notes</DataField>
+										<DataSource>HMPatientChargeEntryLine</DataSource>
+										<MultiLine>Yes</MultiLine>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>DateGroup</Name>
+										<ElementPosition>1968526675</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormDateControl">
+												<Name>HMPatientEncounterCharge_TODate1</Name>
+												<ElementPosition>1610612734</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Date</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataField>TODate</DataField>
+												<DataSource>HMPatientChargeEntryLine</DataSource>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+						</Controls>
+						<TopMargin>11</TopMargin>
+						<TopMarginMode>Fixed</TopMarginMode>
+						<FrameType>None</FrameType>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

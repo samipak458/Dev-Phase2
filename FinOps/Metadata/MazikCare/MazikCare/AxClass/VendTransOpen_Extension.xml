@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>VendTransOpen_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public static class VendTransOpen_Extension
+{
+        
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>displayClaimStatus</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    display static HMClaimPaymentStatus displayClaimStatus(VendTransOpen _this)
+    {
+        HMClaimPaymentStatus        hmClaimPaymentStatus;
+        HMCase                      hmCase;
+        HMClaimVersion              hmClaimVersion;
+        HMClaimTable                hmClaimTable;
+        HMPatientChargeEntryTable   hmPatientChargeEntryTable;
+        HMPatientChargeEntryLine    hmPatientChargeEntryLine;
+        HMCaseTrans                 hmCaseTrans;
+        VendTrans                   vendTrans = VendTrans::find(_this.RefRecId);
+        PurchTable                  purchTable = PurchTable::find(VendInvoiceJour::findFromVendTrans(
+                                                         vendTrans.Invoice, vendTrans.TransDate, vendTrans.AccountNum).PurchId);
+
+        hmCase = HMCase::find(purchTable.HMCase);
+        
+   /*     select * from hmClaimVersion
+            join hmClaimTable
+                where hmClaimVersion.HMClaimTable == hmClaimTable.RecId
+                join hmPatientChargeEntryTable
+                    where hmClaimTable.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId
+                    join hmCase
+                        where hmPatientChargeEntryTable.HMCase == hmCase.RecId;
+*/
+
+select count(RecId) from hmCaseTrans    
+    where hmCaseTrans.HMCase == hmcase.RecId
+&& hmCaseTrans.BillingStatus != HMBillStatus::Settled;
+             
+
+
+        if (hmCaseTrans.RecId)
+            hmClaimPaymentStatus = HMClaimPaymentStatus::NotPaid;
+        else
+            hmClaimPaymentStatus = HMClaimPaymentStatus::Paid;
+ 
+
+        return hmClaimPaymentStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MarkTrans_OnValidating</Name>
+				<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        [FormControlEventHandler(formControlStr(VendOpenTrans, MarkTrans), FormControlEventType::Validating)]
+        public static void MarkTrans_OnValidating(FormControl sender, FormControlEventArgs e)
+    {
+        HMClaimPaymentStatus        hmClaimPaymentStatus;
+        var dataObject = sender as FormControl;
+        PaymTerm                    paymTerm;
+        VendTable                   vendTable;
+
+        var args = e as FormControlCancelEventArgs;
+
+        if (args != null && dataObject != null)
+
+        {
+            VendTransOpen  buff= sender.formRun().dataSource("VendTransOpen").cursor();
+            hmClaimPaymentStatus = VendTransOpen_Extension::displayClaimStatus(buff);
+
+
+            if(hmClaimPaymentStatus == HMClaimPaymentStatus::NotPaid)
+            { 
+
+                vendTable = VendTable::find(buff.AccountNum);
+
+                select * from paymTerm
+                where paymTerm.PaymTermId == vendTable.PaymTermId
+                && paymTerm.HMPayOnPay == NoYes::Yes;
+
+                if(paymTerm.RecId)
+                {
+                    warning("Invoice cannot be settled because claim payment hasn't been received.");
+                    args.cancel(true);
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

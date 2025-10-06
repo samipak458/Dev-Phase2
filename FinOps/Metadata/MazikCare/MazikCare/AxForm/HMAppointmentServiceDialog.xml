@@ -1,0 +1,1128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMAppointmentServiceDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMAppointmentServiceDialog extends FormRun
+{
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshAppointmentOrder</Name>
+				<Source><![CDATA[
+    public void refreshAppointmentOrder(HMAppointmentInventTmp _hmAppointmentInventTmp)
+    {
+        VendAccount                             vendAccount;
+        CustTable                               custTable;
+        RecId                                   workerRecId,resourceRecId;
+        HMResourceSchedulingPlanningObject      planObject;
+        HMResourceMaster                        resourceMaster;
+        HMResourceSchedulingAppointment         HMResourceSchedulingAppointment,HMResourceSchedulingAppointmentPrimary;
+        HMResourceSchedulingAppointment         appt = element.args().record();
+        boolean                                 complementExtrasCovered = false;
+        boolean                                 cashSales = false;
+        HMResourceSchedulingAppointmentInvent   HMResourceSchedulingAppointmentInventLocal;
+        RecordInsertList    recordList = new RecordInsertList(tableNum(HMResourceSchedulingAppointmentInvent));
+    
+        select cashSales from custTable where custTable.AccountNum == appt.Client;
+        cashSales = custTable.CashSales;
+    
+        while select * from _hmAppointmentInventTmp
+        {
+            HMResourceSchedulingAppointmentInventLocal.InventTable = _hmAppointmentInventTmp.ItemId;
+            HMResourceSchedulingAppointmentInventLocal.PatientResponsibility = _hmAppointmentInventTmp.PatientResponsibility;
+    
+            if(_hmAppointmentInventTmp.RefRecId == 0)
+            {
+                HMResourceSchedulingAppointmentInventLocal.PatientResponsibility = HMPatientPaymentResponsibility::Client;
+                if(HMInventTable::findByItemId(HMResourceSchedulingAppointmentInventLocal.InventTable).RAMQ == NoYes::Yes)
+                {
+                    HMResourceSchedulingAppointmentInventLocal.PatientResponsibility = HMPatientPaymentResponsibility::Government;
+                }
+                else if(cashSales && HMResourceSchedulingAppointmentInventLocal.PatientResponsibility != HMPatientPaymentResponsibility::Government)
+                {
+                    HMResourceSchedulingAppointmentInventLocal.PatientResponsibility = HMPatientPaymentResponsibility::Patient;
+                }
+    
+            }
+            if(appt.PrimaryAppointment == YesNo::No)
+            {
+                select * from HMResourceSchedulingAppointmentPrimary
+                where HMResourceSchedulingAppointmentPrimary.HMPatientVisit == appt.HMPatientVisit
+                && HMResourceSchedulingAppointmentPrimary.PrimaryAppointment == YesNo::Yes;
+                HMResourceSchedulingAppointmentInventLocal.HMResourceSchedulingAppointment = HMResourceSchedulingAppointmentPrimary.RecId;
+                HMResourceSchedulingAppointmentInventLocal.RelatedAppointmentRecId = appt.RecId;
+    
+            }
+            else
+            {
+                HMResourceSchedulingAppointmentInventLocal.HMResourceSchedulingAppointment = appt.RecId;
+            }
+            select * from resourceMaster
+            join planObject
+            join HMResourceSchedulingAppointment
+            where resourceMaster.recid == planObject.HMResourceMaster
+            && HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == planObject.RecId
+            && HMResourceSchedulingAppointment.RecId == HMResourceSchedulingAppointmentInventLocal.HMResourceSchedulingAppointment;
+    
+            if(resourceMaster)
+            {
+                if(resourceMaster.type == HMResourceType::Vendor)
+                {
+                    vendAccount = VendTable::findRecId(resourceMaster.RefRecId).AccountNum;
+                    resourceRecId = resourceMaster.RecId;
+                }
+                else if(resourceMaster.type == HMResourceType::Employee)
+                {
+                    workerRecId = resourceMaster.RefRecId;
+                    resourceRecId = resourceMaster.RecId;
+                }
+    
+            }
+            if(HMInventTable::findByItemId(HMResourceSchedulingAppointmentInventLocal.InventTable).MDactivity == NoYes::Yes)
+            {
+                HMResourceSchedulingAppointmentInventLocal.VendTable = vendAccount;
+                HMResourceSchedulingAppointmentInventLocal.HcmWorker = workerRecId;
+                HMResourceSchedulingAppointmentInventLocal.HMResourceMaster = resourceRecId;
+            }
+            recordList.add(HMResourceSchedulingAppointmentInventLocal);
+        }
+        recordList.insertDatabase();
+        HMResourceSchedulingAppointmentInvent_ds.executeQuery();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeItem</Name>
+				<Source><![CDATA[
+    public void storeItem(ItemId _itemId)
+    {
+        HMResourceSchedulingAppointmentInvent.InventTable = _itemId;
+        HMResourceSchedulingAppointmentInvent_InventTable.text(_itemId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSubStatus</Name>
+				<Source><![CDATA[
+    public void updateSubStatus()
+    {
+        HMResourceSchedulingAppointmentInvent_ServiceSubStatus.allowEdit(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::Complete ||
+                        HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::Postponed);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMResourceSchedulingAppointmentInvent</Name>
+				<Methods>
+					<Method>
+						<Name>isRelatedAppointment</Name>
+						<Source><![CDATA[
+        public display NoYes isRelatedAppointment(HMResourceSchedulingAppointmentInvent _apptInvent)
+        {
+            return _apptinvent.RelatedAppointmentRecId == 0 ? NoYes::No : NoYes::Yes;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            super();
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>delete</Name>
+						<Source><![CDATA[
+        public void delete()
+        {
+            super();
+        
+            HMResourceSchedulingAppointmentInvent_ds.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateDelete</Name>
+						<Source><![CDATA[
+        public boolean validateDelete()
+        {
+            boolean ret;
+            ItemId protocolId;
+            RecId   apptRecId;
+            if(HMResourceSchedulingAppointmentInvent.Protocol != '')
+            {
+                if(Box::yesNo("@MAZ12321", DialogButton::No, "@SYS4006395") == DialogButton::Yes)
+                {
+                    ret = HMResourceSchedulingHelper::deleteAppointmentProtocol(HMResourceSchedulingAppointmentInvent.Protocol, HMResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment);
+                }
+                else
+                {
+                    ret = false;
+                }
+            }
+            else
+            {
+                ret = super();
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>referenceNumberRequired</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display boolean referenceNumberRequired(HMResourceSchedulingAppointmentInvent _hmResourceSchedulingAppointmentInvent)
+        {
+            HMInventTable hmInventTable;
+            select ReferenceNumberRequired from hmInventTable
+            where hmInventTable.InventTable == _hmResourceSchedulingAppointmentInvent.InventTable;
+        
+            return hmInventTable.ReferenceNumberRequired;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            HMInventTable hmInventTable;
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                select ReferenceNumberRequired from hmInventTable
+                where hmInventTable.InventTable == HMResourceSchedulingAppointmentInvent.InventTable;
+        
+                if(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::Complete)
+                {
+                    if(HMResourceSchedulingAppointmentInvent.NotRequired == NoYes::No)
+                    {
+                        if(hmInventTable.ReferenceNumberRequired && HMResourceSchedulingAppointmentInvent.DrugReference == '')
+                        {
+                            ret = checkFailed("@MAZ12248");
+                        }
+                        //if(hmInventTable.ReferenceNumberRequired && HMResourceSchedulingAppointmentInvent.HMMedSite == 0)
+                        //{
+                            //ret = checkFailed("@MAZ12287");
+                        //}
+                    }
+                }
+        
+        
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>showDinNumber</Name>
+						<Source><![CDATA[
+        [SysClientCacheDataMethodAttribute(true)]
+        public display int64 showDinNumber(HMResourceSchedulingAppointmentInvent _hmResourceSchedulingAppointmentInvent)
+        {
+            HMInventTable hmInventTable;
+            select DIN from hmInventTable
+            where hmInventTable.InventTable == _hmResourceSchedulingAppointmentInvent.InventTable;
+        
+            return hmInventTable.DIN;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+            HMInventTable hmInventTable;
+            ret = super();
+        
+            if(ret)
+            {
+                DeclineService.enabled(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::NotStarted);
+                HMResourceSchedulingUndeclineService.enabled(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::Decline);
+            }
+        
+            if(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::NotStarted && HMResourceSchedulingAppointmentInvent.isProtocol())
+            {
+                HMAppointmentExamCodesExpand.enabled(true);
+            }
+            else
+            {
+                HMAppointmentExamCodesExpand.enabled(false);
+            }
+        
+            element.updateSubStatus();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            HMResourceSchedulingAppointment appt;
+            RecId                           visitRecId;
+            super();
+        
+            select  PrimaryAppointment,RecId, HMPatientVisit from appt
+            where appt.RecId == element.args().record().RecId;
+            visitRecId = appt.HMPatientVisit;
+            if(appt && appt.PrimaryAppointment == YesNo::Yes)
+            {
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointmentInvent)).addRange(fieldNum(HMResourceSchedulingAppointmentInvent,HMResourceSchedulingAppointment)).value(SysQuery::value(appt.RecId));
+            }
+            else
+            {
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointmentInvent)).clearDynalinks();
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointmentInvent)).addRange(fieldNum(HMResourceSchedulingAppointmentInvent,RelatedAppointmentRecId)).value(SysQuery::value(appt.RecId));
+                select  PrimaryAppointment,RecId, HMPatientVisit from appt
+                where appt.HMPatientVisit == visitRecId
+                && appt.PrimaryAppointment == YesNo::Yes;
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointmentInvent)).addRange(fieldNum(HMResourceSchedulingAppointmentInvent,HMResourceSchedulingAppointment)).value(SysQuery::value(appt.RecId));
+            }
+            if(element.args().menuItemName() == menuitemDisplayStr(HMAppointmentServiceDialogView))
+            {
+                this.allowCreate(false);
+                this.allowDelete(false);
+                this.allowEdit(false);
+                ActionPane.visible(false);
+            }
+            select AppointmentStatus from appt
+            where appt.RecId == element.args().record().RecId;
+            HMResourceSchedulingAppointmentInvent_ds.object(fieldNum(HMResourceSchedulingAppointmentInvent,HMServiceStatus)).allowEdit(appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::Confirmed);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>HMServiceStatus</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                super();
+                if(HMResourceSchedulingAppointmentInvent.HMServiceStatus != HMResourceSchedulingAppointmentInvent.orig().HMServiceStatus)
+                {
+                    if(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::Decline)
+                    {
+                        checkFailed("@MAZ12291");
+                        HMResourceSchedulingAppointmentInvent.HMServiceStatus = HMResourceSchedulingAppointmentInvent.orig().HMServiceStatus;
+                    }
+                    else if(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::NoShow)
+                    {
+                        checkFailed(strFmt("@MAZ12357",enum2str(HMServiceStatus::NoShow)));
+                        HMResourceSchedulingAppointmentInvent.HMServiceStatus = HMResourceSchedulingAppointmentInvent.orig().HMServiceStatus;
+                    }
+                    else if(HMResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::Cancelled)
+                    {
+                        checkFailed(strFmt("@MAZ12357",enum2str(HMServiceStatus::Cancelled)));
+                        HMResourceSchedulingAppointmentInvent.HMServiceStatus = HMResourceSchedulingAppointmentInvent.orig().HMServiceStatus;
+                    }
+                }
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>NewService</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            Args args;
+            args = new Args();
+            args.caller(element);
+            args.record(element.args().record());
+            args.parmEnumType(enumNum(HMOrderType));
+            args.parmEnum(HMOrderType::Appointment);
+            new MenuFunction(MenuItemDisplayStr(HMPatientOrderAppointment),MenuItemType::Display).run(Args);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMResourceSchedulingAppointmentInvent_InventTable</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun formRun;
+        
+            args.caller(element);
+            args.name(formStr(HMPatientOrderItemsLookup));
+            args.parmEnum(HMOrderType::Service);
+            formRun = classFactory.formRunClass(args);
+            formRun.init();
+            this.performFormLookup(formRun);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMResourceSchedulingAppointmentInvent_HMResourceMaster</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                HMResourceSchedulingAppointmentInvent.defaultVendorFromResourceMaster();
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMResourceSchedulingAppointmentInvent_VendTable</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                HMResourceSchedulingAppointmentInvent.defaultResourceMasterFromVendor();
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMResourceSchedulingAppointmentInvent_HMServiceStatus</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            element.updateSubStatus();
+            HMResourceSchedulingAppointmentInvent.ServiceSubStatus = '';
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMResourceSchedulingAppointmentInvent_ServiceSubStatus</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tablenum(ReasonTable),this,true);
+            Query query;
+            QueryBuildDataSource queryBuildDataSource;
+        
+            sysTableLookup.addLookupfield(fieldnum(ReasonTable,Reason),true);
+            sysTableLookup.addLookupfield(fieldnum(ReasonTable,Description));
+        
+            query = new Query();
+        
+            queryBuildDataSource = query.addDataSource(tablenum(ReasonTable));
+            queryBuildDataSource.addSortField(fieldnum(ReasonTable,Reason));
+        
+            switch(HMResourceSchedulingAppointmentInvent.HMServiceStatus)
+            {
+                case HMServiceStatus::Complete:
+                    queryBuildDataSource.addRange(fieldnum(ReasonTable,ServiceDone)).value(queryvalue(NoYes::Yes));
+                    break;
+                case HMServiceStatus::Decline:
+                    queryBuildDataSource.addRange(fieldnum(ReasonTable,ServiceDeclined)).value(queryvalue(NoYes::Yes));
+                    break;
+                case HMServiceStatus::Postponed:
+                    queryBuildDataSource.addRange(fieldnum(ReasonTable,ServicePostponed)).value(queryvalue(NoYes::Yes));
+                    break;
+            }
+        
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.parmUseLookupValue(true);
+        
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingAppointmentInvent</Name>
+			<Table>HMResourceSchedulingAppointmentInvent</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DrugReference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmWorker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMedSite</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMServiceProviderType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMServiceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Invoiced</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedTransactionId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NotRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>POPosted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidityDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Price</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Protocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PurchLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RelatedAppointmentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultExpectedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesLine</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceSubStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendTableResult</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">Appointment services</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HeightMode xmlns="">Column</HeightMode>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Left xmlns="">0</Left>
+		<LeftMode xmlns="">Manual</LeftMode>
+		<Style xmlns="">SimpleList</Style>
+		<TitleDataSource xmlns="">HMResourceSchedulingAppointmentInvent</TitleDataSource>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Services</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormActionPaneControl">
+								<Name>ActionPane</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ActionPane</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormActionPaneTabControl">
+										<Name>ActionPaneTab</Name>
+										<ElementPosition>1431655764</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ActionPaneTab</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormButtonGroupControl">
+												<Name>ButtonGroup1</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ButtonGroup</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>New_</Name>
+														<ElementPosition>715827880</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>New</Command>
+														<NormalImage>New</NormalImage>
+														<Primary>Yes</Primary>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>NewService</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>Maintain exam codes</HelpText>
+														<Type>MenuFunctionButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<MenuItemName>HMPatientOrderAppointment</MenuItemName>
+														<Text>@SYS321054</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCommandButtonControl">
+														<Name>Delete</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1431655763</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CommandButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+														<Command>DeleteRecord</Command>
+														<NormalImage>Delete</NormalImage>
+														<Primary>Yes</Primary>
+														<SaveRecord>No</SaveRecord>
+														<Text>@SYS14425</Text>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDropDialogButtonControl">
+														<Name>DeclineService</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>DropDialogButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<AutoRefreshData>Yes</AutoRefreshData>
+														<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+														<MenuItemName>HMAppointmentServiceDeclinedDropDlg</MenuItemName>
+														<NeedsRecord>Yes</NeedsRecord>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>HMResourceSchedulingUndeclineService</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1789569703</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>MenuFunctionButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+														<MenuItemName>HMResourceSchedulingUndeclineService</MenuItemName>
+														<MenuItemType>Action</MenuItemType>
+														<NeedsRecord>Yes</NeedsRecord>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormMenuFunctionButtonControl">
+														<Name>HMAppointmentExamCodesExpand</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1968526675</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>MenuFunctionButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+														<MenuItemName>HMAppointmentExamCodesExpand</MenuItemName>
+														<MenuItemType>Action</MenuItemType>
+														<MultiSelect>Yes</MultiSelect>
+														<NeedsRecord>Yes</NeedsRecord>
+													</AxFormControl>
+												</Controls>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+											</AxFormControl>
+										</Controls>
+										<AlignChild>No</AlignChild>
+										<AlignChildren>No</AlignChildren>
+										<ArrangeMethod>Vertical</ArrangeMethod>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<AlignChildren>No</AlignChildren>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<Style>Strip</Style>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>Grid</Name>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMResourceSchedulingAppointmentInvent_InventTable</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>238609292</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>InventTable</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Label>Exam code</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>itemDescription</Name>
+										<ElementPosition>357913938</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<CacheDataMethod>Yes</CacheDataMethod>
+										<DataMethod>showItemDescription</DataMethod>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Label>@MAZ5207</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>HMAppointmentInventTmp_IsProtcol</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>477218584</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<DataMethod>isProtocol</DataMethod>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Label>@MAZ10609</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMResourceSchedulingAppointmentInvent_Protocol</Name>
+										<AllowEdit>No</AllowEdit>
+										<ElementPosition>596523230</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Protocol</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ProtocolDescription</Name>
+										<ElementPosition>715827876</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>protocolItemDescription</DataMethod>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Label>@MAZ11759</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>isRelatedAppointment</Name>
+										<ElementPosition>730740956</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ12454</HelpText>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<DataMethod>isRelatedAppointment</DataMethod>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Label>@MAZ11527</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>HMResourceSchedulingAppointmentInvent_NotRequired</Name>
+										<ElementPosition>745654037</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<DataField>NotRequired</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMResourceSchedulingAppointmentInvent_HMResourceMaster</Name>
+										<ElementPosition>775480199</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<ReferenceField>HMResourceMaster</ReferenceField>
+										<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMResourceSchedulingAppointmentInvent_HcmWorker</Name>
+										<ElementPosition>835132522</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<ReferenceField>HcmWorker</ReferenceField>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormInt64Control">
+										<Name>DIN</Name>
+										<ElementPosition>894784846</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ11384</HelpText>
+										<Type>Int64</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>showDinNumber</DataMethod>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Label>@MAZ11383</Label>
+										<ShowZero>No</ShowZero>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMResourceSchedulingAppointmentInvent_VendTable</Name>
+										<ElementPosition>954437171</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>VendTable</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMResourceSchedulingAppointmentInvent_PatientResponsibility</Name>
+										<ElementPosition>1073741820</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>PatientResponsibility</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>displayReferenceNumberRequired</Name>
+										<ElementPosition>1207959547</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<DataMethod>referenceNumberRequired</DataMethod>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Label>@MAZ11390</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMResourceSchedulingAppointmentInvent_DrugReference</Name>
+										<ElementPosition>1342177275</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>DrugReference</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormReferenceGroupControl">
+										<Name>HMResourceSchedulingAppointmentInvent_HMMedSite</Name>
+										<ElementPosition>1521134245</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ReferenceGroup</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls />
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<ReferenceField>HMMedSite</ReferenceField>
+										<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMResourceSchedulingAppointmentInvent_HMServiceStatus</Name>
+										<ElementPosition>1700091216</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>HMServiceStatus</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+										<Items />
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMResourceSchedulingAppointmentInvent_ServiceSubStatus</Name>
+										<AllowEdit>No</AllowEdit>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1923787430</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ServiceSubStatus</DataField>
+										<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMResourceSchedulingAppointmentInvent</DataSource>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

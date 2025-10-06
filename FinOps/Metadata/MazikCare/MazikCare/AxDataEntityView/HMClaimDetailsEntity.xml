@@ -1,0 +1,939 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxDataEntityView xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimDetailsEntity</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMClaimDetailsEntity extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        if (!this.skipNumberSequenceCheck())
+        {
+            NumberSeqRecordFieldHandler::enableNumberSequenceControlForField(
+                this, fieldNum(HMClaimDetailsEntity, HMClaimTable_ClaimID), HMParameters::numRefClaimNumber());
+        }
+
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postGetStagingData</Name>
+				<Source><![CDATA[
+    public static void postGetStagingData(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        HMClaimDetailsStaging staging;
+        HMClaimDetailsStaging hmClaimDetailsStaging;
+        CustTable custTable;
+        HMPatient hmPatient;
+        HMCase hmCase;
+        HMCase hmCaseExist;
+        HMBillParameters hmBillParameters;
+        HMCaseInsurance hmCaseInsurance,hmCaseInsuranceExist;
+        HMPatientInsurance hmPatientInsuranceRecord;
+        HMInsuranceCarrier hmInsuranceCarrier;
+
+        select firstonly HMCreateCaseOnClaimImport from hmBillParameters;
+       
+        if(hmBillParameters.HMCreateCaseOnClaimImport == NoYes::Yes)
+        {
+
+            insert_recordset hmCase (CaseNo, HMPatient)
+            select CaseNo from staging
+                group by staging.CaseNo,HMPatient.RecId
+                where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                    && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                    && staging.TransferStatus == DMFTransferStatus::NotStarted
+                join custTable
+                    where custTable.AccountNum == staging.PatientMRN
+                join RecId from hmPatient
+                    where custTable.RecId == hmPatient.CustTable
+                join hmInsuranceCarrier
+                    where hmInsuranceCarrier.Code == staging.InsuranceCarrierCode
+                notexists join hmCaseExist
+                    where hmCaseExist.CaseNo == staging.CaseNo;      
+  
+            //commenting as its not needed for optum
+
+            /*insert_recordset hmCaseInsurance(HMCase,HMPatientInsurance,InsuranceCarrier)
+                select RecId from hmCase
+                join RecId, InsuranceCarrier from hmPatientInsuranceRecord
+                where hmCase.HMPatient == hmPatientInsuranceRecord.HMPatient
+                join staging
+                where staging.CaseNo == hmCase.CaseNo
+                    && staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                    && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                    && staging.TransferStatus == DMFTransferStatus::NotStarted
+                notexists join hmCaseInsuranceExist
+                where hmCaseInsuranceExist.HMCase == hmCase.RecId
+                && hmCaseInsuranceExist.HMPatientInsurance == hmPatientInsuranceRecord.RecId;*/
+        }
+        
+        update_recordset staging
+            setting HMPatient = hmPatient.RecId
+            where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                && staging.TransferStatus == DMFTransferStatus::NotStarted
+            join RecId from hmPatient
+            join custTable
+                where staging.PatientAccountNum == custTable.AccountNum
+                    && hmPatient.CustTable == custTable.RecId;
+
+        update_recordset staging
+            setting IsClaimModified = NoYes::Yes
+                    ,Patient = staging.PatientName
+                    ,PatientAccount = staging.PatientMRN
+                    ,BalanceAmount = staging.HMBalanceAmount
+                    ,Payor = staging.InsuranceCarrierName
+            where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                && staging.TransferStatus == DMFTransferStatus::NotStarted;
+
+        //update_recordset staging
+        //    setting 
+        //        Version_ValidFrom = staging.ValidFrom,
+        //        Version_ValidTo = staging.ValidTo
+        //    where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+        //        && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+        //        && staging.TransferStatus == DMFTransferStatus::NotStarted;
+
+
+        //HMPatientInsurance  hmPatientInsurance;
+        //HMInsuranceCarrier  hmInsuranceCarrier;
+
+        //update_recordset staging
+        //    setting HMInsuranceCarrier = hmInsuranceCarrier.RecId
+        //    where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+        //        && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+        //        && staging.TransferStatus == DMFTransferStatus::NotStarted
+        //    join hmPatientInsurance
+        //        where hmPatientInsurance.HMPatient == staging.HMPatient
+        //            && hmPatientInsurance.HMPayerType == HMPayerType::InsuranceCarrier
+        //            && hmPatientInsurance.InsuranceStatus == HMInsuranceStatus::Active
+        //            && (hmPatientInsurance.EffectiveDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmPatientInsurance.EndDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        //    join hmInsuranceCarrier
+        //    join custTable
+        //        where custTable.AccountNum == hmPatientInsurance.InsuranceCarrier
+        //            && hmInsuranceCarrier.CustTable == custTable.RecId;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <returns></returns>
+    public boolean validateWrite()
+    {
+        HMPatientInsurance  hmpPtientInsurance;
+        HMPatient           hmPatient;
+        CustTable           custTable;
+        boolean             ret;
+
+        ret = super();
+
+        if(this.Priority)
+        {
+            if(this.InsuranceCarrierCode != '')
+            {
+                select firstonly RecId, HMPatient from hmpPtientInsurance
+                    where hmpPtientInsurance.InsuranceCarrier == this.InsuranceCarrierCode
+                        && hmpPtientInsurance.Priority == this.Priority
+                    join RecId, CustTable from hmPatient
+                        where hmPatient.RecId == hmpPtientInsurance.HMPatient
+                    join RecId, AccountNum from custTable
+                        where custTable.RecId == hmPatient.CustTable
+                            && custTable.AccountNum == this.PatientMRN;
+
+                if(hmpPtientInsurance.RecId == 0)
+                {
+                    return checkFailed(strFmt("Patient Insurance for Insurance Code %1 with the sequence number %2 does not exist for patient having MRN : %3",this.InsuranceCarrierCode,this.Priority,this.PatientMRN));
+                }
+            }
+        }
+        
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>MazikCare</ConfigurationKey>
+	<DeveloperDocumentation>@MAZ:HMClaimTableDetailsEntityDevDoc</DeveloperDocumentation>
+	<Label>@MAZ:HMClaimTableDetailsEntity</Label>
+	<Tags>ClaimDetails</Tags>
+	<DataManagementEnabled>Yes</DataManagementEnabled>
+	<DataManagementStagingTable>HMClaimDetailsStaging</DataManagementStagingTable>
+	<IsPublic>Yes</IsPublic>
+	<Modules>MazikCare</Modules>
+	<PrimaryCompanyContext>DataAreaId</PrimaryCompanyContext>
+	<PrimaryKey>EntityKey</PrimaryKey>
+	<PublicCollectionName>HMClaimDetails</PublicCollectionName>
+	<PublicEntityName>HMClaimDetails</PublicEntityName>
+	<ValidTimeStateEnabled>Yes</ValidTimeStateEnabled>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>FederalTaxIDNumber</Name>
+			<DataField>FederalTaxIDNumber</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMCardIssueNumber</Name>
+			<DataField>HMCardIssueNumber</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMClaimTable</Name>
+			<AccessModifier>Private</AccessModifier>
+			<DataField>HMClaimTable</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMInsuranceMembershipId</Name>
+			<DataField>HMInsuranceMembershipId</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ICD10Code1</Name>
+			<DataField>ICD10Code1</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ICD10Code2</Name>
+			<DataField>ICD10Code2</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ICD10Code3</Name>
+			<DataField>ICD10Code3</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ICD10Code4</Name>
+			<DataField>ICD10Code4</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceCarrierAddress</Name>
+			<DataField>InsuranceCarrierAddress</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceCarrierContractName</Name>
+			<DataField>InsuranceCarrierContractName</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceCarrierContractNumber</Name>
+			<DataField>InsuranceCarrierContractNumber</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceCarrierName</Name>
+			<DataField>Name</DataField>
+			<DataSource>HMInsuranceCarrier</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceCarrierPlanId</Name>
+			<DataField>InsuranceCarrierPlanId</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceCarrierPlanName</Name>
+			<DataField>InsuranceCarrierPlanName</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceProgram</Name>
+			<DataField>InsuranceProgram</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredCity</Name>
+			<DataField>InsuredCity</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredGender</Name>
+			<DataField>InsuredGender</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredName</Name>
+			<DataField>InsuredName</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredPhone</Name>
+			<DataField>InsuredPhone</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredPhoneLocal</Name>
+			<DataField>InsuredPhoneLocal</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredPlanProgramName</Name>
+			<DataField>InsuredPlanProgramName</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredPolicyGroupNumber</Name>
+			<DataField>InsuredPolicyGroupNumber</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredState</Name>
+			<DataField>InsuredState</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredStreet</Name>
+			<DataField>InsuredStreet</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuredZipCode</Name>
+			<DataField>InsuredZipCode</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>isNewVisit</Name>
+			<DataField>isNewVisit</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>OtherInsuredGender</Name>
+			<DataField>OtherInsuredGender</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>OtherInsuredName</Name>
+			<DataField>OtherInsuredName</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>OtherInsuredPlanProgramName</Name>
+			<DataField>OtherInsuredPlanProgramName</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>OtherInsuredPolicyGroupNumber</Name>
+			<DataField>OtherInsuredPolicyGroupNumber</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>OutsideLab</Name>
+			<DataField>OutsideLab</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>OutsideLabCharges</Name>
+			<DataField>OutsideLabCharges</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientAnotherPlan</Name>
+			<DataField>PatientAnotherPlan</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientAutoAccident</Name>
+			<DataField>PatientAutoAccident</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientAutoAccidentPlaceState</Name>
+			<DataField>PatientAutoAccidentPlaceState</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientCity</Name>
+			<DataField>PatientCity</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientEmployement</Name>
+			<DataField>PatientEmployement</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientGender</Name>
+			<DataField>PatientGender</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientInsuredRelation</Name>
+			<DataField>PatientInsuredRelation</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientMaritalStatus</Name>
+			<DataField>PatientMaritalStatus</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientName</Name>
+			<DataField>PatientName</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientOtherAccident</Name>
+			<DataField>PatientOtherAccident</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientPhone</Name>
+			<DataField>PatientPhone</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientPhoneLocal</Name>
+			<DataField>PatientPhoneLocal</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientState</Name>
+			<DataField>PatientState</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientZipCode</Name>
+			<DataField>PatientZipCode</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PriorAuthorizationNumber</Name>
+			<DataField>PriorAuthorizationNumber</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ReferringProvider</Name>
+			<DataField>ReferringProvider</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ReferringProviderNPI</Name>
+			<DataField>ReferringProviderNPI</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ReferringProviderQualifier</Name>
+			<DataField>ReferringProviderQualifier</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ReferringProviderQualifierValue</Name>
+			<DataField>ReferringProviderQualifierValue</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>VisitDate</Name>
+			<DataField>VisitDate</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMClaimTable_ClaimID</Name>
+			<Mandatory>Yes</Mandatory>
+			<DataField>ClaimID</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ClaimAmount</Name>
+			<DataField>ClaimAmount</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientMRN</Name>
+			<DataField>AccountNum</DataField>
+			<DataSource>CustTable_Patient</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ValidFrom</Name>
+			<DataField>ValidFrom</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>ValidTo</Name>
+			<DataField>ValidTo</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Version_ValidFrom</Name>
+			<DataField>ValidFrom</DataField>
+			<DataSource>HMClaimVersion</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Version_ValidTo</Name>
+			<DataField>ValidTo</DataField>
+			<DataSource>HMClaimVersion</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMDatePatientUnableWorkFromDate</Name>
+			<DataField>HMDatePatientUnableWorkFromDate</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMDatePatientUnableWorkToDate</Name>
+			<DataField>HMDatePatientUnableWorkToDate</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMInsuredBirthDate</Name>
+			<DataField>HMInsuredBirthDate</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMSecondaryInsuredBirthDate</Name>
+			<DataField>HMSecondaryInsuredBirthDate</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMPatientBirthDate</Name>
+			<DataField>HMPatientBirthDate</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientAccountNum</Name>
+			<DataField>PatientAccountNum</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>CaseNo</Name>
+			<DataField>CaseNo</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMAmountPaid</Name>
+			<DataField>HMAmountPaid</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMBalanceAmount</Name>
+			<DataField>HMBalanceAmount</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>TotalChargeAmount</Name>
+			<DataField>TotalChargeAmount</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMExpectingClaim</Name>
+			<DataField>HMExpectingClaim</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PayorClaimStatus</Name>
+			<DataField>PayorClaimStatus</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMClaimDate</Name>
+			<DataField>HMClaimDate</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMDenialDate</Name>
+			<DataField>HMDenialDate</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMPaymentDate</Name>
+			<DataField>HMPaymentDate</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMLastApprovalDate</Name>
+			<DataField>HMLastApprovalDate</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMICDCode1</Name>
+			<DataField>HMICDCode1</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMICDCode2</Name>
+			<DataField>HMICDCode2</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMICDCode3</Name>
+			<DataField>HMICDCode3</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMICDCode4</Name>
+			<DataField>HMICDCode4</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>InsuranceCarrierCode</Name>
+			<DataField>Code</DataField>
+			<DataSource>HMInsuranceCarrier</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMPatient</Name>
+			<DataField>HMPatient</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMInsuranceCarrier</Name>
+			<DataField>HMInsuranceCarrier</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PaymentReference</Name>
+			<DataField>PaymentReference</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMClaimLocation</Name>
+			<DataField>HMClaimLocation</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Priority</Name>
+			<Mandatory>No</Mandatory>
+			<DataField>Priority</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>RevisedAmount</Name>
+			<DataField>RevisedAmount</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMRevisedAmount</Name>
+			<DataField>HMRevisedAmount</DataField>
+			<DataSource>HMClaimTableDetails</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>IsClaimModified</Name>
+			<DataField>IsClaimModified</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Payor</Name>
+			<DataField>PayorName</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>Patient</Name>
+			<DataField>PatientName</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>PatientAccount</Name>
+			<DataField>PatientAccountNum</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>BalanceAmount</Name>
+			<DataField>HMBalanceAmount</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMDateOfServiceEnd</Name>
+			<DataField>HMDateOfServiceEnd</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+		<AxDataEntityViewField xmlns=""
+			i:type="AxDataEntityViewMappedField">
+			<Name>HMDateOfServiceStart</Name>
+			<DataField>HMDateOfServiceStart</DataField>
+			<DataSource>HMClaimTable</DataSource>
+		</AxDataEntityViewField>
+	</Fields>
+	<Keys>
+		<AxDataEntityViewKey>
+			<Name>EntityKey</Name>
+			<Fields>
+				<AxDataEntityViewKeyField>
+					<DataField>ValidFrom</DataField>
+				</AxDataEntityViewKeyField>
+				<AxDataEntityViewKeyField>
+					<DataField>HMClaimTable_ClaimID</DataField>
+				</AxDataEntityViewKeyField>
+			</Fields>
+		</AxDataEntityViewKey>
+	</Keys>
+	<Mappings />
+	<Ranges />
+	<Relations />
+	<StateMachines />
+	<ViewMetadata>
+		<Name>Metadata</Name>
+		<SourceCode>
+			<Methods>
+				<Method>
+					<Name>classDeclaration</Name>
+					<Source><![CDATA[
+[Query]
+public class Metadata extends QueryRun
+{
+}
+]]></Source>
+				</Method>
+			</Methods>
+		</SourceCode>
+		<DataSources>
+			<AxQuerySimpleRootDataSource>
+				<Name>HMClaimTableDetails</Name>
+				<ApplyDateFilter>Yes</ApplyDateFilter>
+				<DynamicFields>Yes</DynamicFields>
+				<Table>HMClaimTableDetails</Table>
+				<DataSources>
+					<AxQuerySimpleEmbeddedDataSource>
+						<Name>HMClaimTable</Name>
+						<DynamicFields>Yes</DynamicFields>
+						<Table>HMClaimTable</Table>
+						<DataSources>
+							<AxQuerySimpleEmbeddedDataSource>
+								<Name>HMClaimVersion</Name>
+								<ApplyDateFilter>Yes</ApplyDateFilter>
+								<DynamicFields>Yes</DynamicFields>
+								<Table>HMClaimVersion</Table>
+								<DataSources />
+								<DerivedDataSources />
+								<Fields />
+								<Ranges />
+								<Relations>
+									<AxQuerySimpleDataSourceRelation>
+										<Name>QueryDataSourceRelation1</Name>
+										<Field>RecId</Field>
+										<JoinDataSource>HMClaimTable</JoinDataSource>
+										<JoinRelationName>HMClaimTable</JoinRelationName>
+									</AxQuerySimpleDataSourceRelation>
+								</Relations>
+							</AxQuerySimpleEmbeddedDataSource>
+							<AxQuerySimpleEmbeddedDataSource>
+								<Name>HMPatient</Name>
+								<DynamicFields>Yes</DynamicFields>
+								<IsReadOnly>Yes</IsReadOnly>
+								<Table>HMPatient</Table>
+								<DataSources>
+									<AxQuerySimpleEmbeddedDataSource>
+										<Name>CustTable_Patient</Name>
+										<DynamicFields>Yes</DynamicFields>
+										<IsReadOnly>Yes</IsReadOnly>
+										<Table>CustTable</Table>
+										<DataSources />
+										<DerivedDataSources />
+										<Fields />
+										<Ranges />
+										<JoinMode>OuterJoin</JoinMode>
+										<Relations>
+											<AxQuerySimpleDataSourceRelation>
+												<Name>QueryDataSourceRelation1</Name>
+												<JoinRelationName>CustTable</JoinRelationName>
+											</AxQuerySimpleDataSourceRelation>
+										</Relations>
+									</AxQuerySimpleEmbeddedDataSource>
+								</DataSources>
+								<DerivedDataSources />
+								<Fields />
+								<Ranges />
+								<JoinMode>OuterJoin</JoinMode>
+								<Relations>
+									<AxQuerySimpleDataSourceRelation>
+										<Name>QueryDataSourceRelation1</Name>
+										<JoinRelationName>HMPatient</JoinRelationName>
+									</AxQuerySimpleDataSourceRelation>
+								</Relations>
+							</AxQuerySimpleEmbeddedDataSource>
+							<AxQuerySimpleEmbeddedDataSource>
+								<Name>HMInsuranceCarrier</Name>
+								<DynamicFields>Yes</DynamicFields>
+								<IsReadOnly>Yes</IsReadOnly>
+								<Table>HMInsuranceCarrier</Table>
+								<DataSources>
+									<AxQuerySimpleEmbeddedDataSource>
+										<Name>CustTable_Payer</Name>
+										<DynamicFields>Yes</DynamicFields>
+										<IsReadOnly>Yes</IsReadOnly>
+										<Table>CustTable</Table>
+										<DataSources />
+										<DerivedDataSources />
+										<Fields />
+										<Ranges />
+										<JoinMode>OuterJoin</JoinMode>
+										<Relations>
+											<AxQuerySimpleDataSourceRelation>
+												<Name>QueryDataSourceRelation1</Name>
+												<Field>CustTable</Field>
+												<JoinDataSource>HMInsuranceCarrier</JoinDataSource>
+												<RelatedField>RecId</RelatedField>
+											</AxQuerySimpleDataSourceRelation>
+										</Relations>
+									</AxQuerySimpleEmbeddedDataSource>
+								</DataSources>
+								<DerivedDataSources />
+								<Fields />
+								<Ranges />
+								<JoinMode>OuterJoin</JoinMode>
+								<Relations>
+									<AxQuerySimpleDataSourceRelation>
+										<Name>QueryDataSourceRelation1</Name>
+										<Field>HMInsuranceCarrier</Field>
+										<JoinDataSource>HMClaimTable</JoinDataSource>
+										<RelatedField>RecId</RelatedField>
+									</AxQuerySimpleDataSourceRelation>
+								</Relations>
+							</AxQuerySimpleEmbeddedDataSource>
+						</DataSources>
+						<DerivedDataSources />
+						<Fields />
+						<Ranges />
+						<Relations>
+							<AxQuerySimpleDataSourceRelation>
+								<Name>QueryDataSourceRelation1</Name>
+								<Field>HMClaimTable</Field>
+								<JoinDataSource>HMClaimTableDetails</JoinDataSource>
+								<JoinRelationName>HMClaimTable</JoinRelationName>
+							</AxQuerySimpleDataSourceRelation>
+						</Relations>
+					</AxQuerySimpleEmbeddedDataSource>
+				</DataSources>
+				<DerivedDataSources />
+				<Fields />
+				<Ranges />
+				<GroupBy />
+				<Having />
+				<OrderBy />
+			</AxQuerySimpleRootDataSource>
+		</DataSources>
+	</ViewMetadata>
+</AxDataEntityView>

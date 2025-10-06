@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMTask</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMTask
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>assignTask</Name>
+				<Source><![CDATA[
+    public static boolean assignTask(FormDataSource _fds, RecId _worker, HMCallTaskStatus _hmCallTaskStatus = HMCallTaskStatus::Assigned)
+    {
+        boolean ret;
+        smmActivities  smmActivities, smmActivitiesUpdate;
+    
+        try
+        {
+            ttsBegin;
+    
+            for (smmActivities = _fds.getFirst(true) ? _fds.getFirst(true) : _fds.cursor(); smmActivities; smmActivities = _fds.getNext())
+            {
+                smmActivitiesUpdate = smmActivities::find(smmActivities.ActivityNumber, true);
+                smmActivitiesUpdate.ResponsibleWorker = _worker;
+                smmActivitiesUpdate.CallTaskStatus = _hmCallTaskStatus;
+                smmActivitiesUpdate.update();
+            }
+    
+            ttsCommit;
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createTask</Name>
+				<Source><![CDATA[
+    public static boolean createTask(RecId _patientRecId,
+                                        RecId _client,
+                                        smmActivityPurpose _purpose,
+                                        HMComplementType _complementType,
+                                        TransDate _recallDate,
+                                        HMComplementContactType _contactType = HMComplementContactType::Call)
+    {
+        boolean ret;
+        smmActivities  smmActivities;
+    
+        try
+        {
+            ttsBegin;
+    
+            smmActivities.initValue(smmActivityCategory::Task);
+            smmActivities.setActivityNum();
+            smmActivities.ActivityTaskTimeType = smmActivityTaskTimeType::InProgress;
+            smmActivities.Purpose = _purpose;
+            smmActivities.insertParentLink(smmActivityParentType::Patient, _patientRecId, true);
+            smmActivities.StartDateTime = smmActivities.ActualEndDateTime;
+            smmActivities.EndDateTime = smmActivities.ActualEndDateTime;
+            smmActivities.HMClient = _client;
+            smmActivities.ResponsibleWorker = 0;
+            smmActivities.ReminderMinutes = 0;
+            smmActivities.insert();
+    
+            ttsCommit;
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createTaskForAppointment</Name>
+				<Source><![CDATA[
+    public static RecId createTaskForAppointment(RecId _appointmentRecId,
+                                                HMActivityAppointmentStatus _apptStatus = HMActivityAppointmentStatus::None)
+    {
+        boolean                                 ret;
+        smmActivities                           smmActivities;
+        HMResourceschedulingappointment         appt;
+        HMResourceSchedulingAppointmentInvent   apptInvent;
+        CustTable                               custTable;
+        HMOrganizationalUnit                    HMOrganizationalUnit;
+        try
+        {
+            ttsBegin;
+            appt = HMResourceSchedulingAppointment::find(_appointmentRecId);
+            smmActivities.initValue(smmActivityCategory::Task);
+            smmActivities.setActivityNum();
+            smmActivities.ActivityTaskTimeType = smmActivityTaskTimeType::InProgress;
+            smmActivities.Purpose = enum2str(_apptStatus);
+            smmActivities.insertParentLink(smmActivityParentType::Appointment, _appointmentRecId, true);
+            smmActivities.StartDateTime = smmActivities.ActualEndDateTime;
+            smmActivities.EndDateTime = smmActivities.ActualEndDateTime;
+            select Recid from custTable
+            where custTable.AccountNum == appt.Client;
+    
+            smmActivities.HMClient = custTable.RecId;
+            smmActivities.ResponsibleWorker = 0;
+            smmActivities.ReminderMinutes = 0;
+            smmActivities.LanguageId = appt.getPatientLanguage();
+    
+            smmActivities.Doctor = appt.getAppointmentResourceRecId();
+    
+            select InventTable,Protocol from apptInvent
+            where apptInvent.HMResourceSchedulingAppointment == appt.RecId
+            && apptInvent.Protocol != '';
+            if(apptInvent.InventTable)
+            {
+                smmActivities.ProtocolId = apptInvent.Protocol;
+            }
+            else
+            {
+                select Protocol,InventTable from apptInvent
+                where apptInvent.HMResourceSchedulingAppointment == appt.RecId;
+    
+                smmActivities.ProtocolId = apptInvent.InventTable;
+            }
+    
+            smmActivities.Clinic = appt.getClinicRecId();
+            smmActivities.ActivityAppointmentStatus = _apptStatus;
+    
+            select ServiceType from HMOrganizationalUnit
+            where HMOrganizationalUnit.RecId == appt.HMOrganizationalUnitServiceLocation;
+    
+            smmActivities.ServiceType = HMOrganizationalUnit.ServiceType;
+            smmActivities.insert();
+    
+            ttsCommit;
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return smmActivities.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        if(_args.menuItemName() == menuitemActionStr(HMTask_RemoveAssisgnment))
+        {
+            HMTask::assignTask(FormDataUtil::getFormDataSource(_args.record()),0,HMCallTaskStatus::New);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

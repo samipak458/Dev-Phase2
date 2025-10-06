@@ -1,0 +1,391 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientRegistration</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientRegistration
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createCase</Name>
+				<Source><![CDATA[
+    public static RecId createCase(HMResourceSchedulingAppointment _hmResourceSchedulingAppointment)
+    {
+        RecId hmCase;
+        HMResourceSchedulingPlanningObject hmResourceSchedulingPlanningObject = HMResourceSchedulingPlanningObject::find(_hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject);
+    
+        hmCase = HMCaseManagement::createCase(_hmResourceSchedulingAppointment.HMPatient, hmResourceSchedulingPlanningObject.HMOrganizationalUnit, hmResourceSchedulingPlanningObject.CaseType);
+    
+        return hmCase;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseTrans</Name>
+				<Source><![CDATA[
+    public static void createCaseTrans(RecId _appt)
+    {
+        HMResourceSchedulingAppointmentInvent apptInvent;
+        HMResourceSchedulingAppointment appt;
+        HMCaseTrans                             hmCaseTrans;
+        while select * from apptInvent
+            join * from appt
+            where appt.recid == apptInvent.HMResourceSchedulingAppointment
+            && apptInvent.HMResourceSchedulingAppointment == _appt
+        {
+            select count(RecId) from HMCaseTrans
+            where HMCaseTrans.HMResourceSchedulingAppointmentInvent == apptInvent.RecId;
+            if(HMCaseTrans.recid == 0)
+            {
+                HMCaseTrans::createCaseTrans(apptInvent.InventTable,
+                                                apptInvent.Protocol,
+                                                HMServiceStatus::Ordered,
+                                                apptInvent.PatientResponsibility,
+                                                apptInvent.PreAuthorizationNumber,
+                                                0,
+                                                apptInvent.PreAuthValidityDate,
+                                                appt.HMCase,
+                                                appt.RecId,
+                                                apptInvent.RecId);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkDuplicate</Name>
+				<Source><![CDATA[
+    public static boolean checkDuplicate(String100 _Firstname = '',String100 _Midname = '',String100 _Lastname = '',date _birthday = dateNull(),HMSocialSecurity _govId = '',HcmPersonGender _gender = HcmPersonGender::None)
+    {
+        boolean          ret;
+        HMPatient        hmPatientLocal;
+        DirPartyTable    dirPartyTableLocal;
+        DirPersonName    dirPersonNameLocal;
+        DirPersonName    dirPersonNameLocalSelected;
+        DirPerson       dirPersonLocal;
+        DialogButton diagBut;
+        str strMessage = "@MAZ13484";
+        str strTitle = "@SYS6998";
+    
+        ret = true;
+    
+        if (_govId != '')
+        {
+            select count(RecId) from hmPatientLocal where hmPatientLocal.SocialSecurityNumber == _govId;
+    
+            if (hmPatientLocal.RecId == 0)
+            {
+                if (_Firstname != '' && _birthday != dateNull() && _govId != '')
+                {
+                    select count(RecId) from hmPatientLocal where hmPatientLocal.SocialSecurityNumber==_govId && hmPatientLocal.Gender == _gender
+                   join * from dirPartyTableLocal where hmPatientLocal.DirPartyTable == dirPartyTableLocal.RecId
+                   join * from dirPersonLocal      where dirPartyTableLocal.RecId == dirPersonLocal.RecId && (dirPersonLocal.BirthDay == dayofmth(_birthday) && dirPersonLocal.BirthMonth == mthofyr(_birthday) && dirPersonLocal.BirthYear ==year(_birthday) )
+                   join * from dirPersonNameLocal  where dirPersonNameLocal.Person == dirPersonLocal.RecId && dirPersonNameLocal.FirstName == strLRTrim(_Firstname) && dirPersonNameLocal.MiddleName == strLRTrim(_Midname) && dirPersonNameLocal.LastName == strLRTrim(_Lastname);
+                    //join * from hmPatientLocal where hmPatientLocal.CustTable == hmPatientLocal.RecId && hmPatientLocal.SocialSecurityNumber == _govId;
+                }
+            }
+            else
+            {
+                select * from hmPatientLocal where hmPatientLocal.SocialSecurityNumber == _govId  && hmPatientLocal.Gender==_gender
+                join * from dirPartyTableLocal where hmPatientLocal.DirPartyTable == dirPartyTableLocal.RecId
+                join * from dirPersonLocal      where dirPartyTableLocal.RecId == dirPersonLocal.RecId  && (dirPersonLocal.BirthDay == dayofmth(_birthday) && dirPersonLocal.BirthMonth == mthofyr(_birthday) && dirPersonLocal.BirthYear ==year(_birthday))
+                join * from dirPersonNameLocal  where dirPersonNameLocal.Person == dirPersonLocal.RecId;
+                //join * from hmPatientLocal where hmPatientLocal.CustTable == custTableLocal.RecId && hmPatientLocal.SocialSecurityNumber == _govId;
+                dirPersonNameLocalSelected.FirstName = dirPersonNameLocal.FirstName ;
+                dirPersonNameLocalSelected.MiddleName = dirPersonNameLocal.MiddleName  ;
+                dirPersonNameLocalSelected.LastName = dirPersonNameLocal.LastName;
+                if(hmPatientLocal.RecId && isConfigurationKeyEnabled(configurationKeyNum(MzkBupa)))
+                {
+                    diagBut = Box::yesNo (
+                    strMessage,
+                    DialogButton::No, // Initial focus is on the No button.
+                    strTitle);
+                    if (diagBut == DialogButton::No)
+                    {
+                        ret = false;
+                    }
+                    else
+                    {
+                        ret = true;
+                    }
+                }
+                else
+                {
+                    
+                    ret = DirUtility::checkDuplicate(dirPersonNameLocalSelected, DirPartyType::Person, tablestr(DirPerson));
+                    
+                }
+                return ret;
+            }
+        }
+        else
+            if(_govId == '')
+        {
+            select count(RecId) from hmPatientLocal where hmPatientLocal.Gender==_gender
+               join * from dirPartyTableLocal where hmPatientLocal.DirPartyTable == dirPartyTableLocal.RecId
+               join * from dirPersonLocal      where dirPartyTableLocal.RecId == dirPersonLocal.RecId &&  (dirPersonLocal.BirthDay == dayofmth(_birthday) && dirPersonLocal.BirthMonth == mthofyr(_birthday) && dirPersonLocal.BirthYear ==year(_birthday))
+               join * from dirPersonNameLocal  where dirPersonNameLocal.Person == dirPersonLocal.RecId && dirPersonNameLocal.FirstName == strLRTrim(_Firstname) && dirPersonNameLocal.MiddleName == strLRTrim(_Midname) && dirPersonNameLocal.LastName ==  strLRTrim(_Lastname);
+            if(hmPatientLocal.RecId && isConfigurationKeyEnabled(configurationKeyNum(MzkBupa)))
+            {
+                diagBut = Box::yesNo (
+                    strMessage,
+                    DialogButton::No, // Initial focus is on the No button.
+                    strTitle);
+                if (diagBut == DialogButton::No)
+                {
+                    ret = false;
+                }
+                else
+                {
+                    ret= true;
+                }
+                // warning("Patient Already Exist");
+            }
+    
+        }
+        /*
+        if(hmPatientLocal.CustTable > 0)
+        {
+            dirPersonNameLocal.FirstName = strLRTrim(_Firstname) ;
+            dirPersonNameLocal.MiddleName = strLRTrim(_Midname)  ;
+            dirPersonNameLocal.LastName = strLRTrim(_Lastname);
+    
+             if(isConfigurationKeyEnabled(configurationKeyNum(MzkBupa)))
+                {
+                    warning("Patient Already Exist");
+                }
+            else
+                {
+                ret = DirUtility::checkDuplicate(dirPersonNameLocalSelected, DirPartyType::Person, tablestr(DirPerson));
+                }
+    
+    
+          //  ret =  true;
+        }
+        */
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args args)
+    {
+        smmBusRelTable  smmBusRelTable, smmBusRelTableArgs, delsmmBusRelTable;
+        DirPartyRecId   party;
+        NoYes           conversionSuccesfull;
+        MenuFunction    menuFunction;
+        Args            newArgs = new Args();
+        CustTable       custTable;
+        HMPatient       hmPatient,hmpatientlocal;
+        HMParameters    hmParameters;
+        HMResourceSchedulingAppointment appointment;
+        DirPartyTable   partyTable,dirparty;
+        boolean         isValid = true;
+        str             arabicName='';
+        DirPersonName   dirPersonName;
+        HMPatientVisit  hmPatientVisit;
+        FormRun formRun;
+    
+        if (!args || args.dataset() != tableNum(smmBusRelTable))
+        {
+            info(strFmt("%1", tableId2name(args.dataset())));
+            throw error("@SYS22996");
+        }
+    
+        smmBusRelTableArgs = args.record();
+    
+        if(smmBusRelTableArgs.RecId)
+        {
+            select smmBusRelTable
+                where smmBusRelTable.RecId == smmBusRelTableArgs.RecId;
+    
+            party = smmBusRelTable.Party;
+    
+            select forupdate hmPatient
+                        where hmPatient.DirPartyTable == party;
+    
+            select forupdate partyTable
+                        where partyTable.RecId == party;
+    
+            if (hmPatient.RecId)
+            {
+                if (hmPatient.Salutation == HRMSalutation::None)
+                {
+                    error("Fill the Salutation in order to register the patient.");
+                    isValid = false;
+                }
+                
+                if (hmPatient.Salutation == HRMSalutation::None)
+                {
+                    error("Fill the Salutation in order to register the patient.");
+                    isValid = false;
+                }
+    
+                if (!hmPatient.BirthDate)
+                {
+                    error("Fill the birth date in order to register the patient.");
+                    isValid = false;
+                }
+    
+                if (!hmPatient.Gender)
+                {
+                    error("Fill the gender in order to register the patient.");
+                    isValid = false;
+                }
+                if(!HMPatientTransition::validateSalutationRules(hmPatient.Salutation,hmPatient.Gender,0,HMPatient.HMAgeValue,true))
+                {
+                    isValid =false;
+                }
+                //if (!hmPatient.LogisticsAddressCountryRegion)
+                //{
+                    //error("Fill the nationality in order to register the patient.");
+                    //isValid = false;
+                //}
+                /*
+                if (!hmPatient.PrefModeOfCommunication)
+                {
+                    error("Fill the preferred mode of communication in order to register the patient.");
+                    isValid = false;
+                }
+                */
+                if (!partyTable.LanguageId)
+                {
+                    error("Fill the language value in order to register the patient.");
+                    isValid = false;
+                }
+                
+                //if (!hmPatient.HMNationalIdType)
+                //{
+                    //error("Fill the Identification type in order to register the patient.");
+                    //isValid = false;
+                //}
+    
+                //if (!hmPatient.HMIdentificationNumber)
+                //{
+                    //error("Fill the Identification number in order to register the patient.");
+                    //isValid = false;
+                //}
+                /*
+                if (!partyTable.PrimaryContactPhone)
+                {
+                    error("Fill the primary contact phone in order to register the patient.");
+                    isValid = false;
+                }
+                */
+                dirPersonName = DirPersonName::find(partyTable.RecId);
+    
+                //if(dirPersonName.HMArabicFirstName == '')
+                //{
+                    //warning("Fill the arabic first name in order to register the patient");
+                    //isValid = false;
+                //}
+    //
+                //if(dirPersonName.HMArabicLastName == '')
+                //{
+                    //warning("Fill the arabic last name in order to register the patient.");
+                    //isValid = false;
+                //}
+            }
+    
+            select *from hmpatientlocal where hmPatientlocal.Gender == hmPatient.Gender && hmpatientlocal.BirthDate==hmpatient.BirthDate && hmpatientlocal.CustTable != 0
+            join dirparty where dirparty.RecId == hmpatientlocal.DirPartyTable && dirparty.Name == partyTable.Name;
+    
+            if(hmpatientlocal && dirparty)
+            {
+                throw warning ("Patient Already exist");
+            }
+            /*
+            if(!HMPatientRegistration::checkDuplicate(dirPersonName.FirstName, dirPersonName.MiddleName, dirPersonName.LastName,hmPatient.BirthDate,hmPatient.SocialSecurityNumber,hmPatient.Gender))
+            {
+                //  ret = DirUtility::checkDuplicate(dirPersonName, DirPartyType::Person, tablestr(DirPerson));
+                // if (!ret)
+                // {
+                isValid = false;
+                // element.close();
+               
+                // }
+            }
+    
+            */
+            if (smmBusRelTable.canConvertToCustomer() && isValid && Box::yesNo("@MAZ13080", DialogButton::Yes) == DialogButton::Yes )
+            {
+                // Convert to customer
+                conversionSuccesfull = smmBusRelTable::convert2Customer(smmBusRelTable,'', false);
+    
+                if (conversionSuccesfull)
+                {
+                    custTable.PriceGroup = hmParameters::find().DefaultPriceGroup;
+                    custTable = CustTable::findByPartyRecId(party, true);
+                    custTable.CustType = CustType::Patient;
+                    custTable.update();
+    
+                    if (hmPatient)
+                    {
+                        ttsBegin;
+                        hmPatient.CustTable = custTable.RecId;
+                        hmPatient.smmBusRelTable = "";
+                        hmPatient.update();
+                        
+                        HMEventLogMaintian::updateEventLog(tableNum(HMPatient),HMEventType::PatientRegister,hmPatient.RecId);
+                        hmParameters = HMParameters::find();
+    
+                        arabicName = hmPatient.getPatientArabicFirstName()+" "+hmPatient.getPatientArabicMiddleName()+" "+hmPatient.getPatientArabicLastName();
+                        if(hmParameters.ServiceIntegrateEnable && !HMPatientTransition::updateAccountInCRM(hmPatient.RecId, custTable.name(), custTable.AccountNum,hmPatient.patientBirthDate(), hmPatient.Gender,arabicName))
+                        {
+                            throw Exception::Error;
+                        }
+                        ttsCommit;
+    
+                        ttsBegin;
+    
+                        while select forUpdate appointment
+                            where appointment.HMPatient == hmPatient.RecId
+                            && appointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Tentative
+                        {
+                            appointment.appointmentStatus   = HMResourceSchedulingAppointmentStatus::Confirmed;
+                            appointment.DocuRef             = HMResourceSchedulingHelper::generateQRCode(appointment.AppointmentNumber, custTable.AccountNum, appointment.RecId);
+                            appointment.HMCase              = HMPatientRegistration::createCase(appointment);
+                            appointment.update();
+    
+                            select forUpdate hmPatientVisit where hmPatientVisit.RecId == appointment.HMPatientVisit;
+    
+                            hmPatientVisit.HMCase = appointment.HMCase;
+                            hmPatientVisit.update();
+    
+                            HMPatientRegistration::createCaseTrans(appointment.RecId);
+                            HMResourceSchedulingHelper::emailBookingDetails(appointment.RecId);
+                        }
+    
+                        ttsCommit;
+
+                        delete_from delsmmBusRelTable where delsmmBusRelTable.RecId == smmBusRelTable.RecId;
+
+                        formRun = args.caller();
+                        if(formRun)
+                        {
+                           formRun.closeOk();
+                        }
+                        menuFunction = new MenuFunction(menuitemDisplayStr(HMPatientChartRegistrationView), MenuItemType::Display);
+                        args.record(hmPatient);
+                        menuFunction.run(args);
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

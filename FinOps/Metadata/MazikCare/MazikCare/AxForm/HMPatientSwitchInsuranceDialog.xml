@@ -1,0 +1,623 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientSwitchInsuranceDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPatientSwitchInsuranceDialog extends FormRun
+{
+    HMClaimTable hmClaimTable;
+    HMPatientChargeEntryTable hmPatientChargeEntryTable;
+    CustAccount patientAccount, newInsuranceAccount;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addCaseInsurance</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void addCaseInsurance()
+    {
+        HMCase                              hmCaseLocal;
+           
+        HMCaseInsurance hmcaseInsurance;
+
+        while select forupdate hmcaseInsurance
+            where hmcaseInsurance.HMCase == hmPatientChargeEntryTable.HMCase
+                && hmcaseInsurance.HMPatientInsurance != HMPatientInsurance.RecId
+        {
+            hmcaseInsurance.IsActive = NoYes::No;
+            hmcaseInsurance.update();
+        }
+
+        select forupdate RecId, InsuranceCarrier from hmcaseInsurance
+                where hmcaseInsurance.HMCase == hmPatientChargeEntryTable.HMCase
+                && hmcaseInsurance.HMPatientInsurance == HMPatientInsurance.RecId;
+
+        if(!hmcaseInsurance.RecId)
+        {
+            hmCaseInsurance.clear();
+            hmCaseInsurance.HMPatientInsurance       = HMPatientInsurance.RecId;
+            hmCaseInsurance.HMCase                   = hmPatientChargeEntryTable.HMCase;
+            hmCaseInsurance.CoPayAmount              = HMPatientInsurance.CoPayAmount;
+            hmCaseInsurance.HMInsuranceCoveragePlan  = HMPatientInsurance.HMInsuranceCoveragePlan;
+            hmCaseInsurance.PolicyGroup              = HMPatientInsurance.PolicyGroup;
+            hmCaseInsurance.PolicyNumber             = HMPatientInsurance.PolicyNumber;
+            hmCaseInsurance.PolicyType               = HMPatientInsurance.PolicyType;
+            //   hmCaseInsurance.HMPatientEncounter       = element.args().record().RecId;
+            hmCaseInsurance.InsuranceCarrier         = HMPatientInsurance.InsuranceCarrier;
+            hmCaseInsurance.HMPayerType              = HMPatientInsurance.HMPayerType;
+            hmCaseInsurance.CoInsurance              = HMPatientInsurance.CoInsurance;
+            hmCaseInsurance.DeductibleAmount         = HMPatientInsurance.DeductibleAmount;
+            hmCaseInsurance.CurrentDeductibleAmount  = HMPatientInsurance.CurrentDeductibleAmount;
+            hmCaseInsurance.DeductibleUpdateDate     = HMPatientInsurance.DeductibleUpdateDate;
+            hmCaseInsurance.EffectiveDate            = HMPatientInsurance.EffectiveDate;
+            hmCaseInsurance.RelationShip             = HMPatientInsurance.RelationShip;
+            hmCaseInsurance.SubscriberID             = HMPatientInsurance.SubscriberID;
+            hmCaseInsurance.PriorAuthorizationNumber = HMPatientInsurance.PriorAuthorizationNumber;
+        
+            hmCaseInsurance.GroupNumber              = HMPatientInsurance.GroupNumber;
+            hmCaseInsurance.GroupName                = HMPatientInsurance.GroupName;
+            hmCaseInsurance.SubscriberName           = HMPatientInsurance.SubscriberName;
+            hmCaseInsurance.SubscriberEmployer       = HMPatientInsurance.SubscriberEmployer;
+            hmCaseInsurance.SubscriberRelation       = HMPatientInsurance.SubscriberRelation;
+            hmCaseInsurance.IsActive = NoYes::Yes;
+        
+            if(HMPatientInsurance.HMPayerType == HMPayerType::InsuranceCarrier)
+            {
+                hmCaseInsurance.HMBillingValidationStatus = HMBillingValidationStatus::Pending;
+            }
+        
+            hmCaseInsurance.write();
+        }
+        else
+        {
+            hmCaseInsurance.IsActive = NoYes::Yes;
+            hmCaseInsurance.write();
+        }
+
+        newInsuranceAccount = hmCaseInsurance.InsuranceCarrier;
+
+        HMCase hmCase = HMCase::find(hmPatientChargeEntryTable.HMCase, true);
+
+        hmCase.HMFinancialClass = HMInsuranceCarrier::getFinancialClass(hmCaseInsurance.InsuranceCarrier).RecId;
+        hmCase.update();
+
+        hmClaimTable.selectForUpdate(true);
+    
+        hmClaimTable.HMInsuranceCarrier = HMInsuranceCarrier::findByCode(hmCaseInsurance.InsuranceCarrier).RecId;
+        hmClaimTable.HMLastEdiGeneratedDateTime = utcDateTimeNull();
+        hmClaimTable.update();
+
+        HMClaimTableDetails hmClaimTableDetails;
+
+        select forupdate hmClaimTableDetails
+            where hmClaimTableDetails.HMClaimTable == hmClaimTable.RecId;
+
+        hmInsuranceCarrier hmInsuranceCarrier = hmInsuranceCarrier::findByCOde(HMPatientInsurance.InsuranceCarrier);
+
+        hmClaimTableDetails.validTimeStateUpdateMode(ValidTimeStateUpdate::Correction);
+        hmClaimTableDetails.InsuranceIDNumber              = hmInsuranceCarrier.Code;
+        hmClaimTableDetails.InsuranceCarrierName           = hmInsuranceCarrier.Name;
+        hmClaimTableDetails.InsuranceCarrierAddress        = hmInsuranceCarrier.postalAddress();      
+        hmClaimTableDetails.HMInsuranceMembershipId        = HMPatientInsurance.HMPatientInsuranceMembershipId;
+
+        hmClaimTableDetails.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyInvoiceLines</Name>
+				<Source><![CDATA[
+    public void copyInvoiceLines(RecId oldInvoiceRecId, custInvoiceTable newCustInvoiceTable, custInvoiceTable negaCustInvoiceTable)
+    {
+        HMPatientChargeEntryLine patientChargeEntryLine;
+        CustInvoiceTrans        custInvoiceTrans;
+        CustInvoiceLine         custInvoiceLine, newCustInvoiceLine, negaCustInvoiceLine;
+        CustTable               custTable;
+        HMPatient               patient;
+        HMCustInvoiceClass      hmCustInvoice = new HMCustInvoiceClass();
+
+        while select * from custInvoiceLine
+            where custInvoiceLine.ParentRecId == oldInvoiceRecId
+        {
+            newCustInvoiceLine.clear();
+            newCustInvoiceLine.initValue();
+            newCustInvoiceLine.initFromCustInvoiceTable(newCustInvoiceTable);
+            newCustInvoiceLine.Description = custInvoiceLine.Description;
+            newCustInvoiceLine.ParentRecId = newCustInvoiceTable.RecId;
+            newCustInvoiceLine.HMCaseTrans = custInvoiceLine.HMCaseTrans;
+            newCustInvoiceLine.DefaultDimension = custInvoiceLine.DefaultDimension;
+            newCustInvoiceLine.AmountCur = custInvoiceLine.AmountCur;
+            newCustInvoiceLine.Quantity = custInvoiceLine.Quantity;
+            newCustInvoiceLine.UnitPrice = custInvoiceLine.UnitPrice;
+            newCustInvoiceLine.LedgerDimension = custInvoiceLine.LedgerDimension;
+            newCustInvoiceLine.LineNum = custInvoiceLine.LineNum;
+            newCustInvoiceLine.insert();
+
+            negaCustInvoiceLine.clear();
+            negaCustInvoiceLine.initValue();
+            negaCustInvoiceLine.initFromCustInvoiceTable(negaCustInvoiceTable);
+            negaCustInvoiceLine.Description = custInvoiceLine.Description;
+            negaCustInvoiceLine.ParentRecId = negaCustInvoiceTable.RecId;
+            negaCustInvoiceLine.HMCaseTrans = custInvoiceLine.HMCaseTrans;
+            negaCustInvoiceLine.DefaultDimension = custInvoiceLine.DefaultDimension;
+            negaCustInvoiceLine.AmountCur = custInvoiceLine.AmountCur * -1;
+            negaCustInvoiceLine.Quantity = custInvoiceLine.Quantity * -1;
+            negaCustInvoiceLine.UnitPrice = custInvoiceLine.UnitPrice;
+            negaCustInvoiceLine.LedgerDimension = custInvoiceLine.LedgerDimension;
+            negaCustInvoiceLine.LineNum = custInvoiceLine.LineNum;
+            negaCustInvoiceLine.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMPatientInsurance</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void init()
+        {
+            hmClaimTable = element.args().record();
+
+            super();
+
+            this.queryBuildDataSource().addRange(fieldNum(HMPatientInsurance, HMPatient)).value(int642Str(hmClaimTable.HMPatient));
+            hmPatientChargeEntryTable = HMPatientChargeEntryTable::find(hmClaimTable.HMPatientChargeEntryTable);
+
+            ClaimAmount.realValue(hmClaimTable.totalCharge());
+            patientAccount = hmPatientChargeEntryTable.patientChartNum();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>FormCommandButtonControl1</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void clicked()
+        {
+            super();  
+
+            ttsbegin;
+          
+            element.addCaseInsurance();
+
+            CustInvoiceTable custInvoiceTable;
+            CustTrans   custTrans;
+            CustTransOpen custTransOpen;
+            CustInvoiceJour custInvoiceJour;
+
+            //get old invoice
+            select * from custTrans
+                join RecId, AccountNum from custTransOpen
+                join RecId from custInvoiceJour
+                join RecId, InvoiceAccount from custInvoiceTable
+                where custTrans.RecId == custTransOpen.RefRecId
+                && custTrans.AccountNum == custTransOpen.AccountNum
+                && custTrans.TransDate == custInvoiceJour.InvoiceDate
+                && custTrans.Invoice == custInvoiceJour.InvoiceId
+                && custTrans.Voucher == custInvoiceJour.LedgerVoucher
+                && custTrans.AccountNum == custInvoiceJour.InvoiceAccount
+                && custInvoiceJour.numberSequenceGroup == custInvoiceTable.numberSequenceGroup
+                && custInvoiceJour.InvoiceId == custInvoiceTable.InvoiceId
+                && custInvoiceJour.InvoiceDate == custInvoiceTable.InvoiceDate
+                && custInvoiceTable.HMPatientChargeEntryTable == hmPatientChargeEntryTable.RecId;
+            
+            if(custInvoiceTable.RecId)
+            {
+                //create new invoice
+                HMCustInvoiceClass newInvoice = new HMCustInvoiceClass();
+                RecId newInvoiceRecId = newInvoice.createCustInvoiceTable(newInsuranceAccount, "",hmPatientChargeEntryTable.HMCase, hmPatientChargeEntryTable.RecId, patientAccount);
+
+                //create negative invoice
+                HMCustInvoiceClass negativeInvoice = new HMCustInvoiceClass();
+                RecId negativeInvoiceRecId = negativeInvoice.createCustInvoiceTable(custInvoiceTable.InvoiceAccount, "",hmPatientChargeEntryTable.HMCase, hmPatientChargeEntryTable.RecId, patientAccount);
+
+                
+
+                custInvoiceTable newCustInvoiceTable = custInvoiceTable::findRecId(newInvoiceRecId);
+                custInvoiceTable negaCustInvoiceTable = custInvoiceTable::findRecId(negativeInvoiceRecId);
+
+                element.copyInvoiceLines(custInvoiceTable.RecId, newCustInvoiceTable, negaCustInvoiceTable);
+
+                newInvoice.post(newCustInvoiceTable);
+                negativeInvoice.post(negaCustInvoiceTable);
+
+                negaCustInvoiceTable = custInvoiceTable::findRecId(negativeInvoiceRecId);
+
+                //settle old and negative
+                select * from CustInvoiceJour
+                    where CustInvoiceJour.InvoiceId == negaCustInvoiceTable.InvoiceId
+                    && CustInvoiceJour.InvoiceDate == negaCustInvoiceTable.InvoiceDate
+                    && CustInvoiceJour.numberSequenceGroup == negaCustInvoiceTable.numberSequenceGroup;
+
+                CustTable custTable = custTable::find(custTransOpen.AccountNum);
+    
+                custTrans.transData().markForSettlement(custTable);
+                CustInvoiceJour.custTrans().transData().markForSettlement(custTable);
+                CustTrans::settleTransact(custTable);
+            }
+
+            ttscommit;
+
+            Info("Claim switched to insurance successfully");
+
+            FormDataSource fds = element.args().record().datasource();
+            fds.research(true);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientInsurance</Name>
+			<Table>HMPatientInsurance</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AssignmentOfBenefitsIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationLimit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorizationRequest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BalanceAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CoInsurance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CoPayAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrentDeductibleAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleIncInOutOfPocket</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleMet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleUpdateDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EffectiveDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EligibilityAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EligibilityComments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EligibilityLastChecked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeGrade</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployerNameofTheInsured</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GroupName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GroupNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmTitle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HealthPlanId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCardIssueNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimFileIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimTableSetup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClassOrPlanId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClassOrPlanId1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCorporatePlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMEligibleClass</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCarrier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceContract</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceContractClassOrPlans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceCoveragePlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceEligibilityStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientInsuranceMembershipId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientSubscriber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPayerType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceCarrier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceEligibilityStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OutOfPocket</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OutOfPocketMet</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientRelationshipToInsured</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyPlan</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PolicyType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreauthorizationReqd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriorAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Priority</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RelationShip</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReleaseofInformationCertificationIndicat</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SelfPolicy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberDateOfBirth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberEmployer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubscriberRelation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">Switch insurance</Caption>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<ViewEditMode xmlns="">View</ViewEditMode>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>ToolbarList</Pattern>
+				<PatternVersion>1.2</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>FormGroupControl2</Name>
+						<Pattern>CustomFilters</Pattern>
+						<PatternVersion>1.1</PatternVersion>
+						<Type>Group</Type>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>ClaimAmount</Name>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>Claim amount</Label>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+						<FrameType>None</FrameType>
+						<Style>CustomFilter</Style>
+						<ViewEditMode>Edit</ViewEditMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>FormGridControl1</Name>
+						<Type>Grid</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>CarrierName1</Name>
+								<ElementPosition>1145324610</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>CarrierName</DataMethod>
+								<DataSource>HMPatientInsurance</DataSource>
+								<Label>Insurer/Guarantor</Label>
+							</AxFormControl>
+						</Controls>
+						<DataSource>HMPatientInsurance</DataSource>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>FormButtonGroupControl1</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>FormCommandButtonControl1</Name>
+						<Type>CommandButton</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<Text>Transfer amount</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>FormCommandButtonControl2</Name>
+						<Type>CommandButton</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+						<SaveRecord>No</SaveRecord>
+						<Text>Cancel</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

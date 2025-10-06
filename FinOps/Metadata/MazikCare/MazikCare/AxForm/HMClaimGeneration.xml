@@ -1,0 +1,1363 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMClaimGeneration</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMClaimGeneration extends FormRun
+{
+    recId                       physicianRecId;
+    container                   patientRecIdCon;
+    RecId                       templateRecId;
+    container                   conCarrier;
+    container                   conBatchNumbers;
+    str                         HMTPACode;
+
+    HMClaimGenerationBatchProcess claimBatch;
+
+    SysLookupMultiSelectCtrl    msCtrlCarrier;
+    SysLookupMultiSelectCtrl    msCtrlBatch;
+    boolean disableBatchNumber;
+    boolean enableBatchNumber;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCarrier</Name>
+				<Source><![CDATA[
+    public void getCarrier(container _conCarrier = conCarrier)
+    {
+        HMMemo carrierCodes = '';
+    
+        int i = 1;
+    
+        conCarrier = _conCarrier;
+    
+        for(i= 1; i<= conLen(conCarrier); i++)
+        {
+            carrierCodes +=  HMInsuranceCarrier::find(conPeek(conCarrier,i)).Code+ ';';
+        }
+    
+        Carrier.text(carrierCodes);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatient</Name>
+				<Source><![CDATA[
+    public void getPatient(container _con = patientRecIdCon)
+    {
+        HMMemo patientName = '';
+        int i = 1;
+    
+        patientRecIdCon = _con;
+    
+        for(i= 1; i<= conLen(patientRecIdCon); i++)
+        {
+            patientName +=  HMPatient::find(conPeek(patientRecIdCon,i)).PatientName() + ';';
+        }
+    
+        Patient.text(patientName);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        HMTpaDetails TPADetails;
+    
+        Query queryCarrier  = new Query();
+        Query queryBatch    = new Query();
+    
+        QueryBuildDataSource    qbdsCarrier;
+        QueryBuildRange         qbrCarrier;
+    
+        boolean         isFirstCarrier = true;
+        str             expressionCarrier = '((HMInsuranceCarrier_1.Code != "%1"))', fullExpressionCarrier;
+    
+    
+        if (!element.args().caller() || !element.args().caller().runbase())
+        {
+            throw error("@SYS22996");
+        }
+    
+        queryBatch.addDataSource(tableNum(HMInsuranceCarrierBatchDetails)).fields().dynamic(YesNo::No);
+        queryBatch.dataSourceTable(tableNum(HMInsuranceCarrierBatchDetails)).fields().addField(fieldNum(HMInsuranceCarrierBatchDetails, BatchNumber));
+    
+        qbdsCarrier = queryCarrier.addDataSource(tableNum(HMInsuranceCarrier));
+        qbdsCarrier.fields().dynamic(YesNo::No);
+    
+        qbdsCarrier.fields().addField(fieldNum(HMInsuranceCarrier,Code));
+        qbdsCarrier.fields().addField(fieldNum(HMInsuranceCarrier,Name));
+    
+        while select TPADetails
+        {
+            if (isFirstCarrier)
+            {
+                isFirstCarrier = false;
+    
+                fullExpressionCarrier = '(' + strFmt(expressionCarrier, HMInsuranceCarrier::find(tpaDetails.HMInsuranceCarrier).Code);
+            }
+            else
+            {
+                fullExpressionCarrier   +=  ' && ' + strFmt(expressionCarrier, HMInsuranceCarrier::find(tpaDetails.HMInsuranceCarrier).Code);
+            }
+        }
+    
+        if (!isFirstCarrier)
+        {
+            fullExpressionCarrier   +=  ')';
+    
+            qbrCarrier = qbdsCarrier.addRange(fieldNum(HMInsuranceCarrier, Code));
+            qbrCarrier.value(fullExpressionCarrier);
+        }
+     /*   else
+        {
+            qbrCarrier = qbdsCarrier.addRange(fieldNum(HMInsuranceCarrier, Code));
+            qbrCarrier.value('---');
+        }*/
+    
+    
+        super();
+    
+        msCtrlCarrier   = SysLookupMultiSelectCtrl::constructWithQueryRun(element, Carrier, new QueryRun(queryCarrier));
+        msCtrlBatch     = SysLookupMultiSelectCtrl::constructWithQueryRun(element, BatchNumbers, new QueryRun(queryBatch));
+    
+        claimBatch = element.args().caller().RunBase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storePhysician</Name>
+				<Source><![CDATA[
+    public void storePhysician(recId _RecId)
+    {
+        physicianRecId = _RecId;
+        Physician.text(HMResourceMaster::getResourceNameByRecId(_RecId));//HMClinicStaff::getPhysicianNameByRecId(physicianRecId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeTPA</Name>
+				<Source><![CDATA[
+    public void storeTPA(str _TPACode)
+    {
+        HMTPACode = _TPACode;
+    
+        TPA.text(HMTPACode);//HMClinicStaff::getPhysicianNameByRecId(physicianRecId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateForm</Name>
+				<Source><![CDATA[
+    public boolean validateForm()
+    {
+        boolean ret = true;
+        str carrierName;
+    
+        //if(!HMClaimTemplate::findByTemplateName(ClaimTemplate.text()).RecId)
+        //{
+            //warning(strFmt("@SYS84753","@MAZ7032"));
+            //ret = false;
+        //}
+    
+        if(GroupDOS.optionValue() == 1)
+        {
+            if(DOSFrom.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS84753","@MAZ1037"));
+                ret = false;
+            }
+    
+            if(ret && DOSTo.dateValue() != dateNull() && DOSFrom.dateValue() > DOSTo.dateValue())
+            {
+                warning("@MAZ7176");
+                ret = false;
+            }
+        }
+    
+        if(GroupPatient.optionValue() == 1)
+        {
+            if(patientRecIdCon == conNull())
+            {
+                warning(strFmt("@SYS84753","@MAZ9"));
+                ret = false;
+            }
+        }
+    
+        if(GroupPhysician.optionValue() == 1)
+        {
+            if(!physicianRecId)
+            {
+                warning(strFmt("@SYS84753","@MAZ65"));
+                ret = false;
+            }
+        }
+    
+        if(GroupCarrier.optionValue() == 1)
+        {
+            conCarrier = msCtrlCarrier.get();
+            if(conLen(conCarrier) == 1 )
+            {
+                carrierName = conPeek(conCarrier, 1);
+    
+                if(carrierName == "")
+                {
+                    conCarrier = conNull();
+                    warning(strFmt("@SYS84753","@SYS50733"));
+                    ret = false;
+                }
+            }
+        }
+    
+        if (GroupTPA.optionValue() == 1)
+        {
+            if (strLen(TPA.valueStr()) == 0)
+            {
+                error("TPA can not be blank");
+                ret=false;
+            }
+        }
+    
+        if (GroupCarrier.optionValue() == 1)
+        {
+            if (strLen(carrier.valueStr()) == 0)
+            {
+                error("Carrier can not be blank");
+                ret=false;
+            }
+        }
+        //CS: Issue 3485:Disable the field Batch number on Generate claim form by Ammar.Ali
+        if (GroupBatchNumbers.optionValue() == 1)
+        {
+            if (!BatchNumbers.text() && enableBatchNumber)
+            {
+                error("Batch number can not be blank");
+                ret = false;
+            }
+        }
+        //CE: Issue 3485:Disable the field Batch number on Generate claim form
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>ClaimTemplate</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(menuitemdisplaystr(HMClaimTemplate),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            SysTableLookup sysTableLookup;
+            QueryBuildDataSource    queryBuildDataSource;
+            Query                   query = new Query();
+        
+            sysTableLookup = SysTableLookup::newParameters(tableNum(HMClaimTemplate), this, true);
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMClaimTemplate));
+        
+            sysTableLookup.addLookupfield(fieldNum(HMClaimTemplate, TemplateName));
+        
+            sysTableLookup.parmQuery(query);
+        
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMClaimTemplate         hmClaimTemplateLocal;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    hmClaimTemplateLocal = HMClaimTemplate::findByTemplateName(this.valueStr());
+        
+                    if (hmClaimTemplateLocal.RecId)
+                    {
+                        templateRecId = hmClaimTemplateLocal.RecId;
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ7032"));
+                        this.text(HMClaimTemplate::find(templateRecId).TemplateName);
+                    }
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GroupDOS</Name>
+				<Type>Group</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+        
+            if(GroupDOS.optionValue() != 1)
+            {
+                DOSFrom.dateValue(dateNull());
+                DOSTo.dateValue(dateNull());
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GroupPatient</Name>
+				<Type>Group</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+        
+            if(GroupPatient.optionValue() != 1)
+            {
+                element.getPatient(conNull());
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Patient</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+            ContainerClass con = new ContainerClass(patientRecIdCon);
+        
+            args.name(formstr(HMPatientAdvanceMultiLookup));
+            args.caller(element);
+            args.parmObject(con);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>textChange</Name>
+						<Source><![CDATA[
+        public void textChange()
+        {
+            super();
+        
+            element.getPatient();
+            Patient.modified();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GroupPhysician</Name>
+				<Type>Group</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+        
+            if(GroupPhysician.optionValue() != 1)
+            {
+                element.storePhysician(0);
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Physician</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(menuitemdisplaystr(HMClinicStaffMembers),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMResourceMasterAdvanceLookup));
+            args.caller(element);
+            args.parmEnumType(enumNum(HMAdvanceStaffLookupParm));
+            args.parmEnum(HMAdvanceStaffLookupParm::Physician);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMClinicStaff           hmClinicStafflocal;
+            HMlookupClass           HMlookupClassObj = new HMlookupClass();
+            boolean                 ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    hmClinicStafflocal = HMlookupClassObj.checkValidPhysicianName(this.valueStr());
+        
+                    if (hmClinicStafflocal.RecId)
+                    {
+                        element.storePhysician(hmClinicStafflocal.RecId);
+                    }
+        
+                    else
+                    {
+                        warning(strFmt("@SYS316757",'Physician'));
+                        this.text(HMClinicStaff::getPhysicianNameByRecId(physicianRecId));
+                    }
+                }
+                else
+                {
+                    element.storePhysician(0);
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GroupTPA</Name>
+				<Type>Group</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+        
+            if(GroupTPA.optionValue() != 1)
+            {
+                element.storeTPA('');
+                TPA.modified();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>TPA</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Query                   query = new Query();
+            QueryBuildDataSource    queryBuildDataSource;
+            QueryBuildRange         queryBuildRange;
+        
+            HMTPA      HMTPAlocal;
+        
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMTPA), this);
+        
+            sysTableLookup.addLookupField(fieldNum(HMTPA, Code));
+            sysTableLookup.addLookupField(fieldNum(HMTPA, Name));
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMTPA));
+        
+            sysTableLookup.parmQuery(query);
+        
+            sysTableLookup.performFormLookup();
+        
+            //super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMlookupClass   HMlookupClassObj = new HMlookupClass();
+        
+            QueryBuildDataSource    qbdsCarrier, qbdsBatch;
+            QueryBuildRange         qbrCarrier, qbrBatch;
+        
+            HMTPA                           TPAlocal;
+            HMTpaDetails                    tpaDetails;
+            HMInsuranceCarrierBatchDetails  batchDetails;
+        
+            boolean ret;
+            boolean isFirstCarrier = true, isFirstBatch = true;
+        
+            str expressionCarrier = '((HMInsuranceCarrier_1.Code == "%1"))', fullExpressionCarrier;
+            str expressionCarrierEmptyTPA = '((HMInsuranceCarrier_1.Code != "%1"))';
+            str expressionBatch   = '((HMInsuranceCarrierBatchDetails_1.HMInsuranceCarrier == %1))', fullExpressionBatch;
+        
+            Query   queryCarrier       = new query();
+            Query   queryBatch  = new Query();
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    element.storeTPA(this.valueStr());
+                }
+            }
+        
+            if (TPA.valueStr())
+            {
+                TPAlocal = HMTPA::findByCode(TPA.valueStr());
+        
+                qbdsCarrier   = queryCarrier.addDataSource(tableNum(HMInsuranceCarrier));
+                qbdsCarrier.fields().dynamic(YesNo::No);
+        
+                queryCarrier.dataSourceTable(tableNum(HMInsuranceCarrier)).fields().addField(fieldNum(HMInsuranceCarrier,Code));
+                queryCarrier.dataSourceTable(tableNum(HMInsuranceCarrier)).fields().addField(fieldNum(HMInsuranceCarrier,Name));
+        
+                qbdsBatch   = queryBatch.addDataSource(tableNum(HMInsuranceCarrierBatchDetails));
+                qbdsBatch.fields().dynamic(YesNo::No);
+        
+                queryBatch.dataSourceTable(tableNum(HMInsuranceCarrierBatchDetails)).fields().addField(fieldNum(HMInsuranceCarrierBatchDetails, BatchNumber));
+        
+                //qbr.value(strFmt('( ((HMInsuranceCarrier_1.%2 == "001")) || ((HMInsuranceCarrier_1.%2 == "002")) || ((HMInsuranceCarrier_1.Code == "003")) )', qbr.name(), fieldStr(HMInsuranceCarrier, Code)));
+        
+                while select tpaDetails
+                    where tpaDetails.Tpa == TPAlocal.RecId
+                {
+                    if (isFirstCarrier)
+                    {
+                        isFirstCarrier = false;
+        
+                        fullExpressionCarrier = '(' + strFmt(expressionCarrier, HMInsuranceCarrier::find(tpaDetails.HMInsuranceCarrier).Code);
+                        fullExpressionBatch  = '(' + strFmt(expressionBatch, tpaDetails.HMInsuranceCarrier);
+                    }
+                    else
+                    {
+                        fullExpressionCarrier   +=  ' || ' + strFmt(expressionCarrier, HMInsuranceCarrier::find(tpaDetails.HMInsuranceCarrier).Code);
+                        fullExpressionBatch     +=  ' || ' + strFmt(expressionBatch, tpaDetails.HMInsuranceCarrier);
+                    }
+                }
+        
+                if (!isFirstCarrier)
+                {
+                    fullExpressionCarrier   +=  ')';
+                    fullExpressionBatch     +=  ')';
+        
+                    qbrCarrier = qbdsCarrier.addRange(fieldNum(HMInsuranceCarrier, Code));
+                    qbrCarrier.value(fullExpressionCarrier);
+        
+                    qbrBatch = qbdsBatch.addRange(fieldNum(HMInsuranceCarrierBatchDetails, HMInsuranceCarrier));
+                    qbrBatch.value(fullExpressionBatch);
+                //    qbrBatch.value('((HMInsuranceCarrierBatchDetails_1.HMInsuranceCarrier == 5637144576))');
+                }
+                else
+                {
+                    qbrCarrier = qbdsCarrier.addRange(fieldNum(HMInsuranceCarrier, Code));
+                    qbrCarrier.value('---');
+        
+                    qbrBatch = qbdsBatch.addRange(fieldNum(HMInsuranceCarrierBatchDetails, HMInsuranceCarrier));
+                    qbrBatch.value('123');
+                }
+        
+                msCtrlCarrier.refreshQuery(queryCarrier);
+                msCtrlBatch.refreshQuery(queryBatch);
+                Carrier.text('');
+                BatchNumbers.text('');
+            }
+            else
+            {
+                qbdsCarrier = queryCarrier.addDataSource(tableNum(HMInsuranceCarrier));
+                qbdsCarrier.fields().dynamic(YesNo::No);
+        
+                qbdsCarrier.fields().addField(fieldNum(HMInsuranceCarrier,Code));
+                qbdsCarrier.fields().addField(fieldNum(HMInsuranceCarrier,Name));
+        
+                while select TPADetails
+                {
+                    if (isFirstCarrier)
+                    {
+                        isFirstCarrier = false;
+        
+                        fullExpressionCarrier = '(' + strFmt(expressionCarrierEmptyTPA, HMInsuranceCarrier::find(tpaDetails.HMInsuranceCarrier).Code);
+                    }
+                    else
+                    {
+                        fullExpressionCarrier   +=  ' && ' + strFmt(expressionCarrierEmptyTPA, HMInsuranceCarrier::find(tpaDetails.HMInsuranceCarrier).Code);
+                    }
+                }
+        
+                if (!isFirstCarrier)
+                {
+                    fullExpressionCarrier   +=  ')';
+        
+                    qbrCarrier = qbdsCarrier.addRange(fieldNum(HMInsuranceCarrier, Code));
+                    qbrCarrier.value(fullExpressionCarrier);
+        
+                    msCtrlCarrier.refreshQuery(queryCarrier);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GroupCarrier</Name>
+				<Type>Group</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+        
+            if(GroupCarrier.optionValue() != 1)
+            {
+                msCtrlCarrier.set(conNull());
+                conCarrier = conNull();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Carrier</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(menuitemdisplaystr(HMInsuranceCarrier),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMlookupClass   HMlookupClassObj = new HMlookupClass();
+        
+            QueryBuildDataSource    qbdsBatch;
+            QueryBuildRange         qbrBatch;
+        
+            HMInsuranceCarrierBatchDetails  batchDetails;
+        
+            boolean ret;
+            boolean isFirstBatch = true;
+            int i;
+
+            disableBatchNumber = true;
+            enableBatchNumber  = true;
+
+            str expressionBatch   = '((HMInsuranceCarrierBatchDetails_1.HMInsuranceCarrier == %1))', fullExpressionBatch;
+        
+            Query   queryBatch  = new Query();
+        
+            ret = super();
+        
+            conCarrier  = Global::str2con(this.text(), ';', false);
+        
+            qbdsBatch   = queryBatch.addDataSource(tableNum(HMInsuranceCarrierBatchDetails));
+            qbdsBatch.fields().dynamic(YesNo::No);
+        
+            queryBatch.dataSourceTable(tableNum(HMInsuranceCarrierBatchDetails)).fields().addField(fieldNum(HMInsuranceCarrierBatchDetails, BatchNumber));
+        
+            for ( i = 1; i <= conLen(conCarrier) ; i++)
+            {
+                if (i == 1)
+                {
+                    fullExpressionBatch  = '(' + strFmt(expressionBatch, HMInsuranceCarrier::findByCode(conPeek(conCarrier, i)).RecId);
+                }
+                else
+                {
+                    fullExpressionBatch +=  ' || ' + strFmt(expressionBatch, HMInsuranceCarrier::findByCode(conPeek(conCarrier, i)).RecId);
+                }
+            }
+        
+            if (i > 1)
+            {
+                fullExpressionBatch     +=  ')';
+        
+                qbrBatch = qbdsBatch.addRange(fieldNum(HMInsuranceCarrierBatchDetails, HMInsuranceCarrier));
+                qbrBatch.value(fullExpressionBatch);
+                //    qbrBatch.value('((HMInsuranceCarrierBatchDetails_1.HMInsuranceCarrier == 5637144576))');
+            }
+            else
+            {
+                qbrBatch = qbdsBatch.addRange(fieldNum(HMInsuranceCarrierBatchDetails, HMInsuranceCarrier));
+                qbrBatch.value('123');
+            }
+        
+            msCtrlBatch.refreshQuery(queryBatch);
+        
+            BatchNumbers.text('');
+
+            //CS: Issue 3485:Disable the field Batch number on Generate claim form by Ammar.Ali
+            for ( i=1; i <=conLen(conCarrier); i++)
+            {
+                if (HMInsuranceCarrier::findByCode(conPeek(conCarrier, i)).UseInsuranceBatch)
+                {
+                    disableBatchNumber = false;
+                    GroupBatchNumbers.optionValue(1);
+                }
+                else
+                {
+                    enableBatchNumber = false;
+                }
+            }
+
+            if (disableBatchNumber)
+            {
+                GroupBatchNumbers.optionValue(0);
+            }
+            else
+            {
+                GroupBatchNumbers.optionValue(1);
+            }
+            //CE: Issue 3485:Disable the field Batch number on Generate claim form
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GroupBatchNumbers</Name>
+				<Type>Group</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            super();
+        
+            if(GroupBatchNumbers.optionValue() != 1)
+            {
+                msCtrlBatch.set(conNull());
+                conBatchNumbers = conNull();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>BatchNumbers</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+            new MenuFunction(menuitemdisplaystr(HMInsuranceCarrier),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            conBatchNumbers  = Global::str2con(this.text(), ';', false);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            date toDOS;
+        
+            if(element.validateForm())
+            {
+                if(GroupDOS.optionValue() == 1)
+                {
+                    if(DOSTo.dateValue() == dateNull())
+                    {
+                        toDOS = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    }
+                    else
+                    {
+                        toDOS = DOSTo.dateValue();
+                    }
+                }
+        
+                claimBatch.parmFromDate(DOSFrom.dateValue());
+                claimBatch.parmToDate(toDOS);
+                claimBatch.parmPatientIds(patientRecIdCon);
+                claimBatch.parmPhysicianId(physicianRecId);
+                claimBatch.parmCarrierIds(conCarrier);
+                claimBatch.parmBatchNumbers(conBatchNumbers);
+                claimBatch.parmTPAName(HMTpaCode);
+        
+                super();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ7165</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideIfEmpty xmlns="">No</HideIfEmpty>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<StatusBarStyle xmlns="">SimpleWithoutClose</StatusBarStyle>
+		<Style xmlns="">Dialog</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormStaticTextControl">
+				<Name>MainInstruction</Name>
+				<ElementPosition>536870911</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>StaticText</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<FontSize>13</FontSize>
+				<ForegroundColor>InactiveTitleBar</ForegroundColor>
+				<Style>MainInstruction</Style>
+				<Text>@MAZ7165</Text>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormTabControl">
+				<Name>Tab</Name>
+				<AlignControl>No</AlignControl>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Tab</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTabPageControl">
+						<Name>TabPage</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>TabPage</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>DialogStartGrp</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>ClaimTemplate</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>613566756</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ExtendedDataType>HMClaimTemplateName</ExtendedDataType>
+										<Label>@MAZ7032</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupDOS</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>838541233</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormDateControl">
+												<Name>DOSFrom</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Type>Date</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ExtendedDataType>TransDate</ExtendedDataType>
+												<Label>@MAZ1037</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormDateControl">
+												<Name>DOSTo</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1610612733</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Type>Date</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ExtendedDataType>TransDate</ExtendedDataType>
+												<Label>@SYS53942</Label>
+											</AxFormControl>
+										</Controls>
+										<Caption>@MAZ382</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupPatient</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1063515710</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Patient</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Top>0</Top>
+												<TopMode>Manual</TopMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ9</Label>
+											</AxFormControl>
+										</Controls>
+										<Caption>@MAZ9</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupPhysician</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Physician</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Top>0</Top>
+												<TopMode>Manual</TopMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ65</Label>
+											</AxFormControl>
+										</Controls>
+										<Caption>@MAZ65</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupTPA</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1513464664</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>TPA</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Top>0</Top>
+												<TopMode>Manual</TopMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ13241</Label>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+										<Caption>@MAZ13241</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupCarrier</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1738439142</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Carrier</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Top>0</Top>
+												<TopMode>Manual</TopMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS50733</Label>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+										<Caption>@SYS50733</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupBatchNumbers</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1942961394</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>BatchNumbers</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Top>0</Top>
+												<TopMode>Manual</TopMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS14462</Label>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+										<Caption>@SYS14462</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>GroupCarrierFrequency</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1738439142</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>UseCarrierFrequency</Name>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Left>80</Left>
+												<LeftMode>Manual</LeftMode>
+												<Top>0</Top>
+												<TopMode>Manual</TopMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>use carrier frequency</Label>
+												<Text>use carrier frequency</Text>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+										<Caption>Use carrier frequency</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>HMCarrierFrequency</Name>
+										<Type>CheckBox</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>Use carrier frequency</Label>
+										<Style>Checkbox</Style>
+									</AxFormControl>
+								</Controls>
+								<Style>DialogContent</Style>
+							</AxFormControl>
+						</Controls>
+						<Caption>@SYS2952</Caption>
+						<Scrollbars>Auto</Scrollbars>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+				<Style>Auto</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogCommit</Name>
+				<ElementPosition>1610612733</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<LeftMode>AutoRight</LeftMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormCommandButtonControl">
+								<Name>OKButton</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>CommandButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Command>OK</Command>
+								<DefaultButton>Yes</DefaultButton>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormCommandButtonControl">
+								<Name>CancelButton</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>CommandButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Command>Cancel</Command>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<Style>DialogCommit</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

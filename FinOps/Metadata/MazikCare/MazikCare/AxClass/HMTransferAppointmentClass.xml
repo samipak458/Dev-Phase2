@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMTransferAppointmentClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMTransferAppointmentClass
+{
+    HMResourceSchedulingAppointment apptSource,apptDestination,apptPrimaryAppointment;
+
+    ListEnumerator                  listEnumerator;
+    RecId                           newVisitRecId;
+    container                       apptContainer;
+    HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+    HMOrganizationalUnit            HMOrganizationalUnit;
+    HMAppoinmentLog                 HMAppoinmentLog;
+    List                            relatedAppointmentList;
+    HMAppointmentConfirmationStatus confirmStatus;
+    HMAppointmentCancellationStatus cancelStatus;
+    boolean                         emailToBeSent;
+    List                            cancelledAppointmentList;
+    List                            transferredNewApptList;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getApptPrimaryAppointment</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingAppointment getApptPrimaryAppointment()
+    {
+        return apptPrimaryAppointment;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startProcess</Name>
+				<Source><![CDATA[
+    public void startProcess(List _list, HMAppointmentConfirmationStatus _confirmStatus, HMAppointmentCancellationStatus _cancelStatus, boolean _emailToBeSent = true)
+    {
+        RecId apptSourceRecId, apptTargetRecId;
+        confirmStatus = _confirmStatus;
+        cancelStatus = _cancelStatus;
+        emailToBeSent = _emailToBeSent;
+        cancelledAppointmentList = new List(Types::Int64);
+        transferredNewApptList = new List(Types::Int64);
+    
+        listEnumerator = _list.getEnumerator();
+        this.updatePrimaryAppointment();
+    
+        listEnumerator = _list.getEnumerator();
+        this.transferRelatedAppointment();
+    
+        if(!relatedAppointmentList.empty())
+        {
+            listEnumerator = relatedAppointmentList.getEnumerator();
+            while(listEnumerator.moveNext())
+            {
+                this.updateRelatedApptService(conPeek(listEnumerator.current(),1),conPeek(listEnumerator.current(),2));
+            }
+        }
+        if(!cancelledAppointmentList.empty())
+        {
+            HMResourceSchedulingHelper::cancelAppointment(cancelledAppointmentList, _cancelStatus,
+                                                            '',DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()),0,dateNull(),false);
+        }
+    
+        if(!transferredNewApptList.empty())
+        {
+            //todo: ax7 appointment email email 
+           // HMResourceSchedulingHelper::emailRescheduleDetails(transferredNewApptList);
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferPrimaryAppointment</Name>
+				<Source><![CDATA[
+    private void transferPrimaryAppointment()
+    {
+        HMResourceSchedulingAppointment     relatedAppointment;
+        HMNumberSequenceGeneratorClass  HMNumberSequenceGeneratorClass = new HMNumberSequenceGeneratorClass();
+    
+        try
+        {
+            apptDestination.AppointmentDate = conPeek(apptContainer,2);
+            apptDestination.AppointmentTime = conPeek(apptContainer,3);
+            apptDestination.AppointmentEndDate = conPeek(apptContainer,4);
+            apptDestination.AppointmentEndTime = conPeek(apptContainer,5);
+            hmResourceSchedulingPlanningObject = conPeek(apptContainer,6);
+            apptDestination.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+            apptDestination.HMResourceSchedulingTypeCode = conPeek(apptContainer,7);
+            apptDestination.ArrivalTime = conPeek(apptContainer,8);
+            apptDestination.IsHotspot = conPeek(apptContainer,9);
+            apptDestination.AppointmentNumber = HMNumberSequenceGeneratorClass.getNewNumSeqForAppointmentNum(HMOrganizationalUnit::getOperatingUnitRecid(hmResourceSchedulingPlanningObject.HMOrganizationalUnit));
+            if(!newVisitRecId)
+            {
+                newVisitRecId = HMResourceSchedulingHelper::createAppointmentVisit(apptDestination.AppointmentDate,
+                                                                        apptDestination.AppointmentTime, apptDestination.HMPatient,
+                                                                        hmResourceSchedulingPlanningObject.HMOrganizationalUnit);
+            }
+            apptDestination.HMPatientVisit = newVisitRecId;
+            apptDestination.HMConfirmationStatus = confirmStatus;
+            apptDestination.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Confirmed;
+            apptDestination.insert();
+    
+            if (apptDestination.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed)
+            {
+                ttsBegin;
+                apptDestination.DocuRef = HMResourceSchedulingHelper::generateQRCode(apptDestination.AppointmentNumber, apptDestination.getPatientChartNum(), apptDestination.RecId);
+                apptDestination.update();
+                ttsCommit;
+            }
+    
+            HMNumberSequenceGeneratorClass.useNewNumSeqForAppointmentNum();
+    
+            hmAppoinmentLog.clear();
+            hmAppoinmentLog.HMResScheduleAppointment    = apptDestination.RecId;
+            hmAppoinmentLog.HMAppointLogStatus          = HMResourceSchedulingAppointmentStatus::Confirmed;
+            hmAppoinmentLog.HMAppointLogDate            = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            hmAppoinmentLog.HMAppointLogTime            = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+            hmAppoinmentLog.HMAppointLogNote            = '';
+            hmAppoinmentLog.insert();
+    
+            cancelledAppointmentList.addEnd(apptSource.RecId);
+            transferredNewApptList.addEnd(apptDestination.RecId);
+            /*apptSource.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Cancelled;
+            apptSource.HMCancellationStatus = cancelStatus;
+            apptSource.update();
+    
+            hmAppoinmentLog.clear();
+            hmAppoinmentLog.HMResScheduleAppointment    = apptSource.RecId;
+            hmAppoinmentLog.HMAppointLogStatus          = HMResourceSchedulingAppointmentStatus::Confirmed;
+            hmAppoinmentLog.HMAppointLogDate            = today();
+            hmAppoinmentLog.HMAppointLogTime            = timeNow();
+            hmAppoinmentLog.HMAppointLogNote            = '';
+            hmAppoinmentLog.insert();
+            */
+    
+            HMResourceSchedulingHelper::saveAppointmentService(apptSource.RecId,apptDestination.RecId);
+    
+            while select forupdate relatedAppointment
+                where relatedAppointment.HMPatientVisit == apptSource.HMPatientVisit
+                && relatedAppointment.PrimaryAppointment == YesNo::No
+            {
+                relatedAppointment.HMPatientVisit = apptDestination.HMPatientVisit;
+                relatedAppointment.update();
+            }
+    
+            //if(emailToBeSent && apptDestination.PrimaryAppointment == YesNo::Yes)
+            //{
+                //HMEmailGeneration::emailBookingDetails(apptDestination.RecId);
+            //}
+            apptPrimaryAppointment = HMResourceSchedulingAppointment::find(apptDestination.RecId);
+        }
+        catch
+        {
+            if(HMNumberSequenceGeneratorClass)
+            {
+                HMNumberSequenceGeneratorClass.deleteNewNumSeqForAppointmentNum();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferRelatedAppointment</Name>
+				<Source><![CDATA[
+    private void transferRelatedAppointment()
+    {
+        HMNumberSequenceGeneratorClass  HMNumberSequenceGeneratorClass = new HMNumberSequenceGeneratorClass();
+    
+        relatedAppointmentList = new List(Types::Container);
+    
+        try
+        {
+            while(listEnumerator.moveNext())
+            {
+                apptContainer = listEnumerator.current();
+                apptSource = HMResourceSchedulingAppointment::find(conPeek(apptContainer,1),true);
+                if(apptSource.PrimaryAppointment == YesNo::No)
+                {
+                    HMNumberSequenceGeneratorClass = new HMNumberSequenceGeneratorClass();
+                    buf2Buf(apptSource,apptDestination);
+                    if(!apptPrimaryAppointment)
+                    {
+                        select * from apptPrimaryAppointment
+                        where apptPrimaryAppointment.PrimaryAppointment == YesNo::Yes
+                        && apptPrimaryAppointment.HMPatientVisit == apptSource.HMPatientVisit;
+                    }
+                    apptDestination.AppointmentDate = conPeek(apptContainer,2);
+                    apptDestination.AppointmentTime = conPeek(apptContainer,3);
+                    apptDestination.AppointmentEndDate = conPeek(apptContainer,4);
+                    apptDestination.AppointmentEndTime = conPeek(apptContainer,5);
+                    hmResourceSchedulingPlanningObject = conPeek(apptContainer,6);
+                    apptDestination.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                    apptDestination.HMResourceSchedulingTypeCode = conPeek(apptContainer,7);
+                    apptDestination.ArrivalTime = conPeek(apptContainer,8);
+                    apptDestination.IsHotspot = conPeek(apptContainer,9);
+                    apptDestination.AppointmentNumber = HMNumberSequenceGeneratorClass.getNewNumSeqForAppointmentNum(HMOrganizationalUnit::getOperatingUnitRecid(hmResourceSchedulingPlanningObject.HMOrganizationalUnit));
+                    apptDestination.HMPatientVisit = apptPrimaryAppointment.HMPatientVisit;
+                    apptDestination.HMConfirmationStatus = confirmStatus;
+                    apptDestination.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Confirmed;
+                    apptDestination.insert();
+    
+                    hmAppoinmentLog.clear();
+                    hmAppoinmentLog.HMResScheduleAppointment    = apptDestination.RecId;
+                    hmAppoinmentLog.HMAppointLogStatus          = HMResourceSchedulingAppointmentStatus::Confirmed;
+                    hmAppoinmentLog.HMAppointLogDate            = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    hmAppoinmentLog.HMAppointLogTime            = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+                    hmAppoinmentLog.HMAppointLogNote            = '';
+                    hmAppoinmentLog.insert();
+                    HMNumberSequenceGeneratorClass.useNewNumSeqForAppointmentNum();
+                    cancelledAppointmentList.addEnd(apptSource.RecId);
+                    /*apptSource.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Cancelled;
+                    apptSource.HMCancellationStatus = cancelStatus;
+                    apptSource.update();
+    
+                    hmAppoinmentLog.clear();
+                    hmAppoinmentLog.HMResScheduleAppointment    = apptSource.RecId;
+                    hmAppoinmentLog.HMAppointLogStatus          = HMResourceSchedulingAppointmentStatus::Confirmed;
+                    hmAppoinmentLog.HMAppointLogDate            = today();
+                    hmAppoinmentLog.HMAppointLogTime            = timeNow();
+                    hmAppoinmentLog.HMAppointLogNote            = '';
+                    hmAppoinmentLog.insert();*/
+    
+    
+                    relatedAppointmentList.addEnd([apptSource.RecId,apptDestination.RecId]);
+                    transferredNewApptList.addEnd(apptDestination.RecId);
+                }
+            }
+        }
+        catch
+        {
+            if(HMNumberSequenceGeneratorClass)
+            {
+                HMNumberSequenceGeneratorClass.deleteNewNumSeqForAppointmentNum();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePrimaryAppointment</Name>
+				<Source><![CDATA[
+    private void updatePrimaryAppointment()
+    {
+        while(listEnumerator.moveNext())
+        {
+            apptContainer = listEnumerator.current();
+            apptSource = HMResourceSchedulingAppointment::find(conPeek(apptContainer,1),true);
+    
+            if(apptSource.PrimaryAppointment == YesNo::Yes)
+            {
+                buf2Buf(apptSource,apptDestination);
+                this.transferPrimaryAppointment();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateRelatedApptService</Name>
+				<Source><![CDATA[
+    private void updateRelatedApptService(RecId _sourceAppointmentRecId, RecId _targetAppointmentRecId)
+    {
+        HMResourceSchedulingAppointmentInvent apptInventSource, apptInventTarget;
+    
+        while select forUpdate apptInventSource
+            where apptInventSource.HMResourceSchedulingAppointment == apptPrimaryAppointment.RecId
+            && apptInventSource.RelatedAppointmentRecId == _sourceAppointmentRecId
+        {
+            apptInventSource.RelatedAppointmentRecId = _targetAppointmentRecId;
+            apptInventSource.update();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

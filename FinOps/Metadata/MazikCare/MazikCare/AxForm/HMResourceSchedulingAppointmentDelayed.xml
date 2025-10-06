@@ -1,0 +1,823 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMResourceSchedulingAppointmentDelayed</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMResourceSchedulingAppointmentDelayed extends FormRun
+{
+    RecId       planningObjectRecId, StaffOURecId;
+    HMCaseType  caseType;
+    container   param;
+    int         treeType;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        str headerText;
+    
+        if (element.args().parm() != "")
+        {
+            param               = str2con(element.args().parm());
+            caseType            = conPeek(param,1);
+            StaffOURecId        = conPeek(param,2);
+            planningObjectRecId = conPeek(param,3);
+            treeType            = conPeek(param,4);
+    
+            if (planningObjectRecId)
+            {
+                if (treeType == 1)
+                {
+                    headerText = HMResourceSchedulingPlanningObject::find(planningObjectRecId).showOrganizationUnit() + ', ';
+                }
+                else if (treeType == 2)
+                {
+                    headerText = HMClinicStaff::find(HMResourceSchedulingPlanningObject::find(planningObjectRecId).HMClinicStaff).physicianName() + ', ';
+                }
+                else
+                {
+                    headerText = HMResourceSchedulingPlanningObject::find(planningObjectRecId).Description + ', ';
+                }
+    
+            }
+    
+            if (StaffOURecId)
+            {
+                if (treeType == 1)
+                {
+                    headerText += HMClinicStaff::find(StaffOURecId).physicianName();
+                }
+                else
+                {
+                    headerText += HMOrganizationalUnit::find(StaffOURecId).Description;
+                }
+    
+            }
+    
+            headerText = strFmt("@MAZ8363",headerText);
+        }
+        else
+        {
+            headerText = "@MAZ8361";
+        }
+    
+        super();
+    
+        MainInstruction.text(headerText);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markDelayed</Name>
+				<Source><![CDATA[
+    public void markDelayed(RecId  _appointmentRecId)
+    {
+        // mark appointment as delayed
+        HMResourceSchedulingAppointment     HMResourceSchedulingAppointmentUpdate;
+    
+        select forUpdate HMResourceSchedulingAppointmentUpdate
+            where HMResourceSchedulingAppointmentUpdate.RecId == _appointmentRecId;
+    
+        ttsBegin;
+        HMResourceSchedulingAppointmentUpdate.IsDelayed = NoYes::Yes;
+        HMResourceSchedulingAppointmentUpdate.update();
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMResourceSchedulingAppointment</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            if (element.args().parm() == "")
+            {
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,RecId)).value(SysQuery::value(0));
+            }
+            else
+            {
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentDate)).value(SysQuery::value(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())));
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::value(HMResourceSchedulingAppointmentStatus::Open));
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::value(HMResourceSchedulingAppointmentStatus::CheckedIn));
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,AppointmentStatus)).value(SysQuery::value(HMResourceSchedulingAppointmentStatus::Tentative));
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,IsDelayed)).value(SysQuery::value(NoYes::No));
+                this.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,HMAppointmentType)).value(SysQuery::valueNot(HMAppointmentType::Admission));
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMResourceSchedulingPlanningObject</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+        
+            if (element.args().parm() != "")
+            {
+                if (caseType == HMCaseType::None)
+                {
+                    this.query().dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,CaseType)).value(SysQuery::value(HMCaseType::OutPatient));
+                    this.query().dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,CaseType)).value(SysQuery::value(HMCaseType::Surgery));
+                }
+                if (StaffOURecId)
+                {
+                    if (treeType == 1)
+                    {
+                        this.query().dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,HMClinicStaff)).value(SysQuery::value(StaffOURecId));
+                    }
+                    else
+                    {
+                        this.query().dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,HMOrganizationalUnit)).value(SysQuery::value(StaffOURecId));
+                    }
+        
+                }
+                if (planningObjectRecId)
+                {
+                    this.query().dataSourceTable(tableNum(HMResourceSchedulingPlanningObject)).addRange(fieldNum(HMResourceSchedulingPlanningObject,RecId)).value(SysQuery::value(planningObjectRecId));
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>Close</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            HMResourceSchedulingAppointment     HMResourceSchedulingAppointmentMarked;
+            Object                              formRunObject;
+            FormRun                             formRun;
+        
+            super();
+        
+            if (HMResourceSchedulingAppointment_ds.recordsMarked().lastIndex() > 0)
+            {
+                HMResourceSchedulingAppointmentMarked = HMResourceSchedulingAppointment_ds.getFirst(1);
+                while (HMResourceSchedulingAppointmentMarked.RecId)
+                {
+                    element.markDelayed(HMResourceSchedulingAppointmentMarked.RecId);
+                    info(strFmt("@MAZ9472",HMResourceSchedulingAppointmentMarked.AppointmentNumber));
+                    HMResourceSchedulingAppointmentMarked = HMResourceSchedulingAppointment_ds.getNext();
+                }
+            }
+            else if (HMResourceSchedulingAppointment.RecId != 0)
+            {
+                element.markDelayed(HMResourceSchedulingAppointment.RecId);
+                info(strFmt("@MAZ9472",HMResourceSchedulingAppointmentMarked.AppointmentNumber));
+            }
+        
+            element.close();
+            formRun = element.args().caller();
+        
+            if (formHasMethod(formRun, identifierstr(refreshGrid)))
+            {
+                    formRunObject = formRun;
+                    formRunObject.refreshGrid();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingAppointment</Name>
+			<Table>HMResourceSchedulingAppointment</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActualArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AdmissionOrderSource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentConfirmationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Bed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMVersion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BookingNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChartPrepared</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChiefComplaint</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientBillingLogisticsPostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientReportLogisticsPostalAddres</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CopyOfEmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardToken</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardTokenRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CriticalMedicalInformation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DispositionComments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DispositionFollowUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmailStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EODProcessed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FinanceBillingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FinanceBillingStatus_Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForceBookingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreeFollowUpAvailed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GOPNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointmentType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBookingOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCancellationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMConfirmationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceContractClassOrPlans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitAdmissionWard</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitServiceLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientInsurance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientVisit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRecurrentApptDetail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMScheduleType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMWaitingList</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ImportedNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InclinicNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IncompleteInfoLog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IncompleteReserveAppointmentTaskGeneratd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDelayed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsHotspot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOnlineAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOverBooked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsReconfirmEmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsSpecificConsultant</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LedgerJournalTable_AdvancePayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientContact</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientRequestor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalChartRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PONum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriorityNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Referral</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportSentContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestorContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RescheduleWithoutConfirmation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultExpectedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultVisitStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SendEmailTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SmsSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SysOutgoingEmailTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WalkinPatient</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingPlanningObject</Name>
+			<Table>HMResourceSchedulingPlanningObject</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AvailabilityStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CaseType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Category</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultScheduleType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBuildingUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HotSpotType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HotSpotValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OverbookAllowed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlanningObjectStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ScheduleOnPublicHoliday</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SearchInterval</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StartDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMResourceSchedulingAppointment</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<BottomMargin xmlns="">0</BottomMargin>
+		<BottomMarginMode xmlns="">Fixed</BottomMarginMode>
+		<Caption xmlns="">@MAZ207</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<LeftMargin xmlns="">0</LeftMargin>
+		<LeftMarginMode xmlns="">Fixed</LeftMarginMode>
+		<RightMargin xmlns="">0</RightMargin>
+		<RightMarginMode xmlns="">Fixed</RightMarginMode>
+		<Scrollbars xmlns="">No</Scrollbars>
+		<SetCompany xmlns="">No</SetCompany>
+		<StatusBarStyle xmlns="">None</StatusBarStyle>
+		<Style xmlns="">DropDialog</Style>
+		<TopMargin xmlns="">0</TopMargin>
+		<TopMarginMode xmlns="">Fixed</TopMarginMode>
+		<WindowResize xmlns="">Fixed</WindowResize>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>TopGroup</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>DetailsGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>MainInstruction</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>StaticText</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<BackgroundColorRGB>
+									<Red>15</Red>
+									<Green>0</Green>
+									<Blue>0</Blue>
+								</BackgroundColorRGB>
+								<ColorScheme>RGB</ColorScheme>
+								<FontSize>13</FontSize>
+								<ForegroundColorRGB>
+									<Red>0</Red>
+									<Green>51</Green>
+									<Blue>153</Blue>
+								</ForegroundColorRGB>
+								<Style>MainInstruction</Style>
+								<Text></Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGridControl">
+								<Name>Grid</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Grid</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormTimeControl">
+										<Name>HMResourceSchedulingAppointment_AppointmentTime</Name>
+										<ElementPosition>858993458</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Time</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AppointmentTime</DataField>
+										<DataSource>HMResourceSchedulingAppointment</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>Patient</Name>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataMethod>getPatientName</DataMethod>
+										<DataSource>HMResourceSchedulingAppointment</DataSource>
+										<Label>@MAZ9</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormComboBoxControl">
+										<Name>HMResourceSchedulingAppointment_AppointmentStatus</Name>
+										<ElementPosition>1717986916</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>ComboBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>AppointmentStatus</DataField>
+										<DataSource>HMResourceSchedulingAppointment</DataSource>
+										<Items />
+									</AxFormControl>
+								</Controls>
+								<DataSource>HMResourceSchedulingAppointment</DataSource>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<BottomMargin>11</BottomMargin>
+				<BottomMarginMode>Fixed</BottomMarginMode>
+				<LeftMargin>11</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>11</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<TopMargin>0</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonsGroup</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>Close</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ4768</HelpText>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<MultiSelect>Yes</MultiSelect>
+								<NeedsRecord>Yes</NeedsRecord>
+								<Text>@MAZ8364</Text>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+				</Controls>
+				<LeftMargin>11</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>11</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<TopMargin>11</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<BackStyle>Opaque</BackStyle>
+				<Style>DialogCommit</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

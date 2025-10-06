@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSalesInvoiceDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMSalesInvoiceDataContract))
+]
+class HMSalesInvoiceDP extends SRSReportDataProviderBase
+{
+    HMSalesInvoiceReportHeader      hmSalesInvoiceReportHeader;
+    HMSalesInvoiceReportLine        hmSalesInvoiceReportLine;
+    HMSalesInvoiceReportTaxLine     hmSalesInvoiceReportTaxLine;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMSalesInvoiceReportHeader</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMSalesInvoiceReportHeader')]
+    public HMSalesInvoiceReportHeader getHMSalesInvoiceReportHeader()
+    {
+        select * from hmSalesInvoiceReportHeader;
+        return hmSalesInvoiceReportHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMSalesInvoiceReportLine</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMSalesInvoiceReportLine')]
+    public HMSalesInvoiceReportLine getHMSalesInvoiceReportLine()
+    {
+        select * from hmSalesInvoiceReportLine;
+        return hmSalesInvoiceReportLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMSalesInvoiceReportTaxLine</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMSalesInvoiceReportTaxLine')]
+    public HMSalesInvoiceReportTaxLine getHMSalesInvoiceReportTaxLine()
+    {
+        select * from hmSalesInvoiceReportTaxLine;
+        return hmSalesInvoiceReportTaxLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTaxPeriod</Name>
+				<Source><![CDATA[
+    private TaxCode getTaxPeriod(TaxCode _taxCode)
+    {
+        TaxTable                                taxtable;
+        TaxGroupData                            taxgroupdata;
+        String255                                taxGroup;
+        TaxRegistration                         taxRegistration;
+        TaxRegistrationTypeApplicabilityRule    taxRegistrationTypeApplicabilityRule;
+        TaxRegistrationType                     taxRegistrationType;
+    
+        while select TaxCode from taxgroupdata where taxgroupdata.TaxGroup == _taxCode
+        {
+            select TaxPeriod from taxtable where taxtable.TaxCode == taxgroupdata.TaxCode;
+    
+            if(taxtable.TaxPeriod == 'CCRA')
+            {
+                taxGroup = 'GST/HST';
+            }
+            else
+            {
+                taxGroup = 'QST/PST';
+            }
+        }
+    
+        select RegistrationNumber from taxRegistration
+            join RecId from taxRegistrationTypeApplicabilityRule
+                where taxRegistration.TaxRegistrationTypeApplicabilityRule == taxRegistrationTypeApplicabilityRule.RecId
+            join  TaxRegstrationType, RecId from taxRegistrationType
+                where taxRegistrationType.RecId == taxRegistrationTypeApplicabilityRule.TaxRegistrationType
+                    && taxRegistrationType.TaxRegstrationType == taxGroup;
+    
+        if(taxRegistration)
+        {
+            taxGroup = taxGroup + "(#" + taxRegistration.RegistrationNumber + ")";
+        }
+    
+        return taxGroup;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemDescription</Name>
+				<Source><![CDATA[
+    private EcoResDescription itemDescription(ItemId _itemId, LanguageID _languageId)
+    {
+        EcoResDescription description;
+        HMInventTable hmInventTable;
+        InventTable inventTable;
+    
+        select DIN from hmInventTable
+            join * from inventTable
+                where hmInventTable.InventTable == _itemId
+                && inventTable.ItemId == _itemId;
+    
+        description = inventTable.itemDescriptionOrName(_languageId);
+    
+        if(hmInventTable.DIN)
+        {
+            description += " (" + "@MAZ11383" + ": " + int642str(hmInventTable.DIN) + ")";
+        }
+    
+        return description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paymentReference</Name>
+				<Source><![CDATA[
+    private str paymentReference(CustInvoiceJour custInvoiceJour)
+    {
+        CustSettlement  settlement;
+        CustTrans       custTransInvoice;
+        str             paymReference;
+    
+        while select Recid from settlement
+            where settlement.OffsetRecid == custInvoiceJour.custTrans().RecId
+            join PaymReference from custTransInvoice
+            where settlement.TransCompany == custTransInvoice.dataAreaId
+            && settlement.TransRecId == custTransInvoice.RecId
+            && settlement.AccountNum == custTransInvoice.AccountNum
+        {
+            paymReference += custTransInvoice.PaymReference + '; ';
+        }
+    
+        return paymReference;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMSalesInvoiceDataContract              dataContract;
+        CustInvoiceTrans                        custInvoiceTrans;
+        CustInvoiceJour                         custInvoiceJour;
+        CustTable                               custTableInvoice;
+        CompanyInfo                             companyInfo;
+        InventTable                             inventTable;
+        HMPatient                               hmPatient;
+        HMResourceSchedulingAppointmentSalesTbl hmResourceSchedulingAppointmentSalesTbl;
+        HMResourceSchedulingAppointment         hmResourceSchedulingAppointment;
+        ItemId                                  protocolId;
+        HMClientProtocol                        hmClientProtocol;
+        CustTrans                               custTrans;
+        RecId                                   billedToAddress;
+        HMResourceSchedulingPlanningObject      HMResourceSchedulingPlanningObject;
+        HMOrganizationalUnit                    HMOrganizationalUnit;
+        dataContract = this.parmDataContract();
+    
+        select firstonly * from custInvoiceJour
+            where custInvoiceJour.InvoiceId == dataContract.parmInvoiceId();
+    
+        select firstonly Party, AccountNum, HMOverridePatientNameInvoice,CustType from custTableInvoice
+            where custTableInvoice.AccountNum == custInvoiceJour.InvoiceAccount;
+    
+        select RecId from hmResourceSchedulingAppointmentSalesTbl
+            where hmResourceSchedulingAppointmentSalesTbl.SalesTable == custInvoiceJour.SalesId
+            join AppointmentDate, HMResourceSchedulingPlanningObject, RequestorContactPerson, EmployeeNum,
+            PONum, GOPNum, AppointmentNumber, ClientBillingLogisticsPostalAddress,HMResourceSchedulingPlanningObject from hmResourceSchedulingAppointment
+                where hmResourceSchedulingAppointment.RecId == hmResourceSchedulingAppointmentSalesTbl.HMResourceSchedulingAppointment
+            join custTable,TextOnInvoice, PhysicalChartNumber from hmPatient
+                where hmPatient.RecId == hmResourceSchedulingAppointment.HMPatient
+            join HMOrganizationalUnit from HMResourceSchedulingPlanningObject
+                where HMResourceSchedulingPlanningObject.RecId == hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject
+            join ClinicContactDetails_FR,ClinicContactDetails_EN from HMOrganizationalUnit
+                where HMOrganizationalUnit.RecId == HMResourceSchedulingPlanningObject.HMOrganizationalUnit;
+    
+        companyInfo = companyInfo::find();
+        hmSalesInvoiceReportHeader.clear();
+    
+    
+        hmSalesInvoiceReportHeader.SalesId = custInvoiceJour.SalesId;
+        hmSalesInvoiceReportHeader.PurchaseOrder = custInvoiceJour.PurchaseOrder;
+        hmSalesInvoiceReportHeader.CustomerRef = custInvoiceJour.CustomerRef;
+        hmSalesInvoiceReportHeader.PaymentCondition = custInvoiceJour.paymentCondition();
+        hmSalesInvoiceReportHeader.InvoiceDate = custInvoiceJour.InvoiceDate;
+        hmSalesInvoiceReportHeader.SalesAdministrator = hmPatient.PhysicalChartNumber ? hmPatient.PhysicalChartNumber : hmPatient.patientChartNum();
+        hmSalesInvoiceReportHeader.ClinicContactDetails_EN = HMOrganizationalUnit.ClinicContactDetails_EN;
+        hmSalesInvoiceReportHeader.ClinicContactDetails_FR = HMOrganizationalUnit.ClinicContactDetails_FR;
+    
+        if(dataContract.parmIsReceipt())
+        {
+            hmSalesInvoiceReportHeader.PaymentReference = this.paymentReference(custInvoiceJour);
+        }
+    
+        if(custTableInvoice.CustType == CustType::Client)
+        {
+            billedToAddress = hmResourceSchedulingAppointment.ClientBillingLogisticsPostalAddress;
+    
+        }
+        else if(custTableInvoice.CustType == CustType::Patient)
+        {
+            billedToAddress =  custTableInvoice.postalAddressRecId();
+        }
+        else
+        {
+            billedToAddress = HMResourceSchedulingHelper::getPartyDefaultPostalAddressByType(custTableInvoice.Party, LogisticsLocationRoleType::Invoice);
+    
+            if(!billedToAddress)
+            {
+                billedToAddress = HMResourceSchedulingHelper::getPartyDefaultPostalAddressByType(custTableInvoice.Party, LogisticsLocationRoleType::Business);
+            }
+        }
+    
+        hmSalesInvoiceReportHeader.BillToAddress = HMResourceSchedulingHelper::getAddressDescription(billedToAddress);
+        hmSalesInvoiceReportHeader.BilledTo = custTableInvoice.email();
+        hmSalesInvoiceReportHeader.BillToName = custTableInvoice.name();
+        hmSalesInvoiceReportHeader.BillingDate = custInvoiceJour.InvoiceDate;
+        hmSalesInvoiceReportHeader.BirthDate = hmPatient.patientBirthDate();
+        hmSalesInvoiceReportHeader.ExaminationDate = hmResourceSchedulingAppointment.AppointmentDate;
+        hmSalesInvoiceReportHeader.ClientAccount = custTableInvoice.AccountNum;
+        hmSalesInvoiceReportHeader.InvoiceId = custInvoiceJour.InvoiceId;
+        hmSalesInvoiceReportHeader.PayableToName = companyInfo.Name;
+        hmSalesInvoiceReportHeader.PayableToAddress = companyInfo.primaryAddress();
+        hmSalesInvoiceReportHeader.PayableTofax = companyInfo.primaryFax();
+        hmSalesInvoiceReportHeader.PayableToPhone = companyInfo.primaryPhone();
+        hmSalesInvoiceReportHeader.PatientName = custTableInvoice.HMOverridePatientNameInvoice ? hmResourceSchedulingAppointment.EmployeeNum : hmPatient.patientName();
+        hmSalesInvoiceReportHeader.OrderNum = custInvoiceJour.SalesId;
+        hmSalesInvoiceReportHeader.Branch = hmResourceSchedulingAppointment.showClinic();
+        hmSalesInvoiceReportHeader.CompanyLogo = FormLetter::companyLogo();
+        hmSalesInvoiceReportHeader.RequestedBy = ContactPerson::find(hmResourceSchedulingAppointment.RequestorContactPerson).personName();
+        hmSalesInvoiceReportHeader.BillingNotes = custInvoiceJour.BillingNotes;
+        hmSalesInvoiceReportHeader.EmployeeNum = hmResourceSchedulingAppointment.EmployeeNum;
+        hmSalesInvoiceReportHeader.PONum = hmResourceSchedulingAppointment.PONum;
+        hmSalesInvoiceReportHeader.GOPNum = hmResourceSchedulingAppointment.GOPNum;
+        hmSalesInvoiceReportHeader.AppointmentNumber = hmResourceSchedulingAppointment.AppointmentNumber;
+    
+        hmSalesInvoiceReportHeader.SalesBalance = custInvoiceJour.SalesBalance;
+        hmSalesInvoiceReportHeader.EndDisc = custInvoiceJour.EndDisc;
+        hmSalesInvoiceReportHeader.SumMarkup = custInvoiceJour.SumMarkup;
+        hmSalesInvoiceReportHeader.SumTax = custInvoiceJour.SumTax;
+        hmSalesInvoiceReportHeader.InvoiceRoundOff = custInvoiceJour.InvoiceRoundOff;
+        hmSalesInvoiceReportHeader.InvoiceAmount = custInvoiceJour.InvoiceAmount;
+        hmSalesInvoiceReportHeader.CustInvoiceJourCurrencyCode = custInvoiceJour.CurrencyCode;
+    
+        select sum(SettleAmountCur) from custTrans
+            where custTrans.AccountNum == custInvoiceJour.OrderAccount &&
+                custTrans.TransDate  == custInvoiceJour.InvoiceDate &&
+                custTrans.Invoice    == custInvoiceJour.InvoiceId;
+    
+        hmSalesInvoiceReportHeader.AmountPaid = custTrans.SettleAmountCur;
+        hmSalesInvoiceReportHeader.Balance = hmSalesInvoiceReportHeader.InvoiceAmount - hmSalesInvoiceReportHeader.AmountPaid;
+    
+        if(dataContract.parmClientInvoicePrint() == HMClientInvoicePrint::Detail)
+        {
+            while select * from custInvoiceTrans
+                order by custInvoiceTrans.ProtocolId
+                where custInvoiceTrans.InvoiceId == dataContract.parmInvoiceId()
+            {
+                if(custInvoiceTrans.ProtocolId && protocolId != custInvoiceTrans.ProtocolId)
+                {
+                    if(custTableInvoice.CustType == CustType::Client)
+                    {
+                        select * from hmClientProtocol
+                        where hmClientProtocol.ClientAccount == custTableInvoice.AccountNum
+                        && hmClientProtocol.ItemId == custInvoiceTrans.ProtocolId;
+                        if(hmClientProtocol)
+                        {
+                            hmSalesInvoiceReportHeader.Protocol += strFmt('%1 - %2',hmClientProtocol.ItemId,hmClientProtocol.itemAlias()) + '\\n';
+                        }
+                        else
+                        {
+                            hmSalesInvoiceReportHeader.Protocol += strFmt('%1 - %2',custInvoiceTrans.ProtocolId,InventTable::find(custInvoiceTrans.ProtocolId).NameAlias) + '\\n';
+                        }
+                    }
+                    else
+                    {
+                        hmSalesInvoiceReportHeader.Protocol += strFmt('%1 - %2',custInvoiceTrans.ProtocolId,InventTable::find(custInvoiceTrans.ProtocolId).NameAlias) + '\\n';
+                    }
+                    protocolId = custInvoiceTrans.ProtocolId;
+                }
+    
+                hmSalesInvoiceReportLine.clear();
+    
+                hmSalesInvoiceReportLine.ItemId = custInvoiceTrans.ItemId;
+                hmSalesInvoiceReportLine.ItemDescription = this.itemDescription(hmSalesInvoiceReportLine.ItemId, custTableInvoice.languageId());
+                hmSalesInvoiceReportLine.Amount = custInvoiceTrans.lineAmountInclTax();
+                hmSalesInvoiceReportLine.Qty = custInvoiceTrans.Qty;
+                hmSalesInvoiceReportLine.SalesPrice = custInvoiceTrans.SalesPrice;
+                hmSalesInvoiceReportLine.DiscPercent = custInvoiceTrans.DiscPercent;
+                hmSalesInvoiceReportLine.DiscountAmount = custInvoiceTrans.DiscAmount;
+                hmSalesInvoiceReportLine.SalesUnitTxt  = custInvoiceTrans.salesUnitTxt();
+    
+                hmSalesInvoiceReportLine.insert();
+            }
+        }
+        else if(dataContract.parmClientInvoicePrint() == HMClientInvoicePrint::Summary)
+        {
+            while select ProtocolId, sum(SalesPrice), sum(DiscPercent), sum(DiscAmount), sum(LineAmount), sum(LineAmountTax) from custInvoiceTrans
+                group by custInvoiceTrans.ProtocolId
+                where custInvoiceTrans.InvoiceId == dataContract.parmInvoiceId()
+                && custInvoiceTrans.ProtocolId != ""
+    
+            {
+                if(custInvoiceTrans.ProtocolId && protocolId != custInvoiceTrans.ProtocolId)
+                {
+                    if(custTableInvoice.CustType == CustType::Client)
+                    {
+                        select * from hmClientProtocol
+                        where hmClientProtocol.ClientAccount == custTableInvoice.AccountNum
+                        && hmClientProtocol.ItemId == custInvoiceTrans.ProtocolId;
+                        if(hmClientProtocol)
+                        {
+                            hmSalesInvoiceReportHeader.Protocol += strFmt('%1 - %2',hmClientProtocol.ItemId,hmClientProtocol.itemAlias()) + '\\n';
+                        }
+                        else
+                        {
+                            hmSalesInvoiceReportHeader.Protocol += strFmt('%1 - %2',custInvoiceTrans.ProtocolId,InventTable::find(custInvoiceTrans.ProtocolId).NameAlias) + '\\n';
+                        }
+                    }
+                    else
+                    {
+                        hmSalesInvoiceReportHeader.Protocol += strFmt('%1 - %2',custInvoiceTrans.ProtocolId,InventTable::find(custInvoiceTrans.ProtocolId).NameAlias) + '\\n';
+                    }
+                    protocolId = custInvoiceTrans.ProtocolId;
+                }
+    
+                inventTable = InventTable::find(custInvoiceTrans.ProtocolId);
+    
+                hmSalesInvoiceReportLine.clear();
+    
+                hmSalesInvoiceReportLine.ItemId = custInvoiceTrans.ProtocolId;
+                hmSalesInvoiceReportLine.ItemDescription = this.itemDescription(hmSalesInvoiceReportLine.ItemId, custTableInvoice.languageId());
+                hmSalesInvoiceReportLine.Amount = custInvoiceTrans.lineAmountInclTax();
+                hmSalesInvoiceReportLine.Qty = 1;
+                hmSalesInvoiceReportLine.SalesPrice = custInvoiceTrans.SalesPrice;
+                hmSalesInvoiceReportLine.DiscPercent = custInvoiceTrans.DiscPercent;
+                hmSalesInvoiceReportLine.DiscountAmount = custInvoiceTrans.DiscAmount;
+                hmSalesInvoiceReportLine.SalesUnitTxt  = inventTable.inventUnitId();
+    
+                hmSalesInvoiceReportLine.insert();
+            }
+    
+            while select * from custInvoiceTrans
+                where custInvoiceTrans.InvoiceId == dataContract.parmInvoiceId()
+                && custInvoiceTrans.ProtocolId == ""
+    
+            {
+                hmSalesInvoiceReportLine.clear();
+    
+                hmSalesInvoiceReportLine.ItemId = custInvoiceTrans.ItemId;
+                hmSalesInvoiceReportLine.ItemDescription = this.itemDescription(hmSalesInvoiceReportLine.ItemId, custTableInvoice.languageId());
+                hmSalesInvoiceReportLine.Amount = custInvoiceTrans.lineAmountInclTax();
+                hmSalesInvoiceReportLine.Qty = custInvoiceTrans.Qty;
+                hmSalesInvoiceReportLine.SalesPrice = custInvoiceTrans.SalesPrice;
+                hmSalesInvoiceReportLine.DiscPercent = custInvoiceTrans.DiscPercent;
+                hmSalesInvoiceReportLine.DiscountAmount = custInvoiceTrans.DiscAmount;
+                hmSalesInvoiceReportLine.SalesUnitTxt  = custInvoiceTrans.salesUnitTxt();
+    
+                hmSalesInvoiceReportLine.insert();
+            }
+        }
+    
+        while select * from custInvoiceTrans
+                where custInvoiceTrans.InvoiceId == dataContract.parmInvoiceId()
+        {
+            hmSalesInvoiceReportTaxLine.clear();
+    
+            hmSalesInvoiceReportTaxLine.TaxCode             = this.getTaxPeriod(custInvoiceTrans.TaxGroup);
+    
+            if(hmSalesInvoiceReportTaxLine.TaxCode != "")
+            {
+                hmSalesInvoiceReportTaxLine.TaxAmount       = custInvoiceTrans.TaxAmount;
+            }
+    
+            hmSalesInvoiceReportTaxLine.insert();
+        }
+    
+        hmSalesInvoiceReportHeader.insert();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

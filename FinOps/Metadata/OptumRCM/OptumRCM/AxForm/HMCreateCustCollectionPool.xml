@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMCreateCustCollectionPool</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMCreateCustCollectionPool extends FormRun
+{
+    #OCCRetryCount
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCustCollectionPool</Name>
+				<Source><![CDATA[
+    public void insertCustCollectionPool()
+    {
+        CustCollectionsPool custCollectionsPool;
+        DirPartyTable       dirPartyTable;
+        try
+        {
+            ttsbegin;
+            custCollectionsPool.clear();
+            custCollectionsPool.Name                 = Name.text();
+            custCollectionsPool.Description          = Description.text();
+            custCollectionsPool.Type                 = Type.selection();
+            custCollectionsPool.HMPriorityStrategyID = HMPriorityStrategyID.text();
+            custCollectionsPool.HMSequenceNumber     = HMSequenceNumber.realValue();
+
+            if (HMManager.text() != '')
+            {
+                select firstonly RecId from dirPartyTable
+                    where dirPartyTable.Name == HMManager.text();
+
+                custCollectionsPool.HMManager = dirPartyTable.RecId;
+            }
+
+            custCollectionsPool.HMIsOnShore                     = HMIsOnShore.checked();
+            custCollectionsPool.HMIsCriteriaChanged             = HMIsCriteriaChanged.checked();
+            custCollectionsPool.HMIsConsiderForZeroDeniedClaims = HMIsConsiderForZeroDeniedClaims.checked();
+
+            if (custCollectionsPool.validateWrite())
+            {
+                custCollectionsPool.insert();
+            }
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@SYS129816"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@SYS129816"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initiate the close button of the form
+    /// </summary>
+    public void closeOk()
+    {
+        FormRun             formRun = element.args().caller();
+        formDataSource      fds;
+        str                 errorMsg = '';
+        int                 position;
+        DirPartyTable       dirPartyTable;
+        HMPriorityStrategy  hmPriorityStrategy;
+        CustCollectionsPool custCollectionsPool, checkCustCollectionsPool;
+        real                selectedSeqNum= HMSequenceNumber.realValue();
+        
+        if(HMManager.text() != '')
+        {
+            select firstonly RecId from dirPartyTable
+                    where dirPartyTable.Name == HMManager.text();
+
+            if (dirPartyTable.RecId == 0)
+            {
+                throw Error("@Optum:HmManagerNotExistErrMsg");
+            }
+        }
+
+        if(HMPriorityStrategyID.text() != '')
+        {
+            select firstonly RecId from hmPriorityStrategy
+                    where hmPriorityStrategy.HMPriorityStrategyID == HMPriorityStrategyID.text();
+
+            if (hmPriorityStrategy.RecId == 0)
+            {
+                throw Error("@Optum:HMPriorityStrategyIDNotExistErrMsg");
+            }
+        }
+
+        if(!Name.text() || !Description.text() || !HMPriorityStrategyID.text() || selectedSeqNum <= 0)
+        {
+            errorMsg = !Name.text() ? "@SYS129778" :
+                       !Description.text() ? "@SYS129813" :
+                       !HMPriorityStrategyID.text() ? "@Optum:HMPriorityStrategyID" :
+                        selectedSeqNum <= 0 ? "@MAZ:HMSequenceNumberLabel" : '';
+
+            error(strFmt("@Optum:MAZOPT0090",errorMsg));
+
+            return;
+        }
+        else
+        {
+            select RecId from checkCustCollectionsPool
+                where checkCustCollectionsPool.HMSequenceNumber == selectedSeqNum;
+
+            if (checkCustCollectionsPool.RecId != 0)
+            {
+                DialogButton        diagBut;
+                str                 strMessage = "@Optum:DialogBoxMessage";
+                str                 strTitle = "Title";
+
+                diagBut = Box::yesNo(strFmt(strMessage, selectedSeqNum), DialogButton::No, strTitle);
+
+                if (diagBut == DialogButton::Yes)
+                {
+                    select maxof(HMSequenceNumber) from custCollectionsPool;
+
+                    HMCustCollectionsPoolSequencing::updateSequencing(selectedSeqNum, custCollectionsPool.HMSequenceNumber + 2);
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            fds = formRun.dataSource(1);
+
+            this.insertCustCollectionPool();
+
+            position = fds.getPosition();
+        }
+
+        super();
+        
+        fds.refresh();
+        fds.research();
+        fds.setPosition(position);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        CustCollectionsPool custCollectionsPool;
+
+        super();
+
+        select maxof(HMSequenceNumber) from custCollectionsPool;
+
+        HMSequenceNumber.realValue(custCollectionsPool.HMSequenceNumber + 1);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>HMPriorityStrategyID</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Lookup method for the priority strategy
+        /// </summary>
+        public void lookup()
+        {
+            Query                   query = new Query();
+            QueryBuildDataSource    qbds;
+  
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMPriorityStrategy), this);
+    
+            sysTableLookup.addLookupField(fieldNum(HMPriorityStrategy, HMPriorityStrategyID));
+            sysTableLookup.addLookupField(fieldNum(HMPriorityStrategy, HMPriorityStrategyDescription));
+    
+            qbds = query.addDataSource(tableNum(HMPriorityStrategy));
+
+            sysTableLookup.parmQuery(query);
+    
+            sysTableLookup.performFormLookup();
+
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMManager</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Lookup method for the manager
+        /// </summary>
+        public void lookup()
+        {
+            SysTableLookup          sysTableLookup;
+            Query                   query = new Query();
+            QueryBuildDataSource    qbdsDirPartyTable, qbdsDirPartyRelationship, qbdsCustCollectionsAgent;
+
+
+            qbdsDirPartyTable = query.addDataSource(tableNum(DirPartyTable));
+            qbdsDirPartyRelationship = qbdsDirPartyTable.addDataSource(tableNum(DirPartyRelationship));
+            qbdsDirPartyRelationship.joinMode(JoinMode::InnerJoin);
+            qbdsDirPartyRelationship.addLink(fieldNum(DirPartyTable,RecId),fieldNum(DirPartyRelationship,ChildParty));
+            qbdsCustCollectionsAgent = qbdsDirPartyRelationship.addDataSource(tableNum(CustCollectionsAgent));
+            qbdsCustCollectionsAgent.joinMode(JoinMode::InnerJoin);
+            qbdsCustCollectionsAgent.addLink(fieldNum(DirPartyRelationship,RecId),fieldNum(CustCollectionsAgent,DirPartyRelationship));
+            qbdsCustCollectionsAgent.addRange(fieldNum(CustCollectionsAgent, HMIsManager)).value(SysQuery::value(NoYes::Yes));
+  
+            sysTableLookup = SysTableLookup::newParameters(tableNum(DirPartyTable), this);
+            sysTableLookup.parmQuery(query);  
+            sysTableLookup.addLookupField(fieldNum(DirPartyTable, Name));
+     
+            sysTableLookup.performFormLookup();
+
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@Optum:HMCreateCustCollectionPool</Caption>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>ContentSectionGroup</Name>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>Custom</Pattern>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Name</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741823</ElementPosition>
+						<HelpText>@FieldDescriptions_AccountsReceivable:CustCollectionsPool_PoolFieldsGroup_Name</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS129778</Label>
+						<LimitText>20</LimitText>
+						<LimitTextMode>Fixed</LimitTextMode>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Description</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612734</ElementPosition>
+						<HelpText>@FieldDescriptions_AccountsReceivable:CustCollectionsPool_PoolFieldsGroup_Description</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>CustCollectionsPoolDescription</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>Type</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1879048190</ElementPosition>
+						<HelpText>@FieldDescriptions_AccountsReceivable:CustCollectionsPool_PoolFieldsGroup_Type</HelpText>
+						<Type>ComboBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<ComboType>List</ComboType>
+						<EnumType>CustPoolType</EnumType>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMPriorityStrategyID</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMPriorityStrategyID</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>HMSequenceNumber</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMSequenceNumber</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMManager</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMManager</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>HMIsOnShore</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:MAZOPT0023</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>HMIsCriteriaChanged</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:IsPoolModified</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>HMIsConsiderForZeroDeniedClaims</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>CheckBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:HMIsConsiderForZeroDeniedClaims</Label>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OkButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>CommandButton</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CancelButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612734</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+						<SaveRecord>No</SaveRecord>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

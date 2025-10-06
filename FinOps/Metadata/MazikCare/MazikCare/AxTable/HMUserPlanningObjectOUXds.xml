@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMUserPlanningObjectOUXds</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMUserPlanningObjectOUXds extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>xds</Name>
+				<Source><![CDATA[
+    public RefreshFrequency xds()
+    {
+        DirPersonUser                   dirPersonUser;
+        DirPerson                       dirPerson;
+        DirPartyTable                   dirPartyTable;
+        VendTable                       vendTable;
+        HcmWorker                       hcmWorker;
+        HMResourceMaster                hmResourceMaster;
+        HMResourceOrganizationalUnit    hmResourceOrgUnit;
+        Query                           queryResource;
+        HMResourceType                  hmResourceType;
+        QueryRun                        queryRun;
+        boolean                         isFirst = true;
+        HMUserPlanningObjectOUXds       hmUserPlanningObjectOUXds;
+        str resultRecid;
+    
+    
+        select * from dirPersonUser
+        join InstanceRelationType,RecId from dirPartyTable
+        where dirPartyTable.RecId == dirPersonUser.PersonParty
+        && dirPersonUser.User == curUserId();
+    
+        select firstOnly RecId from vendTable
+            where vendTable.Party == dirPartyTable.RecId;
+        if(vendTable.RecId)
+        {
+            hmResourceType = HMResourceType::Vendor;
+        }
+    
+        select firstOnly RecId from hcmWorker
+            where hcmWorker.Person == dirPersonUser.PersonParty;
+        if(hcmWorker.RecId)
+        {
+            hmResourceType = HMResourceType::Employee;
+        }
+        queryResource = new Query();
+        queryResource.addDataSource(tablenum(HMResourceSchedulingPlanningObject)).addDataSource(tableNum(HMOrganizationalUnit)).relations(true);
+        queryResource.dataSourceTable(tableNum(HMOrganizationalUnit)).addRange(fieldNum(HMOrganizationalUnit,RecId)).value(SysQuery::value(0));
+        if(vendTable.RecId || hcmWorker.RecId)
+        {
+            queryResource = new Query();
+            queryResource.addDataSource(tableNum(HMResourceOrganizationalUnit)).addDataSource(tableNum(HMResourceMaster)).relations(true);
+            queryResource.dataSourceTable(tableNum(hmResourceMaster)).addRange(fieldNum(HMResourceMaster,Type)).value(SysQuery::value(hmResourceType));
+            queryResource.dataSourceTable(tableNum(hmResourceMaster)).addRange(fieldNum(HMResourceMaster,RefRecId)).value(SysQuery::value(hmResourceType == HMResourceType::Employee ? hcmWorker.RecId : vendTable.RecId));
+            queryRun = new QueryRun(queryResource);
+            while (queryRun.next())
+            {
+                hmResourceOrgUnit = queryRun.get(tableNum(HMResourceOrganizationalUnit));
+                hmUserPlanningObjectOUXds.HMOrganizationalUnit = hmResourceOrgUnit.HMOrganizationalUnit;
+                hmUserPlanningObjectOUXds.insert();
+            }
+        }
+    
+        return RefreshFrequency::PerSession;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<Label>@MAZ:HMUserPlanningObjectOUXds</Label>
+	<TableType>TempDB</TableType>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMOrganizationalUnit</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMOrganizationalUnit</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>HMOrganizationalUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMOrganizationalUnit</Name>
+					<Field>HMOrganizationalUnit</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMAssignedAgentToClaims</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMAssignedAgentToClaims extends FormRun
+{   
+    str                     gPoolId;
+    MultiSelectionHelper    helper;
+
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>assignAgent</Name>
+				<Source><![CDATA[
+    public void assignAgent(RecId _hmClaimTable, RecId _agentId)
+    {
+        HMClaimTable                hmClaimTable;
+        DirPartyTable               dirParty;
+        DirPartyRelationship        dirPartyRelationship;
+        CustCollectionsAgent        custCollectionsAgent;
+        CustCollectionsAgentPool    custCollectionsAgentPool;
+
+        select firstonly forupdate hmClaimTable
+            where hmClaimTable.RecId ==  _hmClaimTable;
+
+        select firstonly Name from dirParty
+            join RecId from dirPartyRelationship
+                where dirPartyRelationship.ChildParty == dirParty.RecId
+            join RecId from custCollectionsAgent
+                where custCollectionsAgent.DirPartyRelationship == dirPartyRelationship.RecId
+            join RecId from custCollectionsAgentPool
+                where custCollectionsAgentPool.CustCollectionsAgent == custCollectionsAgent.RecId
+                    && custCollectionsAgentPool.CustomerPoolId == gPoolId
+                    && custCollectionsAgent.RecId == _agentId;
+
+        if(dirParty.RecId == 0)
+        {
+            throw error ("@Optum:HMAgentDoesnotExistError");
+        }
+        else
+        {
+            hmClaimTable.ClaimAgent = _agentId;
+            hmClaimTable.AgentName  = dirParty.Name;
+        }
+
+        hmClaimTable.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createClaimChangeLog</Name>
+				<Source><![CDATA[
+    public void createClaimChangeLog(HMClaimTable _hmClaimTable)
+    {
+        HMClaimChangeLogTable hmClaimChangeLogTable;
+
+        hmClaimChangeLogTable.ClaimID          = _hmClaimTable.ClaimID;
+        hmClaimChangeLogTable.OldValue         = _hmClaimTable.AgentName;
+        hmClaimChangeLogTable.NewValue         = Agent.text();
+        hmClaimChangeLogTable.HMAssignmentType = HMAssignmentType::Agent;
+        hmClaimChangeLogTable.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        Set             intRecordSet = new Set(Types::Int64);
+        Set             strRecordSet = new Set(Types::String);
+        HMClaimTable    hmClaimTable;
+        FormRun         formRun = element.args().caller();
+        
+        helper = MultiSelectionHelper::construct();
+        helper.parmDatasource(element.args().record().dataSource());
+
+        hmClaimTable = helper.getFirst();
+        gPoolId = hmClaimTable.PoolName;
+
+        if(formRun.name() == formStr(mzkClaimManagerHMClaimsTableListPage) || formRun.name() == formStr(HMClaimSupervisorHMClaimsTableListPages))
+        {
+            while (hmClaimTable.RecId != 0)
+            {
+                strRecordSet.add(hmClaimTable.PatientAccountNum);
+           
+                if(strRecordSet.elements() > 1)
+                {
+                    throw error("@Optum:ClaimsFromMultiplePatientsAreSelectedErrorMsg");
+                }
+            
+                hmClaimTable = helper.getNext();
+            }
+        }
+        else
+        {
+            while (hmClaimTable.RecId != 0)
+            {
+                intRecordSet.add(hmClaimTable.ClaimPool);
+           
+                if(intRecordSet.elements() > 1)
+                {
+                    throw error("@Optum:ClaimsFromMultiplePoolsAreSelectedErrorMsg");
+                }
+            
+                hmClaimTable = helper.getNext();
+            }
+        }
+
+        super();
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>Agent</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Lookup for Agent names for the selected pool.
+        /// </summary>
+        public void lookup()
+        {
+            SysTableLookup			sysTableLookUp;
+            QueryBuildDataSource	qbdsCustCollectionsAgent;
+            QueryBuildDataSource	qbdsDirPartyRelationship;
+            QueryBuildDataSource	qbdsDirPartyTable;
+            QueryBuildDataSource    qbdsCustcollectionsAgentPool;
+            Query					query = new Query();
+            CustCollectionsAgent    custCollectionsAgent = CustCollectionsAgent::findCurrentAgent();
+            DirPartyRelationship    dirPartyRelationship;
+            
+            if (custCollectionsAgent.HMIsManager == NoYes::Yes)
+            {
+                qbdsDirPartyTable = query.addDataSource(tableNum(DirPartyTable));
+                qbdsDirPartyRelationship = qbdsDirPartyTable.addDataSource(tableNum(DirPartyRelationship));
+                qbdsDirPartyRelationship.addLink(fieldNum(DirPartyTable,RecId),fieldNum(DirPartyRelationship,ChildParty));
+                qbdsDirPartyRelationship.joinMode(joinMode::InnerJoin);
+                qbdsCustCollectionsAgent = qbdsDirPartyRelationship.addDataSource(tableNum(CustCollectionsAgent));
+                qbdsCustCollectionsAgent.addLink(fieldNum(DirPartyRelationship,RecId),fieldNum(CustCollectionsAgent,DirPartyRelationship));
+                qbdsCustCollectionsAgent.joinMode(joinMode::InnerJoin);
+                qbdsCustCollectionsAgentPool = qbdscustCollectionsAgent.addDataSource(tableNum(CustCollectionsAgentPool));
+                qbdsCustCollectionsAgentPool.addLink(fieldNum(CustCollectionsAgent,RecId),fieldNum(CustCollectionsAgentPool,CustCollectionsAgent));
+                qbdsCustCollectionsAgentPool.joinMode(joinMode::InnerJoin);
+                qbdsCustCollectionsAgentPool.addRange(fieldNum(CustCollectionsAgentPool,CustomerPoolId)).value(SysQuery::value(gPoolId));
+            }
+            else
+            {
+                select firstonly ChildParty from dirPartyRelationship
+                    where dirPartyRelationship.RecId == custCollectionsAgent.DirPartyRelationship;
+
+                qbdsDirPartyTable = query.addDataSource(tableNum(DirPartyTable));
+                qbdsDirPartyRelationship = qbdsDirPartyTable.addDataSource(tableNum(DirPartyRelationship));
+                qbdsDirPartyRelationship.addLink(fieldNum(DirPartyTable,RecId),fieldNum(DirPartyRelationship,ChildParty));
+                qbdsDirPartyRelationship.joinMode(joinMode::InnerJoin);
+                qbdsCustCollectionsAgent = qbdsDirPartyRelationship.addDataSource(tableNum(CustCollectionsAgent));
+                qbdsCustCollectionsAgent.addLink(fieldNum(DirPartyRelationship,RecId),fieldNum(CustCollectionsAgent,DirPartyRelationship));
+                qbdsCustCollectionsAgent.addRange(fieldNum(CustCollectionsAgent,HMSupervisor)).value(SysQuery::value(dirPartyRelationship.ChildParty));
+            }
+             
+
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(DirPartyTable), this);
+            sysTableLookUp.addLookupfield(fieldNum(DirPartyTable, Name), true);
+
+            sysTableLookUp.parmQuery(query);
+
+            sysTableLookUp.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CommandOK</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            FormRun                 formRun;
+            HMClaimTable			claimTable;
+            CustCollectionsAgent	getCustCollectionsAgent;
+            DirPartyRelationship	getDirPartyRelationship;
+            DirPartyTable			partyTable;
+            
+            formRun = element.args().caller();
+            formDataSource fds = formRun.dataSource();
+
+            super();
+
+            if(Agent.text() != '')
+            {
+                if (Agent.text())
+                {
+                    select firstonly RecId from getCustCollectionsAgent
+                    join getDirPartyRelationship
+                        where getDirPartyRelationship.RecId == getCustCollectionsAgent.DirPartyRelationship
+                    join partyTable
+                        where partyTable.RecId == getDirPartyRelationship.ChildParty
+                            && partyTable.Name == Agent.text();
+
+                    if (getCustCollectionsAgent.RecId == 0)
+                    {
+                        throw Error ("@Optum:PleaseSelectValidCollectionAgentErrorMsg");
+                    }
+                }
+
+                helper = MultiSelectionHelper::construct();
+                helper.parmDatasource(fds);
+            
+                claimTable = helper.getFirst();
+            
+                while (claimTable.RecId != 0)
+                {
+                    if (SkipClaims.value() == false || claimTable.AgentName == '')
+                    {
+                        ttsbegin;
+                        element.assignAgent(claimTable.RecId, getCustCollectionsAgent.RecId);
+                        element.createClaimChangeLog(claimTable);
+                        ttscommit;
+                    }
+
+                    claimTable = helper.getNext();
+                }
+
+                if(formRun.name() == formStr(HMAllClaims))
+                {
+                    fds.reread();
+                }
+                else
+                {
+                    int position = fds.getPosition();
+
+                    fds.refresh();
+                    fds.research();
+                    fds.setPosition(position);
+                }
+                element.close();
+            }
+            else
+            {
+                throw warning("@Optum:HMSelectAgentToAssign");
+            }
+            
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@MAZ:HMAssignAgent</Caption>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Agent</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS65249</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCheckBoxControl">
+						<Name>SkipClaims</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1561806288</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>CheckBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ:HMButtonLabel</Label>
+						<Value>1</Value>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandOK</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<AutoRefreshData>Yes</AutoRefreshData>
+						<ButtonDisplay>TextOnly</ButtonDisplay>
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@MAZ6110</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

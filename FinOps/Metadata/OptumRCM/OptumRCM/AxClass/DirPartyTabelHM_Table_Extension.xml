@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>DirPartyTabelHM_Table_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(tableStr(dirpartytable))]
+final class DirPartyTabelHM_Table_Extension
+{
+    #OCCRetryCount
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    public void update()
+    {
+        Name                oldName, newName;
+        RecId               party;
+        HMClaimTable        hmClaimTable;
+        CustTable           custTable;
+        HMInsuranceCarrier  hmInsuranceCarrier;
+        HMPatient           hmPatient;
+
+        oldName = this.orig().Name;
+        newName = this.Name;
+        party   = this.RecId;
+
+        next update();
+
+        if(newName != oldName)
+        {
+            try
+            {
+                select firstonly RecId from hmClaimTable
+                    join RecId from hmPatient
+                        where hmPatient.RecId == hmClaimTable.HMPatient
+                    join RecId from custTable
+                        where custTable.RecId == hmPatient.CustTable
+                            && custTable.Party == party;
+
+                if(hmClaimTable.RecId != 0)
+                {
+                    ttsbegin;
+
+                    update_recordset hmClaimTable
+                        setting PatientName = newName
+                    join hmPatient
+                        where hmPatient.RecId == hmClaimTable.HMPatient
+                    join custTable
+                        where custTable.RecId == hmPatient.CustTable
+                            && custTable.Party == party;
+
+                    ttscommit;
+                }
+                else
+                {
+                    select firstonly RecId from hmClaimTable
+                        join RecId from hmInsuranceCarrier
+                            where hmInsuranceCarrier.RecId == hmClaimTable.HMInsuranceCarrier
+                        join RecId from custTable
+                            where custTable.RecId == hmInsuranceCarrier.CustTable
+                                && custTable.Party == party;
+
+                    if(hmClaimTable.RecId != 0)
+                    {
+                        ttsbegin;
+
+                        update_recordset hmClaimTable
+                            setting PayorName = newName
+                        join hmInsuranceCarrier
+                            where hmInsuranceCarrier.RecId == hmClaimTable.HMInsuranceCarrier
+                        join custTable
+                            where custTable.RecId == hmInsuranceCarrier.CustTable
+                                && custTable.Party == party;
+
+                        ttscommit;
+                    }
+
+                }
+
+            }
+            catch (Exception::Deadlock)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ4740"));
+                }
+                else
+                {
+                    retry;
+                }
+
+            }
+            catch
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ4740"));
+                }
+                else
+                {
+                    retry;
+                }
+            }
+
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

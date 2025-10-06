@@ -1,0 +1,1331 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCaseService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCaseService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>cancelAppointmentOrder</Name>
+				<Source><![CDATA[
+    public boolean cancelAppointmentOrder(Guid _orderGuid, Guid _caseId)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues;
+        HMToken     token = HMParameters::find().AuthorizationToken;
+    
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/PatientOrder/cancelAppointmentOrder', "{'orderId':'" + guid2str(_orderGuid) +"','CaseId':'"+ guid2str(_caseId)+"' }", "Authorization: "+token+"");
+    
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+    
+                if(con2Str(conValues) == 'True')
+                {
+                    ret = true;
+                }
+                else
+                {
+                    ret = checkFailed("@MAZ13524");
+                }
+            }
+            else
+            {
+                if(appHelper.parmErrorMessage())
+                {
+                    checkFailed(appHelper.parmErrorMessage());
+                }
+    
+                ret = checkFailed("@MAZ13524");
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAccrueRevenueJournal</Name>
+				<Source><![CDATA[
+    public void createAccrueRevenueJournal(HMCaseTrans _hmCaseTrans)
+    {
+        HMAccrueRevenueJournalClass objClass = new HMAccrueRevenueJournalClass();
+        List list = new List(Types::Record);
+        list.addEnd(_hmCaseTrans);
+        objClass.createLines(list, false, true); 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCase</Name>
+				<Source><![CDATA[
+    public RecId createCase(RecId _patientRecId, recid _organizationalUnitRecId, HMCaseType _caseType, guid _crmRefRecId, HMCaseNo _caseNo, RecId _hmResourceMaster)
+    {
+        RecId caseRecId;
+        HMCase hmCaseLocal;
+        HMPatientChargeEntryTable   hmPatientChargeEntryTable;
+        try
+        {
+            caseRecId = HMCaseManagement::createCase(_patientRecId, _organizationalUnitRecId, _caseType, 0,datenull(), HMPreAuthorizationStatus::None,'', _caseNo, _hmResourceMaster,DateTimeUtil::utcNow(),'',0,0,true,0,0,_crmRefRecId);
+        }
+        catch
+        {
+            caseRecId = 0;
+        }
+    
+        return caseRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseTrans</Name>
+				<Source><![CDATA[
+    public RecId createCaseTrans(ItemId _itemid,
+                                    HMServiceStatus _serviceStatus,
+                                    Guid _caseGuid,
+                                    RecId _apptRecId,
+                                    real   _quantity,
+                                    Guid _orderId,
+                                    UnitIDBase _unit,
+                                    HMUrgency _urgency,
+                                    str notesToPharmacy,
+                                    str patientInstructionsEng,
+                                    str patientInstructionsArabic,
+                                    RecId _specialityRecId,
+                                    RecId _treatmentLocation)
+    {
+        RecId caseRecId, apptInventRecId, caseTransRecId;
+        HMPatientPaymentResponsibility paymentResponsibility;
+        HMCase hmCase;
+        InventTable inventTable;
+    
+        try
+        {
+            caseRecId = HMCaseService::getCaseRecId(_caseGuid);
+    
+            if(_itemid == "" && _specialityRecId > 0)
+            {
+                _itemid = this.getDefaultReferralService(_specialityRecId);
+            }
+    
+            if(!caseRecId)
+            {
+                checkFailed("@MAZ13287");
+            }
+    
+            if(!_itemid)
+            {
+                checkFailed("@MAZ13643");
+            }
+    
+            paymentResponsibility = HMCaseService::getPaymentResponsibility(caseRecId);
+            hmCase = HMCase::find(caseRecId);
+            //Zain : need to think on it.
+            //if(hmCase.HMCaseType == HMCaseType::Emergency)
+            //{
+            //    if(hmCase.HMPatientInsurance)
+            //    {
+            //        paymentResponsibility = HMPatientPaymentResponsibility::Client;
+            //    }
+            //    else
+            //    {
+            //        paymentResponsibility = HMPatientPaymentResponsibility::Patient;
+            //    }
+            //}
+            //Zain
+    
+            ttsBegin;
+    
+    
+            apptInventRecId = HMResourceSchedulingAppointmentInvent::createApptInvent(_apptRecId, _itemid, "", paymentResponsibility, _serviceStatus , "", dateNull());
+    
+            caseTransRecId = HMCaseTrans::createCaseTrans(_itemid,"", _serviceStatus, paymentResponsibility,
+                "", HMPreAuthorizationStatus::None, dateNull(),caseRecId,_apptRecId, apptInventRecId,_quantity, _orderId,_unit, 0, _urgency, _treatmentLocation, HMAlternatDrugStatus::None);
+    
+            HMCaseTransOrderDetails::createCaseTransOrderDetaily(caseTransRecId,patientInstructionsEng,patientInstructionsArabic,notesToPharmacy);
+    
+            ttsCommit;
+        }
+        catch
+        {
+            caseTransRecId = 0;
+        }
+    
+        return caseTransRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseTransPharm</Name>
+				<Source><![CDATA[
+    public RecId createCaseTransPharm(ItemId _itemid,
+                                    HMServiceStatus _serviceStatus,
+                                    RecId _caseRecId,
+                                    RecId _apptRecId,
+                                    real   _quantity,
+                                    Guid _orderId,
+                                    UnitIDBase _unit,
+                                    HMUrgency _urgency,
+                                    HMAlternatDrugStatus _alternateDrugStatus)
+    {
+        RecId caseRecId, apptInventRecId, caseTransRecId;
+        HMPatientPaymentResponsibility paymentResponsibility;
+    
+        try
+        {
+            caseRecId = _caseRecId;
+    
+            if(!caseRecId)
+            {
+                checkFailed("@MAZ13287");
+            }
+    
+            paymentResponsibility = HMCaseService::getPaymentResponsibility(_apptRecId);
+    
+            ttsBegin;
+    
+    
+            apptInventRecId = HMResourceSchedulingAppointmentInvent::createApptInvent(_apptRecId, _itemid, "", paymentResponsibility, _serviceStatus , "", dateNull());
+    
+            caseTransRecId = HMCaseTrans::createCaseTrans(_itemid,"", _serviceStatus, paymentResponsibility,
+                                    "", HMPreAuthorizationStatus::None, dateNull(),caseRecId,_apptRecId, apptInventRecId,_quantity, _orderId,_unit, 0,_urgency, _alternateDrugStatus);
+    
+            ttsCommit;
+        }
+        catch
+        {
+            caseTransRecId = 0;
+        }
+    
+        return caseTransRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseTransTemp</Name>
+				<Source><![CDATA[
+    public RecId createCaseTransTemp(ItemId _itemid,
+                                    HMServiceStatus _serviceStatus,
+                                    RecId _caseRecId,
+                                    RecId _apptRecId,
+                                    int   _quantity,
+                                    guid _orderId)
+    {
+        RecId caseRecId, apptInventRecId, caseTransRecId;
+        HMPatientPaymentResponsibility paymentResponsibility;
+        HMCase hmCase;
+        try
+        {
+            caseRecId = _caseRecId;
+    
+            if(!caseRecId)
+            {
+                checkFailed("@MAZ13287");
+            }
+            if(_apptRecId)
+            {
+                paymentResponsibility = HMCaseService::getPaymentResponsibility(_apptRecId);
+            }
+            else
+            {
+                hmCase = hmCase::find(caseRecId);
+                if(hmCase.HMPatientInsurance == 0)
+                {
+                    paymentResponsibility = HMPatientPaymentResponsibility::Patient;
+                }
+                else
+                {
+                    paymentResponsibility = HMPatientPaymentResponsibility::Client;
+                }
+    
+    
+            }
+    
+            ttsBegin;
+    
+            apptInventRecId = HMResourceSchedulingAppointmentInvent::createApptInvent(_apptRecId, _itemid, "", paymentResponsibility, _serviceStatus , "", dateNull());
+    
+            //caseTransRecId = HMCaseTrans::createCaseTrans(_itemid,"", _serviceStatus, paymentResponsibility,"", HMPreAuthorizationStatus::None, dateNull(),caseRecId,_apptRecId, apptInventRecId,_quantity, _orderId);
+    
+            ttsCommit;
+        }
+        catch
+        {
+            caseTransRecId = 0;
+        }
+    
+        return caseTransRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseTransTemp2</Name>
+				<Source><![CDATA[
+    public RecId createCaseTransTemp2(ItemId _itemid,
+                                    HMServiceStatus _serviceStatus,
+                                    RecId _caseRecId,
+                                    RecId _apptRecId,
+                                    real   _quantity,
+                                    Guid _orderId,
+                                    UnitIDBase _unit,
+                                    HMUrgency _urgency)
+    {
+        RecId caseRecId, apptInventRecId, caseTransRecId;
+        HMPatientPaymentResponsibility paymentResponsibility;
+    
+        try
+        {
+            caseRecId = _caseRecId;
+    
+    
+            if(!caseRecId)
+            {
+                checkFailed("@MAZ13287");
+            }
+    
+            paymentResponsibility = HMCaseService::getPaymentResponsibility(_apptRecId);
+    
+            ttsBegin;
+    
+    
+            apptInventRecId = HMResourceSchedulingAppointmentInvent::createApptInvent(_apptRecId, _itemid, "", paymentResponsibility, _serviceStatus , "", dateNull());
+    
+            caseTransRecId = HMCaseTrans::createCaseTrans(_itemid,"", _serviceStatus, paymentResponsibility,
+                "", HMPreAuthorizationStatus::None, dateNull(),caseRecId,_apptRecId, apptInventRecId,_quantity, _orderId,_unit, 0,_urgency, HMAlternatDrugStatus::None);
+    
+            ttsCommit;
+        }
+        catch
+        {
+            caseTransRecId = 0;
+        }
+    
+        return caseTransRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createChargeEntryLine</Name>
+				<Source><![CDATA[
+    public void createChargeEntryLine(RecId _hmCaseTransRecId)
+    {
+        HMCaseTrans                     hmCaseTrans;
+        HMPatientChargeEntryLine        hmPatientChargeEntryLineLocal, hmPatientChargeEntryLineNew;
+        HMPatientChargeEntryTable       HMPatientChargeEntryTable;
+        HMPatientInsurance              hmPatientInsurance;
+        HMInsuranceCarrier              hmInsuranceCarrier;
+        HMCase                          hmCase;
+        date                            _batchDate;
+        HMInsuranceCarrierBatchDetails  HMInsuranceCarrierBatchDetails;
+        HMInventTable                   hmInventTable;
+        //Musab
+        HMItemCptPcsCodes               revenueCode, hcpcsCode;
+        HMProcedureCodeMaster           revenueProc, hcpcsProc;
+        // Musab
+    
+        HMResourceSchedulingAppointment appt;
+    
+        hmCaseTrans = hmCaseTrans::find(_hmCaseTransRecId, false, ConcurrencyModel::Auto);
+    
+        select HMIsAppointmentOnly from hmInventTable
+        where hmInventTable.InventTable == hmCaseTrans.ItemId;
+    
+        select AppointmentDate from appt
+        where appt.RecId == hmCaseTrans.HMResourceSchedulingAppointment;
+    
+        select RecId,HMCase,ChargeEntryDate from HMPatientChargeEntryTable
+        where HMPatientChargeEntryTable.HMCase == hmCaseTrans.HMCase
+        && HMPatientChargeEntryTable.HMResourceSchedulingAppointment == hmCaseTrans.HMResourceSchedulingAppointment;
+    
+        if(hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Client)
+        {
+            select RecId,BatchMatching from hmInsuranceCarrier
+            join hmPatientInsurance
+            join hmCase
+            where hmInsuranceCarrier.Code == hmPatientInsurance.InsuranceCarrier
+            && hmPatientInsurance.recid == hmCase.HMPatientInsurance
+            && hmCase.recid == HMPatientChargeEntryTable.HMCase;
+            if(hmInsuranceCarrier)
+            {
+                if(hmInsuranceCarrier.BatchMatching == HMInsuraceCarrierBatchMatching::ChargeEntry)
+                {
+                    _batchDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                }
+                else if(hmInsuranceCarrier.BatchMatching == HMInsuraceCarrierBatchMatching::Appointment)
+                {
+                    if(appt)
+                    {
+                        if((DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) - appt.AppointmentDate < hmInsuranceCarrier.CutOffDays) || hmInventTable.HMIsAppointmentOnly)
+                        {
+                            _batchDate = appt.AppointmentDate;
+                        }
+                        else
+                        {
+                            _batchDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                        }
+                    }
+                    else
+                    {
+                        _batchDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    }
+                }
+                HMInsuranceCarrierBatchDetails = HMInsuranceCarrierBatchDetails::findRecIdByCarrierAndDate(hmInsuranceCarrier.RecId,_batchDate);
+            }
+        }
+        if(HMPatientChargeEntryTable)
+        {
+            select count (RecId) from hmPatientChargeEntryLineLocal
+                        where hmPatientChargeEntryLineLocal.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId
+                        && hmPatientChargeEntryLineLocal.HMCaseTrans == hmCaseTrans.RecId;
+    
+            if (hmPatientChargeEntryLineLocal.RecId == 0)
+            {
+                hmPatientChargeEntryLineNew.HMCaseTrans = hmCaseTrans.RecId;
+                hmPatientChargeEntryLineNew.HMPatientChargeEntryTable = HMPatientChargeEntryTable.RecId;
+                hmPatientChargeEntryLineNew.HMInsuranceCarrierBatchDetails = HMInsuranceCarrierBatchDetails.RecId;
+                hmPatientChargeEntryLineNew.PerformedDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                //Added by Musab.
+
+                select * from  hcpcsCode
+                    where hcpcsCode.ItemId == hmCaseTrans.ItemId
+                join * from hcpcsProc
+                    where hcpcsProc.RecId == hcpcsCode.HMProcedureCodeMaster
+                    && hcpcsProc.Type == HMProcCodeSearchType::CPT_HCPS;
+                
+                hmPatientChargeEntryLineNew.CPTCodes = hcpcsCode.HMProcedureCodeMaster;
+                
+                select * from  revenueCode
+                        where revenueCode.ItemId == hmCaseTrans.ItemId
+                    join * from revenueProc
+                        where revenueProc.RecId == revenueCode.HMProcedureCodeMaster
+                        && revenueProc.Type == HMProcCodeSearchType::Revenue;
+
+                hmPatientChargeEntryLineNew.RevenueCode = revenueCode.HMProcedureCodeMaster;
+                // Musab.
+                //if (hmPatientChargeEntryLineNew.validateWrite())
+                //{
+                hmPatientChargeEntryLineNew.write();
+                //}
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPurchOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// createPurchaseOrder
+    /// Created by Zain for Demo purpose
+    /// </summary>
+    /// <param name = "_hmCaseTrans"></param>
+    private NOYes createPurchOrder(RecId _hmCaseTrans)
+    {
+        NOYes				isPOCreated;
+        HMCaseTrans			hmCaseTransLocal;
+        PurchTable			purchTableLocal;
+        PurchLine			purchLineLocal;
+        VendTable			vendTable;
+        NumberSeq			numberSeq;
+        HMResourceMaster	hmResourceMasterLocal;
+
+        try
+        {
+            hmCaseTransLocal = HMCaseTrans::find(_hmCaseTrans, false, ConcurrencyModel::Auto);
+            hmResourceMasterLocal = HMResourceMaster::findByType(HMCase::find(hmCaseTransLocal.HMCase).HMResourceMaster, HMResourceType::Vendor);
+            if (hmCaseTransLocal && hmResourceMasterLocal)
+            {
+                ttsbegin;
+                numberSeq = NumberSeq::newGetNum(PurchParameters::numRefPurchId());
+                purchTableLocal.clear();
+                purchTableLocal.initValue();
+                purchTableLocal.PurchId = numberSeq.num();
+                purchTableLocal.HMCaseTrans = hmCaseTransLocal.RecId;
+                vendTable = VendTable::findRecId(hmResourceMasterLocal.RefRecId);
+                purchTableLocal.initFromVendTable(vendTable);
+                purchTableLocal.LanguageId = CompanyInfo::languageId();
+                purchTableLocal.InvoiceAccount = vendTable.AccountNum;
+                purchTableLocal.CurrencyCode = Ledger::accountingCurrency(CompanyInfo::current());
+                if (!purchTableLocal.validateWrite())
+                        throw Exception::Error;
+                else
+                {
+                    numberSeq.used();
+                    purchTableLocal.insert();
+                }
+
+                purchLineLocal.clear();
+                purchLineLocal.initValue();
+                purchLineLocal.PurchId = purchTableLocal.PurchId;
+                purchLineLocal.initFromPurchTable(purchTableLocal);
+                purchLineLocal.ItemId = hmCaseTransLocal.ItemId;
+                purchLineLocal.QtyOrdered = hmCaseTransLocal.Qty;
+                purchLineLocal.InventDimId = hmCaseTransLocal.InventDim;
+                if (!purchLineLocal.validateWrite())
+                        throw Exception::Error;
+                else
+                        purchLineLocal.insert();
+                ttscommit;
+                isPOCreated = NoYes::Yes;
+            }
+            else
+                    isPOCreated = NOyes::No;
+
+        }
+        catch
+        {
+            ttsabort;
+        }
+
+        return isPOCreated;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createMovementJournal</Name>
+				<Source><![CDATA[
+    public void createMovementJournal(HMCaseTrans _hmCaseTrans)
+    {
+        // HMMovementJournalClass objClass = new HMMovementJournalClass();
+        List list = new List(Types::Record);
+        list.addEnd(_hmCaseTrans);
+        //Fixed by Musab.
+        // objClass.createLines(list);
+        HMMovementJournalClass::createJournalLines(list);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createProcedureOrder</Name>
+				<Source><![CDATA[
+    public boolean createProcedureOrder(recId _caseTransRecId)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues;
+        HMCaseTrans                         hmCaseTrans;
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        HMResourceSchedulingPlanningObject  hmResourceSchedulingPlanningObject;
+        HMToken     token = HMParameters::find().AuthorizationToken;
+    
+        try
+        {
+            if(token == "")
+            {
+                warning("@MAZ13482");
+                ret = checkFailed("@MAZ13483");
+            }
+    
+            select RecId, HMResourceSchedulingAppointment, HMPatient, ItemId from hmCaseTrans
+                where hmCaseTrans.RecId == _caseTransRecId
+                join AppointmentDate from hmResourceSchedulingAppointment where hmResourceSchedulingAppointment.RecId == hmCaseTrans.HMResourceSchedulingAppointment
+                join HMOrganizationalUnit from hmResourceSchedulingPlanningObject where hmResourceSchedulingPlanningObject.RecId == hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject;
+    
+            if(hmCaseTrans.RecId)
+            {
+                ret = appHelper.callPostWebAPI('api/PatientOrder/AddPateintProcedure', "{'AppointmentRecId':'"+int642str(hmCaseTrans.HMResourceSchedulingAppointment)+"','PatientId':'"+int642str(hmCaseTrans.HMPatient)+"','CaseTransRecId':'"+int642str(hmCaseTrans.RecId)+"','ProcedureId':'"+hmCaseTrans.ItemId+"','FulfillmentDate':'"+date2StrUsr(hmResourceSchedulingAppointment.AppointmentDate)+"','LocationId':'"+int642str(hmResourceSchedulingPlanningObject.HMOrganizationalUnit)+"','clinicRecId':'"+int642str(hmResourceSchedulingPlanningObject.HMOrganizationalUnit)+"'}", "Authorization: "+token+"");
+    
+                if(ret)
+                {
+                    conValues = appHelper.parmRecordsCon();
+    
+                    if(con2Str(conValues) != '')
+                    {
+                        ttsBegin;
+    
+                        hmCaseTrans.selectForUpdate(true);
+                        hmCaseTrans.CRMOrderId = str2guid(con2Str(conValues));
+                        hmCaseTrans.update();
+    
+                        ttsCommit;
+    
+                        ret = true;
+                    }
+                    else
+                    {
+                        ret = checkFailed("@MAZ13483");
+                    }
+                }
+                else
+                {
+                    if(appHelper.parmErrorMessage())
+                    {
+                        checkFailed(appHelper.parmErrorMessage());
+                    }
+    
+                    ret = checkFailed("@MAZ13483");
+                }
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCaseTransDetails</Name>
+				<Source><![CDATA[
+    public HMCaseTransContract getCaseTransDetails(RecId _recId)
+    {
+        HMCaseTransContract                 hmCaseTransContract;
+        HMCaseTrans                         hmCaseTrans;
+        InventTable                         inventTable;
+        HMInventTable                       hmInventTable;
+        InventDim                           inventDim;
+        InventBatch                         inventBatch;
+        HMManufacturers                     hmManufacturers;
+    
+        hmCaseTransContract = new HMCaseTransContract();
+    
+        select RecId from hmCaseTrans
+         join ItemId from inventTable
+            where inventTable.ItemId == hmCaseTrans.ItemId
+        outer join RecId from hmInventTable where hmInventTable.InventTable == inventTable.ItemId
+        outer join ManufacturerName from hmManufacturers where hmManufacturers.RecId == hmInventTable.HMManufacturers
+        outer join RecId from inventDim where inventDim.inventDimId == hmCaseTrans.InventDim
+        outer join expDate, inventBatchId from inventBatch where inventBatch.inventBatchId == inventDim.inventBatchId
+        && inventBatch.itemId == hmCaseTrans.ItemId;
+    
+        hmCaseTransContract.parmBatchNum(inventBatch.inventBatchId);
+        hmCaseTransContract.parmExpiryDate(inventBatch.expDate);
+        hmCaseTransContract.parmManufacturerName(hmManufacturers.ManufacturerName);
+    
+        return hmCaseTransContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDefaultReferralService</Name>
+				<Source><![CDATA[
+    public ItemId getDefaultReferralService(RecId specialityRecId)
+    {
+        HMSpecialtyCode     hmSpecialtyCode;
+    
+        select firstonly InventTable from hmSpecialtyCode
+        where hmSpecialtyCode.RecId == specialityRecId;
+    
+        return hmSpecialtyCode.InventTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markCaseClosed</Name>
+				<Source><![CDATA[
+    public boolean markCaseClosed(Guid _caseGuid)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues;
+    
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/PatientCase/markClosed', "{'CaseId':'" + guid2str(_caseGuid) +"'}");
+    
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+    
+                if(con2Str(conValues) == '1')
+                {
+                    ret = true;
+                }
+                else
+                {
+                    ret = checkFailed("@MAZ13567");
+                }
+            }
+            else
+            {
+                if(appHelper.parmErrorMessage())
+                {
+                    checkFailed(appHelper.parmErrorMessage());
+                }
+    
+                ret = checkFailed("@MAZ13567");
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markCaseFinanciallyDischarged</Name>
+				<Source><![CDATA[
+    public boolean markCaseFinanciallyDischarged(Guid _caseGuid)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues;
+    
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/PatientCase/markFinancialDischarge', "{'CaseId':'" + guid2str(_caseGuid) +"'}");
+    
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+    
+                if(con2Str(conValues) == '1')
+                {
+                    ret = true;
+                }
+                else
+                {
+                    ret = checkFailed("@MAZ13499");
+                }
+            }
+            else
+            {
+                if(appHelper.parmErrorMessage())
+                {
+                    checkFailed(appHelper.parmErrorMessage());
+                }
+    
+                ret = checkFailed("@MAZ13499");
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markOrderPaid</Name>
+				<Source><![CDATA[
+    public boolean markOrderPaid(Guid _orderGuid, Guid _caseId)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues;
+    
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/PatientOrder/paidOrder', "{'orderId':'" + guid2str(_orderGuid) +"','CaseId':'"+ guid2str(_caseId)+"' }");
+    
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+    
+                if(con2Str(conValues) == 'True')
+                {
+                    ret = true;
+                }
+                else
+                {
+                    ret = checkFailed("@MAZ13289");
+                }
+            }
+            else
+            {
+                if(appHelper.parmErrorMessage())
+                {
+                    checkFailed(appHelper.parmErrorMessage());
+                }
+    
+                ret = checkFailed("@MAZ13289");
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refundOrder</Name>
+				<Source><![CDATA[
+    public boolean refundOrder(Guid _orderGuid, Guid _caseId)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues;
+    
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/PatientOrder/refundOrder', "{'orderId':'" + guid2str(_orderGuid) +"','CaseId':'"+ guid2str(_caseId)+"' }");
+    
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+    
+                if(con2Str(conValues) == 'True')
+                {
+                    ret = true;
+                }
+                else
+                {
+                    ret = checkFailed("@MAZ13633");
+                }
+            }
+            else
+            {
+                if(appHelper.parmErrorMessage())
+                {
+                    checkFailed(appHelper.parmErrorMessage());
+                }
+    
+                ret = checkFailed("@MAZ13633");
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAppointmentDetails</Name>
+				<Source><![CDATA[
+    public boolean updateAppointmentDetails(Guid _orderGuid, date _date, recId _apptRecId, RecID _patientRecId =0, boolean _registered = false)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues;
+    
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/PatientOrder/updateAppointmentDetails', "{'orderId':'" + guid2str(_orderGuid) +"', 'date':'"+date2StrUsr(_date)+"', 'AxAppoitnmentRefRecId':'"+int642str(_apptRecId)+"', 'patientRecId':'"+int642str(_patientRecId)+"', 'registered':'" +(_registered ? 'True' : 'Fasle')+"'}");
+    
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+    
+                if(con2Str(conValues) == 'True')
+                {
+                    ret = true;
+                }
+                else
+                {
+                    ret = checkFailed("@MAZ13422");
+                }
+            }
+            else
+            {
+                if(appHelper.parmErrorMessage())
+                {
+                    checkFailed(appHelper.parmErrorMessage());
+                }
+    
+                ret = checkFailed("@MAZ13422");
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseStatus</Name>
+				<Source><![CDATA[
+    public boolean updateCaseStatus(str _caseGUID, HMCaseStatus _caseStatus)
+    {
+        boolean                 ret;
+        HMCase                  hmCase;
+    
+        guid caseGUID = str2guid(_caseGUID);
+    
+        try
+        {
+            ttsBegin;
+    
+            select forupdate hmCase where hmCase.CRMCaseRefID == caseGUID;
+    
+            if(hmCase)
+            {
+                hmCase.CaseStatus = _caseStatus;
+    
+                hmCase.update();
+            }
+            else
+            {
+                checkFailed("@MAZ13498");
+            }
+    
+            ttsCommit;
+    
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTransStatus</Name>
+				<Source><![CDATA[
+    public boolean updateCaseTransStatus(RecId _caseTransRecId, HMServiceStatus _serviceStatus, boolean createCharge, RecId _apptRecId, InventBatchId _batchId, guid _caseId, RefRecId _resourceRecId)
+    {
+        boolean                 ret;
+        HMCaseTrans             hmCaseTrans;
+        InventItemGroupItem     inventItemGroupItem;
+        ItemGroupId             consultationItemGroup = HMBillParameters::find().ConsultationItemGroup;
+        InventDim               inventDIm;
+        InventDimParm           inventDimParm;
+        HMCase                  hmCase, hmCaseResUpdate;
+        InventBatch             inventBatch;
+    
+        try
+        {
+            ttsBegin;
+    
+            if(_resourceRecId)
+            {
+                select forUpdate HMResourceMaster,HMCaseType from hmCaseResUpdate
+                where hmCaseResUpdate.CRMCaseRefID == _caseId;
+                if(hmCaseResUpdate.HMCaseType == HMCaseType::Emergency)
+                {
+                    if(hmCaseResUpdate.HMResourceMaster != _resourceRecId)
+                    {
+                        hmCaseResUpdate.HMResourceMaster = _resourceRecId;
+                        hmCaseResUpdate.update();
+                    }
+                }
+            }
+    
+            if(_apptRecId)
+            {
+                select forupdate firstOnly hmCaseTrans where hmCaseTrans.HMResourceSchedulingAppointment == _apptRecId
+                exists join inventItemGroupItem where inventItemGroupItem.ItemId == hmCaseTrans.ItemId
+                && inventItemGroupItem.ItemDataAreaId == hmCaseTrans.dataAreaId
+                && inventItemGroupItem.ItemGroupDataAreaId == hmCaseTrans.dataAreaId
+                && inventItemGroupItem.ItemGroupId == consultationItemGroup;
+            }
+            else if(_caseId != emptyGuid())
+            {
+                select forupdate firstOnly hmCaseTrans
+                    exists join hmCase where hmCase.CRMCaseRefID == _caseId
+                    && hmCase.RecId == hmCaseTrans.HMCase
+                    exists join inventItemGroupItem where inventItemGroupItem.ItemId == hmCaseTrans.ItemId
+                    && inventItemGroupItem.ItemDataAreaId == hmCaseTrans.dataAreaId
+                    && inventItemGroupItem.ItemGroupDataAreaId == hmCaseTrans.dataAreaId
+                    && inventItemGroupItem.ItemGroupId == consultationItemGroup;
+            }
+            else
+            {
+                select forupdate hmCaseTrans where hmCaseTrans.RecId == _caseTransRecId;
+            }
+    
+            if(hmCaseTrans)
+            {
+                if(hmCaseTrans.HMServiceStatus != _serviceStatus)
+                {
+                    if(hmCaseTrans.Urgency == HMUrgency::Stat && InventTable::find(hmCaseTrans.ItemId).ItemType == ItemType::Item)
+                    {
+                        inventDimParm =  InventDimParm::activeDimFlag(InventDimGroupSetup::newInventTable(InventTable::find(hmCaseTrans.ItemId)));
+                        inventDIm = inventDIm::find(hmCaseTrans.InventDim);
+                        if(inventDimParm.InventBatchIdFlag && (createCharge || _serviceStatus == HMServiceStatus::Complete))
+                        {
+                            if(!inventDIm.inventBatchId && !_batchId)
+                            {
+                                throw error("@MAZ13614");
+                            }
+    
+                            if(_batchId)
+                            {
+                                select RecId from inventBatch where inventBatch.inventBatchId == _batchId
+                                && inventBatch.itemId == hmCaseTrans.ItemId;
+    
+                                if(!inventBatch.RecId)
+                                {
+                                    throw error("Incorrect batch number entered");
+                                }
+    
+                                inventDIm.inventBatchId = _batchId;
+                                inventDIm = InventDIm::findOrCreate(inventDIm);
+                                hmCaseTrans.InventDim = inventDIm.inventDimId;
+                            }
+                        }
+                    }
+                    
+                    // Musab.
+                    if(HMBillParameters::find().AllowPaymBeforeService == NoYes::No
+                       && HMClaimTableSetup::findByRecEnum(hmCaseTrans.HMClaimTableSetup_PatientStatus, HMClaimEnumList::PatientStatus).Code != 'OP')
+                    {
+                        if(createCharge)
+                        {
+                            if(hmCaseTrans.ParentCaseTransId == 0)
+                            {
+                                //Zain - for Demo
+                                //this.createPurchOrder(hmCaseTrans.RecId);
+                                //Zain - for Demo
+                                this.createChargeEntryLine(hmCaseTrans.RecId);
+                            }
+                            if(InventTable::find(hmCaseTrans.ItemId).ItemType == ItemType::Item)
+                            {
+                                this.createMovementJournal(hmCaseTrans);
+                            }
+                            if(hmCaseTrans.ParentCaseTransId == 0)
+                            {
+                                if(hmCaseTrans.TotalAmount > 0 && hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Client)
+                                {
+                                    this.createAccrueRevenueJournal(hmCaseTrans);
+                                }
+                            }
+    
+                        }
+                     
+                        hmCaseTrans.HMServiceStatus = _serviceStatus;
+    
+                        hmCaseTrans.update();
+
+                    }
+                    else
+                        error("Allow payment before service must be enabled");
+                }
+            }
+            else
+            {
+                checkFailed("@MAZ13288");
+            }
+    
+            ttsCommit;
+    
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTransStatusTmp</Name>
+				<Source><![CDATA[
+    public boolean updateCaseTransStatusTmp(RecId _caseTransRecId, HMServiceStatus _serviceStatus, boolean createCharge)
+    {
+        boolean ret;
+        HMCaseTrans     hmCaseTrans;
+    
+        try
+        {
+            ttsBegin;
+    
+            select forupdate hmCaseTrans where hmCaseTrans.RecId == _caseTransRecId;
+    
+            if(hmCaseTrans)
+            {
+                if(createCharge)
+                {
+                    if(InventTable::find(hmCaseTrans.ItemId).ItemType == ItemType::Item)
+                    {
+                        this.createMovementJournal(hmCaseTrans);
+                    }
+                    if(hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Client)
+                    {
+                        this.createAccrueRevenueJournal(hmCaseTrans);
+                    }
+                    this.createChargeEntryLine(_caseTransRecId);
+    
+                }
+                hmCaseTrans.HMServiceStatus = _serviceStatus;
+    
+                hmCaseTrans.update();
+            }
+            else
+            {
+                checkFailed("@MAZ13288");
+            }
+    
+            ttsCommit;
+    
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateReportUrl</Name>
+				<Source><![CDATA[
+    public boolean updateReportUrl(recId _hmcaseTransRecId, str _reportPath, str _reportUrl)
+    {
+        boolean                 ret;
+        HMClaimChargeLine       hmClaimChargeLine;
+        HMCaseTrans             hmCaseTrans;
+    
+        try
+        {
+            ttsBegin;
+    
+            select forupdate hmCaseTrans where hmCaseTrans.RecId == _hmcaseTransRecId;
+    
+            if(hmCaseTrans)
+            {
+                hmCaseTrans.ReportUrl = _reportUrl;
+    
+                hmCaseTrans.update();
+            }
+    
+            select forupdate hmClaimChargeLine where hmClaimChargeLine.HMCaseTrans == _hmcaseTransRecId;
+    
+            if(hmClaimChargeLine)
+            {
+                hmClaimChargeLine.ReportUrl = _reportUrl;
+    
+                hmClaimChargeLine.update();
+            }
+    
+            ttsCommit;
+    
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCaseRecId</Name>
+				<Source><![CDATA[
+    public static RecId getCaseRecId(guid _caseGuid)
+    {
+        HMCase hmCase;
+    
+        select RecId from hmCase
+            where hmCase.CRMCaseRefID == _caseGuid;
+    
+        return hmCase.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPaymentResponsibility</Name>
+				<Source><![CDATA[
+    public static HMPatientPaymentResponsibility getPaymentResponsibility(RecId _caseRecId)
+    {
+        //HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        //HMPatientPaymentResponsibility paymentResponsibility;
+
+        //select HMPatientInsurance from hmResourceSchedulingAppointment
+        //    where hmResourceSchedulingAppointment.RecId == _apptRecId;
+
+        //if (hmResourceSchedulingAppointment.HMPatientInsurance)
+        //{
+        //    paymentResponsibility = HMPatientPaymentResponsibility::Client;
+        //}
+        //else
+        //{
+        //    paymentResponsibility = HMPatientPaymentResponsibility::Patient;
+        //}
+        HMCaseInsurance                hmCaseInsurance;
+        HMPatientPaymentResponsibility paymentResponsibility;
+        select* from hmCaseInsurance
+            where hmCaseInsurance.HMCase == _caseRecId;
+
+        if(hmCaseInsurance.HMPatientInsurance)
+            paymentResponsibility = HMPatientPaymentResponsibility::Client;
+        else
+            paymentResponsibility = HMPatientPaymentResponsibility::Patient;
+    
+        return paymentResponsibility;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createInsurance</Name>
+				<Source><![CDATA[
+    [SysEntryPointAttribute(true)]
+    public RecId createInsurance(HMCode code, RecId custTable, HMCode hmFinancialClass, RecId hmClaimTemplate, Description name)
+    {
+        RecId insuranceRecId;
+
+        try
+        {
+            insuranceRecId = HMCaseManagement::createInsurance(code, custTable, hmFinancialClass, hmClaimTemplate, name);
+        }
+        catch
+        {
+            insuranceRecId = 0;
+        }
+    
+        return insuranceRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPatientInsurance</Name>
+				<Source><![CDATA[
+    [SysEntryPointAttribute(true)]
+    public RecId createPatientInsurance(RecId _patientREcId, RecId _insuranceRecId)
+    {
+        
+        HMPatientInsurance  patientInsurance,patientInsuranceCount;
+        RecId               patientInsuranceRecId;
+        
+        try
+        {
+            select Priority from patientInsuranceCount
+                order by Priority desc
+                where patientInsuranceCount.HMPatient == _patientRecId;
+            patientInsurance.InsuranceCarrier = HMInsuranceCarrier::find(_insuranceRecId).Code;
+            patientInsurance.HMPatient = _patientREcId;
+            patientInsurance.Priority = patientInsuranceCount.Priority +1;
+            patientInsurance.doInsert();
+
+            patientInsuranceRecId = patientInsurance.RecId;
+        }
+        catch
+        {
+            patientInsuranceRecId = 0;
+        }
+
+        return patientInsuranceRecId;
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseInsurance</Name>
+				<Source><![CDATA[
+    [SysEntryPointAttribute(true)]
+    public RecId createCaseInsurance(RecId _caseRecId, RecId _patientInsurance)
+    {
+        HMCaseInsurance     hmCaseInsurance;
+        HMPatientInsurance  patientInsurance;
+        RecId               caseInsuranceRecId;
+
+        try
+        {
+            patientInsurance = HMPatientInsurance::find(_patientInsurance);
+            hmCaseInsurance.HMCase = _caseRecId;
+            hmCaseInsurance.HMPatientInsurance = _patientInsurance;
+            hmCaseInsurance.InsuranceCarrier = patientInsurance.InsuranceCarrier;
+            hmCaseInsurance.IsActive = NoYes::Yes;
+            hmCaseInsurance.Priority = 1;
+    
+            hmCaseInsurance.doInsert();
+
+            caseInsuranceRecId = hmCaseInsurance.RecId;
+        }
+        catch
+        {
+            caseInsuranceRecId = 0;
+        }
+
+        return caseInsuranceRecId;
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getEncounterDetail</Name>
+				<Source><![CDATA[
+    public boolean getEncounterDetail(RecId _appoitnmentID)
+    {
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues, recContainer;
+        int recCount = 0, i =1;
+        HMToken     token = HMParameters::find().AuthorizationToken;
+
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/PatientEncounter/getEncounterDetails', "{'AppointmentRefRecId':'" + int642str(_appoitnmentID) +"','EncounterType':'"+ int2str(2)+"','SearchFilters':'Signed'  }", "Authorization: "+token+"");
+
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+                if(conValues != conNull())
+                {
+                    recCount = conPeek(conValues, 3);
+
+                    if(recCount > 0)
+                    {
+                        ret = true;
+                    }
+                    else
+                    {
+                        ret = false;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

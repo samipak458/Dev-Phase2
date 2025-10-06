@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMProtocolExamPriceListClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMProtocolExamPriceListClass
+{
+    HMAppointmentInventTmp      HMAppointmentInventTmp;
+    
+    HMResourceSchedulingHelper  HMResourceSchedulingHelperClass;
+    FormDataSource              formDataSource;
+    HMProtocolExamPriceListTmp  HMProtocolExamPriceListTmp;
+    Map                         mapFieldLabel;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>calculateTotal</Name>
+				<Source><![CDATA[
+    private void calculateTotal(Set _visibleFieldsSet)
+    {
+        SetEnumerator   visibleFieldEnumerator;
+        Map             siteWarehouseTotalMap;
+        MapEnumerator   siteWarehouseTotalMapEnumerator;
+        RecId           totalRecId;
+        QueryRun        queryRun;
+        Query           query;
+    
+        visibleFieldEnumerator = _visibleFieldsSet.getEnumerator();
+    
+        HMProtocolExamPriceListTmp.ItemId = 'TOTAL';
+        HMProtocolExamPriceListTmp.IsTotal = NoYes::Yes;
+        HMProtocolExamPriceListTmp.insert();
+    
+        totalRecId = HMProtocolExamPriceListTmp.RecId;
+    
+        siteWarehouseTotalMap = new Map(Types::Int64,Types::Real);
+        while(visibleFieldEnumerator.moveNext())
+        {
+            query = new query();
+            query.addDataSource(tableNum(HMProtocolExamPriceListTmp));
+            query.dataSourceTable(tableNum(HMProtocolExamPriceListTmp)).addSelectionField(visibleFieldEnumerator.current(),SelectionField::Sum);
+            queryRun = new queryRun(query);
+            queryRun.setCursor(HMProtocolExamPriceListTmp);
+            while(queryRun.next())
+            {
+                HMProtocolExamPriceListTmp = queryRun.get(tableNum(HMProtocolExamPriceListTmp));
+                siteWarehouseTotalMap.insert(visibleFieldEnumerator.current(),HMProtocolExamPriceListTmp.(visibleFieldEnumerator.current()));
+            }
+        }
+        ttsBegin;
+        select forUpdate HMProtocolExamPriceListTmp where HMProtocolExamPriceListTmp.RecId == totalRecId;
+    
+        siteWarehouseTotalMapEnumerator = siteWarehouseTotalMap.getEnumerator();
+        while(siteWarehouseTotalMapEnumerator.moveNext())
+        {
+            HMProtocolExamPriceListTmp.(siteWarehouseTotalMapEnumerator.currentKey()) = siteWarehouseTotalMapEnumerator.currentValue();
+        }
+        HMProtocolExamPriceListTmp.update();
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMProtocolExamPriceListTmp</Name>
+				<Source><![CDATA[
+    public HMProtocolExamPriceListTmp getHMProtocolExamPriceListTmp()
+    {
+        return HMProtocolExamPriceListTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMapFieldLabel</Name>
+				<Source><![CDATA[
+    public Map getMapFieldLabel()
+    {
+        return mapFieldLabel;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertExamCode</Name>
+				<Source><![CDATA[
+    private void insertExamCode(HMClientProtocol _hmCLientProtocol)
+    {
+        BOMVersion                              bomVersion;
+        BOM                                     BomTable;
+        InventTable                             inventTableLocal;
+    
+        select firstonly bomVersion
+            where bomVersion.ItemId == _hmCLientProtocol.ItemId
+            && bomVersion.Active
+            && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+            && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+    
+            while select bomTable
+            where bomTable.BOMId == bomVersion.BOMId
+            join ItemId,Product from inventTableLocal
+            where bomTable.ItemId == inventTableLocal.ItemId
+        {
+            HMProtocolExamPriceListTmp.clear();
+            HMProtocolExamPriceListTmp.ItemId = inventTableLocal.ItemId;
+            HMProtocolExamPriceListTmp.Description = inventTableLocal.itemDescriptionOrName();
+            HMProtocolExamPriceListTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFormDataSource</Name>
+				<Source><![CDATA[
+    public FormDataSource parmFormDataSource(FormDataSource _formDataSource = formDataSource)
+    {
+        formDataSource = _formDataSource;
+    
+        return formDataSource;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchExamPrice</Name>
+				<Source><![CDATA[
+    public void searchExamPrice(HMClientProtocol _hmClientProtocol, date _tradeAgreementDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        PriceDiscAdmTrans                       priceDiscAdmTrans,priceDiscAdmTransInvetDim;
+        str                                     siteWarehouse;
+        InventDim                               inventDim;
+        DictTable                               dictTable;
+        DictField                               dictField;
+        Set                                     setField;
+        int                                     counter = 1;
+        
+        HMResourceSchedulingHelperClass = new HMResourceSchedulingHelper();
+    
+        dictTable = new SysDictTable(tableNum(HMProtocolExamPriceListTmp));
+        setField = new set(Types::Int64);
+        this.insertExamCode(_hmClientProtocol);
+        mapFieldLabel = new Map(Types::Int64,Types::String);
+    
+        while select InventDimId from priceDiscAdmTransInvetDim
+            group by InventDimId
+            where priceDiscAdmTransInvetDim.InventDimId != ''
+            //where priceDiscAdmTransInvetDim.FromDate >= _tradeAgreementDate
+            //&& priceDiscAdmTransInvetDim.ToDate <= _tradeAgreementDate
+        {
+            siteWarehouse = '';
+            inventDim = inventDim::find(priceDiscAdmTransInvetDim.InventDimId);
+            dictField = new DictField(dictTable.id(), dictTable.fieldCnt2Id(counter));
+            while(dictField.name() == 'ItemId' || dictField.isSystem() || dictField.name() == 'Description' || dictField.name() == 'IsTotal')
+            {
+                counter++;
+                dictField = new DictField(dictTable.id(), dictTable.fieldCnt2Id(counter));
+            }
+            if(inventDim.InventSiteId)
+            {
+                siteWarehouse = inventDim.InventSiteId;
+            }
+            if(inventDim.InventLocationId)
+            {
+                siteWarehouse += ' / ' + inventDim.InventLocationId;
+            }
+            if(!siteWarehouse)
+            {
+                siteWarehouse = 'AllBlank';
+            }
+    
+    
+                mapFieldLabel.insert(fieldId2Ext(dictField.id(),1),siteWarehouse);
+                setField.add(dictField.id());
+                counter++;
+    
+    
+    
+        }
+        this.calculateTotal(setField);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

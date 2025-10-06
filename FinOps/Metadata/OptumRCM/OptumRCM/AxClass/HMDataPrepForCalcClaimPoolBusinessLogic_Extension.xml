@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDataPrepForCalcClaimPoolBusinessLogic_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(classStr(HMDataPrepForCalcClaimPoolBusinessLogic))]
+final class HMDataPrepForCalcClaimPoolBusinessLogic_Extension
+{
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillDataIntoHMClaimQualifiedForPoolAssignment</Name>
+				<Source><![CDATA[
+    public HMClaimQualifiedForPoolAssignment fillDataIntoHMClaimQualifiedForPoolAssignment(HMClaimTable _hmClaimTable)
+    {
+        this.insertDataIntoHMClaimPaymentPostingLatestDenialCode(_hmClaimTable);
+
+        return next fillDataIntoHMClaimQualifiedForPoolAssignment(_hmClaimTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoHMClaimPaymentPostingLatestDenialCode</Name>
+				<Source><![CDATA[
+    public void insertDataIntoHMClaimPaymentPostingLatestDenialCode(HMClaimTable _hmClaimTable)
+    {
+        HMClaimPaymentPosting                   hmClaimPaymentPosting;
+        TransDate                               postedDate;
+        RecordInsertList                        recordInsertList = new RecordInsertList(tableNum(HMClaimPaymentPostingLatestDenialCode));
+        HMClaimPaymentPostingLatestDenialCode   hmClaimPaymentPostingLatestDenialCode;
+
+        select firstonly1 DatePosted from hmClaimPaymentPosting
+            order by DatePosted desc
+            where hmClaimPaymentPosting.ClaimID == _hmClaimTable.ClaimID;
+
+        postedDate = hmClaimPaymentPosting.DatePosted;
+
+        while select RecId, ClaimID from hmClaimPaymentPosting
+            where hmClaimPaymentPosting.ClaimID == _hmClaimTable.ClaimID
+                && hmClaimPaymentPosting.DatePosted == postedDate                
+        {
+            hmClaimPaymentPostingLatestDenialCode.clear();
+            hmClaimPaymentPostingLatestDenialCode.HMClaimPaymentPosting         = hmClaimPaymentPosting.RecId;
+            hmClaimPaymentPostingLatestDenialCode.ClaimID                       = hmClaimPaymentPosting.ClaimID;
+            hmClaimPaymentPostingLatestDenialCode.TaskNumberForDataPreparation  = taskNumber;
+            hmClaimPaymentPostingLatestDenialCode.HMClaimBatchJobLogsHeader     = hmClaimBatchJobLogsHeader;
+
+            if(hmClaimPaymentPostingLatestDenialCode.validateWrite())
+            {
+                recordInsertList.add(hmClaimPaymentPostingLatestDenialCode);
+            }
+        }
+
+        try
+        {
+            ttsbegin;
+
+            recordInsertList.insertDatabase();
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error(strFmt("Failed to insert data on %1 temp table", "HMClaimPaymentPostingLatestDenialCode"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error(strFmt("Failed to insert data on %1 temp table", "HMClaimPaymentPostingLatestDenialCode"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

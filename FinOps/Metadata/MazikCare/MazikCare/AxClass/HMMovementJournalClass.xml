@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMMovementJournalClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMMovementJournalClass
+{
+    InventJournalTable inventJournalTable;
+    HMCaseTrans                         hmCaseTrans;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createLines</Name>
+				<Source><![CDATA[
+    public void createLines(List _list,boolean _reverse = false)
+    {
+        ListEnumerator                      listEnumerator;
+        boolean                             isFirst = true;
+        HMCaseTrans                        hmCaseTransLocal;
+        InventJournalId                     journalId;
+        //AxInventJournalTrans                journalTrans;
+        //Zain  -- RCM
+        InventJournalTrans                  inventJournalTrans;
+        InventJournalNameId                 inventJournalName;
+        JournalCheckPost                    journalCheckPost;
+        //Zain  -- RCM
+        HMCaseTransDetail                   hmCaseTransDetail;
+        InventJournalCheckPost_Movement     InventJournalCheckPost;
+        InventDim                           inventDim;
+        HMFinancialDimensionHelper          DimensionHelper = new HMFinancialDimensionHelper();
+        List                                journalTransList;
+        container                           journalTransContainer;
+
+        
+    
+    
+        listEnumerator  = _list.getEnumerator();
+        try
+        {
+            ttsBegin;
+            journalTransList = new List(Types::Container);
+            while(listEnumerator.moveNext())
+            {
+                hmCaseTrans = listEnumerator.current();
+                if(isFirst)
+                {
+                   
+                    isFirst = false;
+                    journalId = this.createMovementJournal();
+                }
+                if(inventJournalTable)
+                {
+                   
+                    ////journalTrans = new AxInventJournalTrans();
+                    ////journalTrans.inventJournalTableRecord(inventJournalTable);
+                    ////journalTrans.parmJournalId(inventJournalTable.JournalId);
+                    ////journalTrans.parmItemId(hmCaseTrans.ItemId);
+                    ////journalTrans.parmTransDate(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+                    ////journalTrans.parmInventDimId(hmCaseTrans.InventDim);
+                    ////journalTrans.parmQty(_reverse == false ? -hmCaseTrans.Qty: hmCaseTrans.Qty);
+                    inventJournalTrans.clear();
+                    inventJournalTrans.initFromInventJournalTable(inventJournalTable);
+                    inventJournalTrans.JournalId = journalId;//inventJournalTable.JournalId;
+                    inventJournalTrans.TransDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    inventJournalTrans.ItemId = hmCaseTrans.ItemId;
+                    // Fixed by Musab. RCM - Bug 3271.
+                    // RCM Start: 
+                    inventJournalTrans.HMCaseTrans = hmCaseTrans.RecId;
+                    inventJournalTrans.initFromInventTable(InventTable::find(hmCaseTrans.ItemId));
+                    if (_reverse ==  false)
+                    {
+                        inventJournalTrans.Qty = -hmCaseTrans.Qty;
+                        inventJournalTrans.CostAmount = inventJournalTrans.CostAmount * (-1);
+                    }
+                    else
+                    {
+                        inventJournalTrans.Qty = hmCaseTrans.Qty;
+                    }
+                    // RCM End.
+                    inventJournalTrans.InventDimId = hmCaseTrans.InventDim;
+                    
+                    //journalTrans.parmDefaultDimension(DimensionHelper.GetDefaultDimensionForMovementJournal(hmCaseTrans));
+                    ////journalTrans.parmLedgerDimension(this.getIssuePostingAccountByItem(journalTrans.parmItemId()));
+                    ////if(!journalTrans.parmLedgerDimension())
+                    ////{
+                    ////    ttsAbort;
+                    ////    return;
+                    ////}
+                    ////journalTrans.save();
+                    inventJournalTrans.DefaultDimension = DimensionHelper.GetDefaultDimensionForMovementJournal(hmCaseTrans);
+                    inventJournalTrans.LedgerDimension = this.getIssuePostingAccountByItem(inventJournalTrans.ItemId);
+                    if(!inventJournalTrans.LedgerDimension)
+                    {
+                        ttsabort;
+                        return;
+                    }
+                    inventJournalTrans.insert();
+
+                    journalTransContainer = conIns(journalTransContainer,1,hmCaseTrans.RecId);
+                    //journalTransContainer = conIns(journalTransContainer,2,journalTrans.parmRecId());
+                    journalTransContainer = conIns(journalTransContainer,2, inventJournalTrans.RecId);
+                    journalTransList.addEnd(journalTransContainer);
+                }
+            }
+            if(!isFirst)
+            {
+                InventJournalCheckPost = InventJournalCheckPost_Movement::newJournalCheckPost(false,false,JournalCheckPostType::Post,tableNum(inventJournalTable),inventJournalTable.JournalId);
+                InventJournalCheckPost.parmAutoBlock(true);
+                InventJournalCheckPost.run();
+            }
+            ttsCommit;
+            if(inventJournalTable::find(inventJournalTable.JournalId).Posted == NoYes::Yes)
+            {
+                listEnumerator = journalTransList.getEnumerator();
+                while(listEnumerator.moveNext())
+                {
+                    journalTransContainer = listEnumerator.current();
+                    hmCaseTransDetail::createCaseTransDetail(conPeek(journalTransContainer,1),HMCaseTransDetailTransactionType::MovemetJournal,conPeek(journalTransContainer,2),tableNum(InventJournalTrans));
+                    hmCaseTransLocal = HMCaseTrans::find(conPeek(journalTransContainer,1));
+                  //  this.updateCaseTransInvetoryStatus(hmCaseTransLocal, HMServiceStatus::Complete);
+                }
+            }
+            else
+            {
+                delete_from inventJournalTable
+                where inventJournalTable.JournalId == journalId;
+                throw warning("Error in posting movement journal");
+            }
+    
+        }
+        catch
+        {
+            throw warning("Error in posting movement journal");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createMovementJournal</Name>
+				<Source><![CDATA[
+    private InventJournalId createMovementJournal()
+    {
+        InventJournalName                       InventJournalName;
+        InventJournalTableData                  jourTableData;
+        
+        //Zain  -- RCM
+        //AxInventJournalTable                    header = new AxInventJournalTable();
+        //Below code creates journal header
+        
+        InventJournalName = InventJournalName::find(HMBillParameters::getMovementJournalName());
+        if (InventJournalName.RecId)
+        {
+            //header.parmJournalNameId(InventJournalName.JournalNameId);
+            //header.parmJournalType(InventJournalType::Movement);
+            //header.save();
+            //inventJournalTable = header.inventJournalTable();
+            //return header.parmJournalNameId();
+            inventJournalTable.clear();
+            inventJournalTable.initFromInventJournalName(InventJournalName::find(InventJournalName.JournalNameId));
+            jourTableData = JournalTableData::newTable(inventJournalTable);
+            inventJournalTable.JournalId = jourTableData.nextJournalId();
+            inventJournalTable.JournalType = InventJournalType::Movement;
+            inventJournalTable.HMCaseTrans= hmCaseTrans.RecId;
+            inventJournalTable.insert();
+            return inventJournalTable.JournalId;
+        }
+        else
+        {
+            checkfailed("@MAZ13252");
+            return '';
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getIssuePostingAccountByItem</Name>
+				<Source><![CDATA[
+    private RecId getIssuePostingAccountByItem(ItemId _itemId)
+    {
+        InventPosting   inventPOsting;
+        InventTable     inventTable;
+        ItemGroupId     itemGroupId;
+        //get by item
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == InventAccountType::SalesConsump
+            && inventPOsting.ItemCode == InventPostingItemCode::Table
+            && inventPOsting.ItemRelation == _itemId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        itemGroupId = InventItemGroupItem::findByItemIdLegalEntity(_itemId, curext()).ItemGroupId;
+    
+        //get by item group
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == InventAccountType::SalesConsump
+            && inventPOsting.ItemCode == InventPostingItemCode::GroupId
+            && inventPOsting.ItemRelation == itemGroupId;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+    
+        //get by all
+        select * from inventPOsting
+            where inventPOsting.InventAccountType == InventAccountType::SalesConsump
+            && inventPOsting.ItemCode == InventPostingItemCode::All;
+    
+        if(inventPOsting)
+        {
+            if(inventPOsting.LedgerDimension)
+            {
+                return inventPOsting.LedgerDimension;
+            }
+        }
+        throw warning(strFmt("Could not find ledger dimension in posting profile against %1",_itemId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTransInvetoryStatus</Name>
+				<Source><![CDATA[
+    public void updateCaseTransInvetoryStatus(HMCaseTrans _caseTrans, HMServiceStatus _hmserviceStatus)
+    {
+        HMCaseTrans caseTransLocal;
+        // Musab.
+        HMPatientChargeEntryLine chargeEntryLineLocal;
+    
+        caseTransLocal = HMCaseTrans::find(_caseTrans.RecId,true);
+    
+        caseTransLocal.HMServiceStatus = _hmserviceStatus;
+        // Musab.
+        chargeEntryLineLocal = HMPatientChargeEntryLine::findByCaseTrans(caseTransLocal.RecId, true);
+        chargeEntryLineLocal.PerformedDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+
+        ttsBegin;
+        caseTransLocal.doUpdate();
+        // Musab.
+        chargeEntryLineLocal.doUpdate();
+        ttsCommit;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createJournalLines</Name>
+				<Source><![CDATA[
+    public static void createJournalLines(List _list,boolean _reverse = false)
+    {
+        HMMovementJournalClass objClass = new HMMovementJournalClass();
+        objClass.createLines(_list,_reverse);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

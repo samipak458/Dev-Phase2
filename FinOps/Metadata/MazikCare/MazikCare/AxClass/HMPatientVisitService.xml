@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientVisitService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientVisitService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getPatientVisit</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMPatientVisitContract))]
+    public List getPatientVisit(Guid _caseGuid,
+                                RecId _apptRecId,
+                                RecId _patientRecId)
+    {
+        HMPatientVisit              hmPatientVisit;
+        HMPatientVisitContract      hmPatientVisitContract;
+    
+        List list = new List(Types::Class);
+        Query query = new Query();
+        QueryBuildDataSource qbds, qbdsChild;
+        QueryRun qryRun;
+    
+        qbds = query.addDataSource(tableNum(HMPatientVisit));
+    
+        if(_caseGuid != emptyGuid())
+        {
+            qbdsChild = qbds.addDataSource(tableNum(HMCase));
+            qbdsChild.relations(true);
+    
+            qbdsChild.addRange(fieldNum(HMCase, CRMCaseRefID)).value(guid2str(_caseGuid));
+        }
+        else if(_apptRecId != 0)
+        {
+            qbdsChild = qbds.addDataSource(tableNum(HMResourceSchedulingAppointment));
+            qbdsChild.relations(true);
+    
+            qbdsChild.addRange(fieldNum(HMResourceSchedulingAppointment, RecId)).value(int642str(_apptRecId));
+        }
+        else if(_patientRecId != 0)
+        {
+            qbds.addRange(fieldNum(HMPatientVisit, Patient)).value(int642str(_patientRecId));
+        }
+    
+        qryRun = new QueryRun(query);
+    
+        while(qryRun.next())
+        {
+            hmPatientVisit = qryRun.get(tableNum(HMPatientVisit));
+    
+            hmPatientVisitContract = new HMPatientVisitContract();
+    
+           // hmPatientVisitContract.parmVisitReason(hmPatientVisit.VisitReason);
+            hmPatientVisitContract.parmVisitRecId(hmPatientVisit.RecId);
+    
+            list.addEnd(hmPatientVisitContract);
+        }
+    
+        return list;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateVisitReason</Name>
+				<Source><![CDATA[
+    public boolean updateVisitReason(Guid _caseGuid,
+                                    RecId _apptRecId,
+                                    str _visitReason)
+    {
+        HMPatientVisit                      hmPatientVisit;
+        HMCase                              hmCase;
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        boolean ret = false;
+    
+        try
+        {
+            if(_caseGuid != emptyGuid())
+            {
+                select forUpdate hmPatientVisit
+                exists join hmCase where hmCase.RecId == hmPatientVisit.HMCase
+                && hmCase.CRMCaseRefID == _caseGuid;
+            }
+            else if(_apptRecId != 0)
+            {
+                select forUpdate hmPatientVisit
+                exists join hmResourceSchedulingAppointment where hmResourceSchedulingAppointment.HMPatientVisit == hmPatientVisit.RecId
+                && hmResourceSchedulingAppointment.RecId == _apptRecId;
+            }
+    
+            if(!hmPatientVisit)
+            {
+                checkFailed("@MAZ13592");
+            }
+    
+            ttsBegin;
+            //TODO: AX7 visitreason field not found
+            //hmPatientVisit.VisitReason = _visitReason;
+            hmPatientVisit.update();
+    
+            ttsCommit;
+    
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

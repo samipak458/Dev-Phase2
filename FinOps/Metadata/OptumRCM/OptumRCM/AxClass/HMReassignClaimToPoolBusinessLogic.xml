@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMReassignClaimToPoolBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMReassignClaimToPoolBusinessLogic
+{
+    Map poolQueryMap;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMReassignClaimToPoolBusinessLogic construct()
+    {
+        return new HMReassignClaimToPoolBusinessLogic();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void processInit(QueryRun _queryRun, HMIsSkipClaims _isSkipClaims, container _poolCon)
+    {
+        HMClaimTable        claimTable;
+        CustCollectionsPool custCollectionsPool;
+
+        poolQueryMap = new Map(Types::String,Types::Class);
+        
+        while(_queryRun.next())
+        {
+            claimTable = _queryRun.get(tableNum(HMClaimTable));
+
+            if (_isSkipClaims == NoYes::No || claimTable.ClaimAgent == 0)
+            {
+                try
+                {
+                    ttsbegin;
+
+                    custCollectionsPool = this.getPool(claimtable.ClaimID, _poolCon);
+
+                    if(custCollectionsPool.RecId != 0)
+                    {
+                        this.updatePoolOnClaims(custCollectionsPool,claimTable);
+                    }
+                    
+                    ttscommit;
+                   
+                }
+                catch
+                {
+                    warning(strFmt('Process failed on claimId %1',claimtable.ClaimID));
+                }
+
+            }
+            
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPool</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "_claimId"></param>
+    /// <returns></returns>
+    public CustCollectionsPool getPool(str _claimId, container _poolCon)
+    {
+        CustCollectionsPool     custCollectionsPool, resCustCollectionsPool;
+        RecId                   poolId;
+        QueryBuildDataSource    qbds;
+        QueryRun                qryRun;
+        int                     counts;
+
+        for(counts = 1; counts <= conlen(_poolCon); counts++)
+        {
+            Query qry;
+
+            select firstonly custCollectionsPool
+                where custCollectionsPool.RecId == conpeek(_poolCon,counts);
+
+            if(poolQueryMap.exists(custCollectionsPool.Name))
+            {
+                qry = poolQueryMap.lookup(custCollectionsPool.Name);
+            }
+            else
+            {
+                qry = new Query(custCollectionsPool.ClaimQueryPacked);
+                poolQueryMap.insert(custCollectionsPool.Name,qry);
+            }
+
+            if(qry != null)
+            {
+                qbds = qry.dataSourceTable(tableNum(HMClaimTable));
+
+                qbds.addRange(fieldNum(HMClaimTable, ClaimId)).value(queryValue(_claimId));
+
+                qryRun = new QueryRun(qry);
+
+                if(qryRun.next())
+                {
+                    resCustCollectionsPool = custCollectionsPool;
+                    break;
+                }
+            }
+        }
+
+        return resCustCollectionsPool;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePoolOnClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void updatePoolOnClaims(CustCollectionsPool _custCollectionsPool, HMClaimTable _hmClaimTable)
+    {
+        HMClaimTable        updateClaimTable;
+        HMInsuranceCarrier  hmInsuranceCarrier;
+
+        select firstonly forupdate updateClaimTable
+            where updateClaimTable.RecId == _hmClaimTable.RecId;
+
+        select firstonly HMIsRestricted from hmInsuranceCarrier
+            where hmInsuranceCarrier.RecId == _hmClaimTable.HMInsuranceCarrier;
+
+        if((_custCollectionsPool.HMIsRestricted == NoYes::Yes &&
+            hmInsuranceCarrier.HMIsRestricted == NoYes::Yes)
+            ||
+            (_custCollectionsPool.HMIsRestricted == NoYes::No &&
+            hmInsuranceCarrier.HMIsRestricted == NoYes::No))
+        {
+            try
+            {
+                updateClaimTable.ClaimPool = _custCollectionsPool.RecId;
+                updateClaimTable.PoolName  = _custCollectionsPool.Name;
+                updateClaimTable.ClaimAgent = 0;
+                updateClaimTable.AgentName = "";
+                updateClaimTable.update();
+            }
+            catch
+            {
+                throw Exception::error;
+            }
+            
+        }
+        //else
+        //{
+        //    //errorMsg = _custCollectionsPool.HMIsRestricted == NoYes::Yes ? "Assignment of restricted pool to a non restricted payor is not allowed" : "Assignment of non restricted pool to a restricted payor is not allowed";
+        //    //throw Error(strFmt("%1",errorMsg));
+        //}
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,707 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMOrganizationalCategory</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMOrganizationalCategory extends FormRun
+{
+    recId                   ParentID;
+    ImageRes                imageRes;
+    recid                   lastSelected;
+    TreeItemIdx             lastSelectedIdx;
+    boolean                 hasChildDept;
+    boolean                 isNewClicked;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>childDepartmentExist</Name>
+				<Source><![CDATA[
+    public boolean childDepartmentExist(int64 _Recid)
+    {
+        HMOrganizationaCategory     hmOrganizationaCategoryLocal;
+        select count(recId) from hmOrganizationaCategoryLocal where
+                hmOrganizationaCategoryLocal.HMOrganizationaCategory == _Recid
+                && hmOrganizationaCategoryLocal.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit;
+    
+        if(hmOrganizationaCategoryLocal.recId==0)
+        {
+            return false;
+        }
+        else
+        {
+            return true;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        this.parentCall();
+        hasChildDept = false;
+        isNewClicked = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parentCall</Name>
+				<Source><![CDATA[
+    public void parentCall()
+    {
+    
+        TreeItemIdx                     parentItemIdx;
+    
+        Tree.deleteAll();
+        parentItemIdx = SysFormTreeControl::addTreeItem(Tree,"@MAZ70",
+                                                       FormTreeAdd::Root,0,imageRes,1);
+    
+    //    while select * from hmOrganizationaCategorylocal
+    //        where hmOrganizationaCategorylocal.HMOrganizationaCategory == 0
+    //    {
+    //        hasChild=false;
+    //        while select * from HMOrganizationaCategorylocalForChildCheck
+    //            where HMOrganizationaCategorylocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategorylocal.RecId
+    //        {
+    //            hasChild = true;
+    //        }
+    //        if(hasChild)
+    //        {
+    //            treeItemIdx = SysFormTreeControl::addTreeItem(Tree,hmOrganizationaCategorylocal.Description,
+    //                                                                parentItemIdx,hmOrganizationaCategorylocal.RecId,imageRes,1);
+    //        }
+    //        else
+    //        {
+    //            treeItemIdx = SysFormTreeControl::addTreeItem(Tree,hmOrganizationaCategorylocal.Description,
+    //                                                                parentItemIdx,hmOrganizationaCategorylocal.RecId,imageRes,0);
+    //        }
+    
+        this.TreeFill(parentItemIdx,0);
+        Tree.expand(parentItemIdx);
+    //    }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setParentID</Name>
+				<Source><![CDATA[
+    public void setParentID(recId _parentID,boolean _hasChildDept)
+    {
+        HMOrganizationaCategory     hmOrganizationCategory;
+        hasChildDept = _hasChildDept;
+        ParentID = _parentID;
+        select * from hmOrganizationCategory where hmOrganizationCategory.RecId == ParentID;
+        HMOrginzationalCategory_Description.text(hmOrganizationCategory.Description);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>treeFill</Name>
+				<Source><![CDATA[
+    private void treeFill(TreeItemIdx _RecId,int64 _RecIdx)
+    {
+        TreeItemIdx                         parentItemIdx;
+        boolean                             hasChild;
+        HMOrganizationaCategory             HMOrganizationaCategorylocalForChildCheck;
+        HMOrganizationaCategory             hmOrganizationaCategorylocalForTree;
+        hasChild = false;
+    
+        while select * from hmOrganizationaCategorylocalForTree
+            where hmOrganizationaCategorylocalForTree.HMOrganizationaCategory == _RecIdx
+        {
+            while select * from HMOrganizationaCategorylocalForChildCheck
+                where HMOrganizationaCategorylocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategorylocalForTree.RecId
+            {
+                hasChild = true;
+            }
+            if(hasChild)
+            {
+                parentItemIdx = SysFormTreeControl::addTreeItem(Tree,hmOrganizationaCategorylocalForTree.Description,
+                                                                    _RecId,hmOrganizationaCategorylocalForTree.RecId,imageRes,1);
+                if(lastSelected == hmOrganizationaCategorylocalForTree.RecId)
+                {
+                    lastSelectedIdx = parentItemIdx;
+                }
+                this.treeFill(parentItemIdx,hmOrganizationaCategorylocalForTree.RecId);
+                hasChild = false;
+            }
+            else
+            {
+                parentItemIdx = SysFormTreeControl::addTreeItem(Tree,hmOrganizationaCategorylocalForTree.Description,
+                                                                    _RecId,hmOrganizationaCategorylocalForTree.RecId,imageRes,0);
+                if(lastSelected == hmOrganizationaCategorylocalForTree.RecId)
+                {
+                    lastSelectedIdx = parentItemIdx;
+                }
+            }
+    
+    
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMOrganizationaCategory</Name>
+				<Methods>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                if (Indicator.selection() != HMOrganizationalCategoryIndicator::DepartmentalUnit)
+                {
+                    if(hasChildDept)
+                    {
+                        Box::stop("@MAZ2912");
+                        ret = false;
+                    }
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>delete</Name>
+						<Source><![CDATA[
+        public void delete()
+        {
+            super();
+            element.ParentCall();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+        
+            super();
+        
+            if(HMOrginzationalCategory_Description.valueStr() == "")
+            {
+                HMOrganizationaCategory.HMOrganizationaCategory = 0;
+            }
+            else
+            {
+                HMOrganizationaCategory.HMOrganizationaCategory = ParentID;
+            }
+            //ParentID=0;
+            lastSelected = HMOrganizationaCategory.RecId;
+        
+            element.ParentCall();
+            if (!isNewClicked)
+            {
+                tree.select(lastSelectedIdx);
+                isNewClicked = false;
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>create</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name = "_append"></param>
+        public void create(boolean _append = false)
+        {
+            super(_append);
+            HMOrginzationalCategory_Description.enabled(true);
+            HMOrginzationalCategory_Description.text("");
+            isNewClicked = true;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>Tree</Name>
+				<Type>Tree</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChanged</Name>
+						<Source><![CDATA[
+        public void selectionChanged(FormTreeItem _OldItem, FormTreeItem _NewItem, FormTreeSelect _how)
+        {
+            HMOrganizationaCategory        hmOrganizationaCategorylocal;
+            FormTreeItem selectedTreeItem = tree.getItem(tree.getSelection());
+            super(_OldItem, _NewItem, _how);
+            select * from hmOrganizationaCategorylocal
+                where hmOrganizationaCategorylocal.RecId == selectedTreeItem.data();
+        
+            if(tree.getRoot() == tree.getSelection())
+            {
+                Indicator.text("");
+                HMOrganizationaCategory_q.dataSourceTable(tableNum(HMOrganizationaCategory)).clearRanges();
+                HMOrganizationaCategory_q.dataSourceTable(tableNum(HMOrganizationaCategory)).addRange(fieldNum(HMOrganizationaCategory,recId)).value('0');
+                HMOrganizationaCategory_ds.executeQuery();
+                HMOrginzationalCategory_Description.enabled(false);
+                HMOrginzationalCategory_Description.text("");
+                HMOrginzationalCategory_Description.update();
+        
+        
+            }
+            else
+            {
+                HMOrginzationalCategory_Description.enabled(true);
+                HMOrganizationaCategory_q.dataSourceTable(tableNum(HMOrganizationaCategory)).clearRanges();
+                HMOrganizationaCategory_q.dataSourceTable(tableNum(HMOrganizationaCategory)).addRange(fieldNum(HMOrganizationaCategory,recId)).value(int642str(hmOrganizationaCategorylocal.RecId));
+                //HMOrganizationaCategory_ds.findRecord(hmOrganizationaCategorylocal);
+                HMOrganizationaCategory_ds.executeQuery();
+                ParentID = HMOrganizationaCategory.HMOrganizationaCategory;
+                HMOrginzationalCategory_Description.text(HMOrganizationaCategory::find(ParentID).Description);
+                hasChildDept = element.childDepartmentExist(ParentID);
+            }
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMOrginzationalCategory_Description</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+        
+            args.name(formstr(HMOrganizationalCategoryLookup));
+            args.caller(element);
+            args.record(HMOrganizationaCategory);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>RadioBtn</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if(ret)
+            {
+                if (Indicator.selection() != HMOrganizationalCategoryIndicator::DepartmentalUnit)
+                {
+                    if(hasChildDept)
+                    {
+                        Box::stop("@MAZ2912");
+                        ret = false;
+                    }
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMOrganizationaCategory</Name>
+			<Table>HMOrganizationaCategory</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+					<Skip>Yes</Skip>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationaCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Indicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ3075</Caption>
+		<ColumnSpace xmlns="">0</ColumnSpace>
+		<ColumnSpaceMode xmlns="">Fixed</ColumnSpaceMode>
+		<Columns xmlns="">5</Columns>
+		<ShowDeleteButton xmlns="">Yes</ShowDeleteButton>
+		<ShowNewButton xmlns="">Yes</ShowNewButton>
+		<Style xmlns="">SimpleListDetails</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>357913941</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTab</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPaneTab</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>RecordBasics</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ButtonGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<DataSource>HMOrganizationaCategory</DataSource>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+				<DataSource>HMOrganizationaCategory</DataSource>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>TreeContainer</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<Width>300</Width>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTreeControl">
+						<Name>Tree</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Tree</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<RightMargin>0</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<Style>BorderlessGridContainer</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>VSplitter</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<FramePosition>Inside</FramePosition>
+				<Style>SplitterVerticalContainer</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DetailsHeader</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>TypeDetails</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Width>300</Width>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMOrganizationaCategory_Code</Name>
+								<ElementPosition>715827882</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Code</DataField>
+								<DataSource>HMOrganizationaCategory</DataSource>
+								<Mandatory>Yes</Mandatory>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMOrganizationaCategory_Description</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741823</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Description</DataField>
+								<DataSource>HMOrganizationaCategory</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>Indicator</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ComboBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Indicator</DataField>
+								<DataSource>HMOrganizationaCategory</DataSource>
+								<Label>@MAZ940</Label>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMOrginzationalCategory_Description</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1789569705</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ1963</HelpText>
+								<NeededPermission>Manual</NeededPermission>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>Description</ExtendedDataType>
+								<Label>@SYS123914</Label>
+							</AxFormControl>
+						</Controls>
+						<RightMargin>0</RightMargin>
+						<RightMarginMode>Fixed</RightMarginMode>
+						<Caption>@MAZ3094</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Indicators</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStaticTextControl">
+								<Name>CopyOfStaticText</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>StaticText</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Text>@MAZ1391</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRadioButtonControl">
+								<Name>RadioBtn</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>RadioButton</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Indicator</DataField>
+								<DataSource>HMOrganizationaCategory</DataSource>
+								<FrameType>None</FrameType>
+								<Items />
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+				</Controls>
+				<Columnspace>0</Columnspace>
+				<ColumnspaceMode>Fixed</ColumnspaceMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>GridContainer</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1789569705</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<Visible>No</Visible>
+				<Width>300</Width>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>Grid</Name>
+						<AllowEdit>No</AllowEdit>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMBuildingUnitCategory_Code</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Code</DataField>
+								<DataSource>HMOrganizationaCategory</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMBuildingUnitCategory_Description</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Description</DataField>
+								<DataSource>HMOrganizationaCategory</DataSource>
+							</AxFormControl>
+						</Controls>
+						<AlternateRowShading>No</AlternateRowShading>
+						<DataSource>HMOrganizationaCategory</DataSource>
+						<MultiSelect>No</MultiSelect>
+						<ShowRowLabels>No</ShowRowLabels>
+						<VisibleRows>15</VisibleRows>
+						<VisibleRowsMode>Fixed</VisibleRowsMode>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<RightMargin>0</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<Style>DetailTitleContainer</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

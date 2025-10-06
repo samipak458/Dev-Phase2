@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCreatePurchaseOrder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMCreatePurchaseOrder
+{
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMCreatePurchaseOrder	createPurchOrder;
+        HMCaseTrans				hmCaseTrans;
+        str						multipleRecords;
+        MultiSelectionHelper	helper;
+        FormRun					caller;
+        FormBuildDataSource		formBuildDS;
+        FormDataSource			HMCaseTrans_ds;
+        container				con;
+        int						i;
+        PurchTable				purchTable;
+
+        multipleRecords = _args.parm();
+        purchTable = _args.record();
+        caller = _args.caller();
+        
+        con = str2con(multipleRecords);
+        createPurchOrder = new HMCreatePurchaseOrder();
+        createPurchOrder.createPurchOrderHeaderList(con);
+        //info(strFmt("Purchase order: %1 has been created.", purchTable.PurchId));
+	}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPurchOrderHeaderList</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// createPurchOrder
+    /// Created by Zain for Demo
+    /// </summary>
+    private NOYes createPurchOrderHeaderList(container _con)
+    {
+        NOYes						isPOCreated;
+        HMCaseTrans					hmCaseTransLocal;
+        PurchTable					purchTableLocal, createdPO;
+        PurchLine					purchLineLocal;
+        VendTable					vendTable;
+        NumberSeq					numberSeq;
+        HMResourceMaster			hmResourceMasterLocal;
+        HMPatientChargeEntryLine	hmPatientChargeEntryLine;
+        int							i;
+        AmountMST					purchPrice;
+        PurchId                     purchId;
+        AccountNum                  vendAccount;
+        RecId                       hmCaseRecId;
+        InventDim                   inventDimLocal, inventDimBuffer;
+        try
+        {
+            ttsbegin;
+            for (i = 1; i <= conLen(_con); i++)
+            {
+                hmCaseTransLocal.RecId = conPeek(_con, i);//_listEnmr.current();
+                hmCaseTransLocal = HMCaseTrans::find(hmCaseTransLocal.RecId, false, ConcurrencyModel::Auto);
+                hmCaseRecId = hmCaseTransLocal.HMCase;
+                hmPatientChargeEntryLine = HMPatientChargeEntryLine::findByCaseTrans(hmCaseTransLocal.RecId);
+                hmResourceMasterLocal = HMResourceMaster::findByType(hmPatientChargeEntryLine.PerformingResource, HMResourceType::Vendor);
+                vendAccount = VendTable::findRecId(hmResourceMasterLocal.RefRecId).AccountNum;
+                if (hmCaseTransLocal && hmResourceMasterLocal)
+                {
+                    select * from purchTableLocal
+                        where purchTableLocal.PurchId == purchId;//hmCaseTransLocal.HMCase;
+                    //vendTable = VendTable::findRecId(hmResourceMasterLocal.RefRecId);
+
+                    if(!purchTableLocal.RecId || (vendTable.AccountNum != vendAccount))// && (purchTableLocal.OrderAccount != vendTable.AccountNum))
+                    {
+                        numberSeq = NumberSeq::newGetNum(PurchParameters::numRefPurchId());
+                        purchTableLocal.clear();
+                        purchTableLocal.initValue();
+                        purchTableLocal.PurchId = numberSeq.num();
+                        purchTableLocal.HMCase = hmCaseTransLocal.HMCase;
+                        vendTable = VendTable::findRecId(hmResourceMasterLocal.RefRecId);
+                        purchTableLocal.initFromVendTable(vendTable);
+                        purchTableLocal.LanguageId = CompanyInfo::languageId();
+                        purchTableLocal.InvoiceAccount = vendTable.InvoiceAccount;
+                        purchTableLocal.CurrencyCode = Ledger::accountingCurrency(CompanyInfo::current());
+                        if (!purchTableLocal.validateWrite())
+                                throw Exception::Error;
+                        else
+                        {
+                            numberSeq.used();
+                            purchTableLocal.insert();
+                            purchId = purchTableLocal.PurchId;
+                        }
+                    }
+
+                    inventDimBuffer = InventDim::find(hmCaseTransLocal.InventDim);
+                    inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                    inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                    inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                    PriceDisc           priceDisc;
+                    PriceDiscParameters parameters = PriceDiscParameters::construct();
+
+                    parameters.parmModuleType(ModuleInventPurchSales::Purch);
+                    parameters.parmItemId(hmCaseTransLocal.ItemId);
+                    parameters.parmInventDim(inventDimLocal);
+                    parameters.parmUnitID(InventTableModule::find(hmCaseTransLocal.ItemId, ModuleInventPurchSales::Purch).UnitId);
+                    parameters.parmPriceDiscDate(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+                    parameters.parmQty(hmCaseTransLocal.Qty);
+                    parameters.parmAccountNum(vendTable.AccountNum);
+                    parameters.parmCurrencyCode(purchTableLocal.CurrencyCode);
+                    priceDisc = PriceDisc::newFromPriceDiscParameters(parameters);
+
+                    priceDisc.findPrice('');
+
+                    purchPrice = priceDisc.price();
+
+                    //conPeek(PriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Purch, hmCaseTransLocal.ItemId,
+                    //                    inventDimLocal,
+                    //                    InventTableModule::find(hmCaseTransLocal.ItemId, ModuleInventPurchSales::Purch).UnitId,//hmCaseTransLocal.salesUnitId(),
+                    //DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),//hmCaseTransLocal.SalesPrice;,
+                    //hmCaseTransLocal.Qty,
+                    //                    vendTable.AccountNum,
+                    //                    purchTableLocal.CurrencyCode,""), 1);
+
+                    hmCaseTransLocal.InventDim = inventDimLocal.inventDimId;
+
+                    purchLineLocal.clear();
+                    purchLineLocal.initValue();
+                    purchLineLocal.PurchId = purchTableLocal.PurchId;
+                    purchLineLocal.initFromPurchTable(purchTableLocal);
+                    purchLineLocal.ItemId = hmCaseTransLocal.ItemId;
+                    purchLineLocal.HMCaseTrans = hmCaseTransLocal.RecId;
+                    purchLineLocal.PurchQty = hmCaseTransLocal.Qty;
+                    purchLineLocal.PurchPrice = purchPrice;//hmCaseTransLocal.SalesPrice;//purchPrice;
+                    purchLineLocal.PurchUnit = InventTableModule::find(hmCaseTransLocal.ItemId, ModuleInventPurchSales::Purch).UnitId;
+                    purchLineLocal.LineDisc = hmCaseTransLocal.DiscountAmount;
+                    purchLineLocal.LineAmount = purchPrice * hmCaseTransLocal.Qty;//hmCaseTransLocal.TotalAmount;
+                    purchLineLocal.InventDimId = hmCaseTransLocal.InventDim;
+                    purchLineLocal.QtyOrdered = purchLineLocal.calcQtyOrdered();
+                    purchLineLocal.RemainPurchPhysical            = purchLineLocal.PurchQty;
+                    purchLineLocal.RemainPurchFinancial           = 0;
+                    purchLineLocal.RemainInventPhysical           = purchLineLocal.QtyOrdered;
+                    purchLineLocal.PdsCWRemainInventPhysical      = purchLineLocal.PdsCWQty;
+
+                    purchLineLocal.RemainInventFinancial          = 0;
+                    purchLineLocal.PdsCWRemainInventFinancial     = 0;
+
+                    if (!purchLineLocal.validateWrite())
+                         throw Exception::Error;
+                    else
+                    {
+                        purchLineLocal.insert();
+                       
+                    }
+               
+                    isPOCreated = NoYes::Yes;
+                    
+                }
+                else
+                {
+                    isPOCreated = NOyes::No;
+                    warning("You cannot create Purchase Order, because this Physician is not linked with Vendor.");
+                }
+            }
+
+            while select * from createdPO
+                where createdPO.HMCase == hmCaseRecId
+                && (createdPO.PurchStatus != PurchStatus::Received
+                && createdPO.PurchStatus != PurchStatus::Invoiced)
+            {
+                this.createPOConfirmation(createdPO);
+                this.createPOReceipt(createdPO);
+            }
+
+            ttscommit;
+            if(isPOCreated == NOYes::Yes)
+            {
+                info(strFmt("Purchase order: %1 has been created.", purchTableLocal.PurchId));
+            }
+
+        }
+        catch
+        {
+            ttsabort;
+        }
+
+        return isPOCreated;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPOConfirmation</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Demo of OneCall
+    /// </summary>
+    /// <param name = "_purchTable"></param>
+	private void createPOConfirmation(PurchTable _purchTable)
+    {
+        PurchFormLetter             purchFormLetter;
+        PurchFormletterParmData     purchFormLetterParmData;
+        PurchParmUpdate             purchParmUpdate;
+        PurchParmTable              purchParmTable;
+        PurchParmLine               purchParmLine;
+        PurchTable                  purchTable;
+        PurchLine                   purchLine;
+        PurchId                     purchId;
+        Num                         packingSlipId;
+
+		try
+        {
+            ttsbegin;
+            // Create PurchParamUpdate table
+            purchFormLetterParmData = PurchFormletterParmData::newData(DocumentStatus::PurchaseOrder,
+			VersioningUpdateType::Initial);
+
+            purchFormLetterParmData.parmOnlyCreateParmUpdate(true);
+            purchFormLetterParmData.createData(false);
+            purchParmUpdate = purchFormLetterParmData.parmParmUpdate();
+
+            // Set PurchParmTable table
+            purchParmTable.clear();
+            purchParmTable.TransDate                = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            purchParmTable.DocumentDate             = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            purchParmTable.Ordering                 = DocumentStatus::PurchaseOrder;
+            purchParmTable.ParmJobStatus            = ParmJobStatus::Waiting;
+            purchParmTable.PurchId                  = _purchTable.PurchId;
+            purchParmTable.PurchName                = _purchTable.PurchName;
+            purchParmTable.DeliveryName             = _purchTable.DeliveryName;
+            purchParmTable.DeliveryPostalAddress    = _purchTable.DeliveryPostalAddress;
+            purchParmTable.OrderAccount             = _purchTable.OrderAccount;
+            purchParmTable.CurrencyCode             = _purchTable.CurrencyCode;
+            purchParmTable.InvoiceAccount           = _purchTable.InvoiceAccount;
+            purchParmTable.ParmId                   = purchParmUpdate.ParmId;
+            purchParmTable.insert();
+
+            purchFormLetter = PurchFormLetter::construct(DocumentStatus::PurchaseOrder);
+            purchFormLetter.transDate(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            purchFormLetter.proforma(false);
+            purchFormLetter.specQty(PurchUpdate::All);
+            purchFormLetter.purchTable(_purchTable);
+
+            // This is the ID we hard code as the product receipt ID, if we do the posting via UI
+            // user would have the option to manually enter this value
+            purchFormLetter.parmParmTableNum(purchParmTable.ParmId);
+            purchFormLetter.parmId(purchParmTable.ParmId);
+            purchFormLetter.purchParmUpdate(purchFormLetterParmData.parmParmUpdate());
+            purchFormLetter.run();
+
+            ttsCommit;
+		}
+        catch
+        {
+            ttsabort;
+		}
+	}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPOReceipt</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Demo of OneCall
+    /// </summary>
+    /// <param name = "_purchTable"></param>
+    /// <returns></returns>
+    private void createPOReceipt(PurchTable _purchTable)
+    {
+        PurchFormLetter             purchFormLetter;
+        PurchFormletterParmData     purchFormLetterParmData;
+        PurchParmUpdate             purchParmUpdate;
+        PurchParmTable              purchParmTable;
+        PurchParmLine               purchParmLine;
+        PurchLine                   _purchLine;
+        PurchId                     purchId;
+        Num                         packingSlipId;
+
+
+        packingSlipId = strFmt("PKGSLP-%1", _purchTable.PurchId);
+
+        try
+        {
+            ttsBegin;
+            // Create PurchParamUpdate table
+            purchFormLetterParmData = PurchFormletterParmData::newData(
+            DocumentStatus::PackingSlip,
+            VersioningUpdateType::Initial);
+    
+            purchFormLetterParmData.parmOnlyCreateParmUpdate(true);
+            purchFormLetterParmData.createData(false);
+            purchParmUpdate = purchFormLetterParmData.parmParmUpdate();
+
+            // Set PurchParmTable table
+            purchParmTable.clear();
+            purchParmTable.TransDate                = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            purchParmTable.Ordering                 = DocumentStatus::PackingSlip;
+            purchParmTable.ParmJobStatus            = ParmJobStatus::Waiting;
+            purchParmTable.Num                      = packingSlipId;
+            purchParmTable.PurchId                  = _purchTable.PurchId;
+            purchParmTable.PurchName                = _purchTable.PurchName;
+            purchParmTable.DeliveryName             = _purchTable.DeliveryName;
+            purchParmTable.DeliveryPostalAddress    = _purchTable.DeliveryPostalAddress;
+            purchParmTable.OrderAccount             = _purchTable.OrderAccount;
+            purchParmTable.CurrencyCode             = _purchTable.CurrencyCode;
+            purchParmTable.InvoiceAccount           = _purchTable.InvoiceAccount;
+            purchParmTable.ParmId                   = purchParmUpdate.ParmId;
+            purchParmTable.insert();
+
+            // Set PurchParmLine table
+            while select _purchLine
+                where _purchLine.PurchId == _purchTable.purchId
+            {
+                purchParmLine.InitFromPurchLine(_purchLine);
+
+                purchParmLine.ReceiveNow    = _purchLine.PurchQty;
+                purchParmLine.ParmId        = purchParmTable.ParmId;
+                purchParmLine.TableRefId    = purchParmTable.TableRefId;
+                purchParmLine.setQty(DocumentStatus::PackingSlip, false, true);
+                purchParmLine.setLineAmount();
+                purchParmLine.insert();
+            }
+
+            purchFormLetter = PurchFormLetter::construct(DocumentStatus::PackingSlip);
+            purchFormLetter.transDate(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+            purchFormLetter.proforma(false);
+            purchFormLetter.specQty(PurchUpdate::All);
+            purchFormLetter.purchTable(_purchTable);
+    
+            // This is the ID we hard code as the product receipt ID, if we do the posting via UI
+            // user would have the option to manually enter this value
+            purchFormLetter.parmParmTableNum(purchParmTable.ParmId);
+            purchFormLetter.parmId(purchParmTable.ParmId);
+            purchFormLetter.purchParmUpdate(purchFormLetterParmData.parmParmUpdate());
+            purchFormLetter.run();
+            ttsCommit;
+        }
+        catch
+        {
+            ttsabort;
+        }
+
+       
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

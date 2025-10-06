@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClientProtocolPriceClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClientProtocolPriceClass
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillProtocolPriceDetails</Name>
+				<Source><![CDATA[
+    public HMClientProtocolPriceOverrideDetailsTmp fillProtocolPriceDetails(HMClientProtocol _hmClientProtocol)
+    {
+        BOM                                     bomTable;
+        BOMVersion                              bomVersion;
+        InventTable                             inventTable;
+        HMClientProtocolPriceOverrideDetailsTmp tmpBuffer;
+        HMClientProtocolPriceOverrideDetails    buffer;
+    
+        select firstonly bomVersion
+            where bomVersion.ItemId == _hmClientProtocol.ItemId
+            && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+            && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+    
+        if(inventTable::find(_hmClientProtocol.ItemId).PmfProductType == PmfProductType::BOM)
+        {
+            if (bomVersion.RecId)
+            {
+                While select ItemId from bomTable
+                    where bomTable.BOMId == bomVersion.BOMId
+                    join inventTable
+                    where bomTable.ItemId == inventTable.ItemId
+                {
+                    tmpBuffer.clear();
+                    tmpBuffer.ItemId = bomTable.ItemId;
+                    if(!_hmClientProtocol.isNewRecord())
+                    {
+                        select firstOnly RecId, DiscountDistribution from buffer
+                        where buffer.ItemId == tmpBuffer.ItemId
+                        && buffer.HMClientProtocol == _hmClientProtocol.RecId;
+                        if(buffer)
+                        {
+                            tmpBuffer.Mark = NoYes::Yes;
+                            tmpBuffer.DiscountDistribution = buffer.DiscountDistribution;
+                        }
+                    }
+                    tmpBuffer.insert();
+                }
+            }
+        }
+        return tmpBuffer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveData</Name>
+				<Source><![CDATA[
+    public void saveData(RecId _clientProtocolRecId, HMClientProtocolPriceOverrideDetailsTmp _bufferTmp)
+    {
+        HMClientProtocolPriceOverrideDetails buffer;
+        RecordInsertList        hmClientProtocolList = new RecordInsertList(tableNum(HMClientProtocolPriceOverrideDetails));
+        delete_from buffer where buffer.HMClientProtocol == _clientProtocolRecId;
+        while select * from _bufferTmp where _bufferTmp.Mark == NoYes::Yes
+        {
+            buffer.clear();
+            buffer.HMClientProtocol = _clientProtocolRecId;
+            buffer.ItemId = _bufferTmp.ItemId;
+            buffer.DiscountDistribution = _bufferTmp.DiscountDistribution;
+            hmClientProtocolList.add(buffer);
+        }
+        hmClientProtocolList.insertDatabase();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateData</Name>
+				<Source><![CDATA[
+    public boolean validateData(HMClientProtocolPriceOverrideDetailsTmp _bufferTmp)
+    {
+        select sum(DiscountDistribution) from _bufferTmp
+        where _bufferTmp.Mark == NoYes::Yes;
+        if(_bufferTmp.DiscountDistribution == 100)
+        {
+            return true;
+        }
+        else
+        {
+            return checkfailed("@MAZ12111");
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteByClientProtocolRecId</Name>
+				<Source><![CDATA[
+    public static void deleteByClientProtocolRecId(RecId _clientProtocolId)
+    {
+        HMClientProtocolPriceOverrideDetails buffer;
+        delete_from buffer where buffer.HMClientProtocol == _clientProtocolId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

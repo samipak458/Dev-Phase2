@@ -1,0 +1,3842 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientRecurrenceAppointment</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Removed unused footnote group. */
+[Form]
+public class HMPatientRecurrenceAppointment extends FormRun
+{
+    List                                                appointmentList;
+    HMResourceSchedulingAppointmentTmp                  HMResourceSchedulingAppointmentTmpLocal;
+    int                                                 appointmentCounters;
+    HMRecurrentApptDetail                               HMRecurrentApptDetailTmp;
+    TransDate                                           occuranceEndDate,finalEndDate;
+    RecId                                               ouRecId;
+    HMResourceSchedulingAppointmentTmp                  HMResourceSchedulingAppointmentTmpForm;
+    ListEnumerator                                      listEnum;
+    HMResourceSchedulingPlanningObject                  PlanningObjectBuffer;
+    FormRun                                             callerForm;
+    int                                                 recurScheduleApptCounter;
+    Object                                              formCall;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CheckCurrentWeek</Name>
+				<Source><![CDATA[
+    public TransDate CheckCurrentWeek(TransDate appointmentDates)
+    {
+        CalculateDateTimeValue dateTimeValue = new CalculateDateTimeValue();
+        HMParameters hmParamters;
+        str firstdayOfWeek;
+    
+        select firstFast FirstDayofWeek from hmParamters;
+        firstdayOfWeek = enum2str(hmParamters.FirstDayofWeek);
+    
+        while (appointmentDates)
+        {
+            if (dateTimeValue.IsFirstWeekDay(appointmentDates,firstdayOfWeek) == true && appointmentDates != HMResourceSchedulingAppointmentTmpForm.AppointmentDate) //appointmentDates != today())
+            {
+                break;
+            }
+            element.WeeklyDayCheck(appointmentDates);
+            appointmentDates ++;
+        }
+        return appointmentDates;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CurrentMonthlyAppointmentDate</Name>
+				<Source><![CDATA[
+    private Integer CurrentMonthlyAppointmentDate(TransDate appointmentDates,str theDaysName,str theDayCount)
+    {
+        CalculateDateTimeValue     dateTimeValue = new CalculateDateTimeValue();
+        int daynum,monthnum,years,occuranceCounter;
+        str datestr;
+        TransDate newDate;
+    
+        monthnum = dateTimeValue.MonthNumber(dateTimeValue.MonthName(appointmentDates));
+        years =  year(appointmentDates);
+    
+            daynum = dateTimeValue.DayNumber(dateTimeValue.MonthName(appointmentDates),theDaysName,theDayCount,int2str(year(appointmentDates)));
+            datestr = int2str(daynum) + '/' +  int2str(monthnum) + '/' + int2str(years);
+            newDate = str2DateDMY(datestr);
+            if (newDate >= appointmentDates)
+            {
+                //element.WriteRecurrenceAppointment(newDate);
+                appointmentList.addEnd(newDate);
+                appointmentCounters++;
+    
+            }
+        return occuranceCounter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CurrentMonthlyAppointmentDateDay</Name>
+				<Source><![CDATA[
+    private Integer CurrentMonthlyAppointmentDateDay(TransDate appointmentDates,int daynum)
+    {
+        CalculateDateTimeValue     dateTimeValue = new CalculateDateTimeValue();
+        int monthnum,years,occuranceCounter,mthofDay;
+        str datestr;
+        TransDate newDate;
+    
+        monthnum = dateTimeValue.MonthNumber(dateTimeValue.MonthName(appointmentDates));
+        years =  year(appointmentDates);
+    
+        datestr = int2str(daynum) + '/' +  int2str(monthnum) + '/' + int2str(years);
+        newDate = str2DateDMY(datestr);
+        mthofDay = dayOfMth(newDate);
+    
+        if (newDate >= appointmentDates)
+        {
+            //    element.WriteRecurrenceAppointment(newDate);
+            appointmentList.addStart(newDate);
+            appointmentCounters++;
+        }
+    
+        return occuranceCounter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>DailySchedule</Name>
+				<Source><![CDATA[
+    public void  DailySchedule()
+    {
+        CalculateDateTimeValue      dateTimeValue = new CalculateDateTimeValue();
+        TransDate                   appointmentDates,endDates;
+        int                         everyDays,occuranceAppointment;
+        str                         dayNames;
+        boolean                     checkweekDay;
+    
+        appointmentDates     =  HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+        endDates             =  enddate.dateValue();
+        occuranceAppointment = str2int(occurance.valueStr());
+        appointmentList      = new List(Types::Date);
+        appointmentList.empty();
+        appointmentCounters = 0;
+        // every day
+        if(Every.selection() == 0)
+        {
+            everyDays  = str2int(Days.valueStr());
+            if(endafter.selection() == 0)
+            {
+                while(appointmentDates)
+                {
+                    appointmentList.addEnd(appointmentDates);
+                    appointmentCounters++;
+                    if (appointmentCounters >= occuranceAppointment)
+                    {
+                        occuranceEndDate = appointmentDates;
+                        break;
+                    }
+                    appointmentDates =  appointmentDates + everyDays;
+                }
+                finalEndDate = occuranceEndDate;
+            }
+    
+    
+            else if(endby.selection() == 0)
+            {
+                while (appointmentDates <= endDates)
+                {
+                    appointmentList.addEnd(appointmentDates);
+                    appointmentCounters++;
+                    appointmentDates = appointmentDates + everyDays;
+                }
+                finalEndDate = endDates;
+            }
+    
+        }
+    
+    
+       //every weekday
+        else if(EveryWeekDay.selection() == 0)
+        {
+            if(endafter.selection() == 0)
+            {
+                while(appointmentDates)
+                {
+                    dayNames = DateTimeValue.DayName(appointmentDates);
+                    checkweekDay = DateTimeValue.CheckWeekDaysParamter(dayNames);
+                    if (!checkweekDay)
+                    {
+                       appointmentDates ++;
+                        continue;
+                    }
+                    else
+                    {
+                        appointmentList.addEnd(appointmentDates);
+                        appointmentCounters++;
+                        appointmentDates ++;
+                        if (appointmentCounters >= occuranceAppointment)
+                        {
+                            occuranceEndDate = appointmentDates;
+                            break;
+                        }
+                    }
+                }
+                finalEndDate = occuranceEndDate;
+            }
+    
+            else if(endby.selection() == 0)
+            {
+                while (appointmentDates <= endDates)
+                {
+                    dayNames = DateTimeValue.DayName(appointmentDates);
+                    checkweekDay = DateTimeValue.CheckWeekDaysParamter(dayNames);
+                    if (!checkweekDay)
+                    {
+                       appointmentDates ++;
+                        continue;
+                    }
+                    else
+                    {
+                        appointmentList.addEnd(appointmentDates);
+                        appointmentCounters++;
+                        appointmentDates ++;
+                    }
+                }
+                finalEndDate = endDates;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>DailyScheduleWrite</Name>
+				<Source><![CDATA[
+    public void DailyScheduleWrite()
+    {
+    
+        HMRecurrentApptDetailTmp.StartDate         = HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+        HMRecurrentApptDetailTmp.StartTime         = HMResourceSchedulingAppointmentTmpForm.AppointmentTime;
+        HMRecurrentApptDetailTmp.RecurrenceType    = HMCalenderName::Daily;
+    
+        if (Every.selection() == 0)
+        {
+            HMRecurrentApptDetailTmp.EveryNDays = HMEveryNDays::EveryDays;
+            HMRecurrentApptDetailTmp.NoOfDays  =  Days.value();
+        }
+        else if(EveryWeekDay.selection() == 0)
+        {
+            HMRecurrentApptDetailTmp.EveryNDays = HMEveryNDays::EveryWeekDay;
+        }
+    
+            HMRecurrentApptDetailTmp.insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>DefaultDate</Name>
+				<Source><![CDATA[
+    public TransDate DefaultDate(TransDate appointmentDates)
+    {
+        int  appointmentYear;
+        str defualtdate;
+        date newapptdefaultdate;
+    
+        appointmentYear = year(appointmentDates);
+        defualtdate = '1/1'+ '/' + int2str(appointmentYear);
+        newapptdefaultdate = str2DateDMY(defualtdate);
+    
+        return newapptdefaultdate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+    
+        callerForm                             = element.args().caller();
+        HMResourceSchedulingAppointmentTmpForm =  element.args().record();
+        ouRecId                                = str2int64(element.args().parm());
+        PlanningObjectBuffer                   = HMResourceSchedulingPlanningObject::find(ouRecId);
+        super();
+        Occurance.value(10);
+        EndDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>IsMonthContainLast</Name>
+				<Source><![CDATA[
+    public  boolean IsMonthContainLast(TransDate _appointmentDate,TransDate newAppointment)
+    {
+        boolean ret;
+        _appointmentDate = _appointmentDate + 7;
+    
+        if (_appointmentDate >= newAppointment )
+        {
+            ret = true;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isValidRecurrence</Name>
+				<Source><![CDATA[
+    public boolean isValidRecurrence(TransDate _appDate,HMTime _apptime)
+    {
+        boolean ret;
+        HMResourceSchedulingPublicHoliday               hmResourceSchedulingPublicHoliday;
+        HMResourceSchedulingWeekPlan                    hmResourceSchedulingWeekPlan;
+        HMResourceSchedulingWeekDayPlan                 hmResourceSchedulingWeekDayPlan;
+        HMResourceSchedulingWeekPlanToCalender          hmResourceSchedulingWeekPlanToCalender;
+        HMResourceSchedulingDayPlan                     hmResourceSchedulingDayPlan;
+        HMResourceSchedulingDayPlanItem                 hmResourceSchedulingDayPlanItem;
+        int                                             day;
+        int                                             month;
+    
+    
+        boolean     check=false;
+        ret = true;
+    
+            if(_appDate < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                ret = false;
+            }
+        /*
+            //if(bed.visible() && bedRecId && !HMPatientAdmission::validateBed(bedRecId,_appDate,element.getEndDate(),hmResourceSchedulingAppointmentForDataFetch.RecId))
+            //{
+                //ret = false;
+            //}
+    
+            //if(bed.visible() && bedRecId && ret && !HMPatientAdmission::validateBedWardGender(hmResourceSchedulingPlanningObjectMain.HMOrganizationalUnit,bedRecId,HMPatient::find(HMPatientRecId).Gender))
+            //{
+                //ret = false;
+            //}
+    
+    
+        if (ret)
+        {
+           // if (RecurrenceCheckbox.checked() == true)
+            {
+               // ret = element.ValidateRecurrence();
+            }
+        }
+        else
+        {
+            return ret;
+        }
+    
+        if(ret && (hmResourceSchedulingPlanningObjectMain.CaseType == HMCaseType::OutPatient || hmResourceSchedulingPlanningObjectMain.CaseType == HMCaseType::Physiotherapy))
+        {
+            if (ret)
+            {
+                ret = element.checkPatientRecurrenceAppointment(_appDate,_apptime);
+            }
+    
+            //to check appointment of the physician at same time
+            if(ret)
+            {
+                ret = element.checkPhysicionrecurrenceAppointment(_appDate,_apptime);
+            }
+    
+            //to check overlapping of physician
+            if(ret)
+            {
+                ret = element.checkPatientTimeRecurrenceOverlaping(_appDate,_apptime);
+            }
+    
+            //to check overlapping of the physician
+            if(ret)
+            {
+                ret = element.checkPhysicionTimeRecurrenceOverLaping(_appDate,_apptime);
+            }
+        }
+    
+        if(ret && hmResourceSchedulingPlanningObjectMain.CaseType == HMCaseType::InPatient)
+        {
+            ret = element.checkPatientAdmissionRecAppointment(_appDate,_apptime); //to check appointment of the patient at same time
+        }
+    
+        if(ret)
+        {
+            if(hmResourceSchedulingPlanningObjectMain.ScheduleOnPublicHoliday ==NoYes::No)
+            {
+                day = dayOfMth(_appDate);
+                month = mthOfYr(_appDate);
+    
+                select count(recId) from hmResourceSchedulingPublicHoliday
+                    where month==hmResourceSchedulingPublicHoliday.Month
+                    && (day >= hmResourceSchedulingPublicHoliday.FromDay && day <= hmResourceSchedulingPublicHoliday.ToDay);
+    
+                if(hmResourceSchedulingPublicHoliday.RecId > 0)
+                {
+    
+                        ret = false;
+    
+                }
+            }
+        */
+            if(ret)
+            {
+                select * from hmResourceSchedulingWeekPlan
+                    join * from hmResourceSchedulingWeekDayPlan
+                    join * from hmResourceSchedulingWeekPlanToCalender
+                    where hmResourceSchedulingWeekPlan.HMResourceSchedulingPlanningObject==PlanningObjectBuffer.RecId
+                    && hmResourceSchedulingWeekPlan.RecId==hmResourceSchedulingWeekDayPlan.HMResourceSchedulingWeekPlan
+                    && hmResourceSchedulingWeekPlan.RecId==hmResourceSchedulingWeekPlanToCalender.HMResourceSchedulingWeekPlan
+                    && hmResourceSchedulingWeekPlanToCalender.WeekNo == weekOfYear(_appDate)
+                    && hmResourceSchedulingWeekPlanToCalender.YearNo == year(_appDate)
+                    && hmResourceSchedulingWeekDayPlan.Days == dayOfWk(_appDate);
+    
+    
+                if(hmResourceSchedulingWeekPlan.RecId == 0)
+                {
+    
+                    ret = false;
+    
+                }
+                else
+                {
+                    check=true;
+                }
+            }
+        /*
+            if(ret && check && PlanningObjectBuffer.CaseType == HMCaseType::OutPatient)
+            {
+                select count(recId) from hmResourceSchedulingDayPlanItem
+                    join * from hmResourceSchedulingDayPlan
+                    where hmResourceSchedulingDayPlan.RecId==hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan
+                    && hmResourceSchedulingDayPlanItem.HMResourceSchedulingDayPlan == hmResourceSchedulingDayPlan.RecId
+                    && hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode == HMScheduleTypeRecId
+                    && (_apptime >= hmResourceSchedulingDayPlanItem.StartTime && _apptime <= hmResourceSchedulingDayPlanItem.EndTime);
+    
+                if(hmResourceSchedulingDayPlanItem.RecId < 1)
+                {
+                    // show confirmation for VIP patient
+                    if (HMPatient::find(HMPatientRecId).IsVIP)
+                    {
+    
+                            ret = true;
+    
+                    }
+                    else
+                    {
+    
+                        ret = false;
+    
+                    }
+    
+                }
+            }
+        */
+            if(ret && check && PlanningObjectBuffer.CaseType == HMCaseType::InPatient)
+            {
+                select count(recId) from hmResourceSchedulingDayPlan
+                    where hmResourceSchedulingDayPlan.RecId==hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan
+                    && (_apptime >= hmResourceSchedulingDayPlan.DayStartTime && _apptime <= hmResourceSchedulingDayPlan.DayEndTime);
+    
+                if(hmResourceSchedulingDayPlan.RecId < 1)
+                {
+    
+                        ret = false;
+    
+                }
+            }
+    /*
+            if(ret && check && PlanningObjectBuffer.CaseType == HMCaseType::InPatient)
+            {
+                select count(recId) from hmResourceSchedulingDayPlanItem
+                    join * from hmResourceSchedulingDayPlan
+                    where hmResourceSchedulingDayPlan.RecId==hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan
+                    && hmResourceSchedulingDayPlanItem.HMResourceSchedulingDayPlan == hmResourceSchedulingDayPlan.RecId
+                    && hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode == HMScheduleTypeRecId;
+    
+    
+                if(hmResourceSchedulingDayPlanItem.RecId < 1)
+                {
+    
+                        ret = false;
+    
+                }
+            }
+        }
+        if(ret)
+        {
+            ret = element.checkIfAssetAlreadyRecurrBook(_appDate,_apptime);
+        }
+        if(ret)
+        {
+            ret = element.checkIfStaffRecBusy(_appDate,_apptime);
+        }*/
+        return  true;//ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MonthlyAppointmentExceedDay</Name>
+				<Source><![CDATA[
+    private void MonthlyAppointmentExceedDay(int monthlyday,transdate appointmentDates)
+    {
+        TransDate   incApptDate;
+        int         incDayAppt;
+    
+    
+        incApptDate = appointmentDates + 1;
+        incDayAppt  = dayOfMth(incApptDate);
+    
+    
+            if (incDayAppt == 1)
+            {
+                //element.WriteRecurrenceAppointment(appointmentDates);
+                appointmentList.addEnd(appointmentDates);
+                appointmentCounters++;
+    
+                if (monthlyday == 31)
+                {
+                    info('Month ' + mthName(mthOfYr(appointmentDates))  + ' have fewer than ' +  int2str(monthlyday) + 'days, the occurence will fall on the last day of the month');
+                }
+    
+            }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MonthlyDaySelection</Name>
+				<Source><![CDATA[
+    private void MonthlyDaySelection(int monthlyMonths,transdate appointmentDates,transdate occuranceDate)
+    {
+        int mthofDay,monthlyDay,newMonth,differDays,a;
+        TransDate changeAppointmentdate,newAppointment;
+    
+    
+        mthofDay    = dayOfMth(appointmentDates);
+        monthlyDay  = str2int(daycount.valueStr());
+        newMonth = monthlyMonths - 1;
+    
+            //when month == 1
+            if (monthlyMonths == 1)
+            {
+                while (appointmentDates <= occuranceDate)
+                {
+                    mthofDay = dayOfMth(appointmentDates);
+    
+                    if (mthofDay == 30 && monthlyDay == 31)
+                    {
+                        element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                    }
+                    else if (appointmentDates == str2DateDMY('28/2/'+ int2str(year(appointmentDates))))
+                    {
+                        if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29 || monthlyDay == 28)
+                        {
+                            element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                        }
+                    }
+                    else if (appointmentDates == str2DateDMY('29/2/'+ int2str(year(appointmentDates))))
+                    {
+                        if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29)
+                        {
+                            element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                        }
+                    }
+                    else if (mthofDay == monthlyDay) //if day is 30
+                    {
+                        //element.WriteRecurrenceAppointment(appointmentDates);
+                        appointmentList.addEnd(appointmentDates);
+                        appointmentCounters++;
+                    }
+    
+                    appointmentDates++;
+                    if (appointmentDates > occuranceDate)
+                    {
+                        break;
+                    }
+                }
+    
+            }
+    
+        //when more than one month
+            else
+            {
+                element.CurrentMonthlyAppointmentDateDay(appointmentDates,monthlyDay);
+                appointmentDates = nextMth(appointmentDates);
+    
+                while (appointmentDates <= occuranceDate)
+                {
+                    for (a=0;a < newMonth;a++)
+                    {
+                        appointmentDates = nextMth(appointmentDates);     //increament recurrence months
+                    }
+                   // appointmentDates = nextMth(appointmentDates);
+                    differDays = dayOfMth(appointmentDates);
+                    changeAppointmentdate = appointmentDates + 1;
+                    appointmentDates =  changeAppointmentdate - differDays;
+                    newAppointment   = nextMth(appointmentDates);
+    
+                    if (appointmentDates > occuranceDate)
+                    {
+                        break;
+                    }
+    
+                    while (appointmentDates < newAppointment)
+                    {
+                        if (appointmentDates > occuranceDate)
+                        {
+                            break;
+                        }
+                        mthofDay  = dayOfMth(appointmentDates);
+    
+                        if (mthofDay == 30 && monthlyDay == 31)
+                        {
+                            element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                        }
+                        else if (appointmentDates == str2DateDMY('28/2/'+ int2str(year(appointmentDates))))
+                        {
+                            if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29 || monthlyDay == 28)
+                            {
+                                element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                            }
+                        }
+                        else if (appointmentDates == str2DateDMY('29/2/'+ int2str(year(appointmentDates))))
+                        {
+                            if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29)
+                            {
+                                element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                            }
+                        }
+                        else if (mthofDay == monthlyDay)
+                        {
+                            //element.WriteRecurrenceAppointment(appointmentDates);
+                            appointmentList.addStart(appointmentDates);
+                            appointmentCounters++;
+                        }
+                        appointmentDates++;
+                    }
+    
+                }
+    
+            }
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MonthlyDaySelectionOccurance</Name>
+				<Source><![CDATA[
+    private void MonthlyDaySelectionOccurance(int monthlyMonths,transdate appointmentDates,int occuranceAppointment)
+    {
+        int         mthofDay,monthlyDay,newMonth,differDays,a,occuranceCounter;
+        TransDate   changeAppointmentdate,newAppointment;
+    
+    
+        mthofDay    = dayOfMth(appointmentDates);
+        monthlyDay  = str2int(daycount.valueStr());
+        newMonth    = monthlyMonths - 1;
+    
+    
+    
+        //when month == 1
+            if (monthlyMonths == 1)
+            {
+                while (appointmentDates)
+                {
+                    mthofDay = dayOfMth(appointmentDates);
+    
+                    if (mthofDay == 30 && monthlyDay == 31)
+                    {
+                        element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                    }
+                    else if (appointmentDates == str2DateDMY('28/2/'+ int2str(year(appointmentDates))))
+                    {
+                        if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29 || monthlyDay == 28)
+                        {
+                            element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                        }
+                    }
+                    else if (appointmentDates == str2DateDMY('29/2/'+ int2str(year(appointmentDates))))
+                    {
+                        if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29)
+                        {
+                            element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                        }
+                    }
+                    else if (mthofDay == monthlyDay)
+                    {
+                        //element.WriteRecurrenceAppointment(appointmentDates);
+                        appointmentList.addEnd(appointmentDates);
+                        appointmentCounters++;
+                    }
+                    if (appointmentCounters >= occuranceAppointment)
+                    {
+                        occuranceEndDate = appointmentDates;
+                        break;
+                    }
+                    appointmentDates++;
+                }
+    
+            }
+    
+    
+    
+        //when more than one month
+            else
+            {
+                occuranceCounter = element.CurrentMonthlyAppointmentDateDay(appointmentDates,monthlyDay);
+                appointmentDates =  nextMth(appointmentDates);
+    
+                while (appointmentDates)
+                {
+                    for (a = 0 ; a < newMonth ; a++)
+                    {
+                        appointmentDates = nextMth(appointmentDates);     //increament recurrence months
+                    }
+                    differDays = dayOfMth(appointmentDates);
+                    changeAppointmentdate = appointmentDates + 1;
+                    appointmentDates =  changeAppointmentdate - differDays;
+                    newAppointment   = nextMth(appointmentDates);
+    
+                    if (appointmentCounters >= occuranceAppointment)
+                    {
+                        break;
+                    }
+    
+                    while (appointmentDates < newAppointment)
+                    {
+                        mthofDay  = dayOfMth(appointmentDates);
+    
+                        if (mthofDay == 30 && monthlyDay == 31)
+                        {
+                            element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                        }
+                        else if (appointmentDates == str2DateDMY('28/2/'+ int2str(year(appointmentDates))))
+                        {
+                            if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29 || monthlyDay == 28)
+                            {
+                                element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                            }
+                        }
+                        else if (appointmentDates == str2DateDMY('29/2/'+ int2str(year(appointmentDates))))
+                        {
+                            if (monthlyDay == 31 || monthlyDay == 30 || monthlyDay == 29)
+                            {
+                                element.MonthlyAppointmentExceedDay(monthlyDay,appointmentDates);
+                            }
+                        }
+                        else if (mthofDay == monthlyDay)
+                        {
+                            //element.WriteRecurrenceAppointment(appointmentDates);
+                            appointmentList.addEnd(appointmentDates);
+                            appointmentCounters++;
+                        }
+                        if (appointmentCounters >= occuranceAppointment)
+                        {
+                            occuranceEndDate = appointmentDates;
+                            break;
+                        }
+                        appointmentDates++;
+    
+                    }
+    
+                }
+    
+            }
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MonthlySchedule</Name>
+				<Source><![CDATA[
+    public void MonthlySchedule()
+    {
+         CalculateDateTimeValue     dateTimeValue = new CalculateDateTimeValue();
+         TransDate                  appointmentDates,endDates,newAppointment,changeAppointmentdate,InitialAppointment;
+         int                        monthlyDay,monthlyMonths,mthofDay,occuranceAppointment,occuranceCounter;
+         str                        theDayCount,theDaysName;
+    
+         appointmentDates       =  HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+         endDates               =  enddate.dateValue();
+         occuranceAppointment   = str2int(occurance.valueStr());
+         monthlyDay             = str2int(daycount.valueStr());
+         monthlyMonths          = str2int(EveryMonth.valueStr());
+         mthofDay               = dayOfMth(appointmentDates);
+         theDayCount            = TheCount.valueStr();
+         theDaysName            = thedays.valueStr();
+         InitialAppointment     = appointmentDates;
+         appointmentList = new List(Types::Date);
+         appointmentList.empty();
+         appointmentCounters = 0;
+    
+        if (endafter.selection() == 0)
+        {
+            if (Daybtn.selection() == 0)
+            {
+               element.MonthlyDaySelectionOccurance(monthlyMonths,appointmentDates,occuranceAppointment);
+            }
+            else if(The.selection() == 0)
+            {
+                monthlyMonths =  str2int(TheEveryMonths.valueStr());
+                if (monthlyMonths > 1)
+                {
+                   occuranceCounter = element.CurrentMonthlyAppointmentDate(appointmentDates,theDaysName,theDayCount);           // current appointment schedule
+                }
+                appointmentDates =  Global::dateStartMth(appointmentDates);
+                element.MonthlyTheSelectionOccurance(monthlyMonths,appointmentDates,occuranceAppointment,occuranceCounter,newAppointment,changeAppointmentdate,InitialAppointment,theDayCount,theDaysName);
+            }
+            finalEndDate = occuranceEndDate;
+        }
+    
+        else if (endby.selection() == 0)
+        {
+            if (Daybtn.selection() == 0)
+            {
+                element.MonthlyDaySelection(monthlyMonths,appointmentDates,endDates);
+            }
+            else if(The.selection() == 0)
+            {
+                monthlyMonths =  str2int(TheEveryMonths.valueStr());
+                if (monthlyMonths > 1)
+                {
+                    element.CurrentMonthlyAppointmentDate(appointmentDates,theDaysName,theDayCount);           // current appointment schedule
+                }
+                appointmentDates =  Global::dateStartMth(appointmentDates);
+                element.MonthlyTheSelection(monthlyMonths,appointmentDates,endDates,newAppointment,changeAppointmentdate,InitialAppointment,theDayCount,theDaysName);
+            }
+            finalEndDate = endDates;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MonthlyScheduleWrite</Name>
+				<Source><![CDATA[
+    public void MonthlyScheduleWrite()
+    {
+        HMRecurrentApptDetailTmp.StartDate         = HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+        HMRecurrentApptDetailTmp.StartTime         = HMResourceSchedulingAppointmentTmpForm.AppointmentTime;
+        HMRecurrentApptDetailTmp.RecurrenceType    = HMCalenderName::Monthly;
+    
+        if (Daybtn.selection() == 0)
+        {
+            HMRecurrentApptDetailTmp.MonthTypeOption = HMMonthTypeOption::Day;
+            HMRecurrentApptDetailTmp.DayNumber       = DayCount.value();
+            HMRecurrentApptDetailTmp.MonthNumber     = int642int(EveryMonth.value());
+        }
+        else if(the.selection() == 0)
+        {
+            HMRecurrentApptDetailTmp.MonthTypeOption = HMMonthTypeOption::The;
+            HMRecurrentApptDetailTmp.DayNumberEnum   = str2enum(HMDaysNumber::first,TheCount.valueStr());
+            HMRecurrentApptDetailTmp.DayName         = str2enum(HmDaysName::Monday,TheDays.valueStr());
+            HMRecurrentApptDetailTmp.EveryNMonth     = int642int(TheEveryMonths.value());
+        }
+    
+    
+            HMRecurrentApptDetailTmp.insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MonthlyTheSelection</Name>
+				<Source><![CDATA[
+    private void MonthlyTheSelection(int monthlyMonths,transdate appointmentDates,transdate occuranceDate,
+                                        transdate newAppointment,transdate changeAppointmentdate,
+                                        transdate InitialAppointment,str theDayCount,str theDaysName)
+    {
+        CalculateDateTimeValue     dateTimeValue = new CalculateDateTimeValue();
+        int a,counts,newMonth;
+        boolean isMonthContainLastWeeks;
+    
+        if (monthlyMonths == 1)
+        {
+        while (appointmentDates <= occuranceDate)
+        {
+            counts = 0;
+    
+            newAppointment   = nextMth(appointmentDates);
+            if (appointmentDates > occuranceDate)
+            {
+                break;
+            }
+            while (appointmentDates < newAppointment)
+            {
+                if (theDaysName == dateTimeValue.DayName(appointmentDates))     //tuesday    second
+                {
+                    counts++;
+                    if(counts == dateTimeValue.MonthDaySequence(theDayCount) && appointmentDates >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                    {
+                        //element.WriteRecurrenceAppointment(appointmentDates);
+                        appointmentList.addStart(appointmentDates);
+                        appointmentCounters++;
+                        appointmentDates =  Global::dateStartMth(appointmentDates);
+                        appointmentDates = nextMth(appointmentDates);
+                        break;
+                    }
+                    else if (counts == 4)
+                    {
+                        isMonthContainLastWeeks =  this.IsMonthContainLast(appointmentDates,newAppointment);
+                        if (isMonthContainLastWeeks)
+                        {
+                            //element.WriteRecurrenceAppointment(appointmentDates);
+                            appointmentList.addStart(appointmentDates);
+                            appointmentCounters++;
+                        }
+                    }
+    
+                }
+                appointmentDates++;
+                if (appointmentDates > occuranceDate)
+                {
+                    break;
+                }
+            }
+            }
+        }
+        //more than one month
+        else
+        {
+            appointmentDates = nextMth(appointmentDates);
+            while (appointmentDates <= occuranceDate)
+            {
+              counts = 0;
+              newMonth = monthlyMonths - 1;
+            for ( a = 1 ; a <= newMonth ; a++ )
+            {
+                appointmentDates = nextMth(appointmentDates);
+            }
+            newAppointment   = nextMth(appointmentDates);
+            if (appointmentDates > occuranceDate)
+            {
+                break;
+            }
+            while (appointmentDates < newAppointment)
+            {
+                if (theDaysName == dateTimeValue.DayName(appointmentDates))     //tuesday    second
+                {
+                    counts++;
+                    if(counts == dateTimeValue.MonthDaySequence(theDayCount) )
+                    {
+                        //element.WriteRecurrenceAppointment(appointmentDates);
+                        appointmentList.addStart(appointmentDates);
+                        appointmentCounters++;
+                        appointmentDates =  Global::dateStartMth(appointmentDates);
+                        appointmentDates = nextMth(appointmentDates);
+                        break;
+                    }
+                    else if (counts == 4)
+                    {
+                        isMonthContainLastWeeks =  this.IsMonthContainLast(appointmentDates,newAppointment);
+                        if (isMonthContainLastWeeks)
+                        {
+                            //element.WriteRecurrenceAppointment(appointmentDates);
+                            appointmentList.addStart(appointmentDates);
+                            appointmentCounters++;
+                        }
+                    }
+                }
+                appointmentDates++;
+                if (appointmentDates > occuranceDate)
+                {
+                    break;
+                }
+    
+            }
+    
+        }
+    
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>MonthlyTheSelectionOccurance</Name>
+				<Source><![CDATA[
+    private void MonthlyTheSelectionOccurance(int monthlyMonths,transdate appointmentDates,int occuranceAppointment,int occuranceCounter,
+                                                transdate newAppointment,transdate changeAppointmentdate,transdate InitialAppointment,str theDayCount,str theDaysName)
+    {
+        CalculateDateTimeValue     dateTimeValue = new CalculateDateTimeValue();
+        int a,counts,newMonth;
+        boolean isMonthContainLastWeeks;
+    
+    
+    
+        if (monthlyMonths == 1)
+        {
+            while (appointmentDates)
+            {
+                counts = 0;
+                newAppointment   = nextMth(appointmentDates);
+                if (appointmentCounters >= occuranceAppointment)
+                {
+                    occuranceEndDate = appointmentDates;
+                    break;
+                }
+    
+                while (appointmentDates < newAppointment)
+                {
+                    if (theDaysName == dateTimeValue.DayName(appointmentDates))     //tuesday    second
+                    {
+                        counts++;
+                        if(counts == dateTimeValue.MonthDaySequence(theDayCount) && appointmentDates >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+                        {
+                            //element.WriteRecurrenceAppointment(appointmentDates);
+                            appointmentList.addEnd(appointmentDates);
+                            appointmentCounters++;
+                            if (appointmentCounters >= occuranceAppointment)
+                            {
+                                 break;
+                            }
+                            appointmentDates =  Global::dateStartMth(appointmentDates);
+                            appointmentDates = nextMth(appointmentDates);
+                            break;
+                        }
+                        else if (counts == 4)
+                        {
+                            isMonthContainLastWeeks =  this.IsMonthContainLast(appointmentDates,newAppointment);
+                            if (isMonthContainLastWeeks)
+                            {
+                                //element.WriteRecurrenceAppointment(appointmentDates);
+                                appointmentList.addEnd(appointmentDates);
+                                appointmentCounters++;
+                            }
+                        }
+                    }
+                    if (appointmentCounters >= occuranceAppointment)
+                    {
+                        break;
+                    }
+                    appointmentDates++;
+    
+                }
+            }
+        }
+        //more than one month
+        else
+        {
+            appointmentDates = nextMth(appointmentDates);
+            while (appointmentDates)
+            {
+                newMonth = monthlyMonths - 1;
+                counts = 0;
+                if (appointmentCounters >= occuranceAppointment)
+                {
+                    occuranceEndDate = appointmentDates;
+                    break;
+                }
+                for ( a = 1 ; a <= newMonth ; a++ )
+                {
+                    appointmentDates = nextMth(appointmentDates);
+                }
+                newAppointment   = nextMth(appointmentDates);
+    
+                while (appointmentDates < newAppointment)
+                {
+                    if (theDaysName == dateTimeValue.DayName(appointmentDates))     //tuesday    second
+                    {
+                        counts++;
+                        if(counts == dateTimeValue.MonthDaySequence(theDayCount) )
+                        {
+                            //element.WriteRecurrenceAppointment(appointmentDates);
+                            appointmentList.addEnd(appointmentDates);
+                            appointmentCounters++;
+                            if (appointmentCounters >= occuranceAppointment)
+                            {
+                                break;
+                            }
+                            appointmentDates =  Global::dateStartMth(appointmentDates);
+                            appointmentDates = nextMth(appointmentDates);
+                            break;
+                        }
+                        else if (counts == 4)
+                        {
+                            isMonthContainLastWeeks =  this.IsMonthContainLast(appointmentDates,newAppointment);
+                            if (isMonthContainLastWeeks)
+                            {
+                            //    element.WriteRecurrenceAppointment(appointmentDates);
+                              appointmentList.addEnd(appointmentDates);
+                              appointmentCounters++;
+                            }
+                        }
+                    }
+                    if (appointmentCounters >= occuranceAppointment)
+                    {
+                        break;
+                    }
+                    appointmentDates++;
+            }
+    
+        }
+    
+    }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnTheYearlyAppointment</Name>
+				<Source><![CDATA[
+    public TransDate OnTheYearlyAppointment(TransDate _date, TransDate endDates)
+    {
+        CalculateDateTimeValue dateTimeValue = new CalculateDateTimeValue ();
+        int appointmentYear,currentMonth,appointmentMonth;
+        str monthsName,newdates,daynum,daysNames,daySequence;
+    
+    
+        monthsName = OntheMonthsName.valueStr();
+        daysNames = OntheDayName.valueStr();
+        daySequence =  OntheDays.valueStr();
+        appointmentYear = year(_date);
+        appointmentMonth = mthOfYr(_date);
+        currentMonth  = dateTimeValue.MonthNumber(monthsName);
+        daynum = int2str(dateTimeValue.DayNumber(monthsName,daysNames,daySequence,int2str(appointmentYear)));
+    
+        if (currentMonth >= appointmentMonth)
+        {
+           newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+           _date = str2DateDMY(newdates);
+            if (_date <= endDates)
+            {
+                //element.WriteRecurrenceAppointment(_date);
+                appointmentList.addEnd(_date);
+                appointmentCounters++;
+            }
+        }
+        return _date;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnTheYearlyCurrentAppointment</Name>
+				<Source><![CDATA[
+    public TransDate OnTheYearlyCurrentAppointment(TransDate _date)
+    {
+        CalculateDateTimeValue dateTimeValue = new CalculateDateTimeValue ();
+        int appointmentYear,currentMonth;
+        str monthsName,newdates,daynum,daysNames,daySequence;
+    
+        monthsName = OntheMonthsName.valueStr();
+        daysNames = OntheDayName.valueStr();
+        daySequence =  OntheDays.valueStr();
+        appointmentYear = year(_date);
+        currentMonth  = dateTimeValue.MonthNumber(monthsName);
+    
+        daynum = int2str(dateTimeValue.DayNumber(monthsName,daysNames,daySequence,int2str(appointmentYear)));
+        newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+        _date = str2DateDMY(newdates);
+    
+        return _date;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnTheYearlyRecur</Name>
+				<Source><![CDATA[
+    private void OnTheYearlyRecur(int recurrenceYear,transdate appointmentDates,transdate occuranceDate,transdate newapptdefaultdate)
+    {
+        while (appointmentDates <= occuranceDate)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            appointmentDates = this.OnTheYearlyAppointment(appointmentDates,occuranceDate);
+            if (appointmentDates > occuranceDate)
+            {
+                break;
+            }
+            appointmentDates = newapptdefaultdate;
+            appointmentDates = nextYr(appointmentDates);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnTheYearlyRecurOccurance</Name>
+				<Source><![CDATA[
+    private void OnTheYearlyRecurOccurance(int recurrenceYear,transdate appointmentDates,int occuranceAppointment,transdate newapptdefaultdate)
+    {
+        CalculateDateTimeValue dateTimeValue = new CalculateDateTimeValue ();
+        int appointmentYear,currentMonth,appointmentMonth;
+        str monthsName,newdates,daynum,daysNames,daySequence;
+    
+    
+        while (appointmentDates)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            monthsName = OntheMonthsName.valueStr();
+            daysNames = OntheDayName.valueStr();
+            daySequence =  OntheDays.valueStr();
+            appointmentYear = year(appointmentDates);
+            appointmentMonth = mthOfYr(appointmentDates);
+            currentMonth  = dateTimeValue.MonthNumber(monthsName);
+            daynum = int2str(dateTimeValue.DayNumber(monthsName,daysNames,daySequence,int2str(appointmentYear)));
+    
+            if (currentMonth >= appointmentMonth)
+            {
+               newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+               appointmentDates = str2DateDMY(newdates);
+    
+               appointmentList.addEnd(appointmentDates);
+               appointmentCounters++;
+    
+            }
+            if (appointmentCounters >= occuranceAppointment)
+            {
+                occuranceEndDate = appointmentDates;
+                break;
+            }
+            appointmentDates = newapptdefaultdate;
+            appointmentDates = nextYr(appointmentDates);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnTheYearlyRecurrences</Name>
+				<Source><![CDATA[
+    private void OnTheYearlyRecurrences(int recurrenceYear,Transdate appointmentDates,Transdate occuranceDate,Transdate newapptdefaultdate)
+    {
+        int a;
+        TransDate currentAppointmentDate;
+    
+    
+        currentAppointmentDate = element.OnTheYearlyCurrentAppointment(appointmentDates);
+        if (currentAppointmentDate >= appointmentDates)   // if current appointment date  is equal to the appointment date
+        {
+            //element.WriteRecurrenceAppointment(currentAppointmentDate);
+             appointmentList.addEnd(currentAppointmentDate);
+             appointmentCounters++;
+        }
+    
+        for ( a = 1;a <= recurrenceYear ;a++)
+        {
+                appointmentDates = nextYr(appointmentDates);
+        }
+        while (appointmentDates <= occuranceDate)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            appointmentDates = newapptdefaultdate;
+            appointmentDates = this.OnTheYearlyAppointment(appointmentDates,occuranceDate);
+            for ( a = 1;a <= recurrenceYear ;a++)
+            {
+                appointmentDates = nextYr(appointmentDates);
+            }
+            if (appointmentDates > occuranceDate)
+            {
+                break;
+            }
+    }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnTheYearlyRecurrencesOccurance</Name>
+				<Source><![CDATA[
+    private void OnTheYearlyRecurrencesOccurance(int recurrenceYear,Transdate appointmentDates,int occuranceAppointment,Transdate newapptdefaultdate)
+    {
+        int a;
+        TransDate currentAppointmentDate;
+        CalculateDateTimeValue dateTimeValue = new CalculateDateTimeValue ();
+        int appointmentYear,currentMonth,appointmentMonth;
+        str monthsName,newdates,daynum,daysNames,daySequence;
+    
+    
+        currentAppointmentDate = element.OnTheYearlyCurrentAppointment(appointmentDates);
+    
+        if (currentAppointmentDate >= appointmentDates)   // if current appointment date  is equal to the appointment date
+        {
+             appointmentList.addEnd(currentAppointmentDate);
+             appointmentCounters++;
+        }
+    
+        for ( a = 1;a <= recurrenceYear ;a++)
+        {
+             appointmentDates = nextYr(appointmentDates);
+        }
+    
+        while (appointmentDates)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            appointmentDates = newapptdefaultdate;
+    
+            monthsName = OntheMonthsName.valueStr();
+            daysNames = OntheDayName.valueStr();
+            daySequence =  OntheDays.valueStr();
+            appointmentYear = year(appointmentDates);
+            appointmentMonth = mthOfYr(appointmentDates);
+            currentMonth  = dateTimeValue.MonthNumber(monthsName);
+            daynum = int2str(dateTimeValue.DayNumber(monthsName,daysNames,daySequence,int2str(appointmentYear)));
+    
+            if (currentMonth >= appointmentMonth)
+            {
+               newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+               appointmentDates = str2DateDMY(newdates);
+    
+                appointmentList.addEnd(appointmentDates);
+                appointmentCounters++;
+            }
+            if (appointmentCounters >= occuranceAppointment)
+            {
+                occuranceEndDate = appointmentDates;
+                break;
+            }
+            for ( a = 1;a <= recurrenceYear ;a++)
+            {
+                appointmentDates = nextYr(appointmentDates);
+            }
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnYearlyCurrentAppointmentDate</Name>
+				<Source><![CDATA[
+    public TransDate OnYearlyCurrentAppointmentDate(TransDate _date)
+    {
+        CalculateDateTimeValue calculateDateTimeValue = new CalculateDateTimeValue ();
+        int appointmentYear,currentMonth;
+        str monthsName,newdates,daynum;
+    
+        monthsName = OnMonths.valueStr();
+        daynum = OnMonthsNumber.valueStr();
+        appointmentYear = year(_date);
+        currentMonth  = calculateDateTimeValue.MonthNumber(monthsName);
+        newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+        _date = str2DateDMY(newdates);
+    
+        return _date;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnYearlyRecur</Name>
+				<Source><![CDATA[
+    private void OnYearlyRecur(int recurrenceYear, Transdate appointmentDates,Transdate occuranceDate,Transdate newapptdefaultdate)
+    {
+        while (appointmentDates <= occuranceDate)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            appointmentDates = this.YearlyAppointment(appointmentDates,occuranceDate);
+            if (appointmentDates > occuranceDate)
+            {
+                break;
+            }
+            appointmentDates = newapptdefaultdate;
+            appointmentDates = nextYr(appointmentDates);
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnYearlyRecurOccurance</Name>
+				<Source><![CDATA[
+    private void OnYearlyRecurOccurance(int recurrenceYear, Transdate appointmentDates,int occuranceAppointment,Transdate newapptdefaultdate)
+    {
+        CalculateDateTimeValue      calculateDateTimeValue = new CalculateDateTimeValue ();
+        int appointmentYear,currentMonth,appointmentMonth;
+        str monthsName,newdates,daynum;
+    
+        while (appointmentDates)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            monthsName = OnMonths.valueStr();
+            daynum = OnMonthsNumber.valueStr();
+            appointmentYear = year(appointmentDates);
+            appointmentMonth = mthOfYr(appointmentDates);
+            currentMonth  = calculateDateTimeValue.MonthNumber(monthsName);
+    
+            if (currentMonth >= appointmentMonth)
+            {
+               newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+               appointmentDates = str2DateDMY(newdates);
+               appointmentList.addEnd(appointmentDates);
+               appointmentCounters++;
+    
+            }
+            if (appointmentCounters >= occuranceAppointment)
+            {
+                occuranceEndDate = appointmentDates;
+                break;
+            }
+    
+            appointmentDates = newapptdefaultdate;
+            appointmentDates = nextYr(appointmentDates);
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnYearlyRecurrences</Name>
+				<Source><![CDATA[
+    private void OnYearlyRecurrences(int recurrenceYear,Transdate appointmentDates,Transdate occuranceDate,Transdate newapptdefaultdate)
+    {
+        int a;
+        TransDate currentAppointmentdate;
+    
+        currentAppointmentdate = element.OnYearlyCurrentAppointmentDate(appointmentDates);
+        if (currentAppointmentdate >= appointmentDates)
+        {
+            //element.WriteRecurrenceAppointment(currentAppointmentdate);
+             appointmentList.addEnd(currentAppointmentdate);
+             appointmentCounters++;
+        }
+    
+        for (a = 1;a <= recurrenceYear ;a++)
+        {
+             appointmentDates = nextYr(appointmentDates);
+        }
+        while (appointmentDates <= occuranceDate)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            appointmentDates = newapptdefaultdate;
+            appointmentDates = this.YearlyAppointment(appointmentDates,occuranceDate);
+            for ( a = 1;a <= recurrenceYear ;a++)
+            {
+                appointmentDates = nextYr(appointmentDates);
+            }
+            if (appointmentDates > occuranceDate)
+            {
+                break;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>OnYearlyRecurrencesOccurance</Name>
+				<Source><![CDATA[
+    private void OnYearlyRecurrencesOccurance(int recurrenceYear,Transdate appointmentDates,int occuranceAppointment,Transdate newapptdefaultdate)
+    {
+        int a,occuranceCounter;
+        TransDate currentAppointmentdate;
+        CalculateDateTimeValue calculateDateTimeValue = new CalculateDateTimeValue ();
+    
+        int appointmentYear;
+        int currentMonth;
+        int appointmentMonth;
+        str monthsName,newdates;
+        str daynum;
+    
+        currentAppointmentdate = element.OnYearlyCurrentAppointmentDate(appointmentDates);
+        if (currentAppointmentdate >= appointmentDates)
+        {
+            appointmentList.addEnd(appointmentDates);
+            appointmentCounters++;
+    
+        }
+    
+        for (a = 1;a <= recurrenceYear ;a++)
+        {
+             appointmentDates = nextYr(appointmentDates);
+        }
+    
+        while (appointmentDates)
+        {
+            newapptdefaultdate = element.DefaultDate(appointmentDates);
+            appointmentDates = newapptdefaultdate;
+                                                    // appointmentDates = this.YearlyAppointment(appointmentDates,occuranceDate);
+            monthsName = OnMonths.valueStr();
+            daynum = OnMonthsNumber.valueStr();
+            appointmentYear = year(appointmentDates);
+            appointmentMonth = mthOfYr(appointmentDates);
+            currentMonth  = calculateDateTimeValue.MonthNumber(monthsName);
+    
+            if (currentMonth >= appointmentMonth)
+            {
+               newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+               appointmentDates = str2DateDMY(newdates);
+               appointmentList.addEnd(appointmentDates);
+               appointmentCounters++;
+                //element.WriteRecurrenceAppointment(appointmentDates);
+               occuranceCounter++;
+            }
+    
+            if (appointmentCounters >= occuranceAppointment)
+            {
+                occuranceEndDate = appointmentDates;
+                break;
+            }
+            for ( a = 1;a <= recurrenceYear ;a++)
+            {
+                appointmentDates = nextYr(appointmentDates);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>RecurrenceAppointmentScheduling</Name>
+				<Source><![CDATA[
+    public void RecurrenceAppointmentScheduling(List _appointmentDateList)
+    {
+        HMResourceSchedulingOpenTimeSlotsSearch     hmResourceSchedulingOpenTimeSlotsSearch = new HMResourceSchedulingOpenTimeSlotsSearch();
+        boolean isOverBooking;
+        int appointNumber;
+        HMTime  appointmentTimes;
+        listEnum = _appointmentDateList.getEnumerator();
+        appointmentTimes = HMResourceSchedulingAppointmentTmpForm.AppointmentTime;
+        appointNumber = 1;
+    
+        if ( PlanningObjectBuffer.OverbookAllowed == false)
+        {
+           isOverBooking = hmResourceSchedulingOpenTimeSlotsSearch.checkOverBooked(_appointmentDateList,appointmentTimes,ouRecId);
+        }
+    
+        if (!isOverBooking)
+        {
+            while(listEnum.moveNext())
+            {
+                if (PlanningObjectBuffer.ScheduleOnPublicHoliday == false)
+                {
+                    if (hmResourceSchedulingOpenTimeSlotsSearch.checkPublicHoliday(listEnum.current()))
+                    {
+                        element.WriteRecurrenceAppointmentsTmp(listEnum.current(),appointNumber,NoYes::No);
+                        recurScheduleApptCounter++;
+                        appointNumber++;
+    
+                    }
+                    else
+                    {
+                        element.WriteRecurrenceAppointmentsTmp(listEnum.current(),appointNumber,NoYes::Yes);
+                        recurScheduleApptCounter++;
+                        appointNumber++;
+                    }
+                }
+                else
+                {
+                    element.WriteRecurrenceAppointmentsTmp(listEnum.current(),appointNumber,NoYes::Yes);
+                    recurScheduleApptCounter++;
+                    appointNumber++;
+                }
+            }
+        }
+    
+        else
+        {
+                    element.WriteRecurrenceAppointmentsTmp(listEnum.current(),appointNumber,NoYes::No);
+                    recurScheduleApptCounter++;
+                    appointNumber++;
+    
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>RecurrenceWeekchecking</Name>
+				<Source><![CDATA[
+    public Integer RecurrenceWeekchecking(int recurrenceDays)
+    {
+    
+        if (recurrenceDays == 1)
+        {
+            recurrenceDays = 0;
+        }
+        else
+        {
+            recurrenceDays--;
+        }
+    
+        return recurrenceDays;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+    
+        element.wait(1);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetDefaultDailyPattern</Name>
+				<Source><![CDATA[
+    public void SetDefaultDailyPattern()
+    {
+        Days.value(1);
+        Every.selection(0);
+        EveryWeekDay.selection(1);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetDefaultMonthlyPattern</Name>
+				<Source><![CDATA[
+    public void SetDefaultMonthlyPattern()
+    {
+        daybtn.selection(0);
+        daycount.value(1);
+        everymonth.value(1);
+    
+        the.selection(1);
+        theeverymonths.value(1);
+        thecount.selection(HMDaysNumber::first);
+        thedays.selection(HMDaysName::Monday);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetDefaultWeeklyPattern</Name>
+				<Source><![CDATA[
+    public void SetDefaultWeeklyPattern()
+    {
+         RecurrenceWeeks.value(1);
+         Sunday.value(0);
+         Monday.value(1);
+         Tuesday.value(0);
+         Wednesday.value(0);
+         Thursday.value(0);
+         Friday.value(0);
+         Saturday.value(0);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetDefaultYearlyPattern</Name>
+				<Source><![CDATA[
+    public void SetDefaultYearlyPattern()
+    {
+        RecurrYear.value(1);
+    
+        OnYearly.selection(0);
+        OnMonthsNumber.value(1);
+        OnMonths.selection(MonthsOfYear::January);
+    
+        OntheYearly.selection(1);
+        OntheDays.selection(HMdaysnumber::first);
+        OntheDayName.selection(HMDaysName::Monday);
+        OntheMonthsName.selection(MonthsOfYear::January);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>WeeklyDayCheck</Name>
+				<Source><![CDATA[
+    public void WeeklyDayCheck(TransDate appointmentDates)
+    {
+        CalculateDateTimeValue      dateTimeValue = new CalculateDateTimeValue();
+    
+    
+        if (sunday.checked() == true && dateTimeValue.IsSunday(appointmentDates) == true)
+        {
+             appointmentList.addEnd(appointmentDates);
+             appointmentCounters++;
+            //element.WriteRecurrenceAppointment(appointmentDates);
+        }
+    
+        else if (Monday.checked() == true && dateTimeValue.IsMonday(appointmentDates) == true)
+        {
+             //element.WriteRecurrenceAppointment(appointmentDates);
+             appointmentList.addEnd(appointmentDates);
+             appointmentCounters++;
+        }
+    
+        else if (Tuesday.checked() == true && dateTimeValue.IsTuesday(appointmentDates) == true)
+        {
+             //element.WriteRecurrenceAppointment(appointmentDates);
+              appointmentList.addEnd(appointmentDates);
+              appointmentCounters++;
+        }
+    
+        else if (Wednesday.checked() == true && dateTimeValue.IsWednesday(appointmentDates) == true)
+        {
+             //element.WriteRecurrenceAppointment(appointmentDates);
+             appointmentList.addEnd(appointmentDates);
+             appointmentCounters++;
+        }
+    
+        else if (Thursday.checked() == true &&  dateTimeValue.IsThursday(appointmentDates) == true)
+        {
+             //element.WriteRecurrenceAppointment(appointmentDates);
+             appointmentList.addEnd(appointmentDates);
+             appointmentCounters++;
+        }
+    
+        else if (friday.checked() == true && dateTimeValue.IsFriday(appointmentDates) == true)
+        {
+             //element.WriteRecurrenceAppointment(appointmentDates);
+             appointmentList.addEnd(appointmentDates);
+             appointmentCounters++;
+        }
+    
+        else if (Saturday.checked() == true && dateTimeValue.IsSaturday(appointmentDates) == true)
+        {
+              //element.WriteRecurrenceAppointment(appointmentDates);
+             appointmentList.addEnd(appointmentDates);
+             appointmentCounters++;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>WeeklySchedule</Name>
+				<Source><![CDATA[
+    public void  WeeklySchedule()
+    {
+    
+        CalculateDateTimeValue      dateTimeValue = new CalculateDateTimeValue();
+        TransDate                   appointmentDates,endDates,weekAppointment;
+        int                         recurrenceDays,occuranceAppointment,occuranceCounter;
+    
+        appointmentDates    =  HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+        endDates            =  enddate.dateValue();
+        occuranceAppointment = str2int(occurance.valueStr());
+        recurrenceDays      =  str2int(RecurrenceWeeks.valueStr());
+        recurrenceDays      = element.RecurrenceWeekchecking(recurrenceDays);
+        recurrenceDays      = recurrenceDays * 7;
+        appointmentList = new List(Types::Date);
+    
+        if (endafter.selection() == 0)
+        {
+            element.WeeklySelectionAppointmentOccurance(recurrenceDays,appointmentDates,occuranceAppointment,weekAppointment,occuranceCounter);
+            finalEndDate = occuranceEndDate;
+    
+        }
+        else if (endby.selection() == 0)
+        {
+            element.WeeklySelectionAppointment(recurrenceDays,appointmentDates,endDates,weekAppointment);
+            finalEndDate = endDates;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>WeeklyScheduleWrite</Name>
+				<Source><![CDATA[
+    public void WeeklyScheduleWrite()
+    {
+        HMRecurrentApptDetailTmp.StartDate         = HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+        HMRecurrentApptDetailTmp.StartTime         = HMResourceSchedulingAppointmentTmpForm.AppointmentTime;
+        HMRecurrentApptDetailTmp.RecurrenceType    = HMCalenderName::Weekly;
+    
+        HMRecurrentApptDetailTmp.NoOfWeeks = RecurrenceWeeks.value();
+        HMRecurrentApptDetailTmp.Sunday    = sunday.checked();
+        HMRecurrentApptDetailTmp.Monday    = monday.checked();
+        HMRecurrentApptDetailTmp.Tuesday   = tuesday.checked();
+        HMRecurrentApptDetailTmp.Wednesday = wednesday.checked();
+        HMRecurrentApptDetailTmp.Thursday  = thursday.checked();
+        HMRecurrentApptDetailTmp.Friday    = friday.checked();
+        HMRecurrentApptDetailTmp.Saturday  = saturday.checked();
+        HMRecurrentApptDetailTmp.insert();
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>WeeklySelectionAppointment</Name>
+				<Source><![CDATA[
+    private void WeeklySelectionAppointment(int recurrenceDays,transdate appointmentDates,transdate enddates,transdate weekAppointment)
+    {
+        appointmentCounters  = 0;
+        if (recurrenceDays == 0)
+        {
+            while (appointmentDates <= enddates)
+            {
+                appointmentDates++;
+                if (appointmentDates > enddates)
+                {
+                    break;
+                }
+                else
+                {
+                    element.WeeklyDayCheck(appointmentDates);
+                }
+            }
+        }
+    
+        else
+        {
+            appointmentDates = this.CheckCurrentWeek(appointmentDates);
+    
+            while (appointmentDates <= enddates)
+            {
+                appointmentDates = appointmentDates + recurrenceDays;
+                weekAppointment  = appointmentDates + 7;
+                if (appointmentDates >= enddates)
+                {
+                    break;
+                }
+    
+                while (appointmentDates < weekAppointment )
+                {
+                    element.WeeklyDayCheck(appointmentDates);
+                    if (appointmentDates >= enddates)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        appointmentDates ++;
+                    }
+                }
+    
+    
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>WeeklySelectionAppointmentOccurance</Name>
+				<Source><![CDATA[
+    private void WeeklySelectionAppointmentOccurance(int recurrenceDays,transdate appointmentDates,int occuranceAppointment,transdate weekAppointment,int occuranceCounter)
+    {
+        ///int occuranceCount;
+         appointmentCounters  = 0;
+        if (recurrenceDays == 0)
+        {
+            element.WeeklyDayCheck(appointmentDates);
+            while (appointmentDates)
+            {
+                appointmentDates++;
+                if (appointmentCounters >= occuranceAppointment)
+                {
+                    occuranceEndDate = appointmentDates;
+                    break;
+                }
+                else
+                {
+                    element.WeeklyDayCheck(appointmentDates);
+                }
+            }
+        }
+    
+        else
+        {
+            appointmentDates = this.CheckCurrentWeek(appointmentDates);
+            while (appointmentDates)
+            {
+                appointmentDates = appointmentDates + recurrenceDays;
+                weekAppointment  = appointmentDates + 7; //recurrenceDays;
+    
+                if (appointmentCounters >= occuranceAppointment)
+                {
+                    break;
+                }
+                while (appointmentDates < weekAppointment )
+                {
+                    element.WeeklyDayCheck(appointmentDates);
+                    if (appointmentCounters >= occuranceAppointment)
+                    {
+                        occuranceEndDate = appointmentDates;
+                        break;
+                    }
+                    else
+                    {
+                        appointmentDates ++;
+                    }
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>WriteRecurrenceAppointmentsTmp</Name>
+				<Source><![CDATA[
+    public void WriteRecurrenceAppointmentsTmp(TransDate _appointmentdate,int priorityNumber,NoYes isAvail = NoYes::Yes)
+    {
+        HMResourceSchedulingAppointmentTmpLocal.AppointmentDate = _appointmentdate;
+        HMResourceSchedulingAppointmentTmpLocal.AppointmentTime = HMResourceSchedulingAppointmentTmpForm.AppointmentTime;
+        HMResourceSchedulingAppointmentTmpLocal.PriorityNumber=priorityNumber;
+        HMResourceSchedulingAppointmentTmpLocal.IsDelayed = isAvail;
+    
+       // if(!element.isValidRecurrence(_appointmentdate,HMResourceSchedulingAppointmentTmpForm.AppointmentTime))
+        {
+            HMResourceSchedulingAppointmentTmpLocal.IsDelayed = NoYes::No;
+        }
+            HMResourceSchedulingAppointmentTmpLocal.insert();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>WriteRecurrenceRange</Name>
+				<Source><![CDATA[
+    public void WriteRecurrenceRange()
+    {
+        if (EndAfter.selection() == 0)
+        {
+            HMRecurrentApptDetailTmp.RecurrenceRangeType = HMRecurrenceRangeType::EndAfterDate;
+            HMRecurrentApptDetailTmp.EndAfterNOccur      = int642int(Occurance.value());
+            HMRecurrentApptDetailTmp.OccuranceEndDate    = occuranceEndDate;
+        }
+        else if (endby.selection() == 0)
+        {
+            HMRecurrentApptDetailTmp.RecurrenceRangeType = HMRecurrenceRangeType::EndByDate;
+            HMRecurrentApptDetailTmp.EndByDate           = EndDate.dateValue();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>YearlyAppointment</Name>
+				<Source><![CDATA[
+    public TransDate YearlyAppointment(TransDate _date, TransDate endDates)
+    {
+        CalculateDateTimeValue calculateDateTimeValue = new CalculateDateTimeValue ();
+    
+        int appointmentYear;
+        int currentMonth;
+        int appointmentMonth;
+        str monthsName,newdates;
+        str daynum;
+        //boolean ret;
+    
+    
+        monthsName = OnMonths.valueStr();
+        daynum = OnMonthsNumber.valueStr();
+    
+        appointmentYear = year(_date);
+        appointmentMonth = mthOfYr(_date);
+        currentMonth  = calculateDateTimeValue.MonthNumber(monthsName);
+    
+        if (currentMonth >= appointmentMonth)
+        {
+           newdates =  daynum + '/' + int2str(currentMonth) + '/' + int2str(appointmentYear);
+           _date = str2DateDMY(newdates);
+            if (_date <= endDates)
+            {
+                appointmentList.addEnd(_date);
+                appointmentCounters++;
+                //element.WriteRecurrenceAppointment(_date);
+            }
+    
+        }
+        return _date;
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>YearlySchedule</Name>
+				<Source><![CDATA[
+    public void YearlySchedule()
+    {
+        CalculateDateTimeValue      dateTimeValue = new CalculateDateTimeValue();
+        TransDate                   appointmentDates,endDates;
+        int                         recurrenceYear,OndayNumbers,occuranceAppointment;
+        str                         onMonthsCmb,ontheDay,ontheDayNames,ontheMonthNames;
+        date newapptdefaultdate;
+    
+    
+         appointmentDates    =  HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+         endDates            =  enddate.dateValue();
+         occuranceAppointment = str2int(occurance.valueStr());
+         recurrenceYear      =  str2int(RecurrYear.valueStr());
+         OndayNumbers        =  str2int(OnMonthsNumber.valueStr());
+         onMonthsCmb         =  OnMonths.valueStr();
+    
+         ontheDay            =  ontheDays.valueStr();
+         ontheDayNames       =  OntheDayName.valueStr();
+         ontheMonthNames     =  OntheMonthsName.valueStr();
+         appointmentList = new List(Types::Date);
+         appointmentList.empty();
+         appointmentCounters = 0;
+    
+        ///end after selection in recurrence range
+    
+        if (endafter.selection() == 0)
+        {
+        //on yearly
+            if (OnYearly.selection() == 0)
+            {
+                if (recurrenceYear == 1)
+                {
+                    element.OnYearlyRecurOccurance(recurrenceYear,appointmentDates,occuranceAppointment,newapptdefaultdate);
+                }
+                else
+                {
+                    element.OnYearlyRecurrencesOccurance(recurrenceYear,appointmentDates,occuranceAppointment,newapptdefaultdate);
+                }
+            }
+    
+        //on the yearly
+            else if (OntheYearly.selection() == 0)
+            {
+                if (recurrenceYear == 1)
+                {
+                    element.OnTheYearlyRecurOccurance(recurrenceYear,appointmentDates,occuranceAppointment,newapptdefaultdate);
+                }
+                else
+                {
+                    element.OnTheYearlyRecurrencesOccurance(recurrenceYear,appointmentDates,occuranceAppointment,newapptdefaultdate);
+                }
+            }
+            finalEndDate = occuranceEndDate;
+        }
+    
+        ///end by selection in recurrence range
+        else if (endby.selection() == 0)
+        {
+        //on yearly
+            if (OnYearly.selection() == 0)
+            {
+                if (recurrenceYear == 1)
+                {
+                    element.OnYearlyRecur(recurrenceYear,appointmentDates,endDates,newapptdefaultdate);
+                }
+                else
+                {
+                    element.OnYearlyRecurrences(recurrenceYear,appointmentDates,endDates,newapptdefaultdate);
+                }
+            }
+    
+        //on the yearly
+            else if (OntheYearly.selection() == 0)
+            {
+                if (recurrenceYear ==1)
+                {
+                    element.OnTheYearlyRecur(recurrenceYear,appointmentDates,endDates,newapptdefaultdate);
+                }
+                else
+                {
+                    element.OnTheYearlyRecurrences(recurrenceYear,appointmentDates,endDates,newapptdefaultdate);
+                }
+            }
+            finalEndDate = endDates;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>YearlyScheduleWrite</Name>
+				<Source><![CDATA[
+    public void YearlyScheduleWrite()
+    {
+        HMRecurrentApptDetailTmp.StartDate         = HMResourceSchedulingAppointmentTmpForm.AppointmentDate;
+        HMRecurrentApptDetailTmp.StartTime         = HMResourceSchedulingAppointmentTmpForm.AppointmentTime;
+        HMRecurrentApptDetailTmp.RecurrenceType    = HMCalenderName::Yearly;
+        HMRecurrentApptDetailTmp.RecurEveryNYear = int642int(RecurrYear.value());
+    
+        if (OnYearly.selection() == 0)
+        {
+            HMRecurrentApptDetailTmp.EveryMonthOfYear  = str2enum(monthsofyear::January,OnMonths.valueStr());
+            HMRecurrentApptDetailTmp.DayOfYear         = int642int(OnMonthsNumber.value());
+            HMRecurrentApptDetailTmp.YearTypeOption    = HMYearTypeOption::OnYearly;
+        }
+        else if (OntheYearly.selection() == 0)
+        {
+    
+           HMRecurrentApptDetailTmp.WeekNumberEnumForYear = str2enum(HMDaysNumber::first, OntheDays.valueStr());
+           HMRecurrentApptDetailTmp.WeekDayNameForYear    = str2enum(HMDaysName::Monday,OntheDayName.valueStr());
+           HMRecurrentApptDetailTmp.MonthNameForYear      = str2enum(MonthsOfYear::January,OntheMonthsName.valueStr());
+           HMRecurrentApptDetailTmp.YearTypeOption        = HMYearTypeOption::OntheYearly;
+        }
+    
+    
+    
+            HMRecurrentApptDetailTmp.insert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>rbtnCalender</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+                if (rbtncalender.selection() == HMCalenderName::Daily)
+                {
+                    Daily.visible(true);
+                    Weekly.visible(false);
+                    Monthly.visible(false);
+                    Yearly.visible(false);
+        
+                   element.SetDefaultMonthlyPattern();
+                   element.SetDefaultWeeklyPattern();
+                   element.SetDefaultYearlyPattern();
+                }
+                else if (rbtncalender.selection() == HMCalenderName::Weekly)
+                {
+                    Daily.visible(false);
+                    Weekly.visible(true);
+                    Monthly.visible(false);
+                    Yearly.visible(false);
+        
+                    element.SetDefaultDailyPattern();
+                    element.SetDefaultMonthlyPattern();
+                    element.SetDefaultYearlyPattern();
+                }
+                else if (rbtncalender.selection() == HmCalenderName::Monthly)
+                {
+                    Daily.visible(false);
+                    Weekly.visible(false);
+                    Monthly.visible(true);
+                    Yearly.visible(false);
+        
+                    element.SetDefaultDailyPattern();
+                    element.SetDefaultWeeklyPattern();
+                    element.SetDefaultYearlyPattern();
+                }
+                else if (rbtncalender.selection() == HMCalenderName::Yearly)
+                {
+                    Daily.visible(false);
+                    Weekly.visible(false);
+                    Monthly.visible(false);
+                    Yearly.visible(true);
+        //
+                    element.SetDefaultDailyPattern();
+                    element.SetDefaultMonthlyPattern();
+                    element.SetDefaultWeeklyPattern();
+        
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Every</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+                EveryWeekDay.selection(1);
+                every.selection(0);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Days</Name>
+				<Type>Integer</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            every.selection(0);
+            EveryWeekDay.selection(1);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EveryWeekDay</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+                Every.selection(1);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Daybtn</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+                the.selection(1);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DayCount</Name>
+				<Type>Integer</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            the.selection(1);
+            daybtn.selection(0);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EveryMonth</Name>
+				<Type>Int64</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            the.selection(1);
+            daybtn.selection(0);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>The</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+                Daybtn.selection(1);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>TheCount</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            the.selection(0);
+            daybtn.selection(1);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>TheDays</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            the.selection(0);
+            daybtn.selection(1);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>TheEveryMonths</Name>
+				<Type>Int64</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            the.selection(0);
+            daybtn.selection(1);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OnYearly</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+                OntheYearly.selection(1);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OnMonths</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            OnYearly.selection(0);
+            OntheYearly.selection(1);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OnMonthsNumber</Name>
+				<Type>Int64</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            OnYearly.selection(0);
+            OntheYearly.selection(1);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OntheYearly</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+                OnYearly.selection(1);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OntheDays</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            OnYearly.selection(1);
+            OntheYearly.selection(0);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OntheDayName</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            OnYearly.selection(1);
+            OntheYearly.selection(0);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OntheMonthsName</Name>
+				<Type>ComboBox</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            OnYearly.selection(1);
+            OntheYearly.selection(0);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EndAfter</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                //NoEndDate.selection(1);
+                EndBy.selection(1);
+                EndDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Occurance</Name>
+				<Type>Int64</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+           // NoEndDate.selection(1);
+            EndAfter.selection(0);
+            EndBy.selection(1);
+            EndDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));  //default value
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EndBy</Name>
+				<Type>RadioButton</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChange</Name>
+						<Source><![CDATA[
+        public int selectionChange()
+        {
+            int ret;
+        
+            ret = super();
+            if (ret)
+            {
+               /// NoEndDate.selection(1);
+                EndAfter.selection(1);
+                Occurance.value(10);
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EndDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>enter</Name>
+						<Source><![CDATA[
+        public void enter()
+        {
+            super();
+            //NoEndDate.selection(1);
+            EndAfter.selection(1);
+            EndBy.selection(0);
+            Occurance.value(10);//default value
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+        
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+        
+            while select  forUpdate * from HMResourceSchedulingAppointmentTmpLocal
+                {
+                    ttsBegin;
+                    HMResourceSchedulingAppointmentTmpLocal.delete();
+                    ttsCommit;
+                }
+            element.WriteRecurrenceRange();
+        
+            if (rbtncalender.selection() == HMCalenderName::Daily)
+            {
+                element.DailySchedule();
+                element.DailyScheduleWrite();
+            }
+            else if (rbtncalender.selection() == HMCalenderName::Weekly)
+            {
+        
+                element.WeeklySchedule();
+                element.WeeklyScheduleWrite();
+            }
+            else if (rbtncalender.selection() == HMCalenderName::Monthly)
+            {
+        
+                element.MonthlySchedule();
+                element.MonthlyScheduleWrite();
+            }
+            else if (rbtncalender.selection() == HMCalenderName::Yearly)
+            {
+        
+                element.YearlySchedule();
+                element.YearlyScheduleWrite();
+            }
+            element.RecurrenceAppointmentScheduling(appointmentList);
+            if (HMResourceSchedulingAppointmentTmpLocal && HMRecurrentApptDetailTmp)
+            {
+        
+                if (formHasMethod(callerForm, identifierStr(setBufferRecurrence)))
+                {
+                formCall =   callerForm;
+        
+                 formCall.setBufferRecurrence(HMResourceSchedulingAppointmentTmpLocal , HMRecurrentApptDetailTmp);
+                 element.close();
+                }
+            }
+        
+        
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ9203</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<MaximizeBox xmlns="">No</MaximizeBox>
+		<MinimizeBox xmlns="">No</MinimizeBox>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WidthMode xmlns="">Column</WidthMode>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>Recurrence</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>RecurrencePattern</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>RecurPattern</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormRadioButtonControl">
+												<Name>rbtnCalender</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6823</HelpText>
+												<Type>RadioButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Columns>5</Columns>
+												<EnumType>HMCalenderName</EnumType>
+												<FrameType>None</FrameType>
+												<Items />
+											</AxFormControl>
+										</Controls>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>RecurPatternDetail</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Daily</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>715827882</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>Group_</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormRadioButtonControl">
+																<Name>Every</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>858993458</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6824</HelpText>
+																<Type>RadioButton</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<EnumType>HMEveryDays</EnumType>
+																<FrameType>None</FrameType>
+																<Items />
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormIntegerControl">
+																<Name>Days</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1288490187</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6825</HelpText>
+																<Type>Integer</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>35</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<AllowNegative>No</AllowNegative>
+																<Label>@SYS7425</Label>
+																<ShowLabel>No</ShowLabel>
+																<Value>1</Value>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText2</Name>
+																<ElementPosition>1717986916</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@SYS314611</Text>
+															</AxFormControl>
+														</Controls>
+														<Columns>3</Columns>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormRadioButtonControl">
+														<Name>EveryWeekDay</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ6826</HelpText>
+														<Type>RadioButton</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<EnumType>HMEveryWeekDay</EnumType>
+														<FrameType>None</FrameType>
+														<Selection>1</Selection>
+														<Items />
+													</AxFormControl>
+												</Controls>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Weekly</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741823</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>Group12</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText3</Name>
+																<ElementPosition>858993458</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@SYS92592</Text>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormIntegerControl">
+																<Name>RecurrenceWeeks</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1288490187</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6827</HelpText>
+																<Type>Integer</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>35</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<AllowNegative>No</AllowNegative>
+																<Label>@MAZ6728</Label>
+																<ShowLabel>No</ShowLabel>
+																<Value>1</Value>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText7</Name>
+																<ElementPosition>1717986916</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@SYS314612</Text>
+															</AxFormControl>
+														</Controls>
+														<Columns>3</Columns>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>Group1</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>Sunday</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>477218588</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6828</HelpText>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Label>@SYS13053</Label>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>Monday</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>715827882</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6828</HelpText>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Label>@SYS5217</Label>
+																<Value>1</Value>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>Tuesday</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>954437176</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6828</HelpText>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Label>@SYS6713</Label>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>Wednesday</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1193046470</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6828</HelpText>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Label>@SYS6482</Label>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>Thursday</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1431655764</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6828</HelpText>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Label>@SYS6714</Label>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>Friday</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1670265058</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6828</HelpText>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Label>@SYS7072</Label>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>Saturday</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1908874352</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6828</HelpText>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Label>@SYS13051</Label>
+															</AxFormControl>
+														</Controls>
+														<Columns>3</Columns>
+													</AxFormControl>
+												</Controls>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Monthly</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1431655764</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>Group2</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormRadioButtonControl">
+																<Name>Daybtn</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>613566756</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6829</HelpText>
+																<Type>RadioButton</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<EnumType>HMMonthlyDays</EnumType>
+																<FrameType>None</FrameType>
+																<Items />
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormIntegerControl">
+																<Name>DayCount</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>920350134</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6830</HelpText>
+																<Type>Integer</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>35</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<AllowNegative>No</AllowNegative>
+																<Label>Day count</Label>
+																<Value>1</Value>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText11</Name>
+																<ElementPosition>1227133512</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@SYS92590</Text>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormInt64Control">
+																<Name>EveryMonth</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1533916890</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6831</HelpText>
+																<Type>Int64</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>35</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<AllowNegative>No</AllowNegative>
+																<ShowLabel>No</ShowLabel>
+																<Value>1</Value>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText</Name>
+																<ElementPosition>1840700268</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<BackStyle>Auto</BackStyle>
+																<BackgroundColor>WindowBackground</BackgroundColor>
+																<Text>@MAZ6725</Text>
+															</AxFormControl>
+														</Controls>
+														<Columns>5</Columns>
+														<Columnspace>0</Columnspace>
+														<ColumnspaceMode>Fixed</ColumnspaceMode>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>Group3</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormRadioButtonControl">
+																<Name>The</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>536870910</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6832</HelpText>
+																<Type>RadioButton</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<EnumType>HMMonthlyThe</EnumType>
+																<FrameType>None</FrameType>
+																<Selection>1</Selection>
+																<Items />
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormComboBoxControl">
+																<Name>TheCount</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>805306365</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6833</HelpText>
+																<Type>ComboBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<EnumType>HMDaysNumber</EnumType>
+																<ShowLabel>No</ShowLabel>
+																<Items />
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormComboBoxControl">
+																<Name>TheDays</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1073741820</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6834</HelpText>
+																<Type>ComboBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<EnumType>HMDaysName</EnumType>
+																<ShowLabel>No</ShowLabel>
+																<Items />
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText10</Name>
+																<ElementPosition>1342177275</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@SYS92590</Text>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormInt64Control">
+																<Name>TheEveryMonths</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1610612730</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6831</HelpText>
+																<Type>Int64</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>35</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<AllowNegative>No</AllowNegative>
+																<ShowLabel>No</ShowLabel>
+																<Value>1</Value>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText1</Name>
+																<ElementPosition>1879048185</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@MAZ6725</Text>
+															</AxFormControl>
+														</Controls>
+														<Columns>6</Columns>
+														<Columnspace>2</Columnspace>
+														<ColumnspaceMode>Fixed</ColumnspaceMode>
+													</AxFormControl>
+												</Controls>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Yearly</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1789569705</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>Group13</Name>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText4</Name>
+																<ElementPosition>858993458</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@SYS92592</Text>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormInt64Control">
+																<Name>RecurrYear</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1288490187</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ6835</HelpText>
+																<Type>Int64</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<Width>35</Width>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<AllowNegative>No</AllowNegative>
+																<Label>@MAZ6726</Label>
+																<ShowLabel>No</ShowLabel>
+																<Value>1</Value>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormStaticTextControl">
+																<Name>StaticText6</Name>
+																<ElementPosition>1717986916</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>StaticText</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Text>@MAZ6723</Text>
+															</AxFormControl>
+														</Controls>
+														<Columns>3</Columns>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>Group15</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormGroupControl">
+																<Name>Group4</Name>
+																<ElementPosition>1073741822</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>Group</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Controls>
+																	<AxFormControl xmlns=""
+																		i:type="AxFormRadioButtonControl">
+																		<Name>OnYearly</Name>
+																		<AutoDeclaration>Yes</AutoDeclaration>
+																		<ElementPosition>1073741822</ElementPosition>
+																		<FilterExpression>%1</FilterExpression>
+																		<HeightMode>Auto</HeightMode>
+																		<HelpText>@MAZ6836</HelpText>
+																		<Type>RadioButton</Type>
+																		<VerticalSpacing>-1</VerticalSpacing>
+																		<WidthMode>Auto</WidthMode>
+																		<FormControlExtension
+																			i:nil="true" />
+																		<EnumType>HMOnYearly</EnumType>
+																		<FrameType>None</FrameType>
+																		<Items />
+																	</AxFormControl>
+																	<AxFormControl xmlns=""
+																		i:type="AxFormGroupControl">
+																		<Name>Group10</Name>
+																		<AlignControl>Yes</AlignControl>
+																		<ElementPosition>1610612733</ElementPosition>
+																		<FilterExpression>%1</FilterExpression>
+																		<HeightMode>Auto</HeightMode>
+																		<Type>Group</Type>
+																		<VerticalSpacing>-1</VerticalSpacing>
+																		<WidthMode>Auto</WidthMode>
+																		<FormControlExtension
+																			i:nil="true" />
+																		<Controls>
+																			<AxFormControl xmlns=""
+																				i:type="AxFormStaticTextControl">
+																				<Name>StaticText9</Name>
+																				<ElementPosition>715827882</ElementPosition>
+																				<FilterExpression>%1</FilterExpression>
+																				<HeightMode>Auto</HeightMode>
+																				<Type>StaticText</Type>
+																				<VerticalSpacing>-1</VerticalSpacing>
+																				<WidthMode>Auto</WidthMode>
+																				<FormControlExtension
+																					i:nil="true" />
+																				<Text></Text>
+																			</AxFormControl>
+																			<AxFormControl xmlns=""
+																				i:type="AxFormStaticTextControl">
+																				<Name>CopyOfStaticText9</Name>
+																				<ElementPosition>1073741823</ElementPosition>
+																				<FilterExpression>%1</FilterExpression>
+																				<HeightMode>Auto</HeightMode>
+																				<Type>StaticText</Type>
+																				<VerticalSpacing>-1</VerticalSpacing>
+																				<WidthMode>Auto</WidthMode>
+																				<FormControlExtension
+																					i:nil="true" />
+																				<Text></Text>
+																			</AxFormControl>
+																			<AxFormControl xmlns=""
+																				i:type="AxFormComboBoxControl">
+																				<Name>OnMonths</Name>
+																				<AutoDeclaration>Yes</AutoDeclaration>
+																				<ElementPosition>1431655764</ElementPosition>
+																				<FilterExpression>%1</FilterExpression>
+																				<HeightMode>Auto</HeightMode>
+																				<HelpText>@MAZ6838</HelpText>
+																				<Type>ComboBox</Type>
+																				<VerticalSpacing>-1</VerticalSpacing>
+																				<WidthMode>Auto</WidthMode>
+																				<FormControlExtension
+																					i:nil="true" />
+																				<EnumType>MonthsOfYear</EnumType>
+																				<ShowLabel>No</ShowLabel>
+																				<Items />
+																			</AxFormControl>
+																			<AxFormControl xmlns=""
+																				i:type="AxFormInt64Control">
+																				<Name>OnMonthsNumber</Name>
+																				<AutoDeclaration>Yes</AutoDeclaration>
+																				<ElementPosition>1789569705</ElementPosition>
+																				<FilterExpression>%1</FilterExpression>
+																				<HeightMode>Auto</HeightMode>
+																				<HelpText>@MAZ6839</HelpText>
+																				<Type>Int64</Type>
+																				<VerticalSpacing>-1</VerticalSpacing>
+																				<Width>35</Width>
+																				<WidthMode>Auto</WidthMode>
+																				<FormControlExtension
+																					i:nil="true" />
+																				<AllowNegative>No</AllowNegative>
+																				<ShowLabel>No</ShowLabel>
+																				<Value>1</Value>
+																			</AxFormControl>
+																		</Controls>
+																		<Columns>4</Columns>
+																	</AxFormControl>
+																</Controls>
+																<Columns>2</Columns>
+																<Columnspace>2</Columnspace>
+																<ColumnspaceMode>Fixed</ColumnspaceMode>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormGroupControl">
+																<Name>Group5</Name>
+																<ElementPosition>1610612733</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>Group</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Controls>
+																	<AxFormControl xmlns=""
+																		i:type="AxFormRadioButtonControl">
+																		<Name>OntheYearly</Name>
+																		<AutoDeclaration>Yes</AutoDeclaration>
+																		<ElementPosition>1073741822</ElementPosition>
+																		<FilterExpression>%1</FilterExpression>
+																		<HeightMode>Auto</HeightMode>
+																		<HelpText>@MAZ6837</HelpText>
+																		<Type>RadioButton</Type>
+																		<VerticalSpacing>-1</VerticalSpacing>
+																		<WidthMode>Auto</WidthMode>
+																		<FormControlExtension
+																			i:nil="true" />
+																		<EnumType>HMOntheYearly</EnumType>
+																		<FrameType>None</FrameType>
+																		<Selection>1</Selection>
+																		<Items />
+																	</AxFormControl>
+																	<AxFormControl xmlns=""
+																		i:type="AxFormGroupControl">
+																		<Name>Group7</Name>
+																		<AlignControl>Yes</AlignControl>
+																		<ElementPosition>1610612733</ElementPosition>
+																		<FilterExpression>%1</FilterExpression>
+																		<HeightMode>Auto</HeightMode>
+																		<Type>Group</Type>
+																		<VerticalSpacing>-1</VerticalSpacing>
+																		<WidthMode>Auto</WidthMode>
+																		<FormControlExtension
+																			i:nil="true" />
+																		<Controls>
+																			<AxFormControl xmlns=""
+																				i:type="AxFormComboBoxControl">
+																				<Name>OntheDays</Name>
+																				<AutoDeclaration>Yes</AutoDeclaration>
+																				<ElementPosition>858993458</ElementPosition>
+																				<FilterExpression>%1</FilterExpression>
+																				<HeightMode>Auto</HeightMode>
+																				<HelpText>@MAZ6840</HelpText>
+																				<Type>ComboBox</Type>
+																				<VerticalSpacing>-1</VerticalSpacing>
+																				<WidthMode>Auto</WidthMode>
+																				<FormControlExtension
+																					i:nil="true" />
+																				<EnumType>HMDaysNumber</EnumType>
+																				<ShowLabel>No</ShowLabel>
+																				<Items />
+																			</AxFormControl>
+																			<AxFormControl xmlns=""
+																				i:type="AxFormComboBoxControl">
+																				<Name>OntheDayName</Name>
+																				<AutoDeclaration>Yes</AutoDeclaration>
+																				<ElementPosition>1288490187</ElementPosition>
+																				<FilterExpression>%1</FilterExpression>
+																				<HeightMode>Auto</HeightMode>
+																				<HelpText>@MAZ6841</HelpText>
+																				<Type>ComboBox</Type>
+																				<VerticalSpacing>-1</VerticalSpacing>
+																				<WidthMode>Auto</WidthMode>
+																				<FormControlExtension
+																					i:nil="true" />
+																				<EnumType>HMDaysName</EnumType>
+																				<ShowLabel>No</ShowLabel>
+																				<Items />
+																			</AxFormControl>
+																			<AxFormControl xmlns=""
+																				i:type="AxFormComboBoxControl">
+																				<Name>OntheMonthsName</Name>
+																				<AutoDeclaration>Yes</AutoDeclaration>
+																				<ElementPosition>1717986916</ElementPosition>
+																				<FilterExpression>%1</FilterExpression>
+																				<HeightMode>Auto</HeightMode>
+																				<HelpText>@MAZ6838</HelpText>
+																				<Type>ComboBox</Type>
+																				<VerticalSpacing>-1</VerticalSpacing>
+																				<WidthMode>Auto</WidthMode>
+																				<FormControlExtension
+																					i:nil="true" />
+																				<EnumType>MonthsOfYear</EnumType>
+																				<Label>@SYS26401</Label>
+																				<Items />
+																			</AxFormControl>
+																		</Controls>
+																		<Columns>3</Columns>
+																		<Columnspace>2</Columnspace>
+																		<ColumnspaceMode>Fixed</ColumnspaceMode>
+																		<FrameType>None</FrameType>
+																	</AxFormControl>
+																</Controls>
+																<Columns>2</Columns>
+																<Columnspace>2</Columnspace>
+																<ColumnspaceMode>Fixed</ColumnspaceMode>
+															</AxFormControl>
+														</Controls>
+													</AxFormControl>
+												</Controls>
+											</AxFormControl>
+										</Controls>
+										<LeftMargin>11</LeftMargin>
+										<LeftMarginMode>Fixed</LeftMarginMode>
+									</AxFormControl>
+								</Controls>
+								<Caption>@SYS86395</Caption>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>RecurrenceRange</Name>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>CopyOfGroup7</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>SizeToAvailable</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormRadioButtonControl">
+												<Name>EndAfter</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6842</HelpText>
+												<Type>RadioButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<EnumType>HMEndAfterDate</EnumType>
+												<FrameType>None</FrameType>
+												<Items />
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group9</Name>
+												<ElementPosition>1610612734</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>SizeToAvailable</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormInt64Control">
+														<Name>Occurance</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ6844</HelpText>
+														<Type>Int64</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Width>35</Width>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<AllowNegative>No</AllowNegative>
+														<Label>@MAZ6727</Label>
+														<ShowLabel>No</ShowLabel>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStaticTextControl">
+														<Name>StaticText5</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>StaticText</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Text>@MAZ6724</Text>
+													</AxFormControl>
+												</Controls>
+												<Columns>2</Columns>
+												<FrameType>None</FrameType>
+											</AxFormControl>
+										</Controls>
+										<Columns>3</Columns>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>CopyOfGroup8</Name>
+										<ElementPosition>1610612734</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormRadioButtonControl">
+												<Name>EndBy</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>858993458</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6843</HelpText>
+												<Type>RadioButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<EnumType>HMEndByDate</EnumType>
+												<FrameType>None</FrameType>
+												<Selection>1</Selection>
+												<Items />
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStaticTextControl">
+												<Name>StaticText8</Name>
+												<ElementPosition>1288490187</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>StaticText</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Text></Text>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormDateControl">
+												<Name>EndDate</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1717986916</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ6845</HelpText>
+												<Type>Date</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<ExtendedDataType>TransDate</ExtendedDataType>
+												<ShowLabel>No</ShowLabel>
+											</AxFormControl>
+										</Controls>
+										<Columns>3</Columns>
+									</AxFormControl>
+								</Controls>
+								<Caption>@SYS70526</Caption>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+						<Style>DialogContent</Style>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@SYS26349</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

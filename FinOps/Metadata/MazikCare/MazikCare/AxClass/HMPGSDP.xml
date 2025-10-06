@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPGSDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMPGSContract))
+]
+class HMPGSDP extends SRSReportDataProviderBase
+{
+    HMPGSReportTmp      PGSTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMHMPGSReportTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMPGSReportTmp')]
+    public HMPGSReportTmp getHMHMPGSReportTmp()
+    {
+        select * from PGSTmp;
+        return PGSTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemDescription</Name>
+				<Source><![CDATA[
+    private EcoResDescription itemDescription(ItemId _itemId)
+    {
+        EcoResDescription description;
+        HMInventTable hmInventTable;
+        InventTable inventTable;
+    
+        select DIN from hmInventTable
+            join * from inventTable
+                where hmInventTable.InventTable == _itemId
+                && inventTable.ItemId == _itemId;
+    
+        description = inventTable.itemDescriptionOrName();
+    
+    
+    
+        return description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        GeneralJournalEntry             GeneralJournalEntry;
+        GeneralJournalAccountEntry      GeneralJournalAccountEntry;
+        SubledgerVoucherGeneralJournalEntry SubledgerVoucherGeneralJournalEntry;
+        LedgerEntryJournal              LedgerEntryJournal;
+        CustTrans                       custTrans;
+    
+        HMPGSContract   dataContract;
+        InventTable     inventTable;
+        HMPatient       hmPatient;
+        HMCaseTrans     caseTrans, caseTransLocal;
+    
+        HMInsuranceContractClassOrPlans         plan;
+        HMInsuranceContract                     contract;
+        HMInsuranceContractCarrierCombination   combination;
+        HMInsuranceCarrier                      carrierContract, carrierLocal;
+        HMPatientInsurance                      patientInsurance;
+        HMPatientChargeEntryLine                chargeLine, chargeLineLocal;
+        HMInsuranceCarrierBatchDetails          batchContract;
+        HMClaimChargeLine                       claimChargeLine;
+        HMClaimVersion                          claimVersion;
+        HMClaimTable                            claim;
+        hmcase                                  hmcase;
+        HMCaseInsurance                         CaseInsurance;
+    
+        LedgerJournalTable  journalTable;
+        LedgerJournalTrans  ledgerjournalTrans;
+        HMCaseTransDetail   caseTransDetails;
+        str                 journalNumber;
+        HMResourceSchedulingAppointment appointment;
+    
+       /* plans               = HMInsuranceContractClassOrPlans::find(this.HMInsuranceContractClassOrPlans);
+        contract            = HMInsuranceContract::find(plans.HMInsuranceContract);
+        carrierCombination  = HMInsuranceContractCarrierCombination::find(contract.HMInsuranceContractCarrierCombination);
+        carrier             = HMInsuranceCarrier::find(carrierCombination.HMInsuranceCarrier);
+        */
+        dataContract        = this.parmDataContract() as HMPGSContract;
+        batchContract       = HMInsuranceCarrierBatchDetails::findbByBatchNumber(dataContract.parmBatchNumber());
+    
+        carrierContract     = HMInsuranceCarrier::findByPartyName(dataContract.parmInsuranceCarrier());
+    
+        while select caseTrans
+            join hmcase
+                order by hmCase.HMCaseType//, claim.HMPatient
+            /*join appointment*/
+            where caseTrans.HMCase == hmcase.RecId
+            && caseTrans.BillingStatus != HMBillStatus::NotPaid
+            join CaseInsurance 
+            where  CaseInsurance.HMCase == hmcase.RecId
+            && CaseInsurance.IsActive == noyes::Yes
+    
+    
+                join patientInsurance
+                where CaseInsurance.HMPatientInsurance == patientInsurance.RecId
+                    join plan
+                    where patientInsurance.HMInsuranceContractClassOrPlans == Plan.RecId
+                        join contract
+                        where contract.RecId == plan.HMInsuranceContract
+                            join combination
+                            where combination.RecId == contract.HMInsuranceContractCarrierCombination
+                                join carrierLocal
+                                where carrierLocal.RecId    == combination.HMInsuranceCarrier
+                            ///    && appointment.AppointmentDate >= dataContract.parmFromDate()
+                          //      && appointment.AppointmentDate <= dataContract.parmToDate()
+                                    join chargeLine
+                                    where caseTrans.RecId == chargeLine.HMCaseTrans
+                                    && chargeLine.HMInsuranceCarrierBatchDetails == batchContract.RecId
+                           //         && carrierLocal.RecId   == carrierContract.RecId
+                                        join claimChargeLine
+                                        where claimChargeLine.HMCaseTrans == caseTrans.RecId
+                                            join claimVersion
+                                            where claimVersion.HMClaimTable == claimChargeLine.HMClaimTable
+                                            && claimVersion.Status == HMClaimStatus::Submitted
+                                                outer join CaseTransDetails
+                                                where CaseTransDetails.HMCaseTrans == caseTrans.RecId
+                                                && !caseTransDetails.Reversed
+                                                && (caseTransDetails.TransactionType == 2||caseTransDetails.TransactionType==1)
+        {
+    
+            ttsBegin;
+    
+            PGSTmp.clear();
+    
+            // code by amir nazim 11/25/2016
+            select firstOnly * from LedgerEntryJournal
+            join GeneralJournalEntry
+            where GeneralJournalEntry.LedgerEntryJournal == LedgerEntryJournal.RecId
+            && GeneralJournalEntry.Ledger == Ledger::current()
+            join GeneralJournalAccountEntry
+            where GeneralJournalAccountEntry.GeneralJournalEntry == GeneralJournalEntry.RecId
+            join SubledgerVoucherGeneralJournalEntry
+            where SubledgerVoucherGeneralJournalEntry.GeneralJournalEntry == GeneralJournalEntry.RecId
+            join custTrans
+            where SubledgerVoucherGeneralJournalEntry.Voucher == custTrans.Voucher
+            && SubledgerVoucherGeneralJournalEntry.AccountingDate == custTrans.TransDate
+                outer join caseTransDetails
+                where custTrans.RecId == caseTransDetails.refRecId
+                && caseTransDetails.RefTableId == tableNum(custTrans)
+                && caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::InsurancePayment
+                    join caseTransLocal
+                    where caseTransLocal.RecId == caseTransDetails.HMCaseTrans
+                    && caseTransLocal.HMCase == hmcase.RecId
+                join chargeLineLocal
+                where caseTransLocal.RecId == chargeLineLocal.HMCaseTrans
+                && chargeLineLocal.HMInsuranceCarrierBatchDetails == batchContract.RecId;
+            // code by amir nazim 11/25/2016
+    
+            journalTable = LedgerJournalTable::find(ledgerjournalTrans.JournalNum);
+    
+            PGSTmp.FromDateBatch    = batchContract.FromDate;
+            PGSTmp.ToDateBatch      = batchContract.ToDate;
+    
+            // code change by amir nazim 11/25/2016 on dawood virani request
+            PGSTmp.InvoiceNumber    = LedgerEntryJournal.JournalNumber;
+            PGSTmp.InvoiceDate      = date2str(custTrans.TransDate, 321, DateDay::Digits2, DateSeparator::Slash, DateMonth::Digits2, DateSeparator::Slash, DateYear::Digits4);
+            // code change by amir nazim 11/25/2016 on dawood virani request
+    
+            PGSTmp.CarrierCode                  = carrierLocal.Code;
+            PGSTmp.CarrierName                  = carrierLocal.Name;
+            PGSTmp.PatientName                  = hmcase.getPatientName();
+            PGSTmp.PatientInsuranceCardNumber   = patientInsurance.HMPatientInsuranceMembershipId;
+            PGSTmp.PatientMRN                   = HMPatient::find(hmcase.HMPatient).patientChartNum();
+            PGSTmp.ServiceDescription           = this.itemDescription(caseTrans.ItemId);
+            PGSTmp.GrossAmount                  = caseTrans.TotalAmount;
+            PGSTmp.DiscountAmount               = caseTrans.DiscountAmount;
+            PGSTmp.NetAmount                    = caseTrans.TotalAmount - PGSTmp.DiscountAmount;
+            PGSTmp.DeductibleAmount             = caseTrans.DeductibleActual + caseTrans.CashAmount;
+    
+            //change by amir nazim 11/25/2016 on dawood virani request: Insurance amount is wrong
+            //PGSTmp.InsuranceAmount              = caseTrans.InsuranceAmount;
+            PGSTmp.InsuranceAmount  = caseTrans.TotalAmount - caseTrans.DiscountAmount - caseTrans.DeductibleActual - caseTrans.CashAmount;
+            //PGSTmp.NetAmount - caseTrans.DeductibleActual;
+            //PGSTmp.InsuranceAmount              = PGSTmp.NetAmount - caseTrans.DeductibleActual;
+            //change by amir nazim 11/25/2016 on dawood virani request: Insurance amount is wrong
+    
+           /* PGSTmp.FromDate                     = date2str(dataContract.parmFromDate(), 123, 2, 1, 2, 1, 4);
+            PGSTmp.ToDate                       = date2str(dataContract.parmToDate(), 123, 2, 1, 2, 1, 4);*/
+    
+            PGSTmp.insert();
+    
+            ttsCommit;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,834 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimChargeLine</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMClaimChargeLine extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>chargeEdit</Name>
+				<Source><![CDATA[
+    edit RealBase chargeEdit(Boolean set, RealBase charge = 0)
+    {
+        RealBase newCharge;
+
+        if (set) 
+        {
+            if (this.IsImportedFromChargeEntryLine)
+            {
+                checkFailed("@MAZ13384");
+            }
+            //else
+            //{
+            //    this.ChargeLeft = trunc(charge);
+            //    this.ChargeRight = real2int(frac(charge) * power(10,numOfDec(charge)));
+            //}
+        }
+
+        //newCharge = this.ChargeLeft + (this.ChargeRight/power(10,strLen(int2str(this.ChargeRight))));
+        newCharge = this.HMChargeLineAmount;
+
+        return newCharge;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>decreasePriority</Name>
+				<Source><![CDATA[
+    public void decreasePriority()
+    {
+        HMClaimChargeLine    hmClaimChargeLine;
+    
+        select count(recId) from hmClaimChargeLine
+        where hmClaimChargeLine.HMClaimTable == this.HMClaimTable;
+    
+        if( this.Priority < hmClaimChargeLine.RecId )
+        {
+            ttsBegin;
+            select firstOnly forUpdate hmClaimChargeLine
+            where hmClaimChargeLine.Priority == (this.Priority + 1)
+            && hmClaimChargeLine.HMClaimTable == this.HMClaimTable;
+    
+            if( hmClaimChargeLine )
+            {
+                hmClaimChargeLine.Priority--;
+                hmClaimChargeLine.update();
+    
+                this.Priority++;
+                this.update();
+            }
+    
+            ttsCommit;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fromDateEdit</Name>
+				<Source><![CDATA[
+    edit TransDate fromDateEdit(Boolean set, TransDate fromDate)
+    {
+        TransDate newDate;
+
+        //if (set)
+        //{
+        //    this.FromDateDay = dayOfMth(fromDate);
+        //    this.FromDateMonth = mthOfYr(fromDate);
+        //    this.FromDateYear = year(fromDate);
+        //}
+
+        newDate = this.HMServiceFromDate;
+
+        return newDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>increasePriority</Name>
+				<Source><![CDATA[
+    public void increasePriority()
+    {
+        HMClaimChargeLine    hmClaimChargeLine;
+    
+        if( this.Priority > 1 )
+        {
+            ttsBegin;
+            select firstOnly forUpdate hmClaimChargeLine
+            where hmClaimChargeLine.Priority == (this.Priority - 1)
+            && hmClaimChargeLine.HMClaimTable == this.HMClaimTable;
+    
+            if( hmClaimChargeLine )
+            {
+                hmClaimChargeLine.Priority++;
+                hmClaimChargeLine.update();
+    
+                this.Priority--;
+                this.update();
+            }
+    
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        super();
+        this.Priority = HMClaimChargeLine::getAvailablePriority(this.HMClaimTable);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>toDateEdit</Name>
+				<Source><![CDATA[
+    edit TransDate toDateEdit(Boolean set, TransDate toDate)
+    {
+        TransDate newDate;
+
+        //if (set)
+        //{
+        //    this.ToDateDay = dayOfMth(toDate);
+        //    this.ToDateMonth = mthOfYr(toDate);
+        //    this.ToDateYear = year(toDate);
+        //}
+
+        newDate = this.HMServiceToDate;
+
+        return newDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateDelete</Name>
+				<Source><![CDATA[
+    public boolean validateDelete()
+    {
+        boolean ret;
+        HMClaimChargeLine    hmClaim1500ChargeLine;
+    
+        ret = super();
+    
+        if(ret)
+        {
+            ttsBegin;
+            while select forUpdate * from hmClaim1500ChargeLine
+            where hmClaim1500ChargeLine.HMClaimTable == this.HMClaimTable
+            && hmClaim1500ChargeLine.Priority > this.Priority
+            {
+                hmClaim1500ChargeLine.Priority--;
+                if( hmClaim1500ChargeLine.validateWrite())
+                {
+                    hmClaim1500ChargeLine.update();
+                }
+            }
+            ttsCommit;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    public boolean validateWrite()
+    {
+        boolean ret;
+    
+        ret = super();
+        
+        if (this.fromDateEdit(false,dateNull()) && this.toDateEdit(false,dateNull()) && this.fromDateEdit(false,dateNull()) > this.toDateEdit(false,dateNull()))
+        {
+            ret = checkFailed("@MAZ9692");
+        }
+    
+        if (this.IsImportedFromChargeEntryLine)
+        {
+            ret = checkFailed("@MAZ13384");
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record is located in the <c>HMClaim1500ChargeLine</c> table.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMClaim1500ChargeLine</c> table record to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    /// <remarks>
+    ///    If the specified record is not located in the <c>HMClaim1500ChargeLine</c> table, an error message is
+    ///    displayed.
+    /// </remarks>
+    public static boolean checkExist(RecId _recId)
+    {
+        boolean ret = true;
+    
+        if (!HMClaimChargeLine::exist(_recId))
+        {
+            ret = checkFailed(strfmt(HMClaimChargeLine::txtNotExist(), _recId));
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>exist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether the specified record in the <c>HMClaimChargeLine</c> table exists.
+    /// </summary>
+    /// <param name="_recId">
+    ///    The record ID of the <c>HMClaimChargeLine</c> table to check if it exists.
+    /// </param>
+    /// <returns>
+    ///    true if the specified record exists; otherwise, false.
+    /// </returns>
+    public static boolean exist(RecId _recId)
+    {
+        boolean found;
+    
+        found = (select firstonly
+                     RecId
+                 from
+                     hmClaimChargeLine
+                 where
+                     hmClaimChargeLine.RecId == _recId).RecId != 0;
+    
+        return found;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the specified record in the <c>HMClaimChargeLine</c> table.
+    /// </summary>
+    /// <param name="_recId">
+    /// The record ID of the record to find.
+    /// </param>
+    /// <param name="_forUpdate">
+    /// A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    /// The concurrency model option to use when reading the record; optional.
+    /// </param>
+    /// <returns>
+    /// A record of the <c>HMClaimChargeLine</c> table; otherwise, an empty record.
+    /// </returns>
+    public static HMClaimChargeLine find(
+        recId   _recId,
+        boolean _forUpdate = false,
+        ConcurrencyModel        _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMClaimChargeLine    hmClaimChargeLine;
+    
+        if (_forUpdate && _concurrencyModel != ConcurrencyModel::Auto)
+        {
+            hmClaimChargeLine.concurrencyModel(_concurrencyModel);
+        }
+    
+        if (_recId)
+        {
+            hmClaimChargeLine.selectForUpdate(_forUpdate);
+    
+            select firstonly hmClaimChargeLine
+                where hmClaimChargeLine.RecId == _recId;
+        }
+    
+        return hmClaimChargeLine;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAvailablePriority</Name>
+				<Source><![CDATA[
+    public static Integer getAvailablePriority(RecId _claimRecId)
+    {
+        HMClaimChargeLine    hmClaimChargeLine;
+    
+        select maxOf(Priority)
+            from hmClaimChargeLine
+            where hmClaimChargeLine.HMClaimTable == _claimRecId;
+    
+        if(hmClaimChargeLine)
+            return hmClaimChargeLine.Priority + 1;
+        else
+            return 1;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>txtNotExist</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets the message to use when a specific record in the <c>HMClaim1500ChargeLine</c> does not exist.
+    /// </summary>
+    /// <returns>
+    ///    The message that states a record does not exist.
+    /// </returns>
+    public static TxtNotExist txtNotExist()
+    {
+        return "@SYS127989";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void insert()
+    {
+        if (this.LineNumber == 0)
+        {
+            this.LineNumber = HMClaimChargeLine::lastLineNum(this.HMClaimTable)+1;
+        }
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lastLineNum</Name>
+				<Source><![CDATA[
+    static TradeLineNumber lastLineNum(RefRecId HMClaimTable)
+    {
+        return (select maxof(LineNumber) from HMClaimChargeLine
+                    
+                    where HMClaimChargeLine.HMClaimTable == HMClaimTable).LineNumber;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<ConfigurationKey>BillNClaimMgmt</ConfigurationKey>
+	<DeveloperDocumentation>@MAZ9631</DeveloperDocumentation>
+	<Label>@MAZ9630</Label>
+	<TitleField1>HMClaimTable</TitleField1>
+	<TitleField2>InventTable</TitleField2>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<ReplacementKey>HMClaim1500ChargeLineIdx</ReplacementKey>
+	<DeleteActions>
+		<AxTableDeleteAction>
+			<Name>HMClaimChargeLineItemPayments_HMClaim1500ChargeLine</Name>
+			<DeleteAction>Cascade</DeleteAction>
+			<Relation>HMClaim1500ChargeLine</Relation>
+			<Table>HMClaimChargeLineItemPayments</Table>
+		</AxTableDeleteAction>
+	</DeleteActions>
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>InventTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMClaimTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>LineNumber</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Procedure</Name>
+			<Label>Procedure</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>EMG</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>InventTable</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DiagnosisPointer</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ChargeLeft</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>ChargeRight</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Units</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>CPT_HCPCS_Code</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>NPI</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMProcedureModifier1</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMProcedureModifier2</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMProcedureModifier3</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMProcedureModifier4</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>HMPlaceOfService</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>BalanceChangeDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<Label>@SYS68704</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>BalanceResponsible</Name>
+			<EnumType>HMClaimBalanceResponsible</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ChargeLeft</Name>
+			<ExtendedDataType>HMReal</ExtendedDataType>
+			<Label>@MAZ9591</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>ChargeRight</Name>
+			<ExtendedDataType>Integer</ExtendedDataType>
+			<Label>@MAZ9592</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DiagnosisPointer</Name>
+			<ExtendedDataType>String10</ExtendedDataType>
+			<Label>@MAZ9486</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>EMG</Name>
+			<ExtendedDataType>String10</ExtendedDataType>
+			<Label>@MAZ9487</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>CPT_HCPCS_Code</Name>
+			<ExtendedDataType>String10</ExtendedDataType>
+			<Label>@MAZ:HMCPTHCPSCode</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMCaseTrans</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMClaimTable</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMPatientChargeEntryLine</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMPlaceOfService</Name>
+			<ExtendedDataType>HMPlaceOfServiceCode</ExtendedDataType>
+			<Label>@MAZ186</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMProcedureMasterCode</Name>
+			<ExtendedDataType>HMProcedureMasterCode</ExtendedDataType>
+			<HelpText>@MAZ4681</HelpText>
+			<Label>@MAZ4681</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMProcedureModifier1</Name>
+			<ExtendedDataType>HMProcedureModifierCode</ExtendedDataType>
+			<Label>@MAZ6218</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMProcedureModifier2</Name>
+			<ExtendedDataType>HMProcedureModifierCode</ExtendedDataType>
+			<Label>@MAZ6219</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMProcedureModifier3</Name>
+			<ExtendedDataType>HMProcedureModifierCode</ExtendedDataType>
+			<Label>@MAZ6220</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMProcedureModifier4</Name>
+			<ExtendedDataType>HMProcedureModifierCode</ExtendedDataType>
+			<Label>@MAZ6221</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InventTable</Name>
+			<ExtendedDataType>ItemId</ExtendedDataType>
+			<Label>@MAZ5721</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsImportedFromChargeEntryLine</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<HelpText>@MAZ13382</HelpText>
+			<Label>@MAZ13383</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsRejected</Name>
+			<ExtendedDataType>NoYesId</ExtendedDataType>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>NPI</Name>
+			<ExtendedDataType>HMClaimNPI</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Priority</Name>
+			<ExtendedDataType>Integer</ExtendedDataType>
+			<Label>@MAZ931</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ReportUrl</Name>
+			<ExtendedDataType>URL</ExtendedDataType>
+			<Label>@MAZ5021</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Units</Name>
+			<ExtendedDataType>Integer</ExtendedDataType>
+			<Label>@MAZ9490</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Disputed</Name>
+			<Label>@MAZ:HMDisputed</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>LineNumber</Name>
+			<ExtendedDataType>LineNumber</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>HMServiceToDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<Label>@MAZ:HMSERVICETODATE</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>HMServiceFromDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<Label>@MAZ:HMSERVICEFROMDATE</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>HMChargeLineAmount</Name>
+			<ExtendedDataType>Amount</ExtendedDataType>
+			<Label>@MAZ:HMChargeLineAmount</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>HMDiagnosisIdentifier</Name>
+			<Label>@MAZ:HMDiagnosisIdentifier</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ClaimID</Name>
+			<ExtendedDataType>HMClaimNumber</ExtendedDataType>
+			<Label>@MAZ9404</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>HMClaim1500ChargeLineIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>InventTable</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>HMClaimTable</DataField>
+				</AxTableIndexField>
+				<AxTableIndexField>
+					<DataField>LineNumber</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>CaseTrans</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HmCaseTrans</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMCaseTrans</Name>
+					<Field>HMCaseTrans</Field>
+					<RelatedField>Recid</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMClaimTable</Name>
+			<Cardinality>OneMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>HMClaimTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Composition</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMClaimTable</Name>
+					<Field>HMClaimTable</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatientChargeEntryLine</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMPatientChargeEntryLine</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPatientChargeEntryLine</Name>
+					<Field>HMPatientChargeEntryLine</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMPlaceOfService</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>HMPlaceOfService</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPlaceOfService</Name>
+					<Field>HMPlaceOfService</Field>
+					<RelatedField>Code</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMProcedureCodeMaster</Name>
+			<Cardinality>OneMore</Cardinality>
+			<RelatedTable>HMProcedureCodeMaster</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMProcedureMasterCode</Name>
+					<Field>HMProcedureMasterCode</Field>
+					<RelatedField>Code</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMProcedureModifier1</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>HMProcedureModifier</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMProcedureModifier1</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMProcedureModifier1</Name>
+					<Field>HMProcedureModifier1</Field>
+					<RelatedField>Code</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMProcedureModifier2</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>HMProcedureModifier</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMProcedureModifier2</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMProcedureModifier2</Name>
+					<Field>HMProcedureModifier2</Field>
+					<RelatedField>Code</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMProcedureModifier3</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>HMProcedureModifier</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMProcedureModifier3</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMProcedureModifier3</Name>
+					<Field>HMProcedureModifier3</Field>
+					<RelatedField>Code</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMProcedureModifier4</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>HMProcedureModifier</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMProcedureModifier4</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMProcedureModifier4</Name>
+					<Field>HMProcedureModifier4</Field>
+					<RelatedField>Code</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>InventTable</Name>
+			<Cardinality>OneMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>InventTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HmProducttype</Name>
+					<RelatedField>HmProducttype</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventTable</Name>
+					<Field>InventTable</Field>
+					<RelatedField>ItemId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>ItemIdx</Index>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

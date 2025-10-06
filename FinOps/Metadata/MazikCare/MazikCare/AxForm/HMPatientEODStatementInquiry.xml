@@ -1,0 +1,924 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientEODStatementInquiry</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPatientEODStatementInquiry extends FormRun
+{
+    RecId                       organizationalLocationRecId,serviceLocationRecId,merchantRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getMerchantIdQuery</Name>
+				<Source><![CDATA[
+    public Query getMerchantIdQuery()
+    {
+        Query query;
+        QueryBuildDataSource qbds;
+        query = new query();
+        qbds = query.addDataSource(tableNum(HMMerchantDetails));
+        if(serviceLocationRecId)
+        {
+            qbds.addDataSource(tableNum(HMOrganizationalUnitMerchantDetails)).relations(true);
+            query.dataSourceTable(tableNum(HMOrganizationalUnitMerchantDetails)).addRange(fieldNum(HMOrganizationalUnitMerchantDetails,HMOrganizationalUnit)).value(SysQuery::value(serviceLocationRecId));
+        }
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        HMPatientEODStatement_ds.queryBuildDataSource().addRange(fieldnum(HMPatientEODStatement,RecId)).value(SysQuery::value(0));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeOrganizationalUnit</Name>
+				<Source><![CDATA[
+    public void storeOrganizationalUnit(recId _recId)
+    {
+        organizationalLocationRecId = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeOrganizationalUnitRecId</Name>
+				<Source><![CDATA[
+    public void storeOrganizationalUnitRecId(RecId _serviceLocationRecId)
+    {
+        container conResult;
+        serviceLocationRecId = _serviceLocationRecId;
+        if(serviceLocationRecId)
+        {
+            conResult = HMPatientEODStatementClass::defaultMerchantIdByOU(serviceLocationRecId);
+            if(conResult != conNull())
+            {
+                merchantRecId = conpeek(conResult,1);
+                MerchantId.text(conPeek(conResult,2));
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>LocationId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal;
+            FormRun itemLookUp;
+        
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMMedisyClinicLookup));
+            argsLocal.caller(element);
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            RecId locationRecId;
+        
+            ret = super();
+            if(ret)
+            {
+                ServiceLocation.text('');
+                MerchantId.text('');
+                serviceLocationRecId = 0;
+                merchantRecId = 0;
+                if(this.text() == '')
+                {
+                    element.storeOrganizationalUnit(0);
+                }
+                else
+                {
+                    locationRecId = HMResourceSchedulingHelper::getLocationRecId(this.text());
+                    if(!locationRecId)
+                    {
+                        warning("@MAZ11529");
+                        this.text('');
+                    }
+                    element.storeOrganizationalUnit(locationRecId);
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ServiceLocation</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args    args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMOrganizationalUnitFileTrackerLookup));
+            args.caller(element);
+            //args.parmEnum(HMFileLocationType::ServiceLocation);
+            args.parm(con2Str(['ShowFromParent', organizationalLocationRecId],";"));
+        
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            RecId serviceLocationId;
+        
+            ret = super();
+            if(ret)
+            {
+                MerchantId.text('');
+                merchantRecId = 0;
+                if(this.text() == '')
+                {
+                    element.storeOrganizationalUnitRecId(0);
+                }
+                else
+                {
+                    //serviceLocationId = HMResourceSchedulingHelper::getServiceLocationRecId(this.text(),organizationalLocationRecId );
+                    //if(!serviceLocationId)
+                    //{
+                        //warning("@MAZ12030");
+                        //this.text('');
+                    //}
+                    //element.storeOrganizationalUnitRecId(serviceLocationId);
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>MerchantId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource;
+            QueryBuildRange queryBuildRange;
+        
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMMerchantDetails), this);
+        
+            sysTableLookup.addLookupField(fieldNum(HMMerchantDetails, Code));
+            sysTableLookup.addLookupField(fieldNum(HMMerchantDetails, Description));
+        
+            sysTableLookup.parmQuery(element.getMerchantIdQuery());
+        
+            sysTableLookup.performFormLookup();
+        
+            //super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMMerchantDetails                   hmMerchantDetails;
+            HMOrganizationalUnitMerchantDetails HMOrganizationalUnitMerchantDetails;
+            boolean ret;
+            ret = super();
+            if(ret)
+            {
+                if(serviceLocationRecId)
+                {
+                    select RecId from hmMerchantDetails
+                    join HMOrganizationalUnitMerchantDetails
+                    where HMOrganizationalUnitMerchantDetails.HMMerchantDetails == hmMerchantDetails.RecId
+                    && HMOrganizationalUnitMerchantDetails.HMOrganizationalUnit == serviceLocationRecId
+                    && hmMerchantDetails.Code == this.text();
+                }
+                else
+                {
+                    select RecId from hmMerchantDetails
+                    where hmMerchantDetails.Code == this.text();
+                }
+                if(hmMerchantDetails.RecId != 0)
+                {
+                    merchantRecId = hmMerchantDetails.RecId;
+                }
+                else
+                {
+                    warning("@MAZ12046");
+                    this.text('');
+                    merchantRecId = 0;
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EndDateTime</Name>
+				<Type>DateTime</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+            if(ret)
+            {
+                EndDateTime.dateTimeValue(DateTimeUtil::newDateTime(DateTimeUtil::date(EndDateTime.dateTimeValue()),timeMax()));
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Search</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            str             range;
+            HMPatientEODStatement_ds.queryBuildDataSource().clearRanges();
+            HMPatientEODStatement_ds.queryBuildDataSource().clearDynalinks();
+            HMPatientEODStatement_ds.queryBuildDataSource().addRange(fieldNum(HMPatientEODStatement,Status)).value(SysQuery::value(HMPatientEODStatementStatus::Posted));
+            if(organizationalLocationRecId != 0)
+            {
+                HMPatientEODStatement_ds.queryBuildDataSource().addRange(fieldNum(HMPatientEODStatement,HMOrganizationalUnit)).value(SysQuery::value(organizationalLocationRecId));
+            }
+            if(serviceLocationRecId != 0)
+            {
+                HMPatientEODStatement_ds.queryBuildDataSource().addRange(fieldNum(HMPatientEODStatement,HMOrganizationalUnit_ServiceLocation)).value(SysQuery::value(serviceLocationRecId));
+            }
+            if(merchantRecId != 0)
+        
+            {
+        
+                HMPatientEODStatement_ds.queryBuildDataSource().addRange(fieldNum(HMPatientEODStatement,HMMerchantDetails)).value(SysQuery::value(merchantRecId));
+            }
+            if(UserId.text())
+            {
+                HMPatientEODStatement_ds.queryBuildDataSource().addRange(fieldNum(HMPatientEODStatement,UserId)).value(SysQuery::value(UserId.text()));
+            }
+            //range = strFmt('((HMPatientEODStatement.IntervalStartDateTime >= %1) && (HMPatientEODStatement.IntervalEndDateTime <= %1)',DateTimeUtil::toStr(StartDateTime.dateTimeValue()));
+            //range += strFmt(' && (HMPatientEODStatement.IntervalStartDateTime >= %1) && (HMPatientEODStatement.IntervalEndDateTime <= %1))',DateTimeUtil::toStr(EndDateTime.dateTimeValue()));
+        
+            if(StartDateTime.dateTimeValue() != utcDateTimeNull())
+            {
+                range = strFmt('((HMPatientEODStatement.IntervalStartDateTime >= %1)',DateTimeUtil::toStr(StartDateTime.dateTimeValue()));
+            }
+        
+            if(EndDateTime.dateTimeValue() != utcDateTimeNull())
+            {
+                range += strFmt(' && (HMPatientEODStatement.IntervalEndDateTime <= %1))',DateTimeUtil::toStr(EndDateTime.dateTimeValue()));
+            }
+        
+            if(range)
+            {
+                HMPatientEODStatement_ds.queryBuildDataSource().addRange(fieldNum(HMPatientEODStatement,RecId)).value(range);
+            }
+        
+            HMPatientEODStatement_ds.executeQuery();
+            if(!HMPatientEODStatement)
+            {
+                info("@MAZ12337");
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientEODStatement</Name>
+			<Table>HMPatientEODStatement</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CalculatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMMerchantDetails</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit_ServiceLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntervalEndDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntervalStartDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PostingDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatementNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UserId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientEODStatementSummaryLines</Name>
+			<Table>HMPatientEODStatementSummaryLines</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AmountCounted</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountCur</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AmountDifference</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Comments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CurrencyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustPaymModeTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LedgerJournalTrans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatementNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>HMPatientEODStatement</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ12273</Caption>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>PageTitleGroup</Name>
+				<ElementPosition>858993458</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<Visible>No</Visible>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<AlignChild>No</AlignChild>
+				<Style>DetailTitleContainer</Style>
+				<ViewEditMode>View</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>CustomFilterGroup</Name>
+				<ElementPosition>1288490187</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<Visible>No</Visible>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<AlignChild>No</AlignChild>
+				<Style>DetailTitleContainer</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>SearchGroup</Name>
+				<ElementPosition>1574821340</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>LocationId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>596523234</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ5981</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ServiceLocation</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>894784851</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ12031</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ11675</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>MerchantId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1193046468</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS121489</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>UserId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1491308085</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>UserId</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>TransactionInterval</Name>
+						<ElementPosition>1789569705</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateTimeControl">
+								<Name>StartDateTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11715</HelpText>
+								<Type>DateTime</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS342157</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateTimeControl">
+								<Name>EndDateTime</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612734</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ11714</HelpText>
+								<Type>DateTime</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS342159</Label>
+							</AxFormControl>
+						</Controls>
+						<Caption>Transaction interval</Caption>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1968526675</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ButtonGroup</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>Search</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Text>Search</Text>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Style>DialogCommitContainer</Style>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>GridContainer</Name>
+				<ElementPosition>1861152493</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>Grid</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateTimeControl">
+								<Name>HMPatientEODStatement_IntervalStartDateTime</Name>
+								<ElementPosition>429496728</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>DateTime</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>IntervalStartDateTime</DataField>
+								<DataSource>HMPatientEODStatement</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateTimeControl">
+								<Name>HMPatientEODStatement_IntervalEndDateTime</Name>
+								<ElementPosition>644245092</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>DateTime</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>IntervalEndDateTime</DataField>
+								<DataSource>HMPatientEODStatement</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientEODStatement_UserId</Name>
+								<ElementPosition>751619275</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>UserId</DataField>
+								<DataSource>HMPatientEODStatement</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientEODStatement_StatementNumber</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>858993458</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>StatementNumber</DataField>
+								<DataSource>HMPatientEODStatement</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientEODStatementSummaryLines_CurrencyCode</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1073741820</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>CurrencyCode</DataField>
+								<DataSource>HMPatientEODStatementSummaryLines</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>CopyOfLocationId</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1288490187</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientEODStatement</DataSource>
+								<Label>@SYS131567</Label>
+								<ReferenceField>HMOrganizationalUnit</ReferenceField>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>LocationDescription</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1299227604</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientEODStatement</DataSource>
+								<Label>@SYS50208</Label>
+								<ReferenceField>HMOrganizationalUnit</ReferenceField>
+								<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>SubLocationId</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1309965021</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientEODStatement</DataSource>
+								<ReferenceField>HMOrganizationalUnit_ServiceLocation</ReferenceField>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>SubLocationDescription</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1320702438</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@MAZ12033</HelpText>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientEODStatement</DataSource>
+								<Label>@MAZ12032</Label>
+								<ReferenceField>HMOrganizationalUnit_ServiceLocation</ReferenceField>
+								<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientEODStatementSummaryLines_CustPaymModeTable</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1331439855</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>CustPaymModeTable</DataField>
+								<DataSource>HMPatientEODStatementSummaryLines</DataSource>
+								<Label>@MAZ6382</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMPatientEODStatementSummaryLines_AmountCur</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1342177275</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Real</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>AmountCur</DataField>
+								<DataSource>HMPatientEODStatementSummaryLines</DataSource>
+								<NoOfDecimals>-1</NoOfDecimals>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMPatientEODStatementSummaryLines_AmountCounted</Name>
+								<ElementPosition>1610612730</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Real</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>AmountCounted</DataField>
+								<DataSource>HMPatientEODStatementSummaryLines</DataSource>
+								<NoOfDecimals>-1</NoOfDecimals>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMPatientEODStatementSummaryLines_AmountDifference</Name>
+								<AllowEdit>No</AllowEdit>
+								<ElementPosition>1879048188</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Real</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>AmountDifference</DataField>
+								<DataSource>HMPatientEODStatementSummaryLines</DataSource>
+								<NoOfDecimals>-1</NoOfDecimals>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientEODStatementSummaryLines_Comments</Name>
+								<ElementPosition>2013265917</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Comments</DataField>
+								<DataSource>HMPatientEODStatementSummaryLines</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>HMPatientEODStatement_HMMerchantDetails</Name>
+								<ElementPosition>2075900857</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientEODStatement</DataSource>
+								<ReferenceField>HMMerchantDetails</ReferenceField>
+							</AxFormControl>
+						</Controls>
+						<AlternateRowShading>No</AlternateRowShading>
+						<DataSource>HMPatientEODStatement</DataSource>
+						<MultiSelect>No</MultiSelect>
+						<ShowRowLabels>No</ShowRowLabels>
+					</AxFormControl>
+				</Controls>
+				<Style>BorderlessGridContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

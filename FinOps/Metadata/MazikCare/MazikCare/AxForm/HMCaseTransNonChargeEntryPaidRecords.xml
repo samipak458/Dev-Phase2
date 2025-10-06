@@ -1,0 +1,1948 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMCaseTransNonChargeEntryPaidRecords</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMCaseTransNonChargeEntryPaidRecords extends FormRun
+{
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        StartDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+        EndDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+        this.updateData();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateData</Name>
+				<Source><![CDATA[
+    public void updateData()
+    {
+        Query q;
+        utcDateTime startdateTime,endDateTime;
+        QueryBuildRange appointmentRange, caseRange;
+        str caseRangeString;
+
+        str dateTime2strQuery(utcDateTime _utcDateTime)
+        {
+            str cvtDateTime;
+
+            If (_utcDateTime==DateTimeUtil::minValue())
+            cvtDateTime = '1900-01-01T00:00:00';
+            else
+          cvtDateTime = DateTimeUtil::toStr(_utcDateTime);
+
+
+            return cvtDateTime;
+        }
+
+        startdateTime = DateTimeUtil::newDateTime(StartDate.dateValue(),0);//, Timezone::GMTPLUS0300KUWAIT_RIYADH);
+        endDateTime = DateTimeUtil::newDateTime(EndDate.dateValue(),timeMax());//, Timezone::GMTPLUS0300KUWAIT_RIYADH);
+
+        HMCaseTrans_1_ds.query().dataSourceTable(tableNum(HMCaseTrans)).clearRanges();
+        HMResourceSchedulingAppointment_1_ds.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).clearRanges();
+
+        appointmentRange    = HMResourceSchedulingAppointment_1_ds.query().dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment,appointmentDate));
+        appointmentRange.value(SysQuery::range(StartDate.dateValue(), EndDate.dateValue()));
+
+        caseRange           =   HMCaseTrans_1_ds.query().dataSourceTable(tableNum(HMCaseTrans)).addRange(fieldNum(HMCaseTrans,CreatedDateTime));
+        caseRangeString     =   strFmt(@"(((%3.%5 >= %1) && (%3.%5 <= %2) && (%3.%4 == 0)) || ((%6.%7 >= %1) && (%6.%7 <= %2) && (%3.%4 != 0)))))"
+                                    , dateTime2strQuery(startDateTime), dateTime2strQuery(endDateTime), "HMCaseTrans_1"
+                                    , fieldStr(HMCaseTrans, HMResourceSchedulingAppointment), fieldStr(HMCaseTrans, CreatedDateTime)
+                                    , "HMResourceSchedulingAppointment_1", fieldStr(HMResourceSchedulingAppointment, AppointmentDate));
+        caseRange.value(caseRangeString);
+
+        caseRange.status(RangeStatus::Hidden);
+        appointmentRange.status(RangeStatus::Hidden);
+
+        q = HMCaseTrans_1_ds.query();
+        HMCase_1_ds.executeQuery();
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMCase_1</Name>
+				<Methods>
+					<Method>
+						<Name>getTPA</Name>
+						<Source><![CDATA[
+        public display HMTpaCode getTPA(HMCase _hmcase)
+        {
+            HMPatientInsurance                      hmPatientInsurance = HMPatientInsurance::find(_hmcase.HMPatientInsurance);
+            HMInsuranceContractClassOrPlans         plan = HMInsuranceContractClassOrPlans::find(hmPatientInsurance.HMInsuranceContractClassOrPlans);
+            HMInsuranceCarrier                      carrier;
+            HMInsuranceContract                     contract;
+            HMInsuranceContractCarrierCombination   combination;
+            HMTPA                                   hMTPA;
+            HMTpaDetails                            hMTpaDetails;
+
+            if(plan)
+            {
+                contract    = HMInsuranceContract::find(plan.HMInsuranceContract);
+                combination = HMInsuranceContractCarrierCombination::find(contract.HMInsuranceContractCarrierCombination);
+                carrier     = HMInsuranceCarrier::find(combination.HMInsuranceCarrier);
+
+                select firstOnly hMTpaDetails where hMTpaDetails.HMInsuranceCarrier == carrier.RecId;
+                return hMTPA::find(hMTpaDetails.Tpa).Code;
+            }
+
+            return "";
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+			<DataSource>
+				<Name>HMCaseTrans_1</Name>
+				<Methods>
+					<Method>
+						<Name>getContractName</Name>
+						<Source><![CDATA[
+        public display str getContractName(HMCaseTrans _hmcaseTrans)
+        {
+            HMCase                                  hmCase;
+            HMResourceSchedulingAppointment         appointment;
+            HMPatientInsurance                      patientInsurance;
+            HMInsuranceContract                     contract;
+            HMInsuranceContractClassOrPlans         plan;
+            RefRecId                                patientInsuranceRecId;
+
+            str     specialtyDescription;
+            boolean isFirst = true;
+
+            if (_hmcaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Patient)
+            {
+                return '';
+            }
+
+            appointment = HMResourceSchedulingAppointment::find(_hmcaseTrans.HMResourceSchedulingAppointment);
+
+            if (appointment)
+            {
+                patientInsuranceRecId  = appointment.HMPatientInsurance;
+            }
+            else
+            {
+                hmCase                  = hmCase::find(_hmcaseTrans.HMCase);
+                patientInsuranceRecId   = hmCase.hmpatientInsurance;
+            }
+
+            patientInsurance = HMPatientInsurance::find(patientInsuranceRecId);
+
+            plan        = HMInsuranceContractClassOrPlans::find(patientInsurance.HMInsuranceContractClassOrPlans);
+            contract    = HMInsuranceContract::find(plan.HMInsuranceContract);
+
+            return contract.HMContractName;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getPerformedDate</Name>
+						<Source><![CDATA[
+        public display TransDate getPerformedDate(HMCaseTrans _hmCaseTrans)
+        {
+            HMPatientChargeEntryLine hMPatientChargeEntryLine;
+
+            select firstOnly PerformedDate from hMPatientChargeEntryLine
+            where hMPatientChargeEntryLine.HMCaseTrans == _hmCaseTrans.RecId;
+            return hMPatientChargeEntryLine.PerformedDate;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getResourceName</Name>
+						<Source><![CDATA[
+        public display str getResourceName(HMCaseTrans _hmcaseTrans)
+        {       
+            return HMResourceMasterHelper::getResourceName(HMCase::find(_hmcaseTrans.HMCase).HMResourceMaster);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getSpecialtyCode</Name>
+						<Source><![CDATA[
+        public display str getSpecialtyCode(HMCaseTrans _hmcaseTrans)
+        {
+            HMCase                              hmCase;
+            HMResourceSchedulingAppointment     appointment;
+            HMResourceSchedulingPlanningObject  planningObject;
+            HMResourceMaster                    resourceMaster;
+            HMResourceMasterSpeciality          masterSpecialty;
+            HMSpecialtyCode                     specialty;
+            RefRecId                            resourceRecId;
+
+            str     specialtyCode;
+            boolean isFirst = true;
+
+            appointment = HMResourceSchedulingAppointment::find(_hmcaseTrans.HMResourceSchedulingAppointment);
+
+            if (appointment)
+            {
+                planningObject = HMResourceSchedulingPlanningObject::find(appointment.HMResourceSchedulingPlanningObject);
+                resourceRecId  = planningObject.HMResourceMaster;
+            }
+            else
+            {
+                hmCase = HMCase::find(_hmcaseTrans.HMCase);
+                resourceRecId = hmCase.HMResourceMaster;
+            }
+
+            while select masterSpecialty
+                where masterSpecialty.HMResource == resourceRecId
+            join specialty
+                where specialty.RecId == masterSpecialty.HMSpecialtyCode
+            {
+                if (isFirst)
+                {
+                    isFirst         = false;
+                    specialtyCode   = specialty.SpecialtyCodeId;
+                }
+                else
+                {
+                    specialtyCode   += ', ' + specialty.SpecialtyCodeId;
+                }
+            }
+
+            return specialtyCode;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getSpecialtyDescription</Name>
+						<Source><![CDATA[
+        public display str getSpecialtyDescription(HMCaseTrans _hmcaseTrans)
+        {
+            HMCase                              hmCase;
+            HMResourceSchedulingAppointment     appointment;
+            HMResourceSchedulingPlanningObject  planningObject;
+            HMResourceMaster                    resourceMaster;
+            HMResourceMasterSpeciality          masterSpecialty;
+            HMSpecialtyCode                     specialty;
+            RefRecId                            resourceRecId;
+
+            str     specialtyDescription;
+            boolean isFirst = true;
+
+            appointment = HMResourceSchedulingAppointment::find(_hmcaseTrans.HMResourceSchedulingAppointment);
+
+            if (appointment)
+            {
+                planningObject = HMResourceSchedulingPlanningObject::find(appointment.HMResourceSchedulingPlanningObject);
+                resourceRecId  = planningObject.HMResourceMaster;
+            }
+            else
+            {
+                hmCase = HMCase::find(_hmcaseTrans.HMCase);
+                resourceRecId = hmCase.HMResourceMaster;
+            }
+
+            while select masterSpecialty
+				where masterSpecialty.HMResource == resourceRecId
+			join specialty
+				where specialty.RecId == masterSpecialty.HMSpecialtyCode
+            {
+                if (isFirst)
+                {
+                    isFirst                 = false;
+                    specialtyDescription    = specialty.Description;
+                }
+                else
+                {
+                    specialtyDescription    += ', ' + specialty.Description;
+                }
+            }
+
+            return specialtyDescription;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getContractId</Name>
+						<Source><![CDATA[
+        public display str getContractId(HMCaseTrans _hmcaseTrans)
+        {
+            HMCase                                  hmCase;
+            HMResourceSchedulingAppointment         appointment;
+            HMPatientInsurance                      patientInsurance;
+            HMInsuranceContract                     contract;
+            HMInsuranceContractClassOrPlans         plan;
+            RefRecId                                patientInsuranceRecId;
+
+            str     specialtyDescription;
+            boolean isFirst = true;
+
+            if (_hmcaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Patient)
+            {
+                return '';
+            }
+
+            appointment = HMResourceSchedulingAppointment::find(_hmcaseTrans.HMResourceSchedulingAppointment);
+
+            if (appointment)
+            {
+                patientInsuranceRecId  = appointment.HMPatientInsurance;
+            }
+            else
+            {
+                hmCase                  = hmCase::find(_hmcaseTrans.HMCase);
+                patientInsuranceRecId   = hmCase.hmpatientInsurance;
+            }
+
+            patientInsurance = HMPatientInsurance::find(patientInsuranceRecId);
+
+            plan        = HMInsuranceContractClassOrPlans::find(patientInsurance.HMInsuranceContractClassOrPlans);
+            contract    = HMInsuranceContract::find(plan.HMInsuranceContract);
+
+            return contract.HMContractNumber;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getApptDate</Name>
+						<Source><![CDATA[
+        public display date getApptDate(HMCaseTrans _hmcaseTrans)
+        {
+            return HMResourceSchedulingAppointment::find(_hmcaseTrans.HMResourceSchedulingAppointment).AppointmentDate;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>paymentDate</Name>
+						<Source><![CDATA[
+        public display date paymentDate (HMCaseTrans _hmcaseTrans)
+        {
+            HMCaseTransDetail   HMCaseTransDetail;
+
+            select firstonly createdDateTime from HMCaseTransDetail
+				order by createdDateTime desc
+				where HMCaseTransDetail.HMCaseTrans == _hmcaseTrans.RecId
+					&& (HMCaseTransDetail.TransactionType == HMCaseTransDetailTransactionType::InsurancePayment
+					|| HMCaseTransDetail.TransactionType == HMCaseTransDetailTransactionType::PatientPayment);
+
+            return DateTimeUtil::date(HMCaseTransDetail.createdDateTime);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>getApptNumber</Name>
+						<Source><![CDATA[
+        public display HMAppointmentNumber getApptNumber(HMCaseTrans _hmcaseTrans)
+        {
+            return HMResourceSchedulingAppointment::find(_hmcaseTrans.HMResourceSchedulingAppointment).AppointmentNumber;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>StartDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <returns></returns>
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if (StartDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS24050"));
+            }
+
+            if (EndDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS36680"));
+            }
+
+            if (EndDate.dateValue() < StartDate.dateValue())
+            {
+                warning("@MAZ2029");
+            }
+            else
+            {
+                element.updateData();
+            }
+            
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EndDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        /// <returns></returns>
+        public boolean modified()
+        {
+            boolean ret;
+    
+            ret = super();
+    
+            if (StartDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS24050"));
+         
+            }
+
+            if (EndDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS36680"));
+                
+            }
+
+            if (EndDate.dateValue() < StartDate.dateValue())
+            {
+                warning("@MAZ2029");
+                
+            }
+            else
+            {
+                element.updateData();
+            }
+            
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSourceQuery>HMCaseTransNonChargeEntryPaidRecords</DataSourceQuery>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMCase_1</Name>
+			<Table>HMCase</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AddmisionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AdmittingDiagnosisCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CaseNo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CaseStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Clinic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CRMCaseRefID</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CSVFileGenerated</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiagnosisandProcedureCodeQualifier</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DimensionDefault</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DischargeDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DischargeStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocumentControlNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Ecia</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Ecib</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Ecic</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ECode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBuildingUnit_Room</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCaseType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMFinancialClass</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMParentCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientInsurance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPPSCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRoomType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OperatingPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OtherPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OtherPhysician1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientReasonA</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientReasonB</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientReasonC</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PointOfOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAdmittingDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrincipalDiagnosisCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrincipalProcedureCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrincipalProcedureDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Remarks</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>serviceDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StateId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TypeOfAdmission</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMCaseTrans_1</Name>
+			<Table>HMCaseTrans</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AlternatDrugStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AlternatePrimaryCaseTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CRMOrderId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Deductible</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleActual</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductibleCollectionDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductiblePercentage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DeductiblePerUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Discount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscountAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DiscPercent2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClaimTableSetup_PatientStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMItemCptPcsCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingAppointmentInvent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMServiceStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Instructions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InsuranceAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventDim</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPPS</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ItemName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderedQty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentCaseTransId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientResponsibility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PharmacyBatchId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Protocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Qty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RelatedAppointmentRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RemainingBillAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportUrl</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPrice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SettledAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TotalAmount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Urgency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WriteOff</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMResourceSchedulingAppointment_1</Name>
+			<Table>HMResourceSchedulingAppointment</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>ActualArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AdmissionOrderSource</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentConfirmationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentEndTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AppointmentTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ArrivalTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Bed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BOMVersion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BookingNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChartPrepared</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChiefComplaint</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientBillingLogisticsPostalAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClientReportLogisticsPostalAddres</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CopyOfEmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardToken</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardTokenRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CriticalMedicalInformation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DispositionComments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DispositionFollowUp</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Duration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmailStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EODProcessed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FinanceBillingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FinanceBillingStatus_Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForceBookingStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreeFollowUpAvailed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GOPNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAnesthesiaType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAppointmentType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBookingOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCancellationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCase</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMConfirmationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMInsuranceContractClassOrPlans</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitAdmissionWard</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitServiceLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientInsurance</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientVisit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRecurrentApptDetail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceMaster_PerformingDoctor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingPlanningObject</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMResourceSchedulingTypeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMScheduleType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMWaitingList</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ImportedNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InclinicNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IncompleteInfoLog</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IncompleteReserveAppointmentTaskGeneratd</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsDelayed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsHotspot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOnlineAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOverBooked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsReconfirmEmailSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsSpecificConsultant</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LedgerJournalTable_AdvancePayment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Notes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientContact</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientRequestor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalChartRequired</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PONum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthorizationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreAuthValidDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryAppointment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriorityNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Referral</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReportSentContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RequestorContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RescheduleWithoutConfirmation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultExpectedDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResultVisitStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SendEmailTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SmsSent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SysOutgoingEmailTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WalkinPatient</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatient_1</Name>
+			<Table>HMPatient</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AgeInDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgeInMonths</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BloodGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BoxId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CallNotes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CanContact</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CivicAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Client</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactFirst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPerson</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPhoneMobile</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardToken</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CriticalMedicalInformation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>del_Category</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirPartyRelationshipNextToKin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirPartyTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuRef</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DrivingLicenseNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmployeeNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Employer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Employment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentEmail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentFax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentLogisticsLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EmploymentPhone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EncounterActive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Executive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExecutiveProtocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExtraCoveredByClient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FamilyPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Field1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FileLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FormProvision</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Gender</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HasCareBookRegistration</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmEthnicOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HcmLanguageCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Height</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HIPAA</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HipaaDateAcknowledge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMAgeValue</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBookingOrigin</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMCalcBirthDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaff</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMClinicStaffFamilyDoctor</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMHijriDateOfBirth</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMHijriExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMIdentificationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMLaboratories</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMNationalIdExpiryDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMNationalIdType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientAllergyInvestigationStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPatientRestriction</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMPharmacy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMProfession</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMRaceCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMReferringPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Image</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InClinicFileLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsAuthorized</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOnHold</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsOutstanding</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsVIP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>JobTitle</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LogisticsAddressCountryRegion</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NameSuffix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OtherName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PassportExpireDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PassportNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PatientHighlights</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PhysicalChartNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PictureRefused</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Pilot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreEmployment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PreEmploymentProtocol</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrefModeOfCommunication</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProfessionalStatus</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProvincialHealthCardExpDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ProvincialHealthCardNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RAMQ</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonTableMerge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReasonTablePatientDeactivate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecallDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ReferringPhysician</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefusedToProvidePicture</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefuseToSign</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RefuseToSignAcknowledge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RegisteredBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RegistrationDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Relationship</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RISRegistered</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Salutation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SelfEmployed</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>smmBusRelTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SocialSecurityNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Status</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TextOnInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Weight</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">Case transactions</Caption>
+		<Pattern xmlns="">SimpleList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>FormActionPaneControl1</Name>
+				<Type>ActionPane</Type>
+				<Visible>No</Visible>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FilterGroup</Name>
+				<Pattern>CustomAndQuickFilters</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl>
+						<Name>QuickFilterControl1</Name>
+						<FormControlExtension>
+							<Name>QuickFilterControl</Name>
+							<ExtensionComponents />
+							<ExtensionProperties>
+								<AxFormControlExtensionProperty>
+									<Name>targetControlName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>placeholderText</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+								<AxFormControlExtensionProperty>
+									<Name>defaultColumnName</Name>
+									<Type>String</Type>
+								</AxFormControlExtensionProperty>
+							</ExtensionProperties>
+						</FormControlExtension>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>StartDate</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>TransDate</ExtendedDataType>
+						<Label>Start date</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>EndDate</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>TransDate</ExtendedDataType>
+						<Label>End date</Label>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<FrameType>None</FrameType>
+				<Style>CustomFilter</Style>
+				<ViewEditMode>Edit</ViewEditMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>Grid</Name>
+				<Type>Grid</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMCase_1_CaseNo</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>CaseNo</DataField>
+						<DataSource>HMCase_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>getApptDate</Name>
+						<Type>Date</Type>
+						<Visible>No</Visible>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>Appointment date</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>HMCase_1_HMCaseType</Name>
+						<Type>ComboBox</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>HMCaseType</DataField>
+						<DataSource>HMCase_1</DataSource>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMResourceSchedulingAppointment_1_AppointmentNumber</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AppointmentNumber</DataField>
+						<DataSource>HMResourceSchedulingAppointment_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>HMResourceSchedulingAppointment_1_AppointmentDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AppointmentDate</DataField>
+						<DataSource>HMResourceSchedulingAppointment_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateTimeControl">
+						<Name>HMResourceSchedulingAppointment_1_CreatedDateTime</Name>
+						<Type>DateTime</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>CreatedDateTime</DataField>
+						<DataSource>HMResourceSchedulingAppointment_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>getPerformedDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>getPerformedDate</DataMethod>
+						<DataSource>HMCaseTrans_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>PatientNumber</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>patientChartNum</DataMethod>
+						<DataSource>HMPatient_1</DataSource>
+						<Label>@MAZ11856</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Patient</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>patientName</DataMethod>
+						<DataSource>HMPatient_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>getResourceName</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>getResourceName</DataMethod>
+						<DataSource>HMCaseTrans_1</DataSource>
+						<Label>Doctor's Name</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>HMCase_1_PreAuthorizationNumber</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>PreAuthorizationNumber</DataField>
+						<DataSource>HMCase_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>PaymentDate</Name>
+						<Type>Date</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>paymentDate</DataMethod>
+						<DataSource>HMCaseTrans_1</DataSource>
+						<Label>Payment date</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>FieldGroup1</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMCaseTrans_1_ItemId</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>ItemId</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Description</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>getitemname</DataMethod>
+								<DataSource>HMCaseTrans_1</DataSource>
+								<Label>Description</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>HMCaseTrans_1_PatientResponsibility</Name>
+								<Type>ComboBox</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>PatientResponsibility</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMCaseTrans_1_Protocol</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Protocol</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>HMCaseTrans_1_BillingStatus</Name>
+								<Type>ComboBox</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>BillingStatus</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_OrderedQty</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>OrderedQty</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_DiscountAmount</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>DiscountAmount</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_DeductiblePercentage</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>DeductiblePercentage</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_Deductible</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Deductible</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_DeductibleActual</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>DeductibleActual</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_InsuranceAmount</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>InsuranceAmount</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_CashAmount</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>CashAmount</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>dueFromPatient</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>dueFromPatient</DataMethod>
+								<DataSource>HMCaseTrans_1</DataSource>
+								<Label>Due from patient</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_TotalAmount</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>TotalAmount</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormReferenceGroupControl">
+						<Name>HMCaseTrans_1_HMOrganizationalUnit</Name>
+						<Type>ReferenceGroup</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls />
+						<DataSource>HMCaseTrans_1</DataSource>
+						<ReferenceField>HMOrganizationalUnit</ReferenceField>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>TPACode</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>getTPA</DataMethod>
+						<DataSource>HMCase_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>getSpecialtycode</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>getSpecialtyCode</DataMethod>
+						<DataSource>HMCaseTrans_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>getSpecialtyDescription</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>getSpecialtyDescription</DataMethod>
+						<DataSource>HMCaseTrans_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>getContractId</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>getContractId</DataMethod>
+						<DataSource>HMCaseTrans_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>getContractName</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<CacheDataMethod>Yes</CacheDataMethod>
+						<DataMethod>getContractName</DataMethod>
+						<DataSource>HMCaseTrans_1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>FieldGroup2</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>Unit</Name>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<CacheDataMethod>Yes</CacheDataMethod>
+								<DataMethod>salesUnitId</DataMethod>
+								<DataSource>HMCaseTrans_1</DataSource>
+								<Label>Unit</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_SalesPrice</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>SalesPrice</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormComboBoxControl">
+								<Name>HMCaseTrans_1_HMServiceStatus</Name>
+								<Type>ComboBox</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>HMServiceStatus</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+								<Items />
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_DiscPercent1</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>DiscPercent1</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMCaseTrans_1_DiscPercent2</Name>
+								<Type>Real</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>DiscPercent2</DataField>
+								<DataSource>HMCaseTrans_1</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>getItemGroup</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<DataMethod>getItemGroup</DataMethod>
+								<DataSource>HMCaseTrans_1</DataSource>
+								<Label>Item group</Label>
+								<Mandatory>Yes</Mandatory>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

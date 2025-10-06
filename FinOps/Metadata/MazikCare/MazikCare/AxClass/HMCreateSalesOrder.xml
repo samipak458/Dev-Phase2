@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCreateSalesOrder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMCreateSalesOrder
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMCreateSalesOrder		createSalesOrder;
+        HMCaseTrans				hmCaseTrans;
+        str						multipleRecords;
+        MultiSelectionHelper	helper;
+        FormRun					caller;
+        FormBuildDataSource		formBuildDS;
+        FormDataSource			HMCaseTrans_ds;
+        container				con;
+        int						i;
+        SalesTable				salesTable;
+
+        multipleRecords = _args.parm();
+        salesTable = _args.record();
+        caller = _args.caller();
+        
+        con = str2con(multipleRecords);
+        createSalesOrder = new HMCreateSalesOrder();
+        createSalesOrder.createSalesOrderHeaderList(con);
+        //info(strFmt("Sales order: %1 has been created.", salesTable.SalesId));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSalesOrderHeaderList</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// createSalesOrder
+    /// Created by Zain for Demo
+    /// </summary>
+    private NOYes createSalesOrderHeaderList(container _con)
+    {
+        NOYes						isSOCreated;
+        HMCaseTrans					hmCaseTransLocal;
+        SalesTable					salesTable;
+        SalesLine					salesLine;
+        CustTable					custTable;
+        NumberSeq					numberSeq;
+        HMPatient					hmPatient;
+        HMPatientChargeEntryLine	hmPatientChargeEntryLine;
+        HMPatientChargeEntryTable	hmPatientChargeEntryTable;
+        HMClaimChargeLine			hmClaimChargeLine;
+        HMClaimTable				hmClaimTable;
+        int							i;
+        AmountMST					salesPrice;
+        AccountNum                  customerAccount;
+
+        try
+        {
+            ttsbegin;
+            for (i = 1; i <= conLen(_con); i++)
+            {
+                hmCaseTransLocal.RecId = conPeek(_con, i);//_listEnmr.current();
+                hmCaseTransLocal = HMCaseTrans::find(hmCaseTransLocal.RecId, false, ConcurrencyModel::Auto);
+                hmPatientChargeEntryTable = HMPatientChargeEntryTable::findByCase(hmCaseTransLocal.HMCase);
+                hmPatient = HMPatient::find(HMCase::find(hmCaseTransLocal.HMCase).HMPatient);
+                custTable = CustTable::findRecId(hmPatient.CustTable);
+
+				select * from hmClaimChargeLine
+                    where hmClaimChargeLine.HMCaseTrans == hmCaseTransLocal.RecId;
+
+                hmClaimTable = HMClaimTable::find(hmClaimChargeLine.HMClaimTable);
+                customerAccount = hmPatientChargeEntryTable.getCaseInsuranceNum();
+                if (!customerAccount && hmClaimTable)
+                {
+                    customerAccount = hmPatientChargeEntryTable.getGuarantorNum();
+                    if (!customerAccount)
+                    {
+                        customerAccount = hmPatientChargeEntryTable.patientChartNum();
+                    }
+				}
+				else
+                    customerAccount = custTable.AccountNum;
+
+
+
+                if (hmCaseTransLocal && custTable)
+                {
+					select * from salesTable
+                        where salesTable.HMCase == hmCaseTransLocal.HMCase;
+
+                    if(!salesTable.RecId)
+                    {
+                        numberSeq = NumberSeq::newGetNum(SalesParameters::numRefSalesId());
+                        salesTable.clear();
+                        salesTable.initValue();
+                        salesTable.SalesId = numberSeq.num();
+                        salesTable.CustAccount = customerAccount;
+                        salesTable.CustGroup = custTable.CustGroup;
+                        salesTable.HMCase = hmCaseTransLocal.HMCase;
+                        salesTable.initFromCustTable();
+                        salesTable.LanguageId = CompanyInfo::languageId();
+                        salesTable.InvoiceAccount = customerAccount;
+                        salesTable.CurrencyCode = Ledger::accountingCurrency(CompanyInfo::current());
+                        if (!salesTable.validateWrite())
+                                throw Exception::Error;
+                        else
+                        {
+                            numberSeq.used();
+                            salesTable.insert();
+                        }
+                    }
+
+                    // purchPrice = conPeek(PriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Purch, hmCaseTransLocal.ItemId,
+                    //InventDim::find(hmCaseTransLocal.InventDim),
+                    //                                                         hmCaseTransLocal.salesUnitId(),
+                    //                                                         DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),//hmCaseTransLocal.SalesPrice;,
+                    //hmCaseTransLocal.Qty,
+                    //                                                         vendTable.AccountNum,
+                    //                                                         purchTableLocal.CurrencyCode,""), 1);
+
+                    salesLine.clear();
+                    salesLine.initValue();
+                    salesLine.SalesId = salesTable.SalesId;
+                    salesLine.initFromSalesTable(salesTable);
+                    salesLine.ItemId = hmCaseTransLocal.ItemId;
+                    salesLine.SalesQty = hmCaseTransLocal.Qty;
+                    salesLine.SalesPrice = hmCaseTransLocal.SalesPrice;//purchPrice;
+                    salesLine.SalesUnit = hmCaseTransLocal.salesUnitId();
+                    salesLine.LineDisc = hmCaseTransLocal.DiscountAmount;
+                    salesLine.LineAmount = hmCaseTransLocal.TotalAmount;
+                    salesLine.InventDimId = hmCaseTransLocal.InventDim;
+                    //salesLine.QtyOrdered = salesLine.calcQtyOrdered();
+                    //salesLine.RemainSalesPhysical = salesLine.SalesQty;
+                    //salesLine.RemainSalesPhysical = 0;
+                    //salesLine.RemainInventPhysical = salesLine.QtyOrdered;
+                    //salesLine.PdsCWRemainInventPhysical = salesLine.PdsCWQty;
+
+                    //salesLine.RemainInventFinancial          = 0;
+                    //salesLine.PdsCWRemainInventFinancial     = 0;
+
+                    if (!salesLine.validateWrite())
+                         throw Exception::Error;
+                    else
+                    {
+                        salesLine.createLine(NoYes::Yes, // Validate
+                                    NoYes::Yes, // initFromSalesTable
+                                    NoYes::Yes, // initFromInventTable
+                                    NoYes::Yes, // calcInventQty
+                                    NoYes::Yes, // searchMarkup
+                                    NoYes::Yes); // searchPrice
+                        //salesLine.insert();
+                       
+                    }
+               
+                    isSOCreated = NoYes::Yes;
+                }
+                else
+                {
+                    isSOCreated = NOyes::No;
+                    //warning("You cannot create Sales Order, because this Physician is not linked with Vendor.");
+                    break;
+                }
+            }
+            //this.createPOConfirmation(purchTableLocal);
+            //this.createPOReceipt(purchTableLocal);
+
+            ttscommit;
+            if(isSOCreated == NOYes::Yes)
+            {
+                info(strFmt("Sales order: %1 has been created.", salesTable.SalesId));
+            }
+        }
+        catch
+        {
+            ttsabort;
+        }
+
+        return isSOCreated;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResourceScheduleDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMResourceScheduleDataContract))
+]
+class HMResourceScheduleDP extends SRSReportDataProviderBase //SRSReportDataProviderBase
+{
+    HMResourceScheduleReportTmp hmResourceScheduleTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMResourceScheduleTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMResourceScheduleReportTmp')]
+    public HMResourceScheduleReportTmp getHMResourceScheduleTmp()
+    {
+        select * from hmResourceScheduleTmp;
+        return hmResourceScheduleTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMResourceScheduleDataContract         datacontract;
+        HMResourceSchedulingAppointment         HMResourceSchedulingAppointment;
+        HMResourceSchedulingAppointment         HMResourceSchedulingAppointmentForRelatedAppt;
+        HMResourceSchedulingPlanningObject      HMResourceSchedulingPlanningObject;
+        HMResourceMaster                        HMResourceMaster;
+        EcoResProductTranslation                EcoResProductTranslation;
+        //Zain  MazikCare
+        HMResourceSchedulingAppointmentInvent   HMResourceSchedulingAppointmentInvent;
+        HcmPersonGender                         hcmPersonGender;
+        //Zain  MazikCare
+        FormRun                         _formrun;
+        NoYes                           _noyes;
+    
+        str _name;
+        datacontract =this.parmDataContract();
+    
+        if(datacontract.parmVendortype() == HMVendorType::External)
+        {
+            while select *from HMResourceSchedulingAppointment order by HMResourceSchedulingPlanningObject asc
+                join HMResourceSchedulingPlanningObject
+                Join HMResourceMaster
+                where HMResourceMaster.RecId == HMResourceSchedulingPlanningObject.HMResourceMaster
+                && HMResourceMaster.Type == HMResourceType::Vendor
+                && HMResourceMaster.VendorType == HMVendorType::External
+                && HMResourceSchedulingAppointment.AppointmentDate == datacontract.parmAppointmentDate()
+                && (HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn || HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed || HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+                && HMResourceSchedulingPlanningObject.RecId == HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject
+                //Zain  MazikCare
+                && HMResourceSchedulingPlanningObject.HMOrganizationalUnit == datacontract.parmDepartment()
+                //Zain  MazikCare
+            {
+                if(HMResourceMaster.VendorType == HMVendorType::External)
+                {
+                    HMResourceScheduleTmp.PatientName = HMResourceSchedulingAppointment.getPatientName();
+                    HMResourceScheduleTmp.PatientVFN = HMResourceSchedulingAppointment.getPatientPFN();
+                    HMResourceScheduleTmp.AppointmentDate =HMResourceSchedulingAppointment.AppointmentDate;
+                    HMResourceScheduleTmp.ArrivalTime =HMResourceSchedulingAppointment.ArrivalTime;
+                    HMResourceScheduleTmp.AppointmentStatus =HMResourceSchedulingAppointment.AppointmentStatus;
+                    HMResourceScheduleTmp.Clinic = HMResourceSchedulingPlanningObject.showOrganizationUnit();//HMOrganizationalUnit::find(HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation).Description;
+                    HMResourceScheduleTmp.ResourceName =HMResourceSchedulingAppointment.getAppointmentResource();
+                    //HMResourceScheduleTmp.HMProtocolAlias =HMResourceSchedulingAppointment.getProtocolDescription();
+                    HMResourceScheduleTmp.ClientName = HMResourceSchedulingAppointment.getClientName();
+                    HMResourceScheduleTmp.HMAppointmentType =HMResourceSchedulingTypeCode::find(HMResourceSchedulingAppointment.HMResourceSchedulingTypeCode).Description;
+                    HMResourceScheduleTmp.AppointmentTime  = HMResourceSchedulingAppointment.AppointmentTime;
+    
+                    select RecId from HMResourceSchedulingAppointmentForRelatedAppt
+                    where
+                    //HMResourceSchedulingAppointmentForRelatedAppt.HMPatientEncounter == HMResourceSchedulingAppointment.HMPatientEncounter
+                    //&&
+                    //HMResourceSchedulingAppointmentForRelatedAppt.HMPatientEncounter != 0
+                    //&&
+                    HMResourceSchedulingAppointmentForRelatedAppt.RecId != HMResourceSchedulingAppointment.RecId;
+                    if(HMResourceSchedulingAppointmentForRelatedAppt)//&& HMResourceSchedulingAppointment.PrimaryAppointment == yesno::Yes)
+                    {
+                        HMResourceScheduleTmp.HasRelatedAppointment = enum2str(NoYes::Yes);
+                    }
+                    else
+                    {
+                       HMResourceScheduleTmp.HasRelatedAppointment = enum2str(NoYes::No);
+                    }
+    
+                    HMResourceScheduleTmp.insert();
+    
+                }
+            }
+        }
+        else
+        {
+            while select *from HMResourceSchedulingAppointment order by HMResourceSchedulingPlanningObject asc
+                where HMResourceSchedulingAppointment.AppointmentDate == datacontract.parmAppointmentDate()
+                   && (HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn || HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed || HMResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+                join HMResourceSchedulingPlanningObject
+                where HMResourceSchedulingPlanningObject.RecId == HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject
+                   //Zain  MazikCare
+                   && HMResourceSchedulingPlanningObject.HMOrganizationalUnit == datacontract.parmDepartment()
+                   //Zain  MazikCare
+                Join HMResourceMaster
+                where HMResourceMaster.RecId == HMResourceSchedulingPlanningObject.HMResourceMaster
+                //((HMResourceMaster.Type == HMResourceType::Vendor  && HMResourceMaster.VendorType == HMVendorType::Internal) || (HMResourceMaster.Type == HMResourceType::Employee))
+                //&&
+                //Zain  MazikCare
+                    join HMResourceSchedulingAppointmentInvent
+                        where HMResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == HMResourceSchedulingAppointment.RecId
+                //Zain  MazikCare
+            {
+                HMResourceScheduleTmp.PatientName = HMResourceSchedulingAppointment.getPatientName();
+                HMResourceScheduleTmp.PatientVFN = HMResourceSchedulingAppointment.getPatientPFN();
+                HMResourceScheduleTmp.AppointmentDate =HMResourceSchedulingAppointment.AppointmentDate;
+                HMResourceScheduleTmp.ArrivalTime =HMResourceSchedulingAppointment.ArrivalTime;
+                HMResourceScheduleTmp.AppointmentStatus =HMResourceSchedulingAppointment.AppointmentStatus;
+                HMResourceScheduleTmp.Clinic = HMResourceSchedulingPlanningObject.showOrganizationUnit();//HMOrganizationalUnit::find(HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation).Description;
+                HMResourceScheduleTmp.ResourceName =HMResourceSchedulingAppointment.getAppointmentResource();
+                //HMResourceScheduleTmp.HMProtocolAlias =HMResourceSchedulingAppointment.getProtocolDescription();
+                HMResourceScheduleTmp.ClientName = HMResourceSchedulingAppointment.getClientName();
+                HMResourceScheduleTmp.HMAppointmentType =HMResourceSchedulingTypeCode::find(HMResourceSchedulingAppointment.HMResourceSchedulingTypeCode).Description;
+                HMResourceScheduleTmp.AppointmentTime  = HMResourceSchedulingAppointment.AppointmentTime;
+    
+                select RecId from HMResourceSchedulingAppointmentForRelatedAppt;
+                //where ;
+                //HMResourceSchedulingAppointmentForRelatedAppt.HMPatientEncounter == HMResourceSchedulingAppointment.HMPatientEncounter
+                //&& HMResourceSchedulingAppointmentForRelatedAppt.HMPatientEncounter != 0
+                //&& HMResourceSchedulingAppointmentForRelatedAppt.RecId != HMResourceSchedulingAppointment.RecId;
+                if(HMResourceSchedulingAppointmentForRelatedAppt)// && HMResourceSchedulingAppointment.PrimaryAppointment == yesno::Yes)
+                {
+                    HMResourceScheduleTmp.HasRelatedAppointment = enum2str(NoYes::Yes);
+                }
+                else
+                {
+                   HMResourceScheduleTmp.HasRelatedAppointment = enum2str(NoYes::No);
+                }
+                //Zain  MazikCare
+                select * from EcoResProductTranslation
+                    where EcoResProductTranslation.Product == InventTable::find(HMResourceSchedulingAppointmentInvent.InventTable).Product;
+    
+                HMResourceScheduleTmp.Procedure = strFmt("%1  %2", HMResourceSchedulingAppointmentInvent.InventTable, EcoResProductTranslation.Name);//InventTable::find(HMResourceSchedulingAppointmentInvent.InventTable).itemName());
+                HMResourceScheduleTmp.Doctor = HMResourceMaster::find(HMResourceSchedulingAppointment.HMResourceMaster_PerformingDoctor).Description;
+                HMResourceScheduleTmp.Age = HMPatient::find(HMResourceSchedulingAppointment.HMPatient).patientBirthDate();
+                HMResourceScheduleTmp.Gender = HMPatient::find(HMResourceSchedulingAppointment.HMPatient).Gender;
+                HMResourceScheduleTmp.Notes = HMCase::find(HMResourceSchedulingAppointment.HMCase).Notes;
+                HMResourceScheduleTmp.Anesthesia = HMAnesthesiaType::find(HMResourceSchedulingAppointment.HMAnesthesiaType).Description;
+                //Zain  MazikCare
+    
+               HMResourceScheduleTmp.insert();
+    
+            }
+        }
+        super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

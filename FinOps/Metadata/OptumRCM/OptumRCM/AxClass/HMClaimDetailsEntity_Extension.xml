@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimDetailsEntity_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(tableStr(HMClaimDetailsEntity))]
+final class HMClaimDetailsEntity_Extension
+{
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>postGetStagingData</Name>
+				<Source><![CDATA[
+    public static void postGetStagingData(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        HMClaimDetailsStaging   stagingTable;
+        HMPatientInsurance      hmPatientInsurance;
+        HMInvoiceType           hmInvoiceType;
+        utcdatetime             currentDateTime =  DateTimeUtil::getSystemDateTime();
+        HMSiteTable             hmSiteTable;
+        HMICDTable              hmICDTable, hmICDTableExist;
+
+        next postGetStagingData(_dmfDefinitionGroupExecution);
+        //HMClaimDetailsStaging staging;
+        //HMClaimDetailsStaging hmClaimDetailsStaging;
+        //HMInsuranceCarrier hmInsuranceCarrier;
+
+        //update_recordset staging
+        // setting HMTimelyFilingDate =staging.HMClaimDate + hmInsuranceCarrier.CutOffDays
+        //    where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+        //        && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+        //        && staging.TransferStatus == DMFTransferStatus::NotStarted
+        //    join CutOffDays from hmInsuranceCarrier
+        //    where staging.InsuranceCarrierCode == hmInsuranceCarrier.Code;
+            
+        // Default versioning.
+
+        update_recordset stagingTable
+            setting Version_ValidFrom = currentDateTime,
+                    ValidFrom = currentDateTime,
+                    UB04_PBM_ValidFrom = currentDateTime,
+                    HMICDCode1 = stagingTable.ICD10Code1,
+                    HMICDCode2 = stagingTable.ICD10Code2,
+                    HMICDCode3 = stagingTable.ICD10Code3,
+                    HMICDCode4 = stagingTable.ICD10Code4
+            where stagingTable.DefinitionGroup  == _dmfDefinitionGroupExecution.DefinitionGroup
+                && stagingTable.ExecutionId     == _dmfDefinitionGroupExecution.ExecutionId
+                && stagingTable.TransferStatus  == DMFTransferStatus::NotStarted;
+
+        // update priority and membership based on the patient insurance primary key
+        update_recordset stagingTable
+            setting Priority = hmPatientInsurance.Priority,
+                    HMInsuranceMembershipId = hmPatientInsurance.HMPatientInsuranceMembershipId
+            join hmPatientInsurance
+                where hmPatientInsurance.HMPatientInsurancePrimaryId  == stagingTable.HMPatientInsurancePrimaryId
+                    && stagingTable.HMPatientInsurancePrimaryId  != ''
+                    && stagingTable.DefinitionGroup  == _dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId     == _dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus  == DMFTransferStatus::NotStarted;
+
+        update_recordset stagingTable
+            setting ClaimType = hmInvoiceType.ClaimType
+                join hmInvoiceType
+                    where hmInvoiceType.Name == stagingTable.HMInvoiceType
+                        && stagingTable.DefinitionGroup  == _dmfDefinitionGroupExecution.DefinitionGroup
+                        && stagingTable.ExecutionId     == _dmfDefinitionGroupExecution.ExecutionId
+                        && stagingTable.TransferStatus  == DMFTransferStatus::NotStarted;
+        
+
+        // update SiteRegion cache field on HMClaimTable
+        update_recordset stagingTable
+            setting BilledRegion = hmSiteTable.HMRegion
+            join hmSiteTable
+                where hmSiteTable.HMSiteName == stagingTable.HMSite
+                    && stagingTable.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                    && stagingTable.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+                    && stagingTable.TransferStatus == DMFTransferStatus::NotStarted;
+
+        // Create new ICD codes.
+        //ICD CODE 01
+        insert_recordset hmICDTable (Code)
+            select ICD10Code1 from stagingTable
+                group by stagingTable.ICD10Code1
+            where stagingTable.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && stagingTable.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+            && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+            && stagingTable.ICD10Code1 != ''
+            notexists join hmICDTableExist
+                where hmICDTableExist.Code == stagingTable.ICD10Code1;
+
+        //ICD CODE 02
+        insert_recordset hmICDTable (Code)
+            select ICD10Code2 from stagingTable
+                group by stagingTable.ICD10Code2
+            where stagingTable.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && stagingTable.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+            && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+            && stagingTable.ICD10Code2 != ''
+            notexists join hmICDTableExist
+                where hmICDTableExist.Code == stagingTable.ICD10Code2;
+
+        //ICD CODE 03
+        insert_recordset hmICDTable (Code)
+            select ICD10Code3 from stagingTable
+                group by stagingTable.ICD10Code3
+            where stagingTable.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && stagingTable.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+            && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+            && stagingTable.ICD10Code3 != ''
+            notexists join hmICDTableExist
+                where hmICDTableExist.Code == stagingTable.ICD10Code3;
+
+        //ICD CODE 04
+        insert_recordset hmICDTable (Code)
+            select ICD10Code4 from stagingTable
+                group by stagingTable.ICD10Code4
+            where stagingTable.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                && stagingTable.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+            && stagingTable.TransferStatus == DMFTransferStatus::NotStarted
+            && stagingTable.ICD10Code4 != ''
+            notexists join hmICDTableExist
+                where hmICDTableExist.Code == stagingTable.ICD10Code4;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateWrite</Name>
+				<Source><![CDATA[
+    public boolean validateWrite()
+    {
+        boolean                 ret;
+        HMClaimProcessStatus    hmClaimProcessStatus;
+
+        ret = next validateWrite();
+
+        if(this.Status != '')
+        {
+            select firstonly RecId from hmClaimProcessStatus
+                where hmClaimProcessStatus.Status == this.Status;
+
+            if(hmClaimProcessStatus.RecId == 0)
+            {
+                return checkFailed(strFmt("@SYP4986038", "@Optum:MAZOPT0049", this.Status, "@Optum:MAZOPT0054"));
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postTargetProcess</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Executes the logic once after processing the target data.
+    /// </summary>
+    /// <param name= "_dmfDefinitionGroupExecution">
+    /// The definition group that should be processed.
+    /// </param>
+    public static void postTargetProcess(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+    {
+        HMClaimTable          hmClaimTable;
+        HMClaimDetailsStaging hmClaimDetailsStaging;
+
+        if (_dmfDefinitionGroupExecution.StagingStatus == DMFBatchJobStatus::Finished)
+        {
+            try
+            {
+                ttsbegin;
+
+                update_recordset hmClaimTable
+             setting
+                HMClaimPriority = 0
+             join hmClaimDetailsStaging
+                where  hmClaimTable.ClaimId                  == hmClaimDetailsStaging.HMClaimTable_ClaimID
+                    && hmClaimDetailsStaging.HMBalanceAmount == 0
+                    && hmClaimDetailsStaging.ExecutionId     == _dmfDefinitionGroupExecution.ExecutionId
+                    && hmClaimDetailsStaging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+                    && hmClaimDetailsStaging.TransferStatus  == DMFTransferStatus::Completed;
+
+                ttscommit;
+            }
+            catch (Exception::Deadlock)
+            {
+                retry;
+            }
+            catch (Exception::UpdateConflict)
+            {
+                if (appl.ttsLevel() ==  0)
+                {
+                    if (xSession::currentRetryCount() >= #RetryNum)
+                    {
+                        throw Exception::UpdateConflictNotRecovered;
+                    }
+                    else
+                    {
+                        retry;
+                    }
+                }
+                else
+                {
+                    throw Exception::UpdateConflict;
+                }
+
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

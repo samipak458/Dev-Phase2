@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>MzkProductionOrder</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class MzkProductionOrder
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createProductionOrderFromSalesOrder</Name>
+				<Source><![CDATA[
+    void createProductionOrderFromSalesOrder(salesId _salesId)
+    {
+        SalesTable      salesTable = SalesTable::find(_salesId);
+        SalesLine       salesLine;
+        InventTable     inventTable;
+        ProdId          prodId;
+        ProdTable       prodTable;        
+        InventSerial    serialNumber;
+        InventDim       inventDim;
+        InventDimId     inventDimId;
+
+        while select salesLine
+            where salesLine.SalesId == _salesId
+            && salesLine.InventRefType == InventRefType::Production
+                //&& salesLine.ItemBOMId != ''
+        {
+            for (int i = 0; i < salesLine.QtyOrdered; i++)
+            {         
+                ttsbegin;             
+                prodId = this.createProductionOrder(salesLine, 1);
+                ProdTable = ProdTable::find(prodId, true);
+
+                serialNumber = InventSerial::findOrCreate(prodId, salesLine.ItemId);
+
+                inventDim.clear();
+                inventDim.initFromInventDim(prodTable.inventDim());
+                inventDim.inventSerialId = serialNumber.InventSerialId;
+                inventDim = InventDim::findOrCreate(inventDim);
+                ttscommit;
+
+                ttsbegin;
+                if (inventDim.inventDimId)
+                {                    
+                    prodTable.InventDimId = inventDim.inventDimId;
+                    prodTable.update(true);
+                }
+                ttscommit;
+
+                
+                this.prodEstimate(prodId);
+                this.prodRelease(prodId);
+                this.CreateSalesOrderInvoice(_salesId);
+              //  prodTable.autoUpdate(ProdStatus::CostEstimated);
+              //  prodTable.autoUpdate(ProdStatus::Scheduled);
+              //  prodTable.autoUpdate(ProdStatus::Released);
+
+            }
+        } 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createProductionOrder</Name>
+				<Source><![CDATA[
+    prodId createProductionOrder(SalesLine _salesLine, int _quantity)
+    {
+        ProdTable       prodtable;
+        InventTable     inventTable;
+        InventDim       inventDim;
+        
+        // Initialize InventTable
+        inventTable = inventTable::find(_salesLine.ItemId);
+
+        // Initialize the base values
+        prodtable.initValue();
+        prodtable.initFromInventTable(inventTable);
+        prodtable.initFromSalesLine(_salesLine);
+
+        prodtable.ItemId                = inventTable.ItemId;
+        prodtable.DlvDate               = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        prodtable.QtySched              = _quantity;
+        prodtable.RemainInventPhysical  = _quantity;
+
+        // Initialize InventDim (Obrigatory)
+        inventDim.initValue();
+
+        // Set the active BOM and Route
+        prodtable.BOMId = BOMVersion::findActive(prodtable.ItemId,
+                                     prodtable.BOMDate,
+                                     prodtable.QtySched,
+                                     inventDim).BOMId;
+
+        prodtable.RouteId = RouteVersion::findActive(prodtable.ItemId,
+                                         prodtable.BOMDate,
+                                         prodtable.QtySched,
+                                         inventDim).RouteId;
+
+        // Initialize BOMVersion
+        prodtable.initBOMVersion();
+        // Initialize RouteVersion
+        prodtable.initRouteVersion();
+
+        //Use ProdTableType class to create the production order
+        //prodtable.type().inserted();
+        //===================================================================================
+        InventUpd_Estimated     estimated;
+        SalesLine               salesLine;
+        ProdTable               prodTableParent;
+        ProdBOM                 prodBOM;
+        // PBA begin
+        InventTransId           oldTransId = prodTable.InventTransId;
+        // PBA end    // <GIN>    #ISOCountryRegionCodes
+        // </GIN>
+        ttsbegin;
+        
+
+        switch (prodTable.InventRefType)
+        {
+            case InventRefType::ProdLine:
+                select CollectRefProdId,CollectRefLevel from prodTableParent
+                    where prodTableParent.ProdId == prodTable.InventRefId;
+
+                prodTable.CollectRefLevel     = prodTableParent.CollectRefLevel  + 1;
+                prodTable.CollectRefProdId    = prodTableParent.CollectRefProdId;
+                prodBOM = ProdBOM::findTransId(prodTable.InventRefTransId, true);
+
+                if (!prodTable.checkRefProdBOM(prodBOM))
+                    throw error("@SYS18447");
+                break;
+
+            case InventRefType::Sales:
+                salesLine = SalesLine::findInventTransId(prodTable.InventRefTransId, true);
+
+                if (! prodTable.checkRefSalesLine(salesLine))
+                    throw error("@SYS18447");
+                break;
+        }
+
+        prodTable.InventTransId = NumberSeq::newGetNum(InventParameters::numRefInventTransId()).num();
+
+        if (! prodTable.ProdId)
+        {
+            prodTable.ProdId = ProdTable::numberSeqProdId(true).num();
+        }
+        else
+        {
+            //		if (numberSeqProdId)
+            //		numberSeqProdId.used();
+        }
+
+        prodTable.status().setBackStatus();
+
+        if (! prodTable.CollectRefProdId)
+        {
+            prodTable.CollectRefProdId      = prodTable.ProdId;
+            prodTable.CollectRefLevel       = 0;
+        }
+
+        if (prodTable.isProjMethodFinished())
+        ProjInventJournalTransMapForm::construct(prodTable).insertPost();
+        
+        estimated = InventUpd_Estimated::newProdTable(prodTable, null, prodtable.type());
+        estimated.updateNow();
+    
+  
+        prodTable.setGanttColor();
+        prodTable.doInsert();
+   
+        if (estimated)
+        {
+            estimated.updateOwnerRelationship();
+        }
+
+        switch (prodTable.InventRefType)
+        {
+            case InventRefType::ProdLine:
+
+                prodBOM.InventRefType         = InventRefType::Production;
+                prodBOM.InventRefId           = prodTable.ProdId;
+                prodBOM.InventRefTransId      = prodTable.InventTransId;
+                prodBOM.setInventDimId(prodTable.InventDimId);
+                prodBOM.update();
+    
+                InventUpd_Reservation::updateReserveRefTransId(InventMovement::construct(prodBOM));
+                break;
+    
+    
+            case InventRefType::Sales:
+
+                if (prodTable.QtySched >= salesLine.RemainInventPhysical)
+                {
+                    salesLine.InventRefType      = InventRefType::Production;
+                    salesLine.InventRefId        = prodTable.ProdId;
+                    salesLine.InventRefTransId   = prodTable.InventTransId;
+                }
+                salesLine.setInventDimId(prodTable.InventDimId);
+                salesLine.update();
+                InventUpd_Reservation::updateReserveRefTransId(InventMovement::construct(salesLine));
+                break;
+        }
+  
+        BOMSearch           searchBOM;
+        BOMCopyFromBOM      copyFromBOM;
+        RouteSearch_Config  routeSearch;
+        RouteCopyFromRoute  routeCopyFrom;
+  
+  
+        if (prodTable.bomId)
+        {
+            searchBOM			= BOMSearch::newProdTable(prodTable);
+            copyFromBOM			= BOMCopyFrom::construct(BOMCopyToProd::newProdTableType(prodTable),searchBOM);
+            copyFromBOM.copy();
+   
+            PmfProdCoBy::createLines(prodTable);
+        }
+  
+        if (prodTable.RouteId)
+        {
+            routeSearch     = RouteSearch_Config::newProdTable(prodTable);
+            routeCopyFrom   = RouteCopyFrom::construct(RouteCopyToProd::newProdTableType(prodTable), routeSearch);
+            routeCopyFrom.copy();
+        }
+  
+        // Create the WHSProdTable record.
+        WHSProdTable::createFromProdTable(prodTable);
+        ttscommit;
+        // Inform Production Order Id
+        //  setPrefix( 'Production Order');
+        //  setPrefix( 'Production Order Number');
+        return prodTable.ProdId;    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prodSchedule</Name>
+				<Source><![CDATA[
+    void prodSchedule(prodId _prodId)
+    {
+        ProdTable prodTable;
+        ProdMultiSchedulingOperation ProdMultiSchedulingOperation;
+        ;
+        //find ProdTable, not nessary in your case
+        prodTable = ProdTable::find(_prodId);
+        //init ProdStartup
+      //  ProdMultiSchedulingOperation = ProdMultiSchedulingOperation::construct(new args());
+        //init default parameter
+        RunBaseMultiParm::initParm(ProdMultiSchedulingOperation);
+        //parm ProdTable, you can do this muliple times in case you want to update
+        //more than one production at a time
+        ProdMultiSchedulingOperation.insert(prodTable, ProdMultiSchedulingOperation.defaultParmBuffer());
+        //Do update
+        ProdMultiSchedulingOperation.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prodRelease</Name>
+				<Source><![CDATA[
+    void prodRelease(prodId _prodId)
+    {
+        ProdTable prodTable;
+        ProdMultiRelease ProdMultiRelease;
+        ;
+        //find ProdTable, not nessary in your case
+        prodTable = ProdTable::find(_prodId);
+        //init ProdStartup
+        ProdMultiRelease = ProdMultiRelease::construct(new args());
+        //init default parameter
+        RunBaseMultiParm::initParm(ProdMultiRelease);
+        // RunBaseMultiParm::initFromForm(prodMultiRelease,args);
+        //parm ProdTable, you can do this muliple times in case you want to update
+        //more than one production at a time
+        prodMultiRelease.insert(prodTable, prodMultiRelease.defaultParmBuffer());
+        //Do update
+        prodMultiRelease.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>prodEstimate</Name>
+				<Source><![CDATA[
+    void prodEstimate(prodId _prodId)
+    {
+        ProdTable prodTable;
+        ProdMultiCostEstimation ProdMultiCostEstimation;
+        
+        //find ProdTable, not nessary in your case
+        prodTable = ProdTable::find(_prodId);
+        //init ProdStartup
+        ProdMultiCostEstimation = ProdMultiCostEstimation::construct(new args());
+        //init default parameter
+        RunBaseMultiParm::initParm(ProdMultiCostEstimation);
+        //parm ProdTable, you can do this muliple times in case you want to update
+        //more than one production at a time
+        ProdMultiCostEstimation.insert(prodTable, ProdMultiCostEstimation.defaultParmBuffer());
+        //Do update
+        ProdMultiCostEstimation.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>CreateSalesOrderInvoice</Name>
+				<Source><![CDATA[
+    public void CreateSalesOrderInvoice(SalesId _salesid)
+    {
+        SalesFormLetter salesFormLetter;
+        SalesTable      salesTable;       
+        CustInvoiceJour custInvoiceJour;
+
+        salesTable = SalesTable::find(_salesid);
+
+        if (salesTable.SalesStatus == SalesStatus::None)
+        {
+            salesFormLetter = SalesFormLetter::construct(DocumentStatus::Invoice);
+            salesFormLetter.update(salesTable, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), SalesUpdate::All, AccountOrder::None, NoYes::No, NoYes::No, NoYes::No, NoYes::Yes);
+            //custInvoiceJour = salesFormLetter.parmJournalRecord();
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSalesOrderInvoiceGenerator</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMSalesOrderInvoiceGenerator
+{
+    SalesTable      salesTable;
+
+    CustAccount     invoiceAccount;
+    CustAccount     custAccount;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createAndPostInvoice</Name>
+				<Source><![CDATA[
+    public void createAndPostInvoice(boolean _print = false)
+    {
+        FormletterService                   formLetterService;
+        SalesFormLetterInvoiceContract      salesFormLetterInvoiceContract;
+        SalesFormletterParmData             salesFormLetterParmData;
+        FormletterOutputContract            formLetterOutputContract;
+    
+        salesFormLetterInvoiceContract = new SalesFormLetterInvoiceContract();
+        salesFormLetterInvoiceContract.parmSalesTable(salesTable);
+        salesFormLetterInvoiceContract.parmSourceTable(salesTable);
+        salesFormLetterInvoiceContract.parmSpecQty(SalesUpdate::All);
+        salesFormLetterInvoiceContract.parmSpecQtyIsSet(true);
+    
+        salesFormLetterParmData = SalesFormLetterParmData::newChooseLines(salesFormLetterInvoiceContract.pack());
+        salesFormLetterParmData.createData();
+    
+        salesFormLetterInvoiceContract.parmParmId(salesFormLetterParmData.getOutputContract().parmParmId());
+        salesFormLetterInvoiceContract.parmParmUpdate(salesFormLetterParmData.getOutputContract().parmParmUpdate());
+    
+        salesFormLetterInvoiceContract.parmProforma(_print);
+    
+        formLetterService = FormletterService::construct();
+        formLetterOutputContract = formLetterService.postSalesOrderInvoice(salesFormLetterInvoiceContract);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSalesHeader</Name>
+				<Source><![CDATA[
+    public void createSalesHeader()
+    {
+        HMSalesTableBuilder         salesTableBuilder;
+    
+        salesTableBuilder = new HMSalesTableBuilder();
+        salesTableBuilder.setCustAccount(this.parmCustAccount());
+        if(this.parmInvoiceAccount() != '')
+        {
+            salesTableBuilder.setInvoiceAccount(this.parmInvoiceAccount());
+        }
+        salesTableBuilder.insert();
+    
+        salesTable = salesTableBuilder.salesTable();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSalesLine</Name>
+				<Source><![CDATA[
+    public void createSalesLine(ItemIdSmall _itemId, SalesOrderedQty _salesQty, SalesPrice _salesPrice, SalesLineAmount _lineAmount)
+    {
+        HMSalesLineBuilder                  salesLineBuilder;
+    
+        salesLineBuilder = new HMSalesLineBuilder(salesTable);
+        salesLineBuilder.setItemId(_itemId);
+    
+        salesLineBuilder.setSalesQty(_salesQty);
+    
+        salesLineBuilder.setSalesPrice(_salesPrice);
+    
+        if((_salesQty * _salesPrice) != _lineAmount)
+        {
+            salesLineBuilder.setLineAmount(_lineAmount);
+        }
+    
+        salesLineBuilder.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCustAccount</Name>
+				<Source><![CDATA[
+    public CustAccount parmCustAccount(CustAccount _custAccount = custAccount)
+    {
+        custAccount = _custAccount;
+    
+        return custAccount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmInvoiceAccount</Name>
+				<Source><![CDATA[
+    public CustAccount parmInvoiceAccount(CustAccount _custAccount = invoiceAccount)
+    {
+        invoiceAccount = _custAccount;
+    
+        return invoiceAccount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSalesTable</Name>
+				<Source><![CDATA[
+    public SalesTable parmSalesTable(SalesTable _salesTable = salesTable)
+    {
+        salesTable = _salesTable;
+    
+        return salesTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postInvoice</Name>
+				<Source><![CDATA[
+    public CustInvoiceJour postInvoice()
+    {
+        CustInvoiceJour custInvoiceJour;
+        FormletterOutputContract outputContract = new FormletterOutputContract();
+         //Args                args             = new Args();
+        //CustInvoiceJour jr;
+    //
+        //
+        //select * from jr where jr.SalesId == salesTable.SalesId;
+        //args.record(jr);
+       //new MenuFunction(menuitemOutputStr(SalesInvoiceOriginal), MenuItemType::Output).run(args);
+        SalesFormLetter_Invoice invoice;
+        invoice = SalesFormLetter::construct(DocumentStatus::Invoice);
+        // Post the invoice
+        invoice.update(salesTable,
+        salesTable.InvoiceDate,
+        SalesUpdate::All,
+        AccountOrder::None,
+        false,
+        false); // Set to true to print the invoice
+    
+        outputContract = invoice.getOutputContract();
+        custInvoiceJour = outputContract.parmJournal();
+    
+        return custInvoiceJour;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>printInvoice</Name>
+				<Source><![CDATA[
+    public void printInvoice()
+    {
+         Args                args             = new Args();
+        CustInvoiceJour jr;
+    
+    
+        select * from jr where jr.SalesId == salesTable.SalesId;
+        args.record(jr);
+       new MenuFunction(menuitemOutputStr(SalesInvoiceOriginal), MenuItemType::Output).run(args);
+        //SalesFormLetter_Invoice invoice;
+        //invoice = SalesFormLetter::construct(DocumentStatus::Invoice);
+     //Post the invoice
+    //invoice.update(salesTable,
+    //SystemDateGet(),
+    //SalesUpdate::All,
+    //AccountOrder::None,
+    //false,
+    //false); // Set to true to print the invoice
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>viewProformaInvoice</Name>
+				<Source><![CDATA[
+    public void viewProformaInvoice()
+    {
+        SalesFormLetter salesFormLetter;
+    
+        salesFormLetter = SalesFormLetter::construct(DocumentStatus::Invoice); // Get a new instance of SalesFormletter
+    
+        salesFormLetter.update(salesTable, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), SalesUpdate::All, AccountOrder::None, true, true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemListPrice</Name>
+				<Source><![CDATA[
+    public static Price getItemListPrice(Itemid _itemRelation, InventDimId _inventDimId)
+    {
+        priceDiscTable  priceDiscTable;
+        select firstonly RecId,Amount from priceDiscTable
+        where priceDiscTable.Relation           == PriceType::PriceSales
+        && priceDiscTable.ItemCode           == PriceDiscProductCodeType::Table
+        && priceDiscTable.ItemRelation       == _itemRelation
+        && priceDiscTable.AccountCode ==  PriceDiscPartyCodeType::All
+        && priceDiscTable.InventDimId == _inventDimId
+        && ((priceDiscTable.FromDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        && priceDiscTable.ToDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        || priceDiscTable.FromDate == dateNull()
+        || priceDiscTable.ToDate == dateNull());
+    
+        return priceDiscTable.Amount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemListRecord</Name>
+				<Source><![CDATA[
+    public static priceDiscTable getItemListRecord(Itemid _itemRelation, InventDimId _inventDimId)
+    {
+        priceDiscTable  priceDiscTable;
+        select firstonly RecId,Amount from priceDiscTable
+        where priceDiscTable.Relation           == PriceType::PriceSales
+        && priceDiscTable.ItemCode           == PriceDiscProductCodeType::Table
+        && priceDiscTable.ItemRelation       == _itemRelation
+        && priceDiscTable.AccountCode ==  PriceDiscPartyCodeType::All
+        && priceDiscTable.InventDimId == _inventDimId
+        && ((priceDiscTable.FromDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        && priceDiscTable.ToDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        || priceDiscTable.FromDate == dateNull()
+        || priceDiscTable.ToDate == dateNull());
+    
+        return priceDiscTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemPriceContainerByInventDim</Name>
+				<Source><![CDATA[
+    public static container getItemPriceContainerByInventDim(ItemId _itemId, CustAccount _accountNum, InventDimId _inventDimId, date _date = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        InventDim inventDim;
+        container  conPrice;
+        Price      price;
+        InventTable inventTable = InventTable::find(_itemId);
+        CustTable   custTable = CustTable::find(_accountNum);
+        boolean     tradeAgreementExist;
+    
+        inventDim = InventDim::find(_inventDimId);
+    
+        PriceDisc priceDisc = new PriceDisc(ModuleInventPurchSales::Sales, inventTable.ItemId
+            , inventDim, inventTable.salesUnitId()
+            , _date
+            , 1
+            , _accountNum
+            , custTable.Currency);
+
+        price = priceDisc.price();
+        tradeAgreementExist = priceDisc.findPrice(custTable.PriceGroup, NoYes::Yes);
+
+        conPoke(conPrice, 1, price);
+        conPoke(conPrice, 6, tradeAgreementExist);
+        //conPrice = PriceDisc::findItemPriceAgreement (ModuleInventPurchSales::Sales
+        //,InventTable.ItemId
+        //,InventDim
+        //, InventTable.salesUnitId()
+        //,_date
+        //,1
+        //,_accountNum
+        //,CustTable::find(_accountNum).Currency
+        //,'');
+    
+        //price = conPeek(conPrice,1);
+    
+        return conPrice;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemPricePrice</Name>
+				<Source><![CDATA[
+    public static Price getItemPricePrice(ItemId _itemId, CustAccount _accountNum)
+    {
+        InventDim   inventDim;
+        container   conPrice;
+        Price       price;
+        boolean     tradeAgreementExist;
+        InventTable inventTable = InventTable::find(_itemId);
+        CustTable   custTable = CustTable::find(_accountNum);
+    
+        inventDim.initFromInventTable(inventTable);
+        inventDim = InventDim::findOrCreate(inventDim);
+
+        PriceDisc priceDisc = new PriceDisc(ModuleInventPurchSales::Sales, inventTable.ItemId
+            , inventDim, inventTable.salesUnitId()
+            , DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+            , 1
+            , _accountNum
+            , custTable.Currency);
+
+        conPoke(conPrice, 1, price);
+    
+        //conPrice = PriceDisc::findItemPriceAgreement (ModuleInventPurchSales::Sales
+        //,InventTable.ItemId
+        //,InventDim
+        //, InventTable.salesUnitId()
+        //,DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())
+        //,1
+        //,_accountNum
+        //,CustTable::find(_accountNum).Currency
+        //,'');
+    
+        price = conPeek(conPrice,1);
+    
+        return price;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemPricePriceByInventDim</Name>
+				<Source><![CDATA[
+    public static Price getItemPricePriceByInventDim(ItemId _itemId, CustAccount _accountNum, InventDimId _inventDimId, date _date = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        InventDim inventDim;
+        container  conPrice;
+        Price      price;
+        InventTable inventTable = InventTable::find(_itemId);
+        CustTable   custTable = CustTable::find(_accountNum);
+    
+        inventDim = InventDim::find(_inventDimId);
+    
+        //conPrice = PriceDisc::findItemPriceAgreement (ModuleInventPurchSales::Sales
+        //,InventTable.ItemId
+        //,InventDim
+        //, InventTable.salesUnitId()
+        //,_date
+        //,1
+        //,_accountNum
+        //,CustTable::find(_accountNum).Currency
+        //,'');
+    
+        PriceDisc priceDisc = new PriceDisc(ModuleInventPurchSales::Sales, inventTable.ItemId
+            , inventDim, inventTable.salesUnitId()
+            , _date
+            , 1
+            , _accountNum
+            , custTable.Currency);
+
+        price = priceDisc.price();
+
+        conPoke(conPrice, 1, price);
+    
+        return price;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAllClaims_AssignToMyQueue_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(formControlStr(HMAllClaims,AssignToMyQueue))]
+internal final class HMAllClaims_AssignToMyQueue_Extension
+{
+    
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>clicked</Name>
+				<Source><![CDATA[
+    public void clicked()
+    {
+        HMClaimTable             claimTable,claimTable_Validation;
+        FormDataSource           hmClaimTable_DS,hMPatient_DS;
+        MultiSelectionHelper	 multiSelectionHelper;
+        DirPartyTable            dirParty,dirPartyTable,dirParty_Validation;
+        DirPartyRelationship     dirPartyRelationship,dirPartyRelationship_,dirPartyRelationship_Validation;
+        Set                      strRecordSet;
+        CustCollectionsAgent     custCollectionsAgent,checkCustCollectionsAgent,curCustCollectionsAgent;
+        FormControl              formButtonControl;
+        HMBillParameters         hmBillParameters;
+        int                      position;
+        CustCollectionsAgentPool custCollectionsAgentPool;
+        str                      oldValue;
+        HMClaimChangeLogTable    hmClaimChangeLogTable;
+       
+        next clicked();
+
+        strRecordSet = new Set(Types::String);
+
+        custCollectionsAgent = CustCollectionsAgent::findCurrentAgent();
+        
+        formButtonControl = any2Object(this) as FormControl;
+            
+        hmClaimTable_DS = formButtonControl.formRun().dataSource(formDataSourceStr(HMAllclaims, PatientClaims));
+
+        hmPatient_DS = formButtonControl.formRun().dataSource(formDataSourceStr(HMAllclaims, HMPatient));
+
+        boolean claimAlreadyAssingedToAgent = false;
+
+        multiSelectionHelper = MultiSelectionHelper::construct();
+        multiSelectionHelper.parmDatasource(hmClaimTable_DS);
+        
+        claimTable_Validation = multiSelectionHelper.getFirst();
+
+        while(claimTable_Validation)
+        {
+            select firstonly claimTable
+                where claimTable.ClaimID == claimTable_Validation.ClaimID;
+
+            select firstonly RecId from dirParty_Validation
+                    join RecId from dirPartyRelationship_Validation
+                        where dirPartyRelationship_Validation.ChildParty == dirParty_Validation.RecId
+                    join RecId from curCustCollectionsAgent
+                        where curCustCollectionsAgent.DirPartyRelationship == dirPartyRelationship_Validation.RecId
+                    join RecId from custCollectionsAgentPool
+                        where custCollectionsAgentPool.CustCollectionsAgent == custCollectionsAgent.RecId
+                            && custCollectionsAgentPool.CustomerPoolId == claimTable.PoolName;
+
+            if (dirParty_Validation.RecId == 0)
+            {
+                throw error("@Optum:HMAgentDoesnotExistError");
+            }
+            if (claimTable.ClaimAgent != 0)
+            {
+                claimAlreadyAssingedToAgent = true;
+            }
+            claimTable_Validation = multiSelectionHelper.getNext();
+        }
+
+        if (claimAlreadyAssingedToAgent && custCollectionsAgent.HMIsManager == NoYes::No ) 
+        {
+            select RecId, Name from dirPartyTable
+                join dirPartyRelationship_
+                    where dirPartyRelationship_.ChildParty == dirPartyTable.RecId
+                        && dirPartyRelationship_.RecId == custCollectionsAgent.DirPartyRelationship
+                exists join checkCustCollectionsAgent
+                    where checkCustCollectionsAgent.HMSupervisor == dirPartyTable.RecId;
+
+            if(dirPartyTable.RecId == 0)
+            {
+                throw error("Claim is already assigned to another agent.");
+            }
+
+        }
+        
+        claimTable_Validation = multiSelectionHelper.getFirst();
+
+        while(claimTable_Validation)
+        {
+            oldValue = claimTable_Validation.AgentName;
+
+            select firstonly claimTable
+                where claimTable.ClaimID == claimTable_Validation.ClaimID;
+
+            select firstonly Name from dirParty
+                exists join dirPartyRelationship
+                    where dirPartyRelationship.ChildParty == dirParty.RecId
+                        && dirPartyRelationship.RecId == custCollectionsAgent.DirPartyRelationship;
+
+            claimTable.selectForUpdate(true);
+        
+            ttsbegin;
+        
+            claimTable.ClaimAgent = custCollectionsAgent.RecId;
+            claimTable.AgentName  = dirParty.Name;
+
+            claimTable.update();
+        
+            ttscommit;
+            
+            hmClaimChangeLogTable::createClaimChangeLog(claimTable,oldValue);
+
+            claimTable_Validation = multiSelectionHelper.getNext();
+        }
+
+        if(hmBillParameters.HMRelatedClaimPrioritization == NoYes::Yes)
+        {
+            multiSelectionHelper = MultiSelectionHelper::construct();
+            multiSelectionHelper.parmDatasource(hmClaimTable_DS);
+        }
+
+        HMClaimTable::AssignSimilarClaims(multiSelectionHelper);
+
+        position = hmClaimTable_DS.getPosition();
+
+        hmPatient_DS.executeQuery();
+
+        hmClaimTable_DS.setPosition(position);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

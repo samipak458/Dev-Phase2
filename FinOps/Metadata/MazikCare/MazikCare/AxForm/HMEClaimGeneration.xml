@@ -1,0 +1,712 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMEClaimGeneration</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Group control ButtonGroup had LeftMode property set to AutoRight. This property is no longer respected. Make any necessary adjustments to correct the position of the group control. */
+using System.IO;
+
+using OfficeOpenXml;
+using OfficeOpenXml.Style;
+using OfficeOpenXml.Table;
+[Form]
+public class HMEClaimGeneration extends FormRun
+{
+    //Zain  -- Deprecated in AX7
+    //SysExcelWorksheetHelper worksheetHelper;
+    //SysExcelRange           range;
+    HMInsuranceCarrier      carrier;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>filePathLookupTitle</Name>
+				<Source><![CDATA[
+    public LabelString filePathLookupTitle()
+    {
+        return "@SYS77620"; // Select directory
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+    
+        select firstOnly carrier
+            where carrier.EnableEClaimGeneration == NoYes::Yes;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>InsuranceCarrier</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Query query = new Query();
+            QueryBuildDataSource queryBuildDataSource;
+            QueryBuildRange queryBuildRange;
+        
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMInsuranceCarrier), this);
+        
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrier, Code));
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrier, Name));
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMInsuranceCarrier));
+        
+          //  queryBuildRange = queryBuildDataSource.addRange(fieldNum(CustTable, CustGroup));
+          //  queryBuildRange.value('40');
+        
+            sysTableLookup.parmQuery(query);
+        
+            sysTableLookup.performFormLookup();
+        
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>InsuranceBatchNumber</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Query                   query = new Query();
+            QueryBuildDataSource    queryBuildDataSource;
+            QueryBuildRange         queryBuildRange;
+        
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMInsuranceCarrierBatchDetails), this);
+        
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, BatchNumber));
+            sysTableLookup.addLookupField(fieldNum(HMInsuranceCarrierBatchDetails, Month));
+        
+            queryBuildDataSource = query.addDataSource(tableNum(HMInsuranceCarrierBatchDetails));
+        
+            queryBuildRange = queryBuildDataSource.addRange(fieldNum(HMInsuranceCarrierBatchDetails, HMInsuranceCarrier));
+            queryBuildRange.value(SysQuery::value(carrier.RecId));
+        
+            sysTableLookup.parmQuery(query);
+        
+            sysTableLookup.performFormLookup();
+        
+            //super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>GenerateExcel</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+
+            
+            System.Collections.IEnumerable processes;
+            System.Collections.IEnumerator enumerator;
+            System.Diagnostics.Process process;
+           
+            GeneralJournalEntry             GeneralJournalEntry;
+            GeneralJournalAccountEntry      GeneralJournalAccountEntry;
+            SubledgerVoucherGeneralJournalEntry SubledgerVoucherGeneralJournalEntry;
+            LedgerEntryJournal              LedgerEntryJournal;
+        
+            CustTrans                       custTrans;
+            HMClaimVersion                  claimVersion;
+            HMClaimTable                    claimTable;
+            HMClaimTableDetails             claimTableDetails;
+            HMResourceMaster                HMResourceMaster;
+            HMClaimChargeLine               claimChargeLine;
+            InventTable                     inventTable;
+            HMCaseTrans                     caseTrans, caseTransLocal;
+            HMCaseTransDetail               caseTransDetails;
+            HMCase                          claimCase;
+            HMResourceSchedulingAppointment appointment;
+            LedgerJournalTrans              ledgerJournalTrans;
+            LedgerJournalTable              ledgerJournalTable;
+            HMPatientChargeEntryLine        hmPatientChargeEntryLine;
+        
+            HMPatientEncounter              hmPatientEncounter;
+            Map                             map;
+            HMPatientChargeEntryLine        chargeLineLocal;
+            HMInsuranceCarrierBatchDetails  batchContract;
+        
+            //Zain  -- In AX7 SysExcelHelper has been deprecated
+            //SysExcelHelper          sysExcelHelper;
+            //SysExcelWorksheet       worksheet;
+            int                     currentRow = 1;
+            int                     sumRow;
+            str                     worksheetName;
+            int                     redColor = WinAPI::RGB2int(255, 0, 0);
+            COMVariant              cellValue = new COMVariant(COMVariantInOut::Out);
+            str                     fileName;
+            HMSpecialtyCode         specialtyCode;
+        
+            // Sets the font color for a range of cells
+            // Defines the columns of the spreadsheet
+            #define.MedicalAdjudicator          (1)
+            #define.ClaimSequenceNumber         (2)
+            #define.CardIssueNumber             (3)
+            #define.PatientRegistrationNumber   (4)
+            #define.PatientNumber               (5)
+            #define.PatientName                 (6)
+            #define.InvoiceNumber               (7)
+            #define.InvoiceDate                 (8)
+            #define.PreAuthID                   (9)
+            #define.DoctorName                  (10)
+            #define.Specialty                   (11)
+            #define.ClinicalData                (12)
+            #define.DiagnosisData               (13)
+            #define.CLIIMTYPE                   (14)
+            #define.Reference                   (15)
+            #define.Emergency                   (16)
+            #define.Discount                    (17)
+            #define.Deductible                  (18)
+            #define.SubmittedBy                 (19)
+            #define.PayTo                       (20)
+            #define.BenHead                     (21)
+            #define.ToothNumber                 (22)
+            #define.MediCode                    (23)
+            #define.SVCode                      (24)
+            #define.ServiceDescription          (25)
+            #define.RadiologyDate               (26)
+            #define.RadiologyClinicalData       (27)
+            #define.RadiologyReportText         (28)
+            #define.IncurDateFrom               (29)
+            #define.IncurDateTo                 (30)
+            #define.Quantity                    (31)
+            #define.Pres_Amt                    (32)
+            #define.LineItemDiscount            (33)
+            #define.Notes                       (34)
+            #define.Temperature                 (35)
+            #define.RespiratoryRate             (36)
+            #define.BloodPressure               (37)
+            #define.Height                      (38)
+            #define.Weight                      (39)
+            #define.Pulse                       (40)
+            #define.RejectQuantity              (41)
+            #define.RejectAmount                (42)
+            #define.RejectCode                  (43)
+            #define.RejectionBox1               (44)
+        
+            try
+            {
+
+
+                processes = System.Diagnostics.Process::GetProcessesByName("EXCEL");
+                enumerator = processes.GetEnumerator();
+        
+                while (enumerator.MoveNext())
+                {
+                    process = enumerator.get_Current();
+                    process.Kill();
+                }
+        
+                if (carrier)
+                {
+
+                    if (InsuranceBatchNumber.text() && FilePath.Text() && (FromDate.dateValue() <= ToDate.dateValue() || (!FromDate.dateValue() || !ToDate.dateValue())))
+                    {
+                        MemoryStream memoryStream = new MemoryStream();
+                        using (var package = new ExcelPackage(memoryStream))
+                        {
+                            HMExcelWorkSheetHelper worksheetHelper = new HMExcelWorkSheetHelper();
+                            worksheetName = "@MAZ218";
+                            var worksheets = package.get_Workbook().get_Worksheets();
+                            var Addedworksheet           = worksheets.add(worksheetName);
+                            var cells = Addedworksheet.get_cells();
+                            //Populate the header row with the appropriate field labels and format the columns
+                            worksheetHelper.setColumn   (cells.get_Item(1,1) , 'Invoice Number'        , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,2), 'MR Number'             , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,3), 'Radiology Date'        , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,4), 'Service code'          , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,5), 'Service description'   , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,6), 'Clinical data'         , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,7), 'RR Test'               , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,8), 'URL'                   , Types::String);
+
+
+                            batchContract       = HMInsuranceCarrierBatchDetails::findbByBatchNumber(InsuranceBatchNumber.text());
+        
+                            while select claimChargeLine
+                                join claimTableDetails
+                                join InventTable
+                                join claimVersion
+                                  where claimChargeLine.HMClaimTable    == claimTableDetails.HMClaimTable
+                                    && claimTableDetails.BatchNumber    == InsuranceBatchNumber.text()
+                                    && claimChargeLine.InventTable      == InventTable.ItemId
+                                    && InventTable.HMProductType        == HMInventType::Radiology
+                                    && ( !FromDate.dateValue()  ||  claimTableDetails.VisitDate >= fromDate.dateValue())
+                                    && ( !ToDate.dateValue()    ||  claimTableDetails.VisitDate <= toDate.dateValue())
+                                    && claimVersion.HMClaimTable == claimTableDetails.HMClaimTable
+                                    && claimVersion.Status          == HMClaimStatus::Submitted
+                            {
+                                currentRow++;
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,2),claimTableDetails.PatientAccountNum);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow ,4),InventTable.ItemId);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow ,5),InventTable.itemDescriptionOrName());
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow ,8 ),claimChargeLine.ReportUrl);
+                            }
+        
+                            //worksheetHelper.autoFitColumns(Addedworksheet);
+                            worksheetName = "@MAZ13514";
+                            worksheets = package.get_Workbook().get_Worksheets();
+                            Addedworksheet           = worksheets.add(worksheetName);
+                             cells = Addedworksheet.get_cells();
+
+                            // Populate the header row with the appropriate field labels and format the columns
+                            worksheetHelper.setColumn   (cells.get_Item(1,1), 'Invoice Number'    , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,2 ), 'MR Number'         , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,3), 'Lab Visit Date'    , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,4), 'Lab profile'    , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,5), 'Lab test name'         , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,6), 'Lab result'    , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,7), 'Lab units'   , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,8), 'Lab low'    , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,9), 'Lab high'    , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,10), 'Lab section'    , Types::String);
+                            worksheetHelper.setColumn   (cells.get_Item(1,11), 'URL'    , Types::String);
+        
+                            currentRow = 1;
+        
+                            while select claimChargeLine
+                                join claimTableDetails
+                                join claimVersion
+                                join InventTable
+                                    where claimChargeLine.HMClaimTable == claimTableDetails.HMClaimTable
+                                        && claimTableDetails.BatchNumber == InsuranceBatchNumber.text()
+                                        && claimChargeLine.InventTable ==InventTable.ItemId
+                                        && InventTable.HMProductType    == HMInventType::Laboratory
+                                        && ( !FromDate.dateValue()  ||  claimTableDetails.VisitDate >= fromDate.dateValue())
+                                        && ( !ToDate.dateValue()    ||  claimTableDetails.VisitDate <= toDate.dateValue())
+                                        && claimVersion.HMClaimTable    == claimTableDetails.HMClaimTable
+                                        && claimVersion.Status          == HMClaimStatus::Submitted
+                            {
+                                currentRow++;
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,2) , claimTableDetails.PatientAccountNum);
+                                //worksheetHelper.setCellValue(4  , currentRow, InventTable.ItemId);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,5), InventTable.itemDescriptionOrName());
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,11 ), claimChargeLine.ReportUrl);
+                            }
+        
+                            //worksheetHelper.autoFitColumns(Addedworksheet);
+                            worksheetName = "@MAZ13513";
+                             worksheets = package.get_Workbook().get_Worksheets();
+                             Addedworksheet           = worksheets.add(worksheetName);
+                             cells = Addedworksheet.get_cells();
+        
+                            // Populate the header row with the appropriate field labels and format the columns
+                            worksheetHelper.setColumn               (cells.get_Item(1,#MedicalAdjudicator)                  , 'Medical Adjudicator'        , Types::String);
+                            worksheetHelper.setColumnFromTableField (cells.get_Item(1,#ClaimSequenceNumber )       , tablenum(HMClaimTable)       , fieldnum(HMClaimTable, ClaimId));
+                            worksheetHelper.setColumn               (cells.get_Item(1,#CardIssueNumber   )         , "Card Issue number"          , Types::String);
+                            worksheetHelper.setColumnFromTableField (cells.get_Item(1,#PatientRegistrationNumber)  , tablenum(HMClaimTableDetails), fieldnum(HMClaimTableDetails, HMInsuranceMembershipId));
+                            worksheetHelper.setColumnFromTableField (cells.get_Item(1,#PatientNumber    )          , tablenum(HMClaimTableDetails), fieldnum(HMClaimTableDetails, PatientAccountNum));
+                            worksheetHelper.setColumnFromTableField (cells.get_Item(1,#PatientName    )            , tablenum(HMClaimTableDetails), fieldnum(HMClaimTableDetails, PatientName));
+                            worksheetHelper.setColumn               (cells.get_Item(1,#InvoiceNumber  )            , 'Invoice number'             , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#InvoiceDate    )            , 'Invoice date'               , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#PreAuthID     )             , 'Pre Authorization Id'       , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#DoctorName   )              , 'Doctor'                     , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Specialty     )             , 'Specialty'                  , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#ClinicalData  )             , 'Clinical data'              , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#DiagnosisData )             , 'Diagnosis data'             , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#CLIIMTYPE     )             , 'Clim type'                  , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Reference     )             , 'Refer Ind'                  , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Emergency      )            , 'Emergency Ind'              , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Discount       )            , 'VO Disccount amount'        , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Deductible     )            , 'VO deductible amount'       , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#SubmittedBy    )            , 'Submitted by'               , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#PayTo          )            , 'Pay to'                     , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#BenHead        )            , 'Ben head'                   , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#ToothNumber     )           , 'Tooth no'                   , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#MediCode        )           , 'Medicore'                   , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#SVCode             )        , 'SV code'                    , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#ServiceDescription )        , 'Service description'        , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RadiologyDate       )       , 'Radiology date'             , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RadiologyClinicalData)      , 'Radiology clinical data'    , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RadiologyReportText   )     , 'Radiology report text'      , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#IncurDateFrom         )     , 'Incur date from'            , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#IncurDateTo      )          , 'Incur date to'              , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Quantity    )               , 'Quantity'                   , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Pres_Amt)                   , 'Present Amount'             , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#LineItemDiscount )          , 'Line Item discount'         , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Notes            )          , 'Notes'                      , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Temperature       )         , 'Temperature'                , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RespiratoryRate )           , 'Respiratory rate'           , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#BloodPressure     )         , 'Blood pressure'             , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Height            )         , 'Height'                     , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Weight          )           , 'Weight'                     , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#Pulse             )         , 'Pulse'                      , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RejectQuantity   )          , 'Reject quantity'            , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RejectAmount    )           , 'Reject amount'              , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RejectCode     )            , 'Reject code'                , Types::String );
+                            worksheetHelper.setColumn               (cells.get_Item(1,#RejectionBox1  )            , 'Rejection box'              , Types::String );
+        
+                            currentRow =1;
+        
+                            while select claimChargeLine
+                                join claimTableDetails
+                                    where claimChargeLine.HMClaimTable == claimTableDetails.HMClaimTable
+                                    && claimTableDetails.BatchNumber == InsuranceBatchNumber.text()
+                                        join caseTrans
+                                            where caseTrans.RecId == claimChargeLine.HMCaseTrans
+                                                join claimCase
+                                                where claimCase.RecId == caseTrans.hmcase
+                                                    && ( !FromDate.dateValue()  ||  claimTableDetails.VisitDate >= fromDate.dateValue())
+                                                    && ( !ToDate.dateValue()    ||  claimTableDetails.VisitDate <= toDate.dateValue())
+                                                    join claimVersion
+                                                        where claimVersion.HMClaimTable == claimTableDetails.HMClaimTable
+                                                        && claimVersion.Status          == HMClaimStatus::Submitted
+                            {
+                                claimTable                  = HMClaimTable::find(claimTableDetails.HMClaimTable);
+                                HMResourceMaster            = HMResourceMaster::find(claimTable.HMResourceMaster);
+                                appointment                 = HMResourceSchedulingAppointment::find(caseTrans.HMResourceSchedulingAppointment);
+                                hmPatientChargeEntryLine    = HMPatientChargeEntryLine::find(claimChargeLine.HMPatientChargeEntryLine);
+        
+                                select firstOnly * from LedgerEntryJournal
+                                join GeneralJournalEntry
+                                where GeneralJournalEntry.LedgerEntryJournal == LedgerEntryJournal.RecId
+                                && GeneralJournalEntry.Ledger == Ledger::current()
+                                join GeneralJournalAccountEntry
+                                where GeneralJournalAccountEntry.GeneralJournalEntry == GeneralJournalEntry.RecId
+                                join SubledgerVoucherGeneralJournalEntry
+                                where SubledgerVoucherGeneralJournalEntry.GeneralJournalEntry == GeneralJournalEntry.RecId
+                                join custTrans
+                                where SubledgerVoucherGeneralJournalEntry.Voucher == custTrans.Voucher
+                                && SubledgerVoucherGeneralJournalEntry.AccountingDate == custTrans.TransDate
+                                    outer join caseTransDetails
+                                    where custTrans.RecId == caseTransDetails.refRecId
+                                    && caseTransDetails.RefTableId == tableNum(custTrans)
+                                    && caseTransDetails.TransactionType == HMCaseTransDetailTransactionType::InsurancePayment
+                                        join caseTransLocal
+                                        where caseTransLocal.RecId == caseTransDetails.HMCaseTrans
+                                        && caseTransLocal.HMCase == claimCase.RecId
+                                        join chargeLineLocal
+                                        where caseTransLocal.RecId == chargeLineLocal.HMCaseTrans
+                                        && chargeLineLocal.HMInsuranceCarrierBatchDetails == batchContract.RecId;
+        
+                                currentRow ++;
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#MedicalAdjudicator)         , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#ClaimSequenceNumber )       ,  claimTable.ClaimID);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#CardIssueNumber     )       ,  claimTableDetails.HMCardIssueNumber);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#PatientRegistrationNumber)  , claimTableDetails.HMInsuranceMembershipId);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#PatientNumber       )       , claimTableDetails.PatientAccountNum);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#PatientName         )       ,  claimTableDetails.PatientName);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#InvoiceNumber       )       ,  ledgerentryJournal.JournalNumber);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#InvoiceDate         )       ,  custTrans.TransDate);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#PreAuthID           )       , caseTrans.PreAuthorizationNumber);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#DoctorName          )       , HMResourceMaster.Description);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Specialty           )       , claimTableDetails.SpecialtyDescription);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#ClinicalData        )       , claimTableDetails.ChiefComplaint);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#DiagnosisData       )       , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#CLIIMTYPE           )       , claimCase.HMCaseType == HMCaseType::OutPatient ? "O" : "E" );
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Reference           )       , appointment.Referral ? "Y" : "N" );
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Emergency           )       , claimCase.HMCaseType == HMCaseType::Emergency ? "Y" : "N" );
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Discount            )       , '0');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Deductible          )       , caseTrans.getAppointmentDeductibleAmount());
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#SubmittedBy         )       , 'P');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#PayTo               )       , 'P');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#BenHead             )       , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#ToothNumber         )       , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#MediCode            )       , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#SVCode              )       , claimChargeLine.InventTable);
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#ServiceDescription  )       , InventTable::find(claimChargeLine.InventTable).itemName());
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#RadiologyDate       )       , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#RadiologyClinicalData)      , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#RadiologyReportText )       , '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#IncurDateFrom       )       , date2str(claimTableDetails.VisitDate, 213, DateDay::Digits2, DateSeparator::Hyphen, DateMonth::Digits2, DateSeparator::Hyphen, DateYear::Digits4));
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#IncurDateTo         )       , date2str(claimTableDetails.VisitDate, 213, DateDay::Digits2, DateSeparator::Hyphen, DateMonth::Digits2, DateSeparator::Hyphen, DateYear::Digits4));
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Quantity            )       , caseTrans.Qty);
+
+
+                                // change by amir nazim 11/25/2016 for Wrong insurance amount by Dawood virani
+                               // worksheetHelper.setCellValue(#Pres_Amt                   , currentRow, decRound(caseTrans.TotalAmount, 2));
+                                //worksheetHelper.setCellValue(#Pres_Amt                   , currentRow, decRound(caseTrans.InsuranceAmount, 2));
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Pres_Amt)                   ,  decRound(caseTrans.TotalAmount - caseTrans.DiscountAmount - caseTrans.DeductibleActual - caseTrans.CashAmount, 2));
+                                //change by amir nazim 11/25/2016 for Wrong insurance amount by Dawood virani
+
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#LineItemDiscount )      , decRound(caseTrans.DiscountAmount, 2));
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#Notes )                 , claimTableDetails.ICD10Code2);
+
+
+                                hmPatientEncounter = new HMPatientEncounter();
+                                map = hmPatientEncounter.getEncounterVitals(claimCase.CRMCaseRefID == emptyGuid() ? "" : guid2str(claimCase.CRMCaseRefID), caseTrans.HMResourceSchedulingAppointment);
+        
+                                if(map != null)
+                                {
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Temperature), map.exists(1) ? map.lookup(1) : '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#RespiratoryRate)     , map.exists(4) ? map.lookup(4) : '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#BloodPressure) , map.exists(3) ? map.lookup(3) : '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Height) , map.exists(5) ? map.lookup(5) : '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Weight) , map.exists(6) ? map.lookup(6) : '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Pulse), map.exists(2) ? map.lookup(2) : '');
+                                }
+                                else
+                                {
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Temperature) , '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#RespiratoryRate), '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#BloodPressure), '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Height), '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Weight), '');
+                                    worksheetHelper.setCellValue(cells.get_Item(currentRow,#Pulse) , '');
+                                }
+        
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#RejectQuantity), '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#RejectAmount), '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#RejectCode  ), '');
+                                worksheetHelper.setCellValue(cells.get_Item(currentRow,#RejectionBox1 ), '');
+                            }
+                            /*              if (currentRow > 1)
+                            {
+                                sumRow = currentRow + 2;
+        
+                                worksheetHelper.setCellValue(#BalanceMST, sumRow, "@SYS58659");
+        
+                                worksheetHelper.sumRange(worksheetHelper.getWorksheetRange(#BalanceMST, 2, #BalanceMST, currentRow), #BalanceMST, sumRow);
+        
+                                setRangeFont(#BalanceMST, 2, #BalanceMST, currentRow, redColor);
+        
+                                cellValue = worksheet.cells().item(sumRow, #BalanceMST).value();
+                                if (cellValue.currency() > 0)
+                                {
+                                setRangeFont(#BalanceMST, sumRow, #BalanceMST, sumRow, redColor);
+                                }
+                            }*/
+                            //worksheetHelper.autoFitColumns(Addedworksheet);
+                            //   worksheetHelper.formatWorksheetTableStyle(sysExcelHelper.getOfficeVersion());
+                            //
+        
+        
+                            // Generate the file using the current UTC date time (without the ‘:’ character)
+                            // since it is not allowed for file names.
+                            //fileName = strfmt('%1%2%3', FilePath.text(), strReplace(DateTimeUtil::toStr(DateTimeUtil::utcNow()), ':', ''), sysExcelHelper.getFileExtension());
+        
+                            //sysExcelHelper.save(filename);
+                            //sysExcelHelper.launchExcel();
+                            package.Save();
+                            fileName = strfmt('%1%2%3', Filename, strReplace(DateTimeUtil::toStr(DateTimeUtil::utcNow()), ':', ''),'.xlsx');
+                            file::SendFileToUser(memoryStream,fileName);
+                        }
+                        
+                            super();
+        
+                            this.formRun().close();
+                    }
+                    else
+                    {
+                        if (!FilePath.text())
+                        {
+                            error("@MAZ13437");
+                        }
+        
+                        if (!InsuranceBatchNumber.text())
+                        {
+                            error("@MAZ13438");
+                        }
+        
+                        if ( FromDate.dateValue() > ToDate.dateValue() )
+                        {
+                            error("@SYS120590");
+                        }
+                    }
+                }
+                else
+                {
+                    error("@MAZ13536");
+                }
+        
+            }
+            catch(Exception::Error)
+            {
+                error("@MAZ13439");
+            }
+        
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>setRangeFont</Name>
+						<Source><![CDATA[
+        void setRangeFont(int _fromColumn, int _fromRow, int _toColumn, int _toRow, int _rgbIntColor)
+        {
+                //range = worksheetHelper.getWorksheetRange(_fromColumn, _fromRow, _toColumn, _toRow);
+                //worksheetHelper.setFontColor(range, _rgbIntColor);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMInsuranceCarrier</Name>
+			<Table>HMInsuranceCarrier</Table>
+			<Fields />
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">Generate E Claim File</Caption>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Group_</Name>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ControlsGrid</Name>
+						<ElementPosition>1288490187</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>FromDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>429496728</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>FromDate</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>ToDate</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>644245092</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>ToDate</ExtendedDataType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>InsuranceCarrier</Name>
+								<ElementPosition>858993458</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ96</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>InsuranceBatchNumber</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1288490187</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@MAZ13267</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>FilePath</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1717986916</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>FilePath</ExtendedDataType>
+								<Label>@MAZ13435</Label>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>ButtonGroup</Name>
+						<ElementPosition>1717986916</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>GenerateExcel</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<LeftMode>RightEdge</LeftMode>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Text>@SYS100854</Text>
+							</AxFormControl>
+						</Controls>
+					</AxFormControl>
+				</Controls>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

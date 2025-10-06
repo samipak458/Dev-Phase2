@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMReassignClaimToPoolMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMReassignClaimToPoolMultiThreadBatchJob extends RunBaseBatch
+{
+    QueryRun            gQueryRun;
+    BatchHeader         batchHeader;
+    HMNumberOfThreads   numberOfThreads;
+    HMIsSkipClaims      isSkipClaims;
+    DialogField         dlgHMNumberOfThreads;
+    DialogField         dlgIsSkipClaims;
+    DialogRunbase       dlg;
+
+    #define.CurrentVersion(1)
+    #LOCALMACRO.NumberOfThreads
+        numberOfThreads
+    #ENDMACRO
+    #LOCALMACRO.IsSkipClaims
+        isSkipClaims
+    #ENDMACRO
+        
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMReassignClaimToPoolMultiThreadBatchJob construct()
+    {
+        return new HMReassignClaimToPoolMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    static ClassDescription description()
+    {
+        return "Reassign Claim Pool Multiple Thread Batch Jobs";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void run()
+    {
+        HMReassignClaimToPoolMultiThreadTask    reassignClaimToPoolMultiThreadTask;
+        int                                     recordsToProcess, perThreadRecordsRound, additionalRecords, queryStartPosition, queryEndPosition;
+        real                                    perThreadRecords, diffPerThread;
+        CustCollectionsPool                     CustCollectionsPool;
+        container                               poolCon;
+        HMClaimTable                            hmClaimTable;
+
+        try
+        {
+            while select forupdate RecId,HMIsCriteriaChanged from CustCollectionsPool
+                order by custCollectionsPool.HMSequenceNumber asc
+                where custCollectionsPool.HMIsCriteriaChanged == NoYes::Yes
+                    && custCollectionsPool.ClaimQueryPacked != conNull()
+            {
+                poolCon += CustCollectionsPool.RecId;
+
+                ttsbegin;
+
+                update_recordset hmClaimTable
+                setting
+                    ClaimPool = 0,
+                    PoolName = ""
+                where hmClaimTable.ClaimPool == CustCollectionsPool.RecId
+                    && (isSkipClaims == NoYes::No 
+                        || hmClaimTable.ClaimAgent == 0);
+
+                CustCollectionsPool.HMIsCriteriaChanged = NoYes::No;
+                CustCollectionsPool.update();
+
+                ttscommit;
+            }
+
+            if(this.isInBatch())
+            {
+                numberOfThreads = numberOfThreads == 0 ? 1 : numberOfThreads < 0 ? numberOfThreads * -1 : numberOfThreads;
+
+                recordsToProcess = SysQuery::countLoops(gQueryRun);
+
+                if(recordsToProcess <= numberOfThreads)
+                {
+                    numberOfThreads = 1;
+                    Info("@MAZ:RecordsLesserThanNumberOfThreads");
+                }
+
+                perThreadRecords        = recordsToProcess / numberOfThreads;
+                perThreadRecordsRound   = perThreadRecords;
+                diffPerThread           = perThreadRecords - perThreadRecordsRound;
+                additionalRecords       = diffPerThread * numberOfThreads;
+
+                if(perThreadRecordsRound + additionalRecords > 0)
+                {
+                    for(int i = 1; i <= numberOfThreads; i++)
+                    {
+                
+                        if(!batchHeader)
+                        {
+                            batchHeader = BatchHeader::construct(this.parmCurrentBatch().BatchJobId);
+                        }
+
+                        if(i == 1)
+                        {
+                            queryStartPosition  = 1;
+                            queryEndPosition    = perThreadRecordsRound + additionalRecords;
+                        }
+                        else
+                        {
+                            queryStartPosition  = queryEndPosition + 1;
+                            queryEndPosition    = queryEndPosition + perThreadRecordsRound;
+                        }
+                    
+                        reassignClaimToPoolMultiThreadTask = HMReassignClaimToPoolMultiThreadTask::construct();
+                        reassignClaimToPoolMultiThreadTask.pramQueryRun(gQueryRun);
+                        reassignClaimToPoolMultiThreadTask.pramQueryStartPosition(queryStartPosition);
+                        reassignClaimToPoolMultiThreadTask.pramPerThreadRecords(i == 1 ? perThreadRecordsRound + additionalRecords : perThreadRecordsRound);
+                        reassignClaimToPoolMultiThreadTask.pramTaskDescription(strFmt("Reassign Claim to Pool Multiple Thread Task %1,%2", queryStartPosition, queryEndPosition));
+                        reassignClaimToPoolMultiThreadTask.pramIsSkipClaim(isSkipClaims);
+                        reassignClaimToPoolMultiThreadTask.pramUpdatedPoolList(poolCon);
+                        // add tasks to the batch header
+                        batchHeader.addRuntimeTask(reassignClaimToPoolMultiThreadTask, this.parmCurrentBatch().RecId);
+                
+                    }
+                }
+                else
+                {
+                    Info("@MAZ:NoLogForBatchJob");
+                }
+
+            }
+            else
+            {
+                // execute your code here when not running in batch
+                try
+                {
+                    HMReassignClaimToPoolBusinessLogic reassignClaimToPoolBusinessLogic = HMReassignClaimToPoolBusinessLogic::construct();
+
+                    reassignClaimToPoolBusinessLogic.processInit(gQueryRun, isSkipClaims, poolCon);
+                }
+                catch
+                {
+                    info(strFmt("%1",xSession::xppCallStack()));
+                }
+            }
+
+            if(batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();
+            }
+
+        }
+        catch
+        {
+            info(strFmt("%1",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatch</Name>
+				<Source><![CDATA[
+    //Needs to be set to true so class can be ran in a batch
+    boolean canGoBatch()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+        return [#CurrentVersion] + [pack] + [#NumberOfThreads] + [#IsSkipClaims];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #NumberOfThreads, #IsSkipClaims] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+
+            default:
+                ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    //Determines whether to run on server or client
+    //True - Server; False - Client
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "args"></param>
+    public static void main(Args args)
+    {
+        HMReassignClaimToPoolMultiThreadBatchJob calculateClaimPoolMultiThreadBatchJob = HMReassignClaimToPoolMultiThreadBatchJob::construct();
+
+        calculateClaimPoolMultiThreadBatchJob.caption();
+        calculateClaimPoolMultiThreadBatchJob.initQueryRun();
+
+        if (calculateClaimPoolMultiThreadBatchJob.prompt())
+        {
+            calculateClaimPoolMultiThreadBatchJob.run();
+        }
+            
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    public boolean canGoBatchJournal()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryRun</Name>
+				<Source><![CDATA[
+    public QueryRun queryRun()
+    {
+        return gQueryRun;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQueryRun</Name>
+				<Source><![CDATA[
+     public void initQueryRun()
+    {
+        Query query;
+        
+        query = new Query (queryStr(HMReassignClaimToPoolQuery));
+
+        gQueryRun = new QueryRun(query);
+        gQueryRun.saveUserSetup(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void initParmDefault()
+    {
+        this.initQueryRun();
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQueryValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// </summary>
+    /// <returns></returns>
+    public boolean showQueryValues()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    public Object dialog()
+    {
+        DialogRunbase dialog = super();
+
+        dlgHMNumberOfThreads = dialog.addFieldValue(extendedTypeStr(HMNumberOfThreads),numberOfThreads);
+
+        dlgIsSkipClaims = dialog.addFieldValue(extendedTypeStr(HMIsSkipClaims),isSkipClaims);
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public boolean getFromDialog()
+    {
+        numberOfThreads = dlgHMNumberOfThreads.value();
+        isSkipClaims = dlgIsSkipClaims.value();
+        
+        return super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

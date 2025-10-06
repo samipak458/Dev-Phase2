@@ -1,0 +1,783 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMOrganizationalUnitTreeLookup</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMOrganizationalUnitTreeLookup extends FormRun
+{
+    boolean                 isformclose;
+    ImageRes                imageRes;
+    TreeItemIdx             initialSelection;
+    str                     lastSelected;
+    HMCaseType              caseType;
+
+    boolean canNodeAdded;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canClose</Name>
+				<Source><![CDATA[
+    public boolean canClose()
+    {
+        boolean ret;
+    
+        ret = super();
+        ret = isformclose;
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeSelect</Name>
+				<Source><![CDATA[
+    public void closeSelect(str _selectString = "")
+    {
+        if (isformclose)
+        {
+            super(_selectString);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+    
+        canNodeAdded = false;
+        lastSelected = element.args().parm();
+        caseType = element.args().parmEnum();
+        this.parentCall();
+    
+        if (initialSelection != 0)
+        {
+            tree.select(initialSelection);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isInPatOUExist</Name>
+				<Source><![CDATA[
+    public boolean isInPatOUExist(RecId _hmOrganizationalUnit)
+    {
+        HMOrganizationalUnit            hmOrganizationalUnitlocalForChildCheck;
+        HMOrganizationaCategory         hmOrganizationaCategoryChilCheck;
+    
+        HMOrganizationalUnit            hmOrganizationalUnitLocal;
+        HMOrganizationaCategory         hmOrganizationaCategoryLocal;
+    
+        HMOrganizationalUnit            hmOrganizationalUnitForFetch;
+        HMOrganizationaCategory         hmOrganizationaCategoryForFetch;
+    
+        select count(RecId) from hmOrganizationalUnitLocal
+            where hmOrganizationalUnitLocal.HMOrganizationalUnit == _hmOrganizationalUnit
+            join RecId,Indicator from hmOrganizationaCategoryLocal
+            where hmOrganizationalUnitLocal.HMOrganizationaCategory == hmOrganizationaCategoryLocal.RecId
+            && hmOrganizationaCategoryLocal.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments
+            && hmOrganizationalUnitLocal.IsBlocked == NoYes::No
+            && (hmOrganizationalUnitLocal.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmOrganizationalUnitLocal.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+        if(hmOrganizationalUnitLocal.RecId > 0)
+        {
+            canNodeAdded = true;
+        }
+        else
+        {
+            select count(recId) from hmOrganizationalUnitlocalForChildCheck
+                where hmOrganizationalUnitlocalForChildCheck.HMOrganizationalUnit == _hmOrganizationalUnit
+                join * from hmOrganizationaCategoryChilCheck
+                where hmOrganizationalUnitlocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategoryChilCheck.RecId
+                && hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit
+                && hmOrganizationalUnitlocalForChildCheck.IsBlocked == NoYes::No;
+    
+            if(hmOrganizationalUnitlocalForChildCheck.RecId > 0)
+            {
+                while select * from  hmOrganizationalUnitForFetch
+                    order by recId
+                    join * from hmOrganizationaCategoryForFetch
+                    where hmOrganizationalUnitForFetch.HMOrganizationalUnit == _hmOrganizationalUnit
+                    && hmOrganizationalUnitForFetch.HMOrganizationaCategory == hmOrganizationaCategoryForFetch.RecId
+                    && hmOrganizationaCategoryForFetch.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit
+                    && hmOrganizationalUnitForFetch.IsBlocked == NoYes::No
+                {
+                    canNodeAdded = element.isInPatOUExist(hmOrganizationalUnitForFetch.RecId);
+    
+                    if(canNodeAdded)
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                canNodeAdded = false;
+            }
+    
+        }
+    
+        return canNodeAdded;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isOutPatOUExist</Name>
+				<Source><![CDATA[
+    public boolean isOutPatOUExist(RecId _hmOrganizationalUnit)
+    {
+        HMOrganizationalUnit            hmOrganizationalUnitlocalForChildCheck;
+        HMOrganizationaCategory         hmOrganizationaCategoryChilCheck;
+    
+        HMOrganizationalUnit            hmOrganizationalUnitLocal;
+        HMOrganizationaCategory         hmOrganizationaCategoryLocal;
+    
+        HMOrganizationalUnit            hmOrganizationalUnitForFetch;
+        HMOrganizationaCategory         hmOrganizationaCategoryForFetch;
+    
+        select count(RecId) from hmOrganizationalUnitLocal
+            where hmOrganizationalUnitLocal.HMOrganizationalUnit == _hmOrganizationalUnit
+            join RecId,Indicator from hmOrganizationaCategoryLocal
+            where hmOrganizationalUnitLocal.HMOrganizationaCategory == hmOrganizationaCategoryLocal.RecId
+            && (hmOrganizationaCategoryLocal.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment || hmOrganizationaCategoryLocal.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit)
+            && hmOrganizationalUnitLocal.IsBlocked == NoYes::No
+            && (hmOrganizationalUnitLocal.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmOrganizationalUnitLocal.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+        if(hmOrganizationalUnitLocal.RecId > 0)
+        {
+            canNodeAdded = true;
+        }
+        else
+        {
+            select count(recId) from hmOrganizationalUnitlocalForChildCheck
+                where hmOrganizationalUnitlocalForChildCheck.HMOrganizationalUnit == _hmOrganizationalUnit
+                join * from hmOrganizationaCategoryChilCheck
+                where hmOrganizationalUnitlocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategoryChilCheck.RecId
+                && hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit
+                && hmOrganizationalUnitlocalForChildCheck.IsBlocked == NoYes::No;
+    
+            if(hmOrganizationalUnitlocalForChildCheck.RecId > 0)
+            {
+                while select * from  hmOrganizationalUnitForFetch
+                    order by recId
+                    join * from hmOrganizationaCategoryForFetch
+                    where hmOrganizationalUnitForFetch.HMOrganizationalUnit == _hmOrganizationalUnit
+                    && hmOrganizationalUnitForFetch.HMOrganizationaCategory == hmOrganizationaCategoryForFetch.RecId
+                    && hmOrganizationaCategoryForFetch.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit
+                    && hmOrganizationalUnitForFetch.IsBlocked == NoYes::No
+                {
+                    canNodeAdded = element.isOutPatOUExist(hmOrganizationalUnitForFetch.RecId);
+    
+                    if(canNodeAdded)
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                canNodeAdded = false;
+            }
+    
+        }
+    
+        return canNodeAdded;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parentCall</Name>
+				<Source><![CDATA[
+    public void parentCall()
+    {
+        TreeItemIdx                     parentItemIdx;
+    
+        Tree.deleteAll();
+        parentItemIdx = SysFormTreeControl::addTreeItem(Tree,"@MAZ70", FormTreeAdd::Root,0,imageRes,1);
+    
+        if(caseType == HMCaseType::OutPatient || caseType == HMCaseType::Surgery || caseType == HMCaseType::Physiotherapy)
+        {
+            this.treeFillForOutPat(parentItemIdx,0);
+        }
+        else if(caseType == HMCaseType::InPatient)
+        {
+            this.treeFillForInPat(parentItemIdx,0);
+        }
+        else if(caseType == HMCaseType::All)
+        {
+            this.treeFillForBoth(parentItemIdx,0);
+        }
+        Tree.expand(parentItemIdx);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>treeFillForBoth</Name>
+				<Source><![CDATA[
+    public void treeFillForBoth(TreeItemIdx _RecId,int64 _RecIdx)
+    {
+        TreeItemIdx                     parentItemIdx;
+        HMOrganizationalUnit            hmOrganizationalUnitlocalForChildCheck;
+        HMOrganizationalUnit            hmOrganizationalUnitForTree;
+        HMOrganizationaCategory         hmOrganizationaCategory;
+        HMOrganizationaCategory         hmOrganizationaCategoryChilCheck;
+        FormTreeItem                    formTreeItem;
+    
+        while select * from hmOrganizationalUnitForTree
+            where hmOrganizationalUnitForTree.HMOrganizationalUnit == _RecIdx
+            join RecId,Indicator from hmOrganizationaCategory
+            where hmOrganizationalUnitForTree.HMOrganizationaCategory == hmOrganizationaCategory.RecId
+            && (hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment ||
+            hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit ||
+            hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit ||
+            hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments )
+               && hmOrganizationalUnitForTree.IsBlocked == NoYes::No
+            && (hmOrganizationalUnitForTree.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())  && hmOrganizationalUnitForTree.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        {
+            canNodeAdded = false;
+    
+            if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment|| hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments  || hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit)
+            {
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                if(lastSelected == hmOrganizationalUnitForTree.Description)
+                {
+                    initialSelection = parentItemIdx;
+                }
+            }
+            else if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit && (element.isOutPatOUExist(hmOrganizationalUnitForTree.RecId) || element.isInPatOUExist(hmOrganizationalUnitForTree.RecId)))
+            {
+                select count(recId) from hmOrganizationalUnitlocalForChildCheck
+                    where hmOrganizationalUnitlocalForChildCheck.HMOrganizationalUnit == hmOrganizationalUnitForTree.RecId
+                    join * from hmOrganizationaCategoryChilCheck
+                    where hmOrganizationalUnitlocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategoryChilCheck.RecId
+                    && (hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment ||
+                    hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit ||
+                    hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit ||
+                    hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments)
+                    && hmOrganizationalUnitlocalForChildCheck.IsBlocked == NoYes::No
+                    && (hmOrganizationalUnitlocalForChildCheck.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmOrganizationalUnitlocalForChildCheck.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+                if(hmOrganizationalUnitlocalForChildCheck.RecId>0)
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                    if(lastSelected == hmOrganizationalUnitForTree.Description)
+                    {
+                        initialSelection = parentItemIdx;
+                    }
+    
+                    this.treeFillForBoth(parentItemIdx,hmOrganizationalUnitForTree.RecId);
+                }
+               /* else
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                    if(lastSelected == hmOrganizationalUnitForTree.Description)
+                    {
+                        initialSelection = parentItemIdx;
+                    }
+    
+                }*/
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>treeFillForInPat</Name>
+				<Source><![CDATA[
+    public void treeFillForInPat(TreeItemIdx _RecId,int64 _RecIdx)
+    {
+        TreeItemIdx                     parentItemIdx;
+        HMOrganizationalUnit            hmOrganizationalUnitlocalForChildCheck;
+        HMOrganizationalUnit            hmOrganizationalUnitForTree;
+        HMOrganizationaCategory         hmOrganizationaCategory;
+        HMOrganizationaCategory         hmOrganizationaCategoryChilCheck;
+        FormTreeItem                    formTreeItem;
+    
+        while select * from hmOrganizationalUnitForTree
+            where hmOrganizationalUnitForTree.HMOrganizationalUnit == _RecIdx
+            join RecId,Indicator from hmOrganizationaCategory
+            where hmOrganizationalUnitForTree.HMOrganizationaCategory == hmOrganizationaCategory.RecId
+            && (hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments || hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit)
+            && hmOrganizationalUnitForTree.IsBlocked == NoYes::No
+            && (hmOrganizationalUnitForTree.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())  && hmOrganizationalUnitForTree.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        {
+            canNodeAdded = false;
+    
+            if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments)
+            {
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                if(lastSelected == hmOrganizationalUnitForTree.Description)
+                {
+                    initialSelection = parentItemIdx;
+                }
+            }
+            else if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit && element.isInPatOUExist(hmOrganizationalUnitForTree.RecId))
+            {
+                select count(recId) from hmOrganizationalUnitlocalForChildCheck
+                join * from hmOrganizationaCategoryChilCheck
+                where hmOrganizationalUnitlocalForChildCheck.HMOrganizationalUnit == hmOrganizationalUnitForTree.RecId
+                && hmOrganizationalUnitlocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategoryChilCheck.RecId
+                && (hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments || hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit)
+                && hmOrganizationalUnitlocalForChildCheck.IsBlocked == NoYes::No
+                && (hmOrganizationalUnitlocalForChildCheck.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmOrganizationalUnitlocalForChildCheck.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+                if(hmOrganizationalUnitlocalForChildCheck.RecId>0)
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                    if(lastSelected == hmOrganizationalUnitForTree.Description)
+                    {
+                        initialSelection = parentItemIdx;
+                    }
+    
+                    this.treeFillForInPat(parentItemIdx,hmOrganizationalUnitForTree.RecId);
+                }
+              /*  else
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                    if(lastSelected == hmOrganizationalUnitForTree.Description)
+                    {
+                        initialSelection = parentItemIdx;
+                    }
+    
+                }*/
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>treeFillForOutPat</Name>
+				<Source><![CDATA[
+    public void treeFillForOutPat(TreeItemIdx _RecId,int64 _RecIdx)
+    {
+        TreeItemIdx                     parentItemIdx;
+        HMOrganizationalUnit            hmOrganizationalUnitlocalForChildCheck;
+        HMOrganizationalUnit            hmOrganizationalUnitForTree;
+        HMOrganizationaCategory         hmOrganizationaCategory;
+        HMOrganizationaCategory         hmOrganizationaCategoryChilCheck;
+        FormTreeItem                    formTreeItem;
+    
+        while select * from hmOrganizationalUnitForTree
+            where hmOrganizationalUnitForTree.HMOrganizationalUnit == _RecIdx
+            && (hmOrganizationalUnitForTree.FileLocationType == HMFileLocationType::Clinic
+            || hmOrganizationalUnitForTree.FileLocationType == HMFileLocationType::None)
+            join RecId,Indicator from hmOrganizationaCategory
+            where hmOrganizationalUnitForTree.HMOrganizationaCategory == hmOrganizationaCategory.RecId
+            && (hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment || hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit || hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit)
+               && hmOrganizationalUnitForTree.IsBlocked == NoYes::No
+            && (hmOrganizationalUnitForTree.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())  && hmOrganizationalUnitForTree.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        {
+            canNodeAdded = false;
+    
+            if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment || hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit)
+            {
+                if(hmOrganizationalUnitForTree.FileLocationType == HMFileLocationType::Clinic)
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                    if(lastSelected == hmOrganizationalUnitForTree.Description)
+                    {
+                        initialSelection = parentItemIdx;
+                    }
+                }
+            }
+            else if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit && element.isOutPatOUExist(hmOrganizationalUnitForTree.RecId))
+            {
+                select count(recId) from hmOrganizationalUnitlocalForChildCheck
+                    where hmOrganizationalUnitlocalForChildCheck.HMOrganizationalUnit == hmOrganizationalUnitForTree.RecId
+                    && (hmOrganizationalUnitlocalForChildCheck.FileLocationType == HMFileLocationType::Clinic)
+                    join * from hmOrganizationaCategoryChilCheck
+                    where hmOrganizationalUnitlocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategoryChilCheck.RecId
+                    && (hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment || hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit || hmOrganizationaCategoryChilCheck.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit)
+                    && hmOrganizationalUnitlocalForChildCheck.IsBlocked == NoYes::No
+                    && (hmOrganizationalUnitlocalForChildCheck.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmOrganizationalUnitlocalForChildCheck.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+    
+                if(hmOrganizationalUnitlocalForChildCheck.RecId>0)
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                    if(lastSelected == hmOrganizationalUnitForTree.Description)
+                    {
+                        initialSelection = parentItemIdx;
+                    }
+    
+                    this.treeFillForOutPat(parentItemIdx,hmOrganizationalUnitForTree.RecId);
+                }
+               /* else
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = Tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                    if(lastSelected == hmOrganizationalUnitForTree.Description)
+                    {
+                        initialSelection = parentItemIdx;
+                    }
+    
+                }*/
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>Close</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            HMOrganizationaCategory        hmOrganizationaCategorylocal;
+            FormTreeItem selectedTreeItem = tree.getItem(tree.getSelection());
+            hmOrganizationaCategorylocal=HMOrganizationaCategory::find(HMOrganizationalUnit::find(selectedTreeItem.data()).HMOrganizationaCategory);
+        
+        
+            if(tree.getRoot() != tree.getSelection())
+            {
+                if(caseType == HMCaseType::OutPatient || caseType == HMCaseType::Surgery || caseType == HMCaseType::Physiotherapy)
+                {
+                    if(hmOrganizationaCategorylocal.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment || hmOrganizationaCategorylocal.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit)
+                    {
+                        super();
+        
+                        element.args().caller().setOrganizationUnitID(selectedTreeItem.data());
+                        element.close();
+                    }
+                    else
+                    {
+                        warning('incorrect');
+                    }
+                }
+                else if(caseType == HMCaseType::InPatient)
+                {
+                    if(hmOrganizationaCategorylocal.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments)
+                    {
+                        super();
+        
+                        element.args().caller().setOrganizationUnitID(selectedTreeItem.data());
+                        element.close();
+                    }
+                }
+                else if(caseType == HMCaseType::All)
+                {
+                    super();
+                    if(hmOrganizationaCategorylocal.Indicator == HMOrganizationalCategoryIndicator::NursingAssignments || hmOrganizationaCategorylocal.Indicator == HMOrganizationalCategoryIndicator::OutpatientTreatment || hmOrganizationaCategorylocal.Indicator == HMOrganizationalCategoryIndicator::TreatmentUnit)
+                    {
+                        element.args().caller().setOrganizationUnitID(selectedTreeItem.data());
+                        element.close();
+                    }
+                }
+            }
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMOrganizationalUnit</Name>
+			<Table>HMOrganizationalUnit</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>BogusClient</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CancellationDeadlineDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClinicContactDetails_EN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClinicContactDetails_FR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClinicMapLink</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClinicMapText</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimensionPO</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimensionServiceType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FileLocationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Gender</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GenderSpecificOccupancy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBlockingReasonCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBuildingUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationaCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOrganizationalUnitIndicators</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMOUIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMSpecialtyCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InactivityPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsAdmittingFacility</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsBlocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsIntensiveCareUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsPediatrics</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsSpeciality</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LocationDimension_Medisys</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OMOperatingUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParkingInstructions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParkingInstructionsFR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PlanningObject_InvoiceAndPay</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShortName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WaitTimeThreshold</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WMSLocation</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Frame xmlns="">Border</Frame>
+		<HeightMode xmlns="">Column</HeightMode>
+		<HideIfEmpty xmlns="">No</HideIfEmpty>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Style xmlns="">Lookup</Style>
+		<WidthMode xmlns="">Column</WidthMode>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Group1</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormTreeControl">
+						<Name>Tree</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Tree</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Width>300</Width>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+					</AxFormControl>
+				</Controls>
+				<BottomMargin>0</BottomMargin>
+				<BottomMarginMode>Fixed</BottomMarginMode>
+				<TopMargin>0</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Group_</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>Close</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ1942</HelpText>
+						<LeftMode>RightEdge</LeftMode>
+						<Skip>Yes</Skip>
+						<Type>Button</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<DefaultButton>Yes</DefaultButton>
+						<SaveRecord>No</SaveRecord>
+						<Text>@SYS301992</Text>
+					</AxFormControl>
+				</Controls>
+				<BottomMargin>0</BottomMargin>
+				<BottomMarginMode>Fixed</BottomMarginMode>
+				<TopMargin>0</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<BackStyle>Opaque</BackStyle>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

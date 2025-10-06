@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientChargeEntryPaymentQuickPay</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Removed unused footnote group. */
+/* TODO: (Code Upgrade) Two conflicting captions were defined on this form. The StaticText caption previously on the form was removed, and contained the following label: @MAZ13511. Ensure the value in formDesign.Caption contains the caption you want for this form. */
+[Form]
+public class HMPatientChargeEntryPaymentQuickPay extends FormRun
+{
+    HMSalesInvoiceCreateFormHandler HMSalesInvoiceCreateFormHandler;
+    RecId                           batchRecId  ;
+    HMInsuranceAccount              insuranceAccount;
+    HMInsuranceCarrierBatchNumber   batchNumber;
+    HMTpaCode                       hmTPACode;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    public void closeOk()
+    {
+        FormRun formRun;
+        Args argsLocal;
+        real    remainingPayment;
+        formRun = element.args().caller();
+        if(formHasMethod(formRun,identifierStr(getRemainingPayment)))
+        {
+            remainingPayment = element.args().caller().getRemainingPayment();
+            if(HMPatientChargeEntryPayment.Amount > remainingPayment)
+            {
+                if(Box::yesNo("The amount entered exceeds with the remaining payment, Do you want to continue?",DialogButton::No,"Confirmation") == DialogButton::No)
+                {
+                    return;
+                }
+            }
+        }
+        if(HMPatientChargeEntryPayment_ds.validateWrite())
+        {
+            HMPatientChargeEntryPayment_ds.write();
+            argsLocal = new Args();
+            HMSalesInvoiceCreateFormHandler = new HMSalesInvoiceCreateFormHandler();
+            argsLocal.record(HMPatientChargeEntryPayment);
+            argsLocal.caller(element);
+            HMSalesInvoiceCreateFormHandler.postPatientAdvancePayment(argslocal);
+            super();
+            if(formHasMethod(formRun,identifierStr(updateBatchAmountDetailFields)))
+            {
+                element.args().caller().updateBatchAmountDetailFields(HMPatientChargeEntryPayment.BatchNumber);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        formrun formRun;
+        HMInsuranceCarrierBatchNumber   BatchId;
+        container                       conInsuranceDetails;
+        super();
+        formRun = element.args().caller();
+        if(formHasMethod(formRun,identifierStr(getInsuranceDetails)))
+        {
+            conInsuranceDetails = element.args().caller().getInsuranceDetails();
+            insuranceAccount = conPeek(conInsuranceDetails,1);
+            batchNumber = conPeek(conInsuranceDetails,2);
+            batchRecId = HMInsuranceCarrierBatchDetails::findRecIdbByBatchNumber(batchNumber);
+            if(!BatchId && !insuranceAccount)
+            {
+                warning("@MAZ13399");
+                element.close();
+                return;
+            }
+        }
+        if(formHasMethod(formRun,identifierStr(getTPADetails)))
+        {
+            hmTPACode = element.args().caller().getTPADetails();
+        }
+        HMPatientChargeEntryPayment_ds.create();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveLedgerJournalTrans</Name>
+				<Source><![CDATA[
+    public void saveLedgerJournalTrans(container _jourTransCon)
+    {
+        HMInsuranceCarrierBatchPayments batchPayments;
+        CustTrans                       custTrans;
+        int i;
+        RecId custTransRecId;
+        ttsBegin;
+        for(i=1;i<=conlen(_jourTransCon);i++)
+        {
+            batchPayments.clear();
+            custTransRecId = LedgerJournalTrans::findRecId(conPeek(_jourTransCon,i),false).CustTransId;
+            batchPayments.CustTrans = custTransRecId;
+            batchPayments.HMInsuranceCarrierBatchDetails = batchRecId;
+            batchPayments.insert();
+            custTrans = custTrans::find(custTransRecId);
+            custTrans.selectForUpdate(true);
+            custTrans.HMInsuranceCarrierBatchDetails = batchRecId;
+            custTrans.update();
+        }
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMPatientChargeEntryPayment</Name>
+				<Methods>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            super();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>initValue</Name>
+						<Source><![CDATA[
+        public void initValue()
+        {
+            super();
+            HMPatientChargeEntryPayment.CustAccount = insuranceAccount;
+            HMPatientChargeEntryPayment.BatchNumber = batchNumber;
+            HMPatientChargeEntryPayment.HMTpaCode = hmTPACode;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>MerchantDetails[1]</DataField>
+						<Methods>
+							<Method>
+								<Name>lookupReference</Name>
+								<Source><![CDATA[
+            public Common lookupReference(FormReferenceControl _formReferenceControl)
+            {
+                SysReferenceTableLookup sysTableLookup = SysReferenceTableLookup::newParameters(tableNum(HMMerchantDetails), _formReferenceControl);
+                Query lookupQuery;
+                QueryBuildDataSource qbds;
+                QueryBuildRange qbr;
+                HMMerchantDetails selectedRecord;
+            
+                sysTableLookup.addLookupfield(fieldNum(HMMerchantDetails, Code));
+                sysTableLookup.addLookupfield(fieldNum(HMMerchantDetails, Description));
+            
+                lookupQuery = new Query();
+            
+                qbds = lookupQuery.addDataSource(tableNum(HMMerchantDetails));
+                qbds = qbds.addDataSource(tableNum(HMOrganizationalUnitMerchantDetails));
+                qbds.relations(true);
+            
+                //qbr = qbds.addRange(fieldNum(HMOrganizationalUnitMerchantDetails, HMOrganizationalUnit));
+                //qbr.value(SysQuery::value(HMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation));
+            
+                sysTableLookup.parmQuery(lookupQuery);
+            
+                selectedRecord = sysTableLookup.performFormLookup();
+            
+                return selectedRecord;
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMPatientChargeEntryPayment</Name>
+			<Table>HMPatientChargeEntryPayment</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>MerchantDetails[1]</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ13511</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>GroupDetails</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientChargeEntryPayment_PaymMode</Name>
+								<ElementPosition>613566756</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>PaymMode</DataField>
+								<DataSource>HMPatientChargeEntryPayment</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormReferenceGroupControl">
+								<Name>HMPatientChargeEntryPayment_MerchantDetails</Name>
+								<ElementPosition>920350134</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ReferenceGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls />
+								<DataSource>HMPatientChargeEntryPayment</DataSource>
+								<ReferenceField>MerchantDetails[1]</ReferenceField>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormRealControl">
+								<Name>HMPatientChargeEntryPayment_Amount</Name>
+								<ElementPosition>1227133512</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Real</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>Amount[1]</DataField>
+								<DataSource>HMPatientChargeEntryPayment</DataSource>
+								<Label>@SYS62867</Label>
+								<NoOfDecimals>-1</NoOfDecimals>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientChargeEntryPayment_PaymReference</Name>
+								<ElementPosition>1533916890</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>PaymReference[1]</DataField>
+								<DataSource>HMPatientChargeEntryPayment</DataSource>
+								<Label>@MAZ:MzkHMPaymentReference</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMPatientChargeEntryPayment_PaymentNotes</Name>
+								<ElementPosition>1840700268</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>PaymentNotes[1]</DataField>
+								<DataSource>HMPatientChargeEntryPayment</DataSource>
+								<DisplayHeight>1</DisplayHeight>
+								<DisplayHeightMode>Fixed</DisplayHeightMode>
+								<Label>@MAZ190</Label>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>DialogCommit</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@SYS117292</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

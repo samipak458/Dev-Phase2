@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>MZKCreateItemNInventory</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class MZKCreateItemNInventory
+{
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createReleasedProduct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public static NoYes createReleasedProduct(str _serialNumber, AssetId  _assetId)
+    {
+        EcoResProductEntity                        ecoResProductEntity;
+
+        EcoResProductEntityToCrossTableDataAdaptor adaptor;
+        EcoResProduct                              product;
+
+        NumberSequenceReference                    numberSequenceReference = EcoResProductParameters::numRefProductNumber();
+        NumberSequenceTable                        numberSequenceTable = numberSequenceReference.numberSequenceTable();
+
+        Args                                       args;
+
+        NumberSeq                                  numberSeq = NumberSeq::newGetNum(EcoResProductParameters::numRefProductNumber());//NumberSeq::newGetNumFromId(numberSequenceTable.RecId);
+
+        EcoResProductReleaseSessionManager         productReleaseSessionManager;
+        EcoResReleaseSessionRecId                  releaseSessionRecId;
+
+        InventTable                                inventTable, inventTableSelect;
+        InventModelGroupItem                       inventModelGroupItem;
+        InventItemGroupItem                        inventItemGroupItem;
+        CompanyInfo                                companyInfo = CompanyInfo::find();
+        NoYes                                      isItemCreated = NoYes::No;
+        FixedAssetItems                            fixedAssetItems, fixedAssetItemsSelect;
+        ItemId                                     itemId;
+        AssetTable                                 assetTable;
+        InventTable                                inventTableUpdate;
+
+        try
+        {
+            itemId = _assetId;//_serialNumber+"_item";
+            ecoResProductEntity.ProductNumber                   = itemId;//numberSeq.num();
+            ecoResProductEntity.ProductSearchName               = itemId;
+            ecoResProductEntity.ProductName                     = itemId;
+            ecoResProductEntity.ProductType                     = EcoResProductType::Item;
+            ecoResProductEntity.ProductSubType                  = EcoResProductSubtype::Product;
+            ecoResProductEntity.VariantConfigurationTechnology  = EcoResVariantConfigurationTechnologyType::PredefinedVariants;
+            //ecoResProductEntity.ProductDimensionGroupName       = "Retail Kit";
+            ecoResProductEntity.TrackingDimensionGroupName      = "Serial";
+            ecoResProductEntity.StorageDimensionGroupName       = "SWL";
+
+            // here you can set all the fields of the data entity that you need
+
+            adaptor = EcoResProductEntityToCrossTableDataAdaptor::newFromEntity(ecoResProductEntity);
+
+            ttsbegin;
+            
+            product = EcoResProductCrossTableManager::makeProductRecord(adaptor);
+
+            EcoResProductCrossTableManager::insert(adaptor, product);
+            // here you can create one or more translations
+            EcoResProductTranslation::createOrUpdateTranslation(product.RecId, itemId, "");
+
+            // now we want to release that master product for the current company
+            productReleaseSessionManager    = EcoResProductReleaseSessionManager::newReleaseSession();
+            releaseSessionRecId             = productReleaseSessionManager.parmReleaseSessionRecId();
+
+            productReleaseSessionManager.addProduct(product.RecId);
+            productReleaseSessionManager.addLegalEntityForProduct(companyInfo.RecId, product.RecId);
+
+            args = new Args(formStr(EcoResProductRelease));
+            args.record(EcoResReleaseSession::find(releaseSessionRecId));
+
+            // the first boolean parameter is for showing a log for errors
+            // the second boolean parameter is for executing the release with a batch
+            if (EcoResProductReleaseSessionBatch::runJob(args, true, false))
+            {
+                productReleaseSessionManager.cleanUp();
+            }
+
+            inventTable = InventTable::findByProduct(product.RecId);
+
+            inventItemGroupItem.clear();
+            inventItemGroupItem.ItemId = inventTable.ItemId;
+            inventItemGroupItem.ItemDataAreaId = curExt();
+            inventItemGroupItem.ItemGroupId = "Medication";
+            inventItemGroupItem.ItemGroupDataAreaId = curExt();
+            inventItemGroupItem.insert();
+
+            inventModelGroupItem.clear();
+            inventModelGroupItem.ModelGroupDataAreaId = curExt();
+            inventModelGroupItem.ModelGroupId = "FIFO";
+            inventModelGroupItem.ItemId = inventTable.ItemId;
+            inventModelGroupItem.ItemDataAreaId = curExt();
+            inventModelGroupItem.insert();
+
+            fixedAssetItems.clear();
+            fixedAssetItems.AssetId = _assetId;
+            fixedAssetItems.ItemId = inventTable.ItemId;
+            fixedAssetItems.InventSerialId = _serialNumber;
+            fixedAssetItems.insert();
+
+            //Update ItemId on AssetTable table
+            select forupdate assetTable where assetTable.AssetId == _assetId;
+            assetTable.ItemId = itemId;
+            assetTable.update();
+
+            //Update AssetId on inventTable table
+            select forupdate inventTableUpdate where inventTableUpdate.ItemId == itemId;
+            inventTableUpdate.AssetId = _assetId;
+            inventTableUpdate.update();
+
+            ttscommit;
+            
+
+            isItemCreated = NoYes::Yes;
+
+            select * from fixedAssetItemsSelect
+                where fixedAssetItemsSelect.AssetId == _assetId
+                && fixedAssetItemsSelect.InventSerialId == _serialNumber;
+
+            if(fixedAssetItemsSelect)
+            {
+                MZKCreateItemNInventory::createMovementJournal(fixedAssetItemsSelect.ItemId, fixedAssetItemsSelect.InventSerialId, fixedAssetItemsSelect.AssetId);
+            }
+        }
+        catch(Exception::Error)
+        {
+            throw Exception::Error;
+        }
+
+        return isItemCreated;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createMovementJournal</Name>
+				<Source><![CDATA[
+    public static NoYes createMovementJournal(ItemId _itemId, InventSerialId _inventSerialId, AssetId _assetId)
+    {
+        InventJournalTable              inventJournalTable, inventJournalTableDelete;
+        InventJournalTrans              inventJournalTrans, inventJournalTransDelete;
+        InventJournalNameId             inventJournalName;
+        InventDim                       inventDim;
+        JournalCheckPost                journalCheckPost;
+        NoYes                           isJournalCreated = NoYes::No;
+
+        try
+        {
+            //Below code creates journal header
+            inventJournalTable.clear();
+            inventJournalName =  InventJournalName::standardJournalName(InventJournalType::Movement);
+            inventJournalTable.initFromInventJournalName(InventJournalName::find(inventJournalName ));
+            inventJournalTable.insert();
+
+            //Below code creates journal lines
+            inventJournalTrans.clear();
+            inventJournalTrans.initFromInventJournalTable(inventJournalTable);
+            inventJournalTrans.TransDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+            inventJournalTrans.ItemId = _itemId;
+            inventJournalTrans.initFromInventTable(InventTable::find(_itemId));
+            inventJournalTrans.Qty = 1;
+            inventDim.InventSiteId  = 'Site1';
+            inventDim.InventLocationId = 'DefaultWH';
+            inventDim.wMSLocationId = 'Central';
+            inventDim.inventSerialId = _inventSerialId;
+            inventJournalTrans.InventDimId = inventDim::findOrCreate(inventDim).inventDimId;
+            inventJournalTrans.insert();
+
+
+            //The below code posts the journal
+            journalCheckPost = InventJournalCheckPost::newPostJournal(inventJournalTable);
+            journalCheckPost.run();
+        }
+        catch(Exception::Error)
+        {
+            delete_from inventJournalTableDelete
+                where inventJournalTableDelete.RecId == inventJournalTable.RecId;
+
+            delete_from inventJournalTransDelete
+                where inventJournalTransDelete.RecId == inventJournalTrans.RecId;
+            throw Exception::Error;
+        }
+
+        return isJournalCreated;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

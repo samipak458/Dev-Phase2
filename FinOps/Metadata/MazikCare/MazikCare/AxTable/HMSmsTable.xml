@@ -1,0 +1,480 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSmsTable</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMSmsTable extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>embedImages</Name>
+				<Source><![CDATA[
+    static container embedImages(str html)
+    {
+        #help
+        InteropPermission permission = new InteropPermission(InteropKind::ComInterop);
+    
+        COM document;
+    
+        COM imgCollection;
+        COM htmlCollection;
+        COM imgElement, htmlElement;
+        COMVariant src;
+        Filename filename;
+        int i;
+        List list = new List(Types::String);
+        Map  map  = new Map(Types::String, Types::String);
+    
+        permission.assert();
+    
+        src = new COMVariant();
+    
+        //BP Deviation Documented
+        document = new COM(#HTMLDocumentClassName);
+    
+        if (document)
+        {
+            HMSmsTable::insertHTML2Document(document, html);
+            //BP Deviation Documented
+            imgCollection = document.getElementsByTagName('IMG');
+            //BP Deviation Documented
+            for (i=1; i<=imgCollection.length(); i++)
+            {
+                //BP Deviation Documented
+                imgElement = imgCollection.item(i-1);
+                //BP Deviation Documented
+                src = imgElement.getAttribute('src');
+                //BP Deviation Documented
+                filename = src.bStr();
+                if (subStr(filename,1,5) == 'file:')
+                {
+                    //Server paths are: "file://server/file" -> "//server/file"
+                    //normal paths are: "file:///c:/file"    -> "c:/file"
+    
+                    if (subStr(filename,1,8) == 'file:///')
+                        filename = subStr(filename, 9, maxInt());
+                    if (subStr(filename,1,7) == 'file://')
+                        filename = subStr(filename, 6, maxInt());
+    
+                    if (map.exists(filename))
+                    {
+                        //BP Deviation Documented
+                        src.bStr('cid:'+map.lookup(filename));
+                    }
+                    else
+                    {
+                        list.addEnd(filename);
+                        //BP Deviation Documented
+                        src.bStr('cid:'+int2str(list.elements()));
+                        map.insert(filename, int2str(list.elements()));
+                    }
+                    //BP Deviation Documented
+                    imgElement.setAttribute('src', src);
+                }
+            }
+    
+            //BP Deviation Documented
+            htmlCollection = document.getElementsByTagName('html');
+            //BP Deviation Documented
+            htmlElement = htmlCollection.item(0);
+            //BP Deviation Documented
+            return ['<html>'+htmlElement.innerhtml()+'</html>', list.pack()];
+        }
+    
+        CodeAccessPermission::revertAssert();
+        return [html, list.pack()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    static HMSmsTable find(SysEmailId _id,
+                          boolean        _forUpdate = false)
+    {
+        HMSmsTable sysEmailTable;
+        ;
+    
+        if (_id)
+        {
+            sysEmailTable.selectForUpdate(_forUpdate);
+    
+            select firstonly sysEmailTable
+                where sysEmailTable.HMSmsId == _id;
+        }
+        return sysEmailTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>htmlDecode</Name>
+				<Source><![CDATA[
+    public static str htmlDecode(str _fileName)
+    {
+    
+        ;
+    
+        _fileName = strReplace(_fileName,'&amp;','&');
+        _fileName = strReplace(_fileName,'&quot;','"');
+        _fileName = strReplace(_fileName,'&#39;','\'');
+        _fileName = strReplace(_fileName,'&lt;','<');
+        _fileName = strReplace(_fileName,'&gt;','>');
+        _fileName = strReplace(_fileName, '%20', ' ');
+    
+        return _fileName;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>htmlEncode</Name>
+				<Source><![CDATA[
+    public static str htmlEncode(str html)
+    {
+        str ret;
+        str char;
+        int curPos;
+        int lastPos = 1;
+        int length = strLen(html);
+    
+        if (!length)
+            return '';
+    
+        curPos = strFind(html,'<>&\"\'',1,length);
+        while(curPos > 0)
+        {
+            //append ok characters
+            ret += subStr(html,lastPos,curPos-lastPos);
+    
+            //encode characters
+            char = subStr(html,curPos,1);
+            switch (char)
+            {
+                case '<':
+                    ret += '&lt;';
+                    break;
+                case '>':
+                    ret += '&gt;';
+                    break;
+                case '&':
+                    ret += '&amp;';
+                    break;
+                case '\"':
+                    ret += '&quot;';
+                    break;
+                case '\'':
+                    ret += '&#39;';
+                    break;
+            }
+    
+            //find next character to encode
+            lastPos = curPos + 1;
+            curPos = strFind(html,'<>&\"\'',lastPos,length-curPos);
+        }
+    
+        //append remaining ok characters
+        ret += subStr(html,lastPos,length-lastPos+1);
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>htmlEncodeParameters</Name>
+				<Source><![CDATA[
+    public static Map htmlEncodeParameters(Map _params)
+    {
+        MapEnumerator mapEnum;
+        Map encodedMap;
+    
+        ;
+    
+        if (_params)
+        {
+            encodedMap = new Map(Types::String, Types::String);
+    
+            mapEnum = _params.getEnumerator();
+    
+            while (mapEnum.moveNext())
+            {
+                encodedMap.insert(mapEnum.currentKey(), HMSmsTable::htmlEncode(mapEnum.currentValue()));
+            }
+        }
+    
+        return encodedMap;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertHTML2Document</Name>
+				<Source><![CDATA[
+    static void insertHTML2Document(COM document, str htmlText)
+    {
+        COMDispFunction comWrite;
+        COMVariant text = new COMVariant();
+        COM ctrl;
+    
+        InteropPermission permission = new InteropPermission(InteropKind::ComInterop);
+        permission.assert();
+    
+        ctrl = new COM();
+        ctrl.attach(document.interface());
+        comWrite = new COMDispFunction(ctrl, 'write', COMDispContext::Method);
+        text.bStr(htmltext);
+    
+        //BP Deviation Documented
+        document.open('');
+    
+        //BP Deviation Documented
+        comWrite.call(text);
+        //BP Deviation Documented
+        document.close();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isFromAttachmentsFolder</Name>
+				<Source><![CDATA[
+    static boolean isFromAttachmentsFolder(str _pathName)
+    {
+        SysEmailParameters emailParams = SysEmailParameters::find();
+        str attachmentsFolder;
+        str prefix;
+        str folderChar;
+        str pathName;
+    
+        ;
+    
+        attachmentsFolder = Global::strReplace(emailParams.AttachmentsPath,'\\','/');
+        pathName = Global::strReplace(_pathName,'\\','/');
+    
+        attachmentsFolder = Global::strReplace(attachmentsFolder,'//','/');
+        pathName = Global::strReplace(pathName,'//','/');
+    
+        // if folder not specified, do not allow adding any attachments to emails
+        if (!attachmentsFolder)
+            return false;
+    
+        if (subStr(attachmentsFolder,strLen(attachmentsFolder),1) == '/')
+            attachmentsFolder = subStr(attachmentsFolder,1,strLen(attachmentsFolder) -1);
+    
+        if (strLen(pathName) < strLen(attachmentsFolder))
+            return false;
+    
+        prefix = subStr(pathName,1,strLen(attachmentsFolder));
+    
+        if (strLen(pathName) > strLen(attachmentsFolder))
+        {
+            folderChar = subStr(pathName, strLen(attachmentsFolder) + 1, 1);
+            return (strCmp(strUpr(attachmentsFolder),strUpr(prefix)) == 0) && (folderChar == '/');
+        }
+        else
+            return (strCmp(strUpr(attachmentsFolder),strUpr(prefix)) == 0);
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<FormRef>hmSmsTable</FormRef>
+	<Label>@SYS79918</Label>
+	<TableGroup>Main</TableGroup>
+	<TitleField2>Description</TitleField2>
+	<CacheLookup>Found</CacheLookup>
+	<ClusteredIndex>SmsdIdx</ClusteredIndex>
+	<CreateRecIdIndex>No</CreateRecIdIndex>
+	<PrimaryIndex>SmsdIdx</PrimaryIndex>
+	<DeleteActions>
+		<AxTableDeleteAction>
+			<Name>BrazilParameters_SysEmailTableApproved</Name>
+			<DeleteAction>Restricted</DeleteAction>
+			<Relation>SysEmailTableApproved</Relation>
+			<Table>BrazilParameters</Table>
+		</AxTableDeleteAction>
+		<AxTableDeleteAction>
+			<Name>BrazilParameters_SysEmailTableCanceled</Name>
+			<DeleteAction>Restricted</DeleteAction>
+			<Relation>SysEmailTableCanceled</Relation>
+			<Table>BrazilParameters</Table>
+		</AxTableDeleteAction>
+		<AxTableDeleteAction>
+			<Name>SysEmailMessageTable</Name>
+			<DeleteAction>Cascade</DeleteAction>
+			<Relation></Relation>
+			<Table>SysEmailMessageTable</Table>
+		</AxTableDeleteAction>
+	</DeleteActions>
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Description</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Batch</Name>
+			<Label>@SYS14462</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>BatchGroupId</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Identification</Name>
+			<Label>@SYS5711</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMSmsId</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>Description</DataField>
+				</AxTableFieldGroupField>
+				<AxTableFieldGroupField>
+					<DataField>DefaultLanguage</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Overview</Name>
+			<Label>@SYS9039</Label>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>Description</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Priority</Name>
+			<Label>@SYS15156</Label>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>Sender</Name>
+			<Label>@SYS74259</Label>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>BatchGroupId</Name>
+			<ExtendedDataType>BatchGroupId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>DefaultLanguage</Name>
+			<ExtendedDataType>LanguageId</ExtendedDataType>
+			<HelpText>@SYS74348</HelpText>
+			<Label>@SYS25160</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Description</Name>
+			<Label>@MAZ:HMDepartmentCubeDescription</Label>
+			<StringSize>32</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMSmsId</Name>
+			<ExtendedDataType>HMSmsId</ExtendedDataType>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>SmsdIdx</Name>
+			<AlternateKey>Yes</AlternateKey>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMSmsId</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>BatchGroup</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>BatchGroup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>BatchGroup</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>SysEmailTable</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>BatchGroupId</Name>
+					<Field>BatchGroupId</Field>
+					<RelatedField>Group</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>LanguageTable</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<EDTRelation>Yes</EDTRelation>
+			<RelatedTable>LanguageTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>DefaultLanguage</Name>
+					<Field>DefaultLanguage</Field>
+					<RelatedField>LanguageId</RelatedField>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>LabelFile</Name>
+					<SourceEDT>LanguageId</SourceEDT>
+					<RelatedField>LabelFile</RelatedField>
+					<Value>1</Value>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

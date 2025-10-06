@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>InventOnhandBelowParDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+///    The <c>InventOnhandDP</c> class is the report data provider class for the <c>InventOnhand</c>
+///    report.
+/// </summary>
+[
+    SRSReportQueryAttribute(queryStr(InventOnhand)),
+    SRSReportParameterAttribute(classStr(InventDimViewContract))
+]
+class InventOnhandBelowParDP extends SRSReportDataProviderBase
+{
+    InventOnhandTmp inventOnhandTmp;
+    ReqItemTable    reqItemTab;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkMinimumLevel</Name>
+				<Source><![CDATA[
+    public ReqItemTable checkMinimumLevel(ItemId _itemId)
+    {
+        ReqItemTable reqItemTable;
+    
+        select MinInventOnhand from reqItemTable
+            where reqItemTable.ItemId       == _itemId;
+    
+        return reqItemTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getinventOnhandTmp</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Fetches data from the <c>InventOnhandTmp</c> temporary table.
+    /// </summary>
+    /// <returns>
+    /// The data from <c>InventOnhandTmp</c> table.
+    /// </returns>
+    [
+        SRSReportDataSetAttribute(tableStr(InventOnhandTmp))
+    ]
+    public InventOnhandTmp getinventOnhandTmp()
+    {
+        select  inventOnhandTmp;
+        return  inventOnhandTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpTable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inserts data into a temporary table.
+    /// </summary>
+    /// <param name="_inventSum">
+    /// A table buffer of an <c>InventSum</c> table.
+    /// </param>
+    /// <param name="_inventDim">
+    /// A table buffer of the <c>Inventdim</c> table.
+    /// </param>
+    private void insertTmpTable(InventSum _inventSum, InventDim _inventDim)
+    {
+        InventIAvailability inventAvailability = InventAvailabilityProvider::findBySumDim(_inventSum, _inventDim).parmInventAvailability();
+    
+        reqItemTab = this.checkMinimumLevel(_inventSum.ItemId);
+    
+        if (_inventSum.AvailOrdered < reqItemTab.MinInventOnhand)
+        {
+            inventOnhandTmp.ItemId          = _inventSum.ItemId;
+            inventOnhandTmp.Deducted        = _inventSum.Deducted;
+            inventOnhandTmp.Ordered         = _inventSum.Ordered;
+            inventOnhandTmp.PostedQty       = _inventSum.PostedQty;
+            inventOnhandTmp.Received        = _inventSum.Received;
+            inventOnhandTmp.AvailOrdered    = inventAvailability.availTotal();
+            inventOnhandTmp.AvailPhysical   = inventAvailability.availPhysical();
+            inventOnhandTmp.ReservOrdered   = inventAvailability.reservOrdered();
+            inventOnhandTmp.ReservPhysical  = inventAvailability.reservPhysical();
+    
+            // Fields might not have been selected on the specified buffers, or might have been updated since selection
+            _inventDim.checkInvalidFieldAccess(false);
+    
+            inventOnhandTmp.InventDimFieldsMap::initAllDimensionsFrom(_inventDim);
+            inventOnhandTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Processes the report business logic.
+    /// </summary>
+    /// <remarks>
+    /// Provides the ability to write the report business logic. This method will be called by  at runtime.
+    /// The method should compute data and populate the data tables that will be returned to .
+    /// </remarks>
+    public void processReport()
+    {
+        QueryRun                    queryRun;
+        Query                       query;
+        InventSum                   inventSum;
+        InventDim                   inventDim;
+        InventDimParm               inventDimParmCriteria;
+        InventDimParm               inventDimParm;
+        InventDimViewContract       dimContract;
+    
+        //breakpoint;
+        dimContract = this.parmDataContract() as InventDimViewContract;
+    
+        inventDimParm = dimContract.parmInventDimParm();
+        inventDimParm.ItemIdFlag            = NoYes::Yes;
+    
+        inventDimParmCriteria.ClosedFlag    = NoYes::Yes;
+    
+        query       = InventSum::newQuery(this.parmQuery(), '', null, inventDimParmCriteria, inventDimParm);
+        queryRun    = new QueryRun(query);
+    
+        while (queryRun.next())
+        {
+            inventSum = queryRun.get(tableNum(InventSum));
+    
+            if (InventTable::find(inventSum.ItemId).inventItemType().mustInventBeControlled())
+            {
+                inventDim = queryRun.get(tableNum(InventDim));
+            }
+            if (!InventTable::find(inventSum.ItemId).inventItemType().isServiceItem())
+            {
+                this.insertTmpTable(inventSum, inventDim);
+                inventDim.clear();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

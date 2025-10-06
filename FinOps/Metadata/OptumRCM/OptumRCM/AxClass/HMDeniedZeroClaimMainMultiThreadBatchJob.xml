@@ -1,0 +1,514 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDeniedZeroClaimMainMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used as the main batch job class for updation of aging days, assignment of pool and assignment of priority batch job for $0 denied claims
+/// </summary>
+class HMDeniedZeroClaimMainMultiThreadBatchJob extends RunBaseBatch implements BatchRetryable
+{
+    QueryRun                 gQueryRun;
+    BatchHeader              batchHeader;
+    HMNumberOfThreads        numberOfThreads;
+    HMLastPostingCodes       lastPostedCodes;
+    HMDaysSinceDenialPosting daysSinceDenialPosting;
+    DialogField              dlgHMNumberOfThreads, dlgHMLastPostedCodes, dlgHMDaysSinceDenialPosting;
+    DialogRunbase            dlg;
+    HMClaimJobType           jobType;
+    RecId                    hmClaimBatchJobLogsHeaderDataPrepZeroQualification, hmClaimBatchJobLogsHeaderDataPrepAging, hmClaimBatchJobLogsHeaderDataPrepPoolAssign, hmClaimBatchJobLogsHeaderDataPrepPriority;
+    RecId                    hmClaimBatchJobLogsHeaderAging, hmClaimBatchJobLogsHeaderPoolAssign, hmClaimBatchJobLogsHeaderPriority;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        numberOfThreads
+    #endmacro
+    #localmacro.LastPostedCodes
+        lastPostedCodes
+    #endmacro
+    #localmacro.DaysSinceDenialPosting
+        daysSinceDenialPosting
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMDeniedZeroClaimMainMultiThreadBatchJob construct()
+    {
+        return new HMDeniedZeroClaimMainMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of the task
+    /// </summary>
+    /// <returns>Return description of the task</returns>
+    static ClassDescription description()
+    {
+        return "@Optum:BatchJobForZeroDeniedClaims";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method initiated the task for calculation and updation of aging days, assignment of pool and assignment of priority for $0 denied claims
+    /// </summary>
+    public void run()
+    {
+        HMZeroClaimQualifiedMainMultiThreadBatchJob        hmZeroClaimQualifiedMainMultiThreadBatchJob;
+        HMZeroClaimAgeCalculateMainMultiThreadBatchJob     hmZeroClaimAgeCalculateMainMultiThreadBatchJob;
+        HMAssignPoolToZeroClaimMultiThreadBatchJob         hmAssignPoolToZeroClaimMultiThreadBatchJob;
+        HMAssignPriorityToZeroClaimMainMultiThreadBatchJob hmAssignPriorityToZeroClaimMainMultiThreadBatchJob;
+        int                                                recordsToProcess, perThreadRecordsRound, additionalRecordsRound;
+        HMOneDecimal                                       additionalRecords;
+        real                                               perThreadRecords, diffPerThread;
+        RecId                                              batchJobId;
+        HMZeroClaimBatchJobStatus                          hmZeroClaimBatchJobStatus;
+
+        try
+        {
+            ttsbegin;
+
+            delete_from hmZeroClaimBatchJobStatus;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", 'HMZeroClaimBatchJobStatus'));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", 'HMZeroClaimBatchJobStatus'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        
+        try
+        {
+            
+            if (this.isInBatch())
+            {
+                numberOfThreads = numberOfThreads == 0 ? 1 : numberOfThreads < 0 ? numberOfThreads * -1 : numberOfThreads;
+
+                recordsToProcess = SysQuery::countTotal(gQueryRun);
+                
+                Info(strFmt("@MAZ:NoOfRecordsPicked", recordsToProcess));
+
+                if (recordsToProcess <= numberOfThreads)
+                {
+                    numberOfThreads = 1;
+
+                    Info("@MAZ:RecordsLesserThanNumberOfThreads");
+                }
+
+                perThreadRecords        = recordsToProcess / numberOfThreads;
+                perThreadRecordsRound   = perThreadRecords;
+                diffPerThread           = perThreadRecords - perThreadRecordsRound;
+                additionalRecords       = diffPerThread * numberOfThreads;
+                additionalRecords       = roundUp(additionalRecords, 1);
+                additionalRecordsRound  = additionalRecords;
+
+                if (perThreadRecordsRound + additionalRecordsRound > 0)
+                {
+                    if (!batchHeader)
+                    {
+                        batchJobId = this.parmCurrentBatch().BatchJobId;
+
+                        batchHeader = BatchHeader::construct(batchJobId);
+
+                        batchHeader.parmRetriesOnFailure(5);
+                    }
+
+                    hmZeroClaimQualifiedMainMultiThreadBatchJob = HMZeroClaimQualifiedMainMultiThreadBatchJob::construct();
+                    hmZeroClaimQualifiedMainMultiThreadBatchJob.parmQueryRun(gQueryRun);
+                    hmZeroClaimQualifiedMainMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    hmZeroClaimQualifiedMainMultiThreadBatchJob.parmLastPostedCodes(lastPostedCodes);
+                    hmZeroClaimQualifiedMainMultiThreadBatchJob.parmDaysSinceDenialPosting(daysSinceDenialPosting);
+
+                    hmZeroClaimAgeCalculateMainMultiThreadBatchJob = HMZeroClaimAgeCalculateMainMultiThreadBatchJob::construct();
+                    hmZeroClaimAgeCalculateMainMultiThreadBatchJob.parmQueryRun(gQueryRun);
+                    hmZeroClaimAgeCalculateMainMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    
+                    hmAssignPoolToZeroClaimMultiThreadBatchJob = HMAssignPoolToZeroClaimMultiThreadBatchJob::construct();
+                    hmAssignPoolToZeroClaimMultiThreadBatchJob.parmQueryRun(hmAssignPoolToZeroClaimMultiThreadBatchJob.queryRun());
+                    hmAssignPoolToZeroClaimMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+
+                    hmAssignPriorityToZeroClaimMainMultiThreadBatchJob = HMAssignPriorityToZeroClaimMainMultiThreadBatchJob::construct();
+                    hmAssignPriorityToZeroClaimMainMultiThreadBatchJob.parmQueryRun(hmAssignPriorityToZeroClaimMainMultiThreadBatchJob.queryRun());
+                    hmAssignPriorityToZeroClaimMainMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    
+                    batchHeader.addRuntimeTask(hmZeroClaimQualifiedMainMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmZeroClaimAgeCalculateMainMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmAssignPoolToZeroClaimMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmAssignPriorityToZeroClaimMainMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+
+                    batchHeader.addDependency(hmZeroClaimAgeCalculateMainMultiThreadBatchJob, hmZeroClaimQualifiedMainMultiThreadBatchJob);
+                    batchHeader.addDependency(hmAssignPoolToZeroClaimMultiThreadBatchJob, hmZeroClaimAgeCalculateMainMultiThreadBatchJob);
+                    batchHeader.addDependency(hmAssignPriorityToZeroClaimMainMultiThreadBatchJob, hmAssignPoolToZeroClaimMultiThreadBatchJob);
+                }
+                else
+                {
+                    Info("@MAZ:NoRecordsFoundForProcessing");
+                }
+
+            }
+            else
+            {
+                // execute your code here when not running in batch
+                try
+                {
+                    HMDataPrepForZeroQualifiedCalcBusinessLogic         hmDataPrepForZeroQualifiedCalcBusinessLogic;
+                    HMDataPrepForZeroClaimAgeCalcBusinessLogic          hmDataPrepForZeroClaimAgeCalcBusinessLogic;
+                    HMClaimAgeCalculateBusinessLogic                    hmClaimAgeCalculateBusinessLogic;
+                    HMDataPrepForCalcZeroClaimPoolBusinessLogic         hmDataPrepForCalcZeroClaimPoolBusinessLogic;
+                    HMCalculateZeroClaimPoolBusinessLogic               hmCalculateZeroClaimPoolBusinessLogic;
+                    HMDataPrepForAssignPriorityToZeroClaimBusinessLogic hmDataPrepForAssignPriorityToZeroClaimBusinessLogic;
+                    HMAssignPriorityToZeroClaimsBusinessLogic           hmAssignPriorityToZeroClaimsBusinessLogic;
+                    Query                                               query;
+                    QueryBuildDataSource                                qbds;
+                    QueryRun                                            queryRun;
+                    
+                    //process qualification
+                    hmDataPrepForZeroQualifiedCalcBusinessLogic        = HMDataPrepForZeroQualifiedCalcBusinessLogic::construct();
+                    hmClaimBatchJobLogsHeaderDataPrepZeroQualification = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::ZeroQualificationDataPrep
+                                                                                                             , 0
+                                                                                                             , recordsToProcess
+                                                                                                             , numberOfThreads);
+                    hmDataPrepForZeroQualifiedCalcBusinessLogic.processInit(gQueryRun, 0, hmClaimBatchJobLogsHeaderDataPrepZeroQualification, lastPostedCodes, daysSinceDenialPosting);
+
+
+                    //process aging
+                    query = new Query (queryStr(HMZeroClaimAgeCalculationQuery));
+                    queryRun = new QueryRun(query);
+                    hmDataPrepForZeroClaimAgeCalcBusinessLogic = HMDataPrepForZeroClaimAgeCalcBusinessLogic::construct();
+                    hmClaimAgeCalculateBusinessLogic       = HMClaimAgeCalculateBusinessLogic::construct();
+
+                    hmClaimBatchJobLogsHeaderDataPrepAging = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::AgeZeroBalanceDataPrep
+                                                                                                 , 0
+                                                                                                 , recordsToProcess
+                                                                                                 , numberOfThreads);
+
+                    hmDataPrepForZeroClaimAgeCalcBusinessLogic.processInit(queryRun, 0, hmClaimBatchJobLogsHeaderDataPrepAging);
+
+                    hmClaimBatchJobLogsHeaderAging = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::AgeZeroBalance
+                                                                                         , 0
+                                                                                         , recordsToProcess
+                                                                                         , numberOfThreads);
+                    hmClaimAgeCalculateBusinessLogic.processInit(0, hmClaimBatchJobLogsHeaderAging, hmClaimBatchJobLogsHeaderDataPrepAging);
+
+                    query = new Query (queryStr(HMCalculateZeroClaimPoolQuery));
+                    qbds = query.dataSourceTable(tableNum(HMClaimTable));
+                    qbds.addRange(fieldNum(HMClaimTable, RecId)).value(strFmt('(%1.%2 == 1) || (%1.%3 == 0)',
+                                                            qbds.name(),
+                                                            fieldStr(HMClaimTable, IsClaimModified),
+                                                            fieldStr(HMClaimTable, ClaimPool)));
+                    queryRun = new QueryRun(query);
+
+                    //process pool assignment
+                    hmDataPrepForCalcZeroClaimPoolBusinessLogic = HMDataPrepForCalcZeroClaimPoolBusinessLogic::construct();
+                    hmCalculateZeroClaimPoolBusinessLogic       = HMCalculateZeroClaimPoolBusinessLogic::construct();
+
+                    hmClaimBatchJobLogsHeaderDataPrepPoolAssign = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::PoolZeroBalanceDataPrep
+                                                                                                      , 0
+                                                                                                      , recordsToProcess
+                                                                                                      , numberOfThreads);
+                    hmDataPrepForCalcZeroClaimPoolBusinessLogic.processInit(queryRun, 0, hmClaimBatchJobLogsHeaderDataPrepPoolAssign);
+
+
+                    hmClaimBatchJobLogsHeaderPoolAssign = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::PoolZeroBalance
+                                                                                              , 0
+                                                                                              , recordsToProcess
+                                                                                              , numberOfThreads);
+                    hmCalculateZeroClaimPoolBusinessLogic.processInit(0, hmClaimBatchJobLogsHeaderPoolAssign, hmClaimBatchJobLogsHeaderDataPrepPoolAssign);
+
+
+                    //process priority assignment
+                    hmDataPrepForAssignPriorityToZeroClaimBusinessLogic = HMDataPrepForAssignPriorityToZeroClaimBusinessLogic::construct();
+                    hmAssignPriorityToZeroClaimsBusinessLogic           = HMAssignPriorityToZeroClaimsBusinessLogic::construct();
+
+                    hmClaimBatchJobLogsHeaderDataPrepPriority = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::PriorityZeroBalanceDataPrep
+                                                                                                    , 0
+                                                                                                    , recordsToProcess
+                                                                                                    , numberOfThreads);
+
+                    query = new Query (queryStr(HMAssignPriorityToZeroClaimsQuery));
+                    queryRun = new QueryRun(query);
+                    hmDataPrepForAssignPriorityToZeroClaimBusinessLogic.processInit(queryRun, 0, hmClaimBatchJobLogsHeaderDataPrepPriority);
+
+                    hmClaimBatchJobLogsHeaderPriority = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::PriorityZeroBalance
+                                                                                            , 0
+                                                                                            , recordsToProcess
+                                                                                            , numberOfThreads);
+                    hmAssignPriorityToZeroClaimsBusinessLogic.processInit(0, hmClaimBatchJobLogsHeaderPriority, hmClaimBatchJobLogsHeaderDataPrepPriority);
+                }
+                catch
+                {
+                    warning(strFmt('%1',xSession::xppCallStack()));
+                }
+            }
+
+            if (batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();
+            }
+
+        }
+        catch
+        {
+            throw error(strFmt("@MAZ:BatchJobInitiationFailed",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatch</Name>
+				<Source><![CDATA[
+    //Needs to be set to true so class can be ran in a batch
+    boolean canGoBatch()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+        return [#CurrentVersion] + [pack] + [#CurrentList] + [#LastPostedCodes] + [#DaysSinceDenialPosting];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #CurrentList, #LastPostedCodes, #DaysSinceDenialPosting] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+
+            default:
+                ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    //Determines whether to run on server or client
+    //True - Server; False - Client
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This is the main method to invoke the batch job
+    /// </summary>
+    /// <param name = "args"><c>Args</c> object</param>
+    public static void main(Args args)
+    {
+        HMDeniedZeroClaimMainMultiThreadBatchJob hmDeniedZeroClaimMainMultiThreadBatchJob = HMDeniedZeroClaimMainMultiThreadBatchJob::construct();
+
+        hmDeniedZeroClaimMainMultiThreadBatchJob.caption();
+        hmDeniedZeroClaimMainMultiThreadBatchJob.initQueryRun();
+
+        if (hmDeniedZeroClaimMainMultiThreadBatchJob.prompt())
+        {
+            hmDeniedZeroClaimMainMultiThreadBatchJob.run();
+        }
+            
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    public boolean canGoBatchJournal()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryRun</Name>
+				<Source><![CDATA[
+    public QueryRun queryRun()
+    {
+        return gQueryRun;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQueryRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Defined the batch job query
+    /// </summary>
+    public void initQueryRun()
+    {
+        Query   query;
+        
+        query = new Query (queryStr(HMZeroClaimAgeCalculationQuery));
+
+        gQueryRun = new QueryRun(query);
+        gQueryRun.saveUserSetup(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Intialize the Query run to the parameter
+    /// </summary>
+    public void initParmDefault()
+    {
+        this.initQueryRun();
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQueryValues</Name>
+				<Source><![CDATA[
+    public boolean showQueryValues()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    public Object dialog()
+    {
+        DialogRunbase dialog = super();
+
+        dlgHMNumberOfThreads        = dialog.addFieldValue(extendedTypeStr(HMNumberOfThreads), numberOfThreads);
+        dlgHMLastPostedCodes        = dialog.addFieldValue(extendedTypeStr(HMLastPostingCodes), lastPostedCodes);
+        dlgHMDaysSinceDenialPosting = dialog.addFieldValue(extendedTypeStr(HMDaysSinceDenialPosting), daysSinceDenialPosting);
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public boolean getFromDialog()
+    {
+        numberOfThreads        = dlgHMNumberOfThreads.value();
+        lastPostedCodes        = dlgHMLastPostedCodes.value();
+        daysSinceDenialPosting = dlgHMDaysSinceDenialPosting.value();
+
+        return super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRetryable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Specifies if the batch task is retryable for transient exceptions or not.
+    /// </summary>
+    /// <returns>
+    /// If true is returned, the batch task is retryable, otherwise it is not.
+    /// </returns>
+    [Wrappable(true), Replaceable(true)]
+    public boolean isRetryable()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,1384 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMServicesService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMServicesService
+{
+    //todo: ax7 HmServiceService Code Commentout 
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>CreatePayment</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMPatientAccountContract))]
+    public HMPatientAccountContract CreatePayment(HMCreatePaymentContract _hMCreatePaymentContract)
+    {
+        HMSalesInvoiceCreateFormHandler     objFormHandler;
+        HMPatientChargeEntryPayment         hmPatientChargeEntryPayment;
+        HMResourceSchedulingAppointment     appointment;
+        Args args = new Args();
+        HMCreatePaymentContract hMCreatePaymentContract = new HMCreatePaymentContract();
+        hMCreatePaymentContract = _hMCreatePaymentContract;
+        appointment = HMResourceSchedulingAppointment::find(str2int64(hMCreatePaymentContract.parmAppointmentRecId()));
+        hmPatientChargeEntryPayment.HMResourceSchedulingAppointment = appointment.RecId;
+        hmPatientChargeEntryPayment.HMPatient = appointment.HMPatient;
+        hmPatientChargeEntryPayment.Amount = hMCreatePaymentContract.parmAmount();
+        hmPatientChargeEntryPayment.PaymMode = hMCreatePaymentContract.parmPaymModeRecId();
+        hmPatientChargeEntryPayment.PaymReference = hMCreatePaymentContract.parmPaymentReference();
+        hmPatientChargeEntryPayment.PaymentNotes = hMCreatePaymentContract.parmNotes();
+        hmPatientChargeEntryPayment.PaymentType = HMChargeEntryPaymentType::OutstandingPayment;
+        hmPatientChargeEntryPayment.MerchantDetails = str2int64(hMCreatePaymentContract.parmMerchantRecId());
+    
+        try
+        {
+            ttsBegin;
+            hmPatientChargeEntryPayment.insert();
+            args.record(hmPatientChargeEntryPayment);
+            objFormHandler = new HMSalesInvoiceCreateFormHandler();
+            objFormHandler.postPatientAdvancePayment(args);
+            ttsCommit;
+        }
+        catch(Exception::Error)
+        {
+            return this.GetPatientAccountsData(str2int64(_hMCreatePaymentContract.parmAppointmentRecId()));
+        }
+        return this.GetPatientAccountsData(str2int64(_hMCreatePaymentContract.parmAppointmentRecId()));
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetAllServicesForAssignment</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMServiceContract))]
+    public HMPatientVisitDetailsContract GetAllServicesForAssignment(int64 _appointmentRecId, string50 _search)
+    {
+        HMServiceContract   serviceContract;
+        HMPatientContract   patientContract;
+        HMPatientVisitDetailsContract   detailsContract = new HMPatientVisitDetailsContract();
+        Map response = new Map(Types::String, Types::String);
+    
+        InventTable                     service;
+        HMPatient                       patient;
+        HMResourceSchedulingAppointment appointment;
+        HMResourceSchedulingAppointmentInvent   appointmentService;
+    
+        List    servicesList = new List(Types::Class);
+        appointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+        while select * from service
+            where service.HMProductType == HMInventType::HCPCS
+                &&
+                    (service.ItemId like "*"+_search+"*"
+                        ||
+                   service.NameAlias like "*"+_search+"*")
+            notExists join * from appointmentService
+            where appointmentService.HMResourceSchedulingAppointment == appointment.RecId
+            && appointmentService.InventTable == service.ItemId
+    
+        {
+            serviceContract = new HMServiceContract();
+    
+            serviceContract.populateContractFromInventTable(service,_appointmentRecId);
+    
+            servicesList.addEnd(serviceContract);
+        }
+    
+    
+    
+        if(appointment)
+        {
+            patient = HMPatient::find(appointment.HMPatient);
+    
+            if(patient)
+            {
+                patientContract = new HMPatientContract();
+                patientContract.populatePatientContract(patient);
+                patientContract.parmAppointmentDate(date2str(appointment.AppointmentDate, 123, DateDay::Digits2, DateSeparator::Slash, DateMonth::Digits2, DateSeparator::Slash, DateYear::Digits4));
+                patientContract.parmAppointmentTime(time2str(appointment.AppointmentTime,TimeSeparator::Colon,TimeSeparator::Colon));
+                detailsContract.parmPatient(patientContract);
+            }
+            else
+            {
+                response.insert("0","Patient Not Found");
+            }
+        }
+        else
+        {
+            response.insert("0","Appointment Not found invalid Appointment Id provided.");
+        }
+    
+        detailsContract.parmResponse(response);
+        detailsContract.parmService(servicesList);
+    
+        return detailsContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetAllServicesForAssignmentPaged</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMServiceContract))]
+    public HMPatientVisitDetailsContract GetAllServicesForAssignmentPaged(int64 _appointmentRecId, string50 _search, int64 _pageNumber,str _serviceType)
+    {
+    
+        int64                                   recordsPerPage;
+        int64                                   startingPosition;
+        HMServiceContract                       serviceContract;
+        HMPatientContract                       patientContract;
+        HMPatientVisitDetailsContract           detailsContract = new HMPatientVisitDetailsContract();
+        Map                                     response = new Map(Types::String, Types::String);
+        InventTable                             service;
+        HMPatient                               patient;
+        HMResourceSchedulingAppointment         appointment;
+        HMResourceSchedulingAppointmentInvent   appointmentService;
+        List                                    servicesList = new List(Types::Class);
+        Query                                   query = new Query();
+        QueryRun                                qr;
+        TableId                                 tableId;
+        QueryBuildDataSource                    qbdsInvent;
+        QueryBuildDataSource                    qbdsAppointmentServices;
+        QueryBuildRange                         qbr;
+        HMParameters                            hMParameters;
+        str                                     qstr;
+    
+        appointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+    
+        tableId = tableName2id("InventTable");
+        qbdsInvent = Query.addDataSource(tableId);
+        qbdsInvent.addOrderByField(fieldName2id(tableId,'RecId'));
+        qbdsInvent.addRange(fieldNum(InventTable,HMProductType)).value(SysQuery::value(HMInventType::HCPCS));
+    
+        if(_search)
+        {
+        qstr = strFmt('((%1.ItemId like "%2") || (%3.NameAlias like "%4"))',
+                          qbdsInvent.name(), strFmt("*%1*", _search),
+                          qbdsInvent.name(), strFmt("*%1*", _search));
+        qbdsInvent.addRange(fieldNum(InventTable,RecId)).value(qstr);
+        }
+    
+        if(_serviceType == "Exam")
+        {
+            qbdsInvent.addRange(fieldNum(InventTable,PmfProductType)).value(SysQuery::value(PmfProductType::None));
+        }
+        else if(_serviceType == "Protocol")
+        {
+            qbdsInvent.addRange(fieldNum(InventTable,PmfProductType)).value(SysQuery::value(PmfProductType::BOM));
+        }
+    
+    
+        tableId = tableName2id("HMResourceSchedulingAppointmentInvent");
+        qbdsAppointmentServices = qbdsInvent.addDataSource(tableId);
+        qbdsAppointmentServices.relations(true);
+        qbdsAppointmentServices.joinMode(JoinMode::NoExistsJoin);
+        qbdsAppointmentServices.addRange(FieldNum(HMResourceSchedulingAppointmentInvent,HMResourceSchedulingAppointment )).value(SysQuery::value(_appointmentRecId));
+    
+    
+        select firstOnly HMAppointmentsPageSize from hMParameters;
+    
+        recordsPerPage = HMParameters.HMAppointmentsPageSize;
+    
+        if(hMParameters.HMAppointmentsPageSize < 1)
+        {
+            recordsPerPage = 10;
+        }
+    
+    
+        qr = new QueryRun(Query);
+        qr.literals(true);
+        qr.enablePositionPaging(true);
+    
+        if(_pageNumber <= 0)
+        {
+            qr.addPageRange(_pageNumber + 1,recordsPerPage);
+        }
+        else if(_pageNumber == 1)
+        {
+    
+            startingPosition = 1;
+            qr.addPageRange(startingPosition,recordsPerPage);
+        }
+        else
+        {
+            startingPosition = ((_pageNumber - 1) * recordsPerPage)+1;
+            qr.addPageRange(startingPosition,recordsPerPage);
+        }
+    
+    
+    
+        while(qr.next()){
+            service = qr.getNo(1);
+            info(service.ItemId);
+            info(service.NameAlias);
+            serviceContract = new HMServiceContract();
+    
+            serviceContract.populateContractFromInventTable(service,_appointmentRecId);
+    
+            servicesList.addEnd(serviceContract);
+        }
+    
+        if(appointment)
+        {
+            patient = HMPatient::find(appointment.HMPatient);
+    
+            if(patient)
+            {
+                patientContract = new HMPatientContract();
+                patientContract.populatePatientContract(patient,appointment);
+                patientContract.parmAppointmentDate(date2str(appointment.AppointmentDate, 123, DateDay::Digits2, DateSeparator::Slash, DateMonth::Digits2, DateSeparator::Slash, DateYear::Digits4));
+                patientContract.parmAppointmentTime(time2str(appointment.AppointmentTime,TimeSeparator::Colon,TimeSeparator::Colon));
+                detailsContract.parmPatient(patientContract);
+            }
+            else
+            {
+                response.insert("0","Patient Not Found");
+            }
+        }
+        else
+        {
+            response.insert("0","Appointment Not found invalid Appointment Id provided.");
+        }
+    
+        detailsContract.parmResponse(response);
+        detailsContract.parmService(servicesList);
+    
+        return detailsContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetEmpVendForServiceComplete</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMServiceCompleteDataContract))]
+    public HMServiceCompleteDataContract GetEmpVendForServiceComplete(int64 _appointmentRecId,int64 _WorkerOrVendorRecId,boolean _isWorker,str _UserName)
+    {
+        HMUserContract hMUserContract;
+        HMMedSiteContract hMMedSiteContract;
+        HMMedSite hMMedSite;
+        HMServiceCompleteDataContract hMServiceCompleteDataContract;
+        List hMUserContractList = new List(Types::Class); // Sub List
+        List hMMedSiteContractList = new List(Types::Class); // Sub List
+        HMResourceSchedulingAppointment hMResourceSchedulingAppointmentPrimary;
+        HMResourceSchedulingAppointment hMResourceSchedulingAppointmentRelated;
+        HMResourceSchedulingPlanningObject hMResourceSchedulingPlanningObject;
+        HMResourceMaster hMResourceMaster;
+        HcmWorker hmcWorker;
+        VendTable vendTable;
+    
+    
+            //Load Primary Appointment Resource
+            select * from hMResourceSchedulingAppointmentPrimary
+            where hMResourceSchedulingAppointmentPrimary.RecId == _appointmentRecId;
+    
+             hMUserContract  = new HMUserContract();
+             hMUserContract.parmIsDefault(true); //Assuming passed Appoinement Recid will alwas be a primary Appointment's Recid.
+    
+            //Evaluate current record is Vendor or Employee,
+            hMResourceSchedulingPlanningObject = HMResourceSchedulingPlanningObject::find(hMResourceSchedulingAppointmentPrimary.HMResourceSchedulingPlanningObject);
+            hMResourceMaster = HMResourceMaster::find(HMResourceSchedulingPlanningObject.HMResourceMaster);
+    
+            if(hMResourceMaster.Type == HMResourceType::Employee)
+            {
+                hmcWorker = HcmWorker::find(hMResourceMaster.RefRecId);
+                hMUserContract.parmName(hmcWorker.name());
+                hMUserContract.parmWorkerOrVendorRecid(strFmt('%1',hmcWorker.RecId));
+                hMUserContract.parmIsWorker(true);
+            }
+            else if(hMResourceMaster.Type == HMResourceType::Vendor)
+            {
+                select * from vendTable
+                where VendTable.RecId == hMResourceMaster.RefRecId;
+                hMUserContract.parmName(vendTable.name());
+                hMUserContract.parmWorkerOrVendorRecid(strFmt('%1',vendTable.RecId));
+                hMUserContract.parmIsWorker(false);
+            }
+    
+            hMUserContractList.addEnd(hMUserContract);
+    
+    
+            //Load Related Appointment Resources
+            while select * from hMResourceSchedulingAppointmentRelated
+            where hMResourceSchedulingAppointmentRelated.HMPatientVisit == hMResourceSchedulingAppointmentPrimary.HMPatientVisit
+                && hMResourceSchedulingAppointmentRelated.RecId != hMResourceSchedulingAppointmentPrimary.RecId
+            {
+             hMUserContract  = new HMUserContract();
+             hMUserContract.parmIsDefault(false);
+    
+            //Evaluate current record is Vendor or Employee,
+            hMResourceSchedulingPlanningObject = HMResourceSchedulingPlanningObject::find(hMResourceSchedulingAppointmentRelated.HMResourceSchedulingPlanningObject);
+            hMResourceMaster = HMResourceMaster::find(HMResourceSchedulingPlanningObject.HMResourceMaster);
+    
+            if(hMResourceMaster.Type == HMResourceType::Employee)
+            {
+                hmcWorker = HcmWorker::find(hMResourceMaster.RefRecId);
+                hMUserContract.parmName(hmcWorker.name());
+                hMUserContract.parmWorkerOrVendorRecid(strFmt('%1',hmcWorker.RecId));
+                hMUserContract.parmIsWorker(true);
+                hMUserContractList.addEnd(hMUserContract);
+            }
+            else if(hMResourceMaster.Type == HMResourceType::Vendor)
+            {
+                select * from vendTable
+                where VendTable.RecId == hMResourceMaster.RefRecId;
+                hMUserContract.parmName(vendTable.name());
+                hMUserContract.parmWorkerOrVendorRecid(strFmt('%1',vendTable.RecId));
+                hMUserContract.parmIsWorker(false);
+                hMUserContractList.addEnd(hMUserContract);
+            }
+    
+    
+            }
+    
+    
+        //Load Current User Record
+        hMUserContract  = new HMUserContract();
+        hMUserContract.parmIsDefault(false);
+        hMUserContract.parmName(_UserName);
+        hMUserContract.parmIsWorker(_isWorker);
+        hMUserContract.parmWorkerOrVendorRecid(strFmt('%1',_WorkerOrVendorRecId));
+    
+        hMUserContractList.addEnd(hMUserContract);
+    
+        while select * from hMMedSite
+        {
+            hMMedSiteContract = new HMMedSiteContract();
+            hMMedSiteContract.parmRecID(int642str(hMMedSite.RecId));
+            hMMedSiteContract.parmCode(hMMedSite.Code);
+            hMMedSiteContract.parmDescription(hMMedSite.Description);
+            hMMedSiteContractList.addEnd(hMMedSiteContract);
+        }
+    
+        hMServiceCompleteDataContract = new HMServiceCompleteDataContract();
+        hMServiceCompleteDataContract.parmHMMedSiteContract(hMMedSiteContractList);
+        hMServiceCompleteDataContract.parmHMUserContractList(hMUserContractList);
+    
+        return hMServiceCompleteDataContract;
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInvoiceReport</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::String)]
+    public str getInvoiceReport(RecId _custInvoiceJourRecid)
+    {
+        Args args = new Args();
+        str pdfStr;
+        CustInvoiceJour custInvoiceJour;
+        CustTransOpen custTransOpen;
+        //select custInvoiceJour where custInvoiceJour.RecId == 5637197076;
+        select custTransOpen
+        where custTransOpen.RecId == _custInvoiceJourRecid
+        join custInvoiceJour
+        where custInvoiceJour.InvoiceAccount == custTransOpen.AccountNum;
+    
+        if(custInvoiceJour)
+        {
+            args.record(custInvoiceJour);
+            pdfStr = HMSalesInvoiceForIntegrationController::main(args);
+        }
+        return pdfStr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetPatientAccountsData</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMPatientAccountContract))]
+    public HMPatientAccountContract GetPatientAccountsData(RecId _appointmentRecId)
+    {
+        HMPatientAccountContract                hMPatientAccountContract;
+        HMPaymentTransContract                  hMPaymentTransactionsContract;
+        HMPaymentTransContract                  hMPaymentRefundsContract;
+        HMInvoiceHeaderContract                 hMInvoiceHeaderContract;
+        HMInvoiceLinesContract                  hMInvoiceLinesContract;
+        HMResourceSchedulingAppointment         appointment;
+        HMResourceSchedulingAppointment         invoiceAppointment;
+        HMPatient                               patient;
+        HMResourceSchedulingAppointmentInvent   service;
+        CustTransOpen                           custTransOpen;
+        custTrans                               custTrans;
+        CustTransIdRef                          custTransIdRef;
+        CustInvoiceTrans                        custInvoiceTrans;
+        HMMerchantDetails                       hMMerchantDetails;
+        HMPatientContract                       patientContract = new HMPatientContract();
+        List                                    hMPaymentTransactionsContractList = new List(Types::Class);
+        List                                    hMPaymentRefundsContractList = new List(Types::Class);
+        List                                    hMInvoiceHeaderContractList = new List(Types::Class);
+        List                                    hMInvoiceLinesContractList = new List(Types::Class);
+    
+        hMPatientAccountContract = new HMPatientAccountContract();
+    
+        appointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+        if(appointment)
+        {
+            patient     = HMPatient::find(appointment.HMPatient);
+            if(patient)
+            {
+                patientContract.populatePatientContract(patient,appointment);
+                patientContract.parmAppointmentTime(time2str(appointment.AppointmentTime,TimeSeparator::Colon, TimeSeparator::Colon));
+                patientContract.parmAppointmentDate(date2str(appointment.AppointmentDate, 123, DateDay::Digits2, DateSeparator::Slash, DateMonth::Digits2, DateSeparator::Slash, DateYear::Digits4));
+                if(appointment.ArrivalTime!= -1)
+                {
+                    patientContract.parmArrivalTime(strDel(time2str(appointment.AppointmentTime - appointment.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3));
+                }
+                patientContract.parmApptType(HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode).Description);
+    
+                hMPatientAccountContract.parmPatientContract(patientContract);
+    
+                hMPatientAccountContract.parmTodaysExpectedCharges(appointment.getAppointmentChargesForPatient());
+                hMPatientAccountContract.parmTodaysAdvanceAmount(appointment.totalAppointmentAdvancePayments());
+                hMPatientAccountContract.parmTodaysBalanceAmount(appointment.totalAppointmentInvoiceAmount() - hMPatientAccountContract.parmTodaysAdvanceAmount());
+                hMPatientAccountContract.parmTotalInvoiceAmount(appointment.patientTotalInvoiceAmount());
+                hMPatientAccountContract.parmTotalAdvanceAmount(appointment.patientTotalAdvancePayments());
+                hMPatientAccountContract.parmTotalBalanceAmount(hMPatientAccountContract.parmTotalInvoiceAmount() - hMPatientAccountContract.parmTotalAdvanceAmount());
+    
+                //Get Payments & Refunds Data
+    
+                while select RecId,AmountCur from custTransOpen
+                order by custTransOpen.RecId
+                join HMAppointmentNumber,Voucher,AmountCur,PaymMode from custtrans where custTrans.recid == custTransOpen.RefRecId
+                && custTrans.AccountNum == CustTransOpen.AccountNum
+                && custTrans.AccountNum == appointment.getPatientChartNum()
+                join TransRefId from custTransIdRef where custTransIdRef.TransRecId == custTrans.RecId
+                && custTransIdRef.TransRefType == CustTransRefType::Payment
+                outer join Code from hMMerchantDetails
+                    where hMMerchantDetails.RecId == custTrans.HMMerchantDetails
+                {
+                    if(custTrans.amountCur < 0)
+                    {
+                        hMPaymentTransactionsContract = new HMPaymentTransContract();
+                        hMPaymentTransactionsContract.parmRecId(int642str(custTransOpen.RecId));
+                        hMPaymentTransactionsContract.parmAppointmentNum(custTrans.HMAppointmentNumber);
+                        hMPaymentTransactionsContract.parmTransactionId(custTransIdRef.TransRefId);
+                        hMPaymentTransactionsContract.parmVoucherNum(custTrans.Voucher);
+                        hMPaymentTransactionsContract.parmAmount(ABS(custTransOpen.AmountCur));
+                        hMPaymentTransactionsContract.parmMerchantCode(hMMerchantDetails.Code);
+                        hMPaymentTransactionsContract.parmPaymMode(custTrans.PaymMode);
+                        hMPaymentTransactionsContractList.addEnd(hMPaymentTransactionsContract);
+                    }
+                    else if(custTrans.amountCur > 0)
+                    {
+                        hMPaymentRefundsContract = new HMPaymentTransContract();
+                        hMPaymentRefundsContract.parmRecId(int642str(custTransOpen.RecId));
+                        hMPaymentRefundsContract.parmAppointmentNum(custTrans.HMAppointmentNumber);
+                        hMPaymentRefundsContract.parmTransactionId(custTransIdRef.TransRefId);
+                        hMPaymentRefundsContract.parmVoucherNum(custTrans.Voucher);
+                        hMPaymentRefundsContract.parmAmount(custTransOpen.AmountCur);
+                        hMPaymentRefundsContract.parmMerchantCode(hMMerchantDetails.Code);
+                        hMPaymentRefundsContract.parmPaymMode(custTrans.PaymMode);
+                        hMPaymentRefundsContractList.addEnd(hMPaymentRefundsContract);
+                    }
+                }
+    
+                hMPatientAccountContract.parmPaymentTransactions(hMPaymentTransactionsContractList);
+                hMPatientAccountContract.parmRefundTransactions(hMPaymentRefundsContractList);
+    
+                //Get Invoices data
+    
+                while select RecId,AmountCur from custTransOpen
+                join HMAppointmentNumber,Voucher,AmountCur,Invoice from custtrans where custTrans.recid == custTransOpen.RefRecId
+                && custTrans.AccountNum == CustTransOpen.AccountNum
+                && custTrans.AccountNum == appointment.getPatientChartNum()
+                join TransRefId from custTransIdRef where custTransIdRef.TransRecId == custTrans.RecId
+                && custTransIdRef.TransRefType == CustTransRefType::Invoice
+                outer join AppointmentDate,AppointmentNumber from invoiceAppointment
+                where invoiceAppointment.AppointmentNumber == custTrans.HMAppointmentNumber
+                {
+                    hMInvoiceHeaderContract = new HMInvoiceHeaderContract();
+                    hMInvoiceHeaderContract.parmRecId(int642str(custTransOpen.RecId));
+                    hMInvoiceHeaderContract.parmAppointmentNum(custTrans.HMAppointmentNumber);
+                    hMInvoiceHeaderContract.parmAppointmentDate(strFmt('%1',invoiceAppointment.AppointmentDate));
+                    hMInvoiceHeaderContract.parmInvoiceAmount(custTransOpen.AmountCur);
+                    hMInvoiceHeaderContract.parmInvoiceId(custTrans.Invoice);
+                    hMInvoiceHeaderContract.parmInvoiceLines();
+    
+    
+    
+                    while select RecId,BillingCode,LineAmount,ItemId from custInvoiceTrans
+                        where custInvoiceTrans.InvoiceId == custTrans.Invoice
+                    {
+                        hMInvoiceLinesContract = new HMInvoiceLinesContract();
+                        hMInvoiceLinesContract.parmRecId(int642str(custInvoiceTrans.RecId));
+                        hMInvoiceLinesContract.parmBillingCode(custInvoiceTrans.BillingCode);
+                        hMInvoiceLinesContract.parmServiceName(InventTable::find(custInvoiceTrans.ItemId).itemName());
+                        hMInvoiceLinesContract.parmServiceAmount(custInvoiceTrans.LineAmount);
+    
+                        hMInvoiceLinesContractList.addEnd(hMInvoiceLinesContract);
+                    }
+    
+                    hMInvoiceHeaderContract.parmInvoiceLines(hMInvoiceLinesContractList);
+                    hMInvoiceHeaderContractList.addEnd(hMInvoiceHeaderContract);
+    
+    
+                }
+    
+                hMPatientAccountContract.parmInvoices(hMInvoiceHeaderContractList);
+    
+                //return custTransOpen.AmountCur;
+    
+            }
+    
+        }
+    
+        return hMPatientAccountContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetPatientVisitDetails</Name>
+				<Source><![CDATA[
+    //[ AifCollectionTypeAttribute('return', Types::Class, classstr(HMPatientVisitDetailsContract))]
+    public HMPatientVisitDetailsContract GetPatientVisitDetails(RecId _appointmentRecId, string50 _search)
+    {
+        Map                             response            = new Map(Types::String, Types::String);
+        HMPatientVisitDetailsContract   detailsContract     = new HMPatientVisitDetailsContract();
+        HMServiceContract               serviceContract     = new HMServiceContract();
+        HMPatientContract               patientContract     = new HMPatientContract();
+
+        List listService    = new List(Types::Class);
+        List listCompliment = new List(Types::String);
+
+        HMResourceSchedulingAppointmentInvent   service;
+        HMResourceSchedulingAppointment         appointment;
+        HMPatient                               patient;
+        InventTable                             inventTable;
+        str                                     protocolNotesStr;
+        //TODO: AX7 no more in use 
+        //hMChargeEntryClass_Medisys              HMChargeEntryClass_Medisys = new HMChargeEntryClass_Medisys();
+        HMAppointmentNotesContract              hMAppointmentNotesContract = new hMAppointmentNotesContract();
+        HMAppointmentPrtotocolNotesContract     hMAppointmentPrtotocolNotesContract;
+        List                                    hMAppointmentPrtotocolNotesList;
+        MapIterator                             it;
+        Map                                     itemPriceMap = new Map(Types::String,Types::Real);
+        Map                                     protolNameMap = new Map(Types::String,Types::String);
+        boolean                                 loadComplimentFromPatientOrAppointment = 1;
+        HMProtocolNotes                         hMProtocolNotes;
+        BOMVersion                              bomVersion;
+        str                                     protocolDetails;
+        appointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+
+
+        hMAppointmentPrtotocolNotesList = new List(Types::Class);
+
+        if(appointment)
+        {
+            //itemPriceMap = hMChargeEntryClass_Medisys.getApptPrice(_appointmentRecId);
+            while select service
+                join InventTable
+
+                where
+                service.InventTable == InventTable.ItemId &&
+                service.HMResourceSchedulingAppointment == _appointmentRecId
+                  &&
+                    (InventTable.ItemId like "*"+_search+"*"
+                        ||
+                   inventTable.NameAlias like "*"+_search+"*")
+            {
+                serviceContract = new HMServiceContract();
+                //serviceContract.populateContract(service,itemPriceMap);
+                listService.addEnd(serviceContract);
+
+                if(service.Protocol)
+                {
+
+
+                hMAppointmentPrtotocolNotesContract = new HMAppointmentPrtotocolNotesContract();
+                hMAppointmentPrtotocolNotesContract.parmProtocolName(service.protocolItemDescription());
+
+                patientContract.parmProtocol(service.Protocol);
+                if(service.protocolItemDescription() != '')
+                {
+                    protocolDetails = service.Protocol + ' ' + service.protocolItemDescription();
+                    patientContract.parmProtocol(protocolDetails);
+                }
+                if(!protolNameMap.exists(hMAppointmentPrtotocolNotesContract.parmProtocolName()))
+                    {
+                    protolNameMap.insert(hMAppointmentPrtotocolNotesContract.parmProtocolName(),hMAppointmentPrtotocolNotesContract.parmProtocolName());
+                    //Getting Protocol Notes
+                    select firstonly BOMId,RecId from bomVersion
+                    where bomVersion.Name == hMAppointmentPrtotocolNotesContract.parmProtocolName()
+                    && bomVersion.Active
+                    && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+                    && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+
+                    protocolNotesStr = '';
+
+                    while select Sequence,BOMVersion,Notes from hMProtocolNotes
+                    order by hMProtocolNotes.Sequence
+                    where hMProtocolNotes.BOMVersion == bomVersion.RecId
+                        {
+                            protocolNotesStr = protocolNotesStr + hMProtocolNotes.Notes + ' ';
+                        }
+
+
+                    hMAppointmentPrtotocolNotesContract.parmProtocolNotes(protocolNotesStr);
+                    hMAppointmentPrtotocolNotesList.addEnd(hMAppointmentPrtotocolNotesContract);
+                    }
+                }
+            }
+
+            patient     = HMPatient::find(appointment.HMPatient);
+
+            if (patient)
+            {
+                patientContract.populatePatientContract(patient,appointment);
+
+                patientContract.parmAppointmentTime(time2str(appointment.AppointmentTime,TimeSeparator::Colon, TimeSeparator::Colon));
+                patientContract.parmAppointmentDate(date2str(appointment.AppointmentDate, 123, DateDay::Digits2, DateSeparator::Slash, DateMonth::Digits2, DateSeparator::Slash, DateYear::Digits4));
+                if(appointment.ArrivalTime!= -1)
+                {
+                    patientContract.parmArrivalTime(strDel(time2str(appointment.AppointmentTime - appointment.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3));
+                }
+
+                //Patient and Appointment Notes
+                hMAppointmentNotesContract.parmPatientCriticalMedicalInfo(patient.CriticalMedicalInformation);
+                hMAppointmentNotesContract.parmPatientHighlights(patient.PatientHighlights);
+                hMAppointmentNotesContract.parmBookingNotes(appointment.Notes);
+
+
+
+
+                hMAppointmentNotesContract.parmProtocolNameAndNotes(hMAppointmentPrtotocolNotesList);
+                detailsContract.parmHMAppointmentNotesContract(hMAppointmentNotesContract);
+                //Patient and Appointment Notes
+
+            }
+
+        detailsContract.parmService(listService);
+        detailsContract.parmPatient(patientContract);
+
+
+
+
+
+        }
+        else
+        {
+            response.insert("0", "No appointment found for the recid.");
+            detailsContract.parmResponse(response);
+        }
+
+        return  detailsContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPaymentCreationData</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMCreatePaymentDataContract))]
+    public HMCreatePaymentDataContract getPaymentCreationData(int64 _appointmentRecId)
+    {
+        HMCreatePaymentDataContract hMCreatePaymentDataContract = new HMCreatePaymentDataContract();
+        HMCodeDescContract paymModeClass;
+        HMCodeDescContract merchantClass;
+        CustPaymModeTable custPaymModeTable;
+        HMResourceSchedulingAppointment hMResourceSchedulingAppointment;
+        HMMerchantDetails hMMerchantDetails;
+        HMOrganizationalUnitMerchantDetails hMOrganizationalUnitMerchantDetails;
+        RecId defaultMerchantRecid;
+    
+        List hMpaymentModeContractList = new List(Types::Class);
+        List hMmerchantContractList = new List(Types::Class);
+    
+        while select RecId,PaymMode,Name from custPaymModeTable
+            where custPaymModeTable.ClinicUse == NoYes::Yes
+        {
+            paymModeClass = new HMCodeDescContract();
+            paymModeClass.parmRecId(int642str(custPaymModeTable.RecId));
+            paymModeClass.parmCode(custPaymModeTable.PaymMode);
+            paymModeClass.parmDescription(custPaymModeTable.Name);
+            hMpaymentModeContractList.addEnd(paymModeClass);
+        }
+    
+        defaultMerchantRecid = HMSalesInvoiceCreateFormHandler::defaultMerchantIdByAppt(_appointmentRecId);
+    
+        while select RecId,Code,Description from hMMerchantDetails
+            join RecId from hMOrganizationalUnitMerchantDetails
+            where hMOrganizationalUnitMerchantDetails.HMMerchantDetails == hMMerchantDetails.RecId
+            join RecId from hMResourceSchedulingAppointment
+            where hMResourceSchedulingAppointment.HMOrganizationalUnitServiceLocation == hMOrganizationalUnitMerchantDetails.HMOrganizationalUnit
+            && hMResourceSchedulingAppointment.RecId == _appointmentRecId
+        {
+            merchantClass = new HMCodeDescContract();
+            merchantClass.parmRecId(int642str(hMMerchantDetails.RecId));
+            merchantClass.parmCode(hMMerchantDetails.Code);
+            merchantClass.parmDescription(hMMerchantDetails.Description);
+            if(hMMerchantDetails.RecId == defaultMerchantRecid)
+            {
+                merchantClass.parmIsDefault(true);
+            }
+            hMmerchantContractList.addEnd(merchantClass);
+        }
+    
+    
+    
+        hMCreatePaymentDataContract.parmHMpaymentModeContractList(hMpaymentModeContractList);
+        hMCreatePaymentDataContract.parmHMmerchantContractList(hMmerchantContractList);
+    
+    
+    
+    
+    
+        return hMCreatePaymentDataContract;
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetServiceReasonCodesByStatusId</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMReasonContract))]
+    public List GetServiceReasonCodesByStatusId(int _serviceStatusId)
+    {
+        List        reasonCodes = new List(Types::Class);
+        ReasonTable reason;
+        DictEnum    dict = new DictEnum(enumNum(HMServiceStatus));
+    
+        HMReasonContract reasonContract;
+    
+        switch(_serviceStatusId)
+        {
+            case dict.symbol2Value("Decline"):
+    
+                while select reason
+                where reason.ServiceDeclined == 1
+                {
+                    reasonContract = new HMReasonContract();
+                    reasonContract.parmReasonCode(reason.Reason);
+                    reasonContract.parmReasonDescription(reason.Description);
+                    reasonContract.parmRecId(reason.RecId);
+    
+                    reasonCodes.addEnd(reasonContract);
+                }
+                break;
+    
+            case dict.symbol2Value("OnHold"):
+    
+                while select reason
+                where reason.ServiceOnHold == 1
+                {
+                    reasonContract = new HMReasonContract();
+                    reasonContract.parmReasonCode(reason.Reason);
+                    reasonContract.parmReasonDescription(reason.Description);
+                    reasonContract.parmRecId(reason.RecId);
+    
+                    reasonCodes.addEnd(reasonContract);
+                }
+                break;
+    
+    
+            case dict.symbol2Value("Complete"):
+    
+                while select reason
+                where reason.ServiceComplete == 1
+                {
+                    reasonContract = new HMReasonContract();
+                    reasonContract.parmReasonCode(reason.Reason);
+                    reasonContract.parmReasonDescription(reason.Description);
+                    reasonContract.parmRecId(reason.RecId);
+    
+                    reasonCodes.addEnd(reasonContract);
+                }
+                break;
+    
+    
+        }
+    
+        return reasonCodes;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetServicesForAppointment</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMAppointmentContract))]
+    public List GetServicesForAppointment(RecId _AppointmentRecId)
+    {
+       HMAppointmentContract object;
+        HMResourceSchedulingAppointment appointment;
+    
+        List    l = new List(Types::Class);
+     /*
+        while select * from appointment
+            where appointment.AppointmentDate == today()
+        {
+            object = new HMAppointmentContract();
+    
+            object.parmApptdate(date2strUsr(appointment.AppointmentDate));
+            object.parmApptnum(appointment.AppointmentNumber);
+            object.parmApptRecId(int642str(appointment.RecId));
+            object.parmApptStatus(appointment.showAppointmentStatus());
+            object.parmApptTime(appointment.displayTimeWithoutSec());
+            object.parmApptType(HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode).Description);
+            object.parmClinic(appointment.showClinic());
+            object.parmPatientFileNumber(appointment.getPatientChartNum());
+            object.parmPatientName(appointment.getPatientName());
+            object.parmPatientRecId(int642str(appointment.HMPatient));
+            object.parmApptConfrmStatus(enum2str(appointment.HMConfirmationStatus));
+            l.addEnd(object);
+        }*/
+        return l;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>GetSOPOData</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMSOPOContract))]
+    public HMSOPOContract GetSOPOData(RecId _appointmentRecId)
+    {
+        //RecId                                   _appointmentRecId = 5637146077 = so; //5637146078 = po
+        HMSOPOContract                          hMSalePurchOrderContract;
+        HMResourceSchedulingAppointment         appointment;
+        HMPatientContract                       patientContract = new HMPatientContract();
+        HMPatient                               patient;
+        CustTable                               patientCust;
+        SalesTable                              salesTable;
+        SalesLine                               salesLine;
+        Query                                   query = new Query();
+        QueryRun                                qr;
+        TableId                                 tableIdSalesTable;
+        TableId                                 tableIdCustTable;
+        TableId                                 tableIdhMResourceSchedulingAppointmentSalesTbl;
+        QueryBuildDataSource                    qbdsSalesTable;
+        QueryBuildDataSource                    qbdsCustTable;
+        QueryBuildDataSource                    qbdshMResourceSchedulingAppointmentSalesTbl;
+        List                                    soList    = new List(Types::Class);
+        List                                    soLineList    = new List(Types::Class);
+        List                                    poList    = new List(Types::Class);
+        List                                    poLineList    = new List(Types::Class);
+        HMSalePurchOrderDataContract            soClass;
+        HMSalePurchOrderDataContract            poClass;
+        HMSalesLineDataContract                 salesLineClass;
+        //LogisticsPostalAddress                  logisticsPostalAddress;
+        real                                    totalSalesAmount;
+        HMResourceSchedulingAppointmentSalesTbl hMResourceSchedulingAppointmentSalesTbl;
+    
+        appointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+        if(appointment)
+        {
+            patient     = HMPatient::find(appointment.HMPatient);
+            if(patient)
+            {
+                hMSalePurchOrderContract = new HMSOPOContract();
+                patientContract.populatePatientContract(patient,appointment);
+                patientContract.parmAppointmentTime(time2str(appointment.AppointmentTime,TimeSeparator::Colon, TimeSeparator::Colon));
+                patientContract.parmAppointmentDate(date2str(appointment.AppointmentDate, 123, DateDay::Digits2, DateSeparator::Slash, DateMonth::Digits2, DateSeparator::Slash, DateYear::Digits4));
+                if(appointment.ArrivalTime!= -1)
+                {
+                    patientContract.parmArrivalTime(strDel(time2str(appointment.AppointmentTime - appointment.ArrivalTime,TimeSeparator::Colon,TimeFormat::AMPM),6,3));
+                }
+    
+                hMSalePurchOrderContract.parmTodaysExpectedCharges(appointment.getAppointmentChargesForPatient());
+                hMSalePurchOrderContract.parmTodaysAdvanceAmount(appointment.totalAppointmentAdvancePayments());
+                hMSalePurchOrderContract.parmTodaysBalanceAmount(appointment.totalAppointmentInvoiceAmount() - hMSalePurchOrderContract.parmTodaysAdvanceAmount());
+                hMSalePurchOrderContract.parmTotalInvoiceAmount(appointment.patientTotalInvoiceAmount());
+                hMSalePurchOrderContract.parmTotalAdvanceAmount(appointment.patientTotalAdvancePayments());
+                hMSalePurchOrderContract.parmTotalBalanceAmount(hMSalePurchOrderContract.parmTotalInvoiceAmount() - hMSalePurchOrderContract.parmTotalAdvanceAmount());
+    
+                patientContract.parmApptType(HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode).Description);
+                hMSalePurchOrderContract.parmPatientContract(patientContract);
+    
+    
+    
+                //Query Builder
+    
+                tableIdSalesTable = tableName2id("SalesTable");
+                qbdsSalesTable = Query.addDataSource(tableIdSalesTable);
+                qbdsSalesTable.addOrderByField(fieldName2id(tableIdSalesTable,'RecId'),SortOrder::Ascending);
+                qbdsSalesTable.addRange(fieldNum(SalesTable,HMAppointmentNumber)).value(SysQuery::value(appointment.AppointmentNumber));
+                //qbdsSalesTable.addRange(fieldNum(SalesTable,SalesStatus)).value(SysQuery::value(SalesStatus::Backorder));
+    
+                tableIdhMResourceSchedulingAppointmentSalesTbl = tableName2id("HMResourceSchedulingAppointmentSalesTbl");
+                qbdshMResourceSchedulingAppointmentSalesTbl = qbdsSalesTable.addDataSource(tableIdhMResourceSchedulingAppointmentSalesTbl);
+                qbdshMResourceSchedulingAppointmentSalesTbl.relations(true);
+                qbdshMResourceSchedulingAppointmentSalesTbl.joinMode(JoinMode::OuterJoin);
+                 qr = new QueryRun(Query);
+                 qr.literals(true);
+                 //qr.enablePositionPaging(true);
+                    //if(_pageNumber <= 0)
+                    //{
+                        //qr.addPageRange(_pageNumber + 1,recordsPerPage);
+                    //}
+                    //else if(_pageNumber == 1)
+                    //{
+                    //
+                        //startingPosition = 1;
+                        //qr.addPageRange(startingPosition,recordsPerPage);
+                    //}
+                    //else
+                    //{
+                        //startingPosition = ((_pageNumber - 1) * recordsPerPage)+1;
+                        //qr.addPageRange(startingPosition,recordsPerPage);
+                    //}
+    
+    
+    
+        while(qr.next()){
+            salesTable = qr.getNo(1);
+            hMResourceSchedulingAppointmentSalesTbl = qr.getNo(2);
+            soClass = new HMSalePurchOrderDataContract();
+            soClass.parmRecId(SalesTable.RecId);
+            soClass.parmSalesId(SalesTable.SalesId);
+            soClass.parmAddress(salestable.deliveryAddress().Address);
+            soClass.parmContact(salestable.contactPersonName());
+            soClass.parmCoveredBy(strFmt('%1',hMResourceSchedulingAppointmentSalesTbl.Responsibility));
+            soClass.parmCustAcc(salestable.CustAccount);
+            soClass.parmDiscount(strFmt('%1',salestable.DiscPercent));
+            soClass.parmInvoiceAcc(salestable.InvoiceAccount);
+            soClass.parmPayerName(appointment.clientName());
+            soClass.parmPaymentType(salestable.PaymMode);
+            soClass.parmPhysicianImage(patientContract.parmPhysicianImage());
+            soClass.parmPhysicianName(patientContract.parmPhysicianName());
+            soClass.parmPrePayAllow(strFmt('%1',salesTable.displayIsPrePaymentAllowed()));
+            soClass.parmSalesTaxGroup(salestable.TaxGroup);
+    
+            while select * from SalesLine where SalesLine.SalesId == salesTable.SalesId
+            {
+                totalSalesAmount = totalSalesAmount + salesline.LineAmount;
+                salesLineClass = new HMSalesLineDataContract();
+                salesLineClass.parmDiscAmount(SalesLine.discAmount());
+                salesLineClass.parmDiscPercent(SalesLine.discPercent());
+                salesLineClass.parmExamCode(SalesLine.ItemId);
+                salesLineClass.parmExamName(SalesLine.itemName());
+                salesLineClass.parmNetAmount(SalesLine.LineAmount);
+                salesLineClass.parmProtocolCode();
+                salesLineClass.parmProtocolName();
+                salesLineClass.parmRecId(SalesLine.RecId);
+                salesLineClass.parmSalesTaxGroup(SalesLine.TaxGroup);
+                salesLineClass.parmTaxAmount();
+                salesLineClass.parmTotalAmount(SalesLine.LineAmount);
+                salesLineClass.parmUnitPrice(SalesLine.PriceUnit);
+    
+                soLineList.addEnd(salesLineClass);
+    
+            }
+            soClass.parmAmount(totalSalesAmount);
+            soClass.parmHMSalesLineDataContract(soLineList);
+            soList.addEnd(soClass);
+        }
+    
+    
+                            //Fill SO LIST
+    
+    
+    
+    
+    
+    
+                hMSalePurchOrderContract.parmHMSaleOrderContract(soList);
+    
+                            //Fill PO LIST
+                poClass = new HMSalePurchOrderDataContract();
+    
+                //Fill PO Line LIST
+                salesLineClass= new HMSalesLineDataContract();
+                poLineList.addEnd(salesLineClass);
+                poClass.parmHMSalesLineDataContract(poLineList);
+    
+    
+                poList.addEnd(poClass);
+                hMSalePurchOrderContract.parmHMPurchOrderContract(poList);
+            }
+        }
+    
+    
+        return hMSalePurchOrderContract;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>ResetService</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::String)]
+    public Map ResetService(RecId _serviceRecId,RecId _userRecId, boolean _isWorker)
+    {
+        Map                                     response = new Map(Types::String, Types::String);
+        HMServiceLog                            serviceLog;
+        HMResourceSchedulingAppointmentInvent   service;
+        HMServiceLog                            serviceLogSearch;
+        boolean                                 serviceMarkedAsNotRequired = false;
+        service    =  HMResourceSchedulingAppointmentInvent::find(_serviceRecId, true);
+    
+        if(service)
+        {
+            select RecId from serviceLogSearch
+            where serviceLogSearch.HMResourceSchedulingAppointmentInvent == _serviceRecId
+            && serviceLogSearch.NotRequired == NoYes::Yes;
+    
+            if(serviceLogSearch)
+            {
+                serviceMarkedAsNotRequired = true;
+            }
+    
+            ttsBegin;
+            service.HMServiceStatus = HMServiceStatus::NotStarted;
+            if(serviceMarkedAsNotRequired)
+            {
+                service.NotRequired = NoYes::No;
+            }
+            service.update(false);
+            ttsCommit;
+    
+            HMResourceSchedulingHelper::createServiceLog(_serviceRecId, _userRecId, _isWorker, HMServiceStatus::NotStarted, "Resetting service", 0, NoYes::Yes, NoYes::No);
+    
+            //ttsBegin;
+            //serviceLog.HMServiceLogDate                         = today();
+            //serviceLog.HMServiceLogTime                         = timeNow();
+            //serviceLog.HMResourceSchedulingAppointmentInvent    = _serviceRecId;
+            //serviceLog.HMServiceLogNote                         = "Resetting service";
+            //serviceLog.HMUserRecId                              = _userRecId;
+            //serviceLog.HMIsWorker                               = _isWorker;
+            //serviceLog.ResetService                              = NoYes::Yes;
+            //serviceLog.insert();
+            //ttsCommit;
+    
+            response.insert("1", "Service successfully reset");
+        }
+        else
+        {
+            response.insert("0", "Service not found, The recId "+ int642str(_serviceRecId) +" does not correspond to any Service.");
+        }
+    
+    
+        return  response;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetServiceAsNotRequired</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::String)]
+    public Map SetServiceAsNotRequired(RecId _serviceRecId,RecId _userRecId, boolean _isWorker)
+    {
+        Map                                     response = new Map(Types::String, Types::String);
+        HMServiceLog                            serviceLog;
+        HMResourceSchedulingAppointmentInvent   service;
+    
+        service    =  HMResourceSchedulingAppointmentInvent::find(_serviceRecId, true);
+    
+        if(service)
+        {
+            ttsBegin;
+            service.NotRequired = NoYes::Yes;
+            service.update(false);
+            ttsCommit;
+    
+            HMResourceSchedulingHelper::createServiceLog(_serviceRecId, _userRecId, _isWorker, HMServiceStatus::NotStarted, "Marking service as not required", 0, NoYes::No, NoYes::Yes);
+    
+            //ttsBegin;
+            //serviceLog.HMServiceLogDate                         = today();
+            //serviceLog.HMServiceLogTime                         = timeNow();
+            //serviceLog.HMResourceSchedulingAppointmentInvent    = _serviceRecId;
+            //serviceLog.HMServiceLogNote                         = "Marking service as not required";
+            //serviceLog.HMUserRecId                              = _userRecId;
+            //serviceLog.HMIsWorker                               = _isWorker;
+            //serviceLog.NotRequired                              = NoYes::Yes;
+            //serviceLog.insert();
+            //ttsCommit;
+    
+            response.insert("1", "Service successfully updated");
+        }
+        else
+        {
+            response.insert("0", "Service not found, The recId "+ int642str(_serviceRecId) +" does not correspond to any Service.");
+        }
+    
+    
+        return  response;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>SetServicesToAppointment</Name>
+				<Source><![CDATA[
+    //[ AifCollectionTypeAttribute('return', Types::String)]
+    //public Map SetServiceStatus(RecId _serviceRecId, RecId _reasonRecId, RecId _userRecId, boolean _isWorker, int _serviceStatusId, str _note,str _drugReferenceNumber,RecId _siteRecId)
+    //{
+    //    Map     response = new Map(Types::String, Types::String);
+
+    //    HMServiceLog                            serviceLog;
+    //    HMResourceSchedulingAppointmentInvent   service;
+    //    ReasonTable                             reason;
+    //    VendTable                               vendTable;
+    //    boolean serviceFound, reasonFound;
+
+    //    service    =  HMResourceSchedulingAppointmentInvent::find(_serviceRecId, true);
+    //    reason     =  ReasonTable::findByRecid(_reasonRecId);
+
+    //    if (_serviceStatusId == 1 || _serviceStatusId == 4)
+    //    {
+    //        ttsBegin;
+    //        service.HMServiceStatus = _serviceStatusId;
+    //        if(_serviceStatusId == 4)
+    //        {
+    //            if(_isWorker)
+    //            {
+    //            service.HcmWorker =_userRecId;
+    //            }
+    //            else
+    //            {
+    //                select RecId,AccountNum from vendTable
+    //                where vendTable.RecId == _userRecId;
+    //                service.VendTable = vendTable.AccountNum;
+    //            }
+    //            service.DrugReference = _drugReferenceNumber;
+    //            if(_siteRecId)
+    //            {
+    //                service.HMMedSite = _siteRecId;
+    //            }
+    //        }
+    //        service.update(false);
+    //        ttsCommit;
+    //        response.insert("1", "Service successfully updated");
+
+    //        HMResourceSchedulingHelper::createServiceLog(_serviceRecId, _userRecId, _isWorker, _serviceStatusId, _note, 0, NoYes::No, NoYes::No);
+
+    //        //ttsBegin;
+    //        //serviceLog.HMServiceLogDate                         = today();
+    //        //serviceLog.HMServiceLogTime                         = timeNow();
+    //        //serviceLog.HMResourceSchedulingAppointmentInvent    = _serviceRecId;
+    //        //serviceLog.HMServiceLogNote                         = _note;
+    //        //serviceLog.HMServiceLogStatus                       = _serviceStatusId;
+    //        //serviceLog.HMUserRecId                              = _userRecId;
+    //        //serviceLog.HMIsWorker                               = _isWorker;
+    //        //serviceLog.insert();
+    //        //ttsCommit;
+    //    }
+    
+
+    //    else if(_serviceStatusId == 0)
+    //    {
+    //        response.insert("0", "Cannot set Service status to NOT STARTED.");
+    //    }
+
+    //    else if(_serviceStatusId > 4)
+    //    {
+    //        response.insert("0", "Incorrect value for Service Status");
+    //    }
+
+    //    else if(_serviceStatusId == 2)
+    //    {
+    //        response.insert("0", "Service Cannot be put on hold.");
+    //    }
+
+    //    else if(service && reason)
+    //    {
+    //        ttsBegin;
+    //        service.HMServiceStatus = _serviceStatusId;
+    //        service.update(false);
+    //        ttsCommit;
+    //        response.insert("1", "Service successfully updated");
+
+    //        HMResourceSchedulingHelper::createServiceLog(_serviceRecId, _userRecId, _isWorker, _serviceStatusId, _note, _reasonRecId, NoYes::No, NoYes::No);
+
+    //        //ttsBegin;
+    //        //serviceLog.HMServiceLogDate                         = today();
+    //        //serviceLog.HMServiceLogTime                         = timeNow();
+    //        //serviceLog.HMResourceSchedulingAppointmentInvent    = _serviceRecId;
+    //        //serviceLog.HMServiceLogNote                         = _note;
+    //        //serviceLog.HMServiceLogStatus                       = _serviceStatusId;
+    //        //serviceLog.HMUserRecId                              = _userRecId;
+    //        //serviceLog.HMIsWorker                               = _isWorker;
+    //        //serviceLog.ServiceReason                            = _reasonRecId;
+    //        //serviceLog.insert();
+    //        //ttsCommit;
+
+    //    }
+
+    //    if(!service)
+    //    {
+    //        response.insert("0", "Service not found, The recId "+ int642str(_serviceRecId) +" does not correspond to any Service.");
+    //    }
+    //    if(!reason &&  (_serviceStatusId != 1 || _serviceStatusId != 4))
+    //    {
+    //        response.insert("0", "Reason not found, The recId "+ int642str(_reasonRecId) + " does not correspond to any Reason.");
+    //    }
+
+    //    return  response;
+    //}
+
+    [ AifCollectionTypeAttribute('return', Types::String)]
+    public Map SetServicesToAppointment(RecId _appointmentRecId, str _servicesItemId)
+    {
+        Map     response = new Map(Types::String, Types::String);
+        List    serviceList = new List(Types::String);
+    
+        HMResourceSchedulingAppointment         appointment;
+        HMResourceSchedulingAppointmentInvent   appointmentService;
+        InventTable                             service;
+        ListIterator                            serviceIterator;
+        InventTableModule                       modulePrice;
+    
+    
+        serviceList = strSplit(_servicesItemId, ',');
+        serviceIterator = new ListIterator(serviceList);
+    
+        appointment = HMResourceSchedulingAppointment::find( _appointmentRecId);
+    
+        if (appointment)
+        {
+            while (serviceIterator.more())
+            {
+                ttsBegin;
+    
+                service.clear();
+                service = InventTable::find(serviceIterator.value());
+    
+                if (service)
+                {
+                    appointmentService.clear();
+                    appointmentService.HMResourceSchedulingAppointment = appointment.RecId;
+                    appointmentService.HMServiceStatus = HMServiceStatus::NotStarted;
+    
+                    select modulePrice
+                    where modulePrice.ItemId == service.ItemId
+                            && modulePrice.ModuleType == ModuleInventPurchSales::Sales;
+    
+                    if(modulePrice)
+                    {
+                        appointmentService.Price           = modulePrice.Price;
+                    }
+                    appointmentService.InventTable = service.ItemId;
+                    appointmentService.insert();
+                    ttsCommit;
+                    response.insert("1", "The Item "+ int642str(serviceIterator.value()) + " assigned to the appointment.");
+                }
+                else
+                {
+                    response.insert("0", "Service not found, The recId "+ int642str(serviceIterator.value()) + " does not correspond to any Service.");
+                }
+                serviceIterator.next();
+            }
+    
+        }
+        else
+        {
+            response.insert("0", "Appointment not found, The recId "+ int642str(_appointmentRecId) +" does not correspond to any Appointment.");
+        }
+    
+    
+        return  response;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>settleOutStandingPayments</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('_appointmentRecId', Types::Int64),
+    AifCollectionTypeAttribute('_paymentList', Types::Class, classstr(HMSettlePaymentRecordsDataContract)),
+    AifCollectionTypeAttribute('_invoiceList', Types::Class, classstr(HMSettlePaymentRecordsDataContract)),
+    AifCollectionTypeAttribute('_refundList', Types::Class, classstr(HMSettlePaymentRecordsDataContract)),
+    AifCollectionTypeAttribute('return', Types::Class, classstr(HMPatientAccountContract))]
+    public HMPatientAccountContract settleOutStandingPayments(RecId _appointmentRecId,List _paymentList,List _invoiceList,List _refundList)
+    {
+       HMSalesInvoiceCreateFormHandler       objFormHandler;
+       HMResourceSchedulingAppointment       appointment;
+       CustTransOpen                         custTransOpen;
+       HMSalesInvoiceCreateApplicationHelper hMSalesInvoiceCreateApplicationHelper;
+       Map                                   custTransOpenMap, custTransPaymentMap, custTransRefundMap;
+       Args                                  args = new Args();
+       List                                  recievedParamList;
+       ListEnumerator                        enumerator;
+       HMSettlePaymentRecordsDataContract    hMSettlePaymentRecordsDataContract;
+       appointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+       try
+       {
+           custTransOpenMap = new Map(Types::Int64,Types::Record);
+           custTransPaymentMap = new Map(Types::Int64,Types::Record);
+           custTransRefundMap = new Map(Types::Int64,Types::Record);
+           objFormHandler = new HMSalesInvoiceCreateFormHandler();
+           args.record(appointment);
+           hMSalesInvoiceCreateApplicationHelper = new HMSalesInvoiceCreateApplicationHelper();
+    
+           if(_paymentList)
+           {
+               recievedParamList = new List(Types::Int64);
+               recievedParamList = _paymentList;
+               enumerator = recievedParamList.getEnumerator();
+               while(enumerator.moveNext())
+               {
+                   hMSettlePaymentRecordsDataContract = new HMSettlePaymentRecordsDataContract();
+                   hMSettlePaymentRecordsDataContract = enumerator.current();
+                   custTransOpen = CustTransOpen::find(hMSettlePaymentRecordsDataContract.parmRecId());
+                   if(!custTransPaymentMap.exists(custTransOpen.RecId))
+                   {
+                       custTransPaymentMap.insert(custTransOpen.RecId,custTransOpen);
+                   }
+    
+               }
+           }
+           hMSalesInvoiceCreateApplicationHelper.setCustTransPaymentMap(custTransPaymentMap);
+           if(_invoiceList)
+           {
+               recievedParamList = new List(Types::Int64);
+               recievedParamList = _invoiceList;
+               enumerator = recievedParamList.getEnumerator();
+               while(enumerator.moveNext())
+               {
+                   hMSettlePaymentRecordsDataContract = new HMSettlePaymentRecordsDataContract();
+                   hMSettlePaymentRecordsDataContract = enumerator.current();
+                   custTransOpen = CustTransOpen::find(hMSettlePaymentRecordsDataContract.parmRecId());
+                   if(!custTransOpenMap.exists(custTransOpen.RecId))
+                   {
+                       custTransOpenMap.insert(custTransOpen.RecId,custTransOpen);
+                   }
+    
+               }
+           }
+           hMSalesInvoiceCreateApplicationHelper.setCustTransOpenMap(custTransOpenMap);
+           if(_refundList)
+           {
+               recievedParamList = new List(Types::Int64);
+               recievedParamList = _refundList;
+               enumerator = recievedParamList.getEnumerator();
+               while(enumerator.moveNext())
+               {
+                   hMSettlePaymentRecordsDataContract = new HMSettlePaymentRecordsDataContract();
+                   hMSettlePaymentRecordsDataContract = enumerator.current();
+                   custTransOpen = CustTransOpen::find(hMSettlePaymentRecordsDataContract.parmRecId());
+                   if(!custTransRefundMap.exists(custTransOpen.RecId))
+                   {
+                       custTransRefundMap.insert(custTransOpen.RecId,custTransOpen);
+                   }
+    
+               }
+           }
+           hMSalesInvoiceCreateApplicationHelper.setCustTransRefundMap(custTransRefundMap);
+           args.caller(hMSalesInvoiceCreateApplicationHelper);
+           objFormHandler.postOutStandingPayments(args);
+       }
+       catch(Exception::Error)
+       {
+           return this.GetPatientAccountsData(_appointmentRecId);
+       }
+       return this.GetPatientAccountsData(_appointmentRecId);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDailyCensusReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+//[SRSReportParameterAttribute()]
+class HMDailyCensusReportDP extends SRSReportDataProviderBase
+{
+    HMDailyCensusTmp    hmDailyCensusTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMDailyCensusTmp</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute('HMDailyCensusTmp')
+    ]
+    public HMDailyCensusTmp getHMDailyCensusTmp()
+    {
+        select hmDailyCensusTmp;
+    
+        return hmDailyCensusTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        //super();
+        HMCase                          hmCase;
+        HMPatient                       hmPatient;
+        HMClaimTableSetup               claimTableSetup;
+        HMProcedureCodeMaster           procedureCodeMaster;
+        HMBuildingUnitCategory          buildingUnitCategory;
+        HMBuildingUnit                  buildingUnit;
+        RefRecId                        caseRecId;
+        StartDateTime                   startDateTime;
+        EndDateTime                     endDateTime;
+        CompanyImage                    companyImage;
+    
+        startDateTime = DateTimeUtil::newDateTime(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), 0);
+        endDateTime = DateTimeUtil::newDateTime(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), timeMax());
+    
+    
+        while select * from hmCase
+            where hmCase.HMCaseType != HMCaseType::OutPatient
+                && hmCase.DischargeDate == utcDateTimeNull()
+            join hmPatient
+                where hmCase.HMPatient == hmPatient.RecId
+        {
+            select * from companyImage
+                where companyImage.dataAreaId == curext();
+    
+            select * from buildingUnitCategory
+                join buildingUnit
+                    where buildingUnitCategory.RecId == buildingUnit.HMBuildingUnitCategory
+                       && buildingUnit.RecId == hmCase.HMBuildingUnit_Room;
+    
+            hmDailyCensusTmp.ComapnyName = CompanyInfo::find().Name;
+            hmDailyCensusTmp.CompanyLogo = companyImage.Image;
+            hmDailyCensusTmp.Room = HMBuildingUnit::find(hmCase.HMBuildingUnit_Room).Code;
+            hmDailyCensusTmp.PatientName = CustTable::findRecId(hmPatient.CustTable).name();
+            hmDailyCensusTmp.MRNo = CustTable::findRecId(hmPatient.CustTable).AccountNum;
+            hmDailyCensusTmp.Age = str2int(hmPatient.patientAgeNew());
+            hmDailyCensusTmp.HMCaseNo = hmCase.CaseNo;
+            hmDailyCensusTmp.HMCaseType = enum2str(hmCase.HMCaseType);
+            hmDailyCensusTmp.AdmissionDateTime = hmCase.AddmisionDate;
+            hmDailyCensusTmp.DischargeDateTime = hmCase.DischargeDate;
+            hmDailyCensusTmp.FinancialClass = hmCase.financialClass();
+            hmDailyCensusTmp.PatientStatus = strFmt("%1  - %2", HMClaimTableSetup::findByRecEnum(hmCase.HMPatientStatus, HMClaimEnumList::PatientStatus).Code, HMClaimTableSetup::findByRecEnum(hmCase.HMPatientStatus, HMClaimEnumList::PatientStatus).Description);
+            hmDailyCensusTmp.HIPAA = hmPatient.HIPAA;
+            hmDailyCensusTmp.Physician = HMResourceMaster::find(hmCase.HMResourceMaster).Description;
+            hmDailyCensusTmp.RoomType = HMRoomType::find(hmCase.HMRoomType).Description;
+            if (hmCase.AddmisionDate == utcDateTimeNull())
+                hmDailyCensusTmp.Days = 0;
+            else
+                hmDailyCensusTmp.Days = (DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) - DateTimeUtil::date(hmCase.AddmisionDate));
+            hmDailyCensusTmp.insert();
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

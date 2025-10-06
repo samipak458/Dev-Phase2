@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>CustCollectionsAgentHM_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(tableStr(CustCollectionsAgent))]
+final class CustCollectionsAgentHM_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>IsCurrentAgentSupervisorOrManager</Name>
+				<Source><![CDATA[
+    public static boolean IsCurrentAgentSupervisorOrManager()
+    {
+        boolean isCurrentAgentSupervisorOrManager = true;
+
+        CustCollectionsAgent curCustCollectionsAgent = CustCollectionsAgent::findCurrentAgent();
+
+        if(curCustCollectionsAgent.RecId != 0 && curCustCollectionsAgent.HMIsManager == NoYes::No)
+        {
+            CustCollectionsAgent    checkCustCollectionsAgent;
+            DirPartyRelationship    dirPartyRelationship;
+            DirPartyTable           dirPartyTable;
+
+            select RecId, Name from dirPartyTable
+                join dirPartyRelationship
+                    where dirPartyRelationship.ChildParty == dirPartyTable.RecId
+                        && dirPartyRelationship.RecId == curCustCollectionsAgent.DirPartyRelationship
+                exists join checkCustCollectionsAgent
+                    where checkCustCollectionsAgent.HMSupervisor == dirPartyTable.RecId;
+
+            if(!dirPartyTable.RecId)
+            {
+                isCurrentAgentSupervisorOrManager = false;
+            }
+        }
+
+        return isCurrentAgentSupervisorOrManager;
+	}
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void update()
+    {
+        CustCollectionsAgent    oldAgent = this.orig();
+        HMAgentManagerAuditLog  hmAgentManagerAuditLog;
+        DirPartyRelationship    dirPartyRelationship;
+        DirPartyTable           partyTable, partytableSupervisor;
+        Name                    oldSupervisorName;
+
+        select firstonly Name from partytable
+            join dirPartyRelationship
+                where partyTable.RecId == dirPartyRelationship.ChildParty
+                    && dirPartyRelationship.recid == this.DirPartyRelationship;
+
+        next update();
+
+        if(oldAgent.HMGoal != this.HMGoal)
+        {
+            hmAgentManagerAuditLog::createAgentManagerAuditLog(partyTable.Name, HMActionTypeEnum::Modified, int2Str(oldAgent.HMGoal), int2Str(this.HMGoal), '@MAZ:HMGoal');
+        }
+
+        if(oldAgent.HMIsOnShore != this.HMIsOnShore)
+        {
+            hmAgentManagerAuditLog::createAgentManagerAuditLog(partyTable.Name, HMActionTypeEnum::Modified, enum2str(oldAgent.HMIsOnShore), enum2str(this.HMIsOnShore), '@Optum:MAZOPT0023');
+        }
+
+        if(oldAgent.HMIsManager != this.HMIsManager)
+        {
+            hmAgentManagerAuditLog::createAgentManagerAuditLog(partyTable.Name, HMActionTypeEnum::Modified, enum2str(oldAgent.HMIsManager), enum2str(this.HMIsManager), '@Optum:HMIsManager');
+        }
+
+        if(oldAgent.HMSupervisor != this.HMSupervisor)
+        {
+            select Name from partytableSupervisor
+                    where partytableSupervisor.RecId == oldAgent.HMSupervisor;
+                
+            oldSupervisorName = partytableSupervisor.Name;
+
+            select Name from partytableSupervisor
+                    where partytableSupervisor.RecId == this.HMSupervisor;
+
+            hmAgentManagerAuditLog::createAgentManagerAuditLog(partyTable.Name, HMActionTypeEnum::Modified, oldSupervisorName, partytableSupervisor.Name, '@Optum:HMSupervisor');
+        }
+
+        if(oldAgent.AllowShowAllPools != this.AllowShowAllPools)
+        {
+            hmAgentManagerAuditLog::createAgentManagerAuditLog(partyTable.Name, HMActionTypeEnum::Modified, enum2Str(oldAgent.AllowShowAllPools), enum2Str(this.AllowShowAllPools), '@SYS131398');
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,816 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAppointmentService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMAppointmentService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addServiceInAppointment</Name>
+				<Source><![CDATA[
+    public boolean addServiceInAppointment(RecId _appointmentRecId, str _examCode, str _responsibility)
+    {
+    
+        HMResourceSchedulingAppointmentInvent appInvent;
+    
+        try
+        {
+            ttsBegin;
+    
+            appInvent.HMResourceSchedulingAppointment = _appointmentRecId;
+            appInvent.InventTable = _examCode;
+            if(_responsibility == 'company')
+            {
+                appInvent.PatientResponsibility = HMPatientPaymentResponsibility::Client;
+            }
+            else
+            {
+                appInvent.PatientResponsibility = HMPatientPaymentResponsibility::Patient;
+            }
+    
+            appInvent.insert();
+    
+    
+            ttsCommit;
+            return true;
+        }
+        catch
+        {
+            ttsAbort;
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>cancelAppointment</Name>
+				<Source><![CDATA[
+    public boolean cancelAppointment(RecId _apptRecId)
+    {
+        HMAppoinmentLog HMAppoinmentLog;
+        hmResourceSchedulingAppointment hmResourceSchedulingAppointment;
+        ReasonTable reason;
+        boolean ret;
+    
+        ttsBegin;
+    
+        try
+        {
+            select firstOnly * from reason where reason.Appointments == true;
+    
+            HMAppoinmentLog.HMAppointLogStatus = HMResourceSchedulingAppointmentStatus::Cancelled;
+            HMAppoinmentLog.AppointmentReason  = reason.RecId;
+    
+            hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_apptRecId,true);
+            hmResourceSchedulingAppointment.AppointmentStatus = HMAppoinmentLog.HMAppointLogStatus;
+            hmResourceSchedulingAppointment.update();
+    
+    
+            HMAppoinmentLog.HMResScheduleAppointment = _apptRecId;
+            HMAppoinmentLog.HMAppointLogDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            HMAppoinmentLog.HMAppointLogTime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+            //HMAppoinmentLog.HMAppointLogNote = HMAppointLogNote.valueStr();
+            HMAppoinmentLog.insert();
+    
+            ttsCommit;
+    
+            ret = true;
+        }
+        catch(Exception::Error)
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>confirmAppointment</Name>
+				<Source><![CDATA[
+    public boolean confirmAppointment(RecId _appointmentRecId, str _type)
+    {
+        hmResourceSchedulingAppointment hmResourceSchedulingAppointment;
+    
+        try
+        {
+            ttsBegin;
+            select forUpdate hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.RecId == _appointmentRecId;
+            switch(_type)
+            {
+                case 'Confirmed':
+                    hmResourceSchedulingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Confirmed;
+                    hmResourceSchedulingAppointment.update();
+                    break;
+                case'Reconfirmed':
+                    //hmResourceSchedulingAppointment.HMConfirmationStatus = HMConfirmationStatus::Reconfirmred;
+                    hmResourceSchedulingAppointment.update();
+                    break;
+            }
+            ttsCommit;
+            return true;
+        }
+        catch
+        {
+            ttsAbort;
+            return false;
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAppointment</Name>
+				<Source><![CDATA[
+    public int64 createAppointment(RecId                                 _patientRecId,
+                                  TransDate                             _appointmetnDate,
+                                  TimeOfDay                             _appointmentTime,
+                                  RecId                                 _physicianRecId,
+                                  RecId                                 _clinicRecId,
+                                  RecId                                 _scheduleTypeRecId
+    )
+    {
+    
+                Thread                              emailThread ;
+        HMNumberSequenceGeneratorClass      appointmentClass;
+        HMResourceSchedulingAppointment     HMResourceSchedulingAppointment;
+        utcDateTime                         appointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(_appointmetnDate ,_appointmentTime),HMResourceSchedulingTypeCode::find(_scheduleTypeRecId).Duration);
+        int64                             ret  = 0;
+        HcmWorker        hcmWorker;
+        Thread           emailThreadPhysician;
+    
+        try
+        {
+            appointmentClass = new HMNumberSequenceGeneratorClass();
+            HMResourceSchedulingAppointment.AppointmentNumber                   = appointmentClass.getNewNumSeqForAppointmentNum(HMOrganizationalUnit::getOperatingUnitRecid(_clinicRecId));
+            HMResourceSchedulingAppointment.HMPatient                           = _patientRecId;
+            HMResourceSchedulingAppointment.AppointmentDate                     = _appointmetnDate;
+            HMResourceSchedulingAppointment.AppointmentTime                     = _appointmentTime;
+            HMResourceSchedulingAppointment.AppointmentEndTime                  = DateTimeUtil::time(appointmentEnd);
+            HMResourceSchedulingAppointment.AppointmentEndDate                  = DateTimeUtil::date(appointmentEnd);
+            HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject  = HMResourceSchedulingPlanningObject::findByClinicStaff(_physicianRecId).RecId;
+            HMResourceSchedulingAppointment.HMResourceSchedulingTypeCode        = _scheduleTypeRecId;
+            HMResourceSchedulingAppointment.AppointmentStatus                   = HMResourceSchedulingAppointmentStatus::Open;
+            HMResourceSchedulingAppointment.HMBookingOrigin                =HMParameters::find().HMBookingOrigin;
+    
+            HMResourceSchedulingAppointment.insert();
+    
+            if (HMResourceSchedulingAppointment.RecId)
+            {
+                ret = HMResourceSchedulingAppointment.RecId;
+    
+                 emailThread = new Thread();
+                emailThread.setInputParm([hmResourceSchedulingAppointment.AppointmentDate, hmResourceSchedulingAppointment.AppointmentTime, hmResourceSchedulingAppointment.HMPatient, hmResourceSchedulingAppointment.RecId, "", FormOpenMode::ForNew, HMParameters::find().AppointmentSysEmailTable]);
+                //TODO: AX7 code conflict
+                //HMResourceSchedulingHelper::sendAppointmentEmailNew(emailThread);
+    
+                hcmWorker = HcmWorker::find(HMClinicStaff::find(HMResourceSchedulingPlanningObject::find(HMResourceSchedulingAppointment.HMResourceSchedulingPlanningObject).HMClinicStaff).HcmWorker);
+    
+                if(hcmWorker.email() !="")
+                {
+                    emailThreadPhysician = new Thread();
+    
+                    emailThreadPhysician.setInputParm([hcmWorker.email(),HMResourceSchedulingAppointment.RecId,HMParameters::find().AppointmentSysEmailTable,hcmWorker.name()]);
+                    //TODO: AX7 code conflict
+                    //emailThreadPhysician.run(classnum(HMResourceSchedulingHelper),staticMethodStr(HMResourceSchedulingHelper,sendAppointmentMailPhysician));
+                }
+            }
+        }
+        catch
+        {
+            ret = 0;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>editAppointment</Name>
+				<Source><![CDATA[
+    public boolean editAppointment(RecId _apptRecId, date _date, timeofday _time)
+    {
+        HMAppoinmentLog HMAppoinmentLog;
+        hmResourceSchedulingAppointment hmResourceSchedulingAppointment;
+        ReasonTable reason;
+        utcDateTime appointmentEnd;
+        boolean ret;
+    
+        ttsBegin;
+    
+        try
+        {
+            select firstOnly * from reason where reason.Appointments == true;
+    
+            hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_apptRecId,true);
+    
+            hmResourceSchedulingAppointment.AppointmentDate = _date;
+            hmResourceSchedulingAppointment.AppointmentTime = _time;
+    
+            appointmentEnd = DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(_date,_time),HMResourceSchedulingTypeCode::find(hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode).Duration);
+            hmResourceSchedulingAppointment.AppointmentEndTime = DateTimeUtil::time(appointmentEnd);
+            hmResourceSchedulingAppointment.AppointmentEndDate = DateTimeUtil::date(appointmentEnd);
+            hmResourceSchedulingAppointment.AppointmentStatus = HMResourceSchedulingAppointmentStatus::Confirmed;
+            hmResourceSchedulingAppointment.AppointmentReason = reason.RecId;
+    
+            hmResourceSchedulingAppointment.update();
+    
+            hmAppoinmentLog.HMAppointLogStatus          = HMResourceSchedulingAppointmentStatus::Edited;
+            HMAppoinmentLog.AppointmentReason  = reason.RecId;
+            HMAppoinmentLog.HMResScheduleAppointment = _apptRecId;
+            HMAppoinmentLog.HMAppointLogDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            HMAppoinmentLog.HMAppointLogTime = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+            //HMAppoinmentLog.HMAppointLogNote = HMAppointLogNote.valueStr();
+            HMAppoinmentLog.insert();
+    
+            ttsCommit;
+    
+            ret = true;
+        }
+        catch(Exception::Error)
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findAppointment</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMAppointmentDataContract))]
+    public List findAppointment(recid _appointmentRecId)
+    {
+        HMResourceSchedulingOpenTimeSlotsSearch  openSlotSearchObj =  new HMResourceSchedulingOpenTimeSlotsSearch();
+        HMAppointmentDataContract object;
+        HMResourceSchedulingAppointment appointment;
+        HMResourceSchedulingOpenTimeSlotsTmp                        hmResourceSchedulingOpenTimeSlotsTmpLocal;
+        HMResourceSchedulingPlanningObject planningobj;
+    
+        RecId                       recId;
+        List                        l = new List(Types::Class);
+    
+        while select * from appointment
+            where appointment.recid == _appointmentRecId
+        {
+            object = new HMAppointmentDataContract();
+            planningobj = HMResourceSchedulingPlanningObject::find(appointment.HMResourceSchedulingPlanningObject);
+            object.parmApptdate(date2strUsr(appointment.AppointmentDate));
+            object.parmApptRecId(int642str(appointment.RecId));
+            object.parmApptStatus(appointment.showAppointmentStatus());
+            object.parmApptTime(appointment.displayTimeWithoutSec());
+            object.parmApptType(HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode).Description);
+            object.parmClinic(appointment.showClinic());
+            object.parmPhysician(appointment.getAppointmentPhysician());
+            object.parmPatientRecId(int642str(appointment.HMPatient));
+            //hmResourceSchedulingOpenTimeSlotsTmpLocal = openSlotSearchObj.searchOpenTimeSlotPatientChart(appointment.AppointmentDate,appointment.AppointmentDate+HMParameters::find().OpenSlots,
+              //true,appointment.HMPatient,planningobj.HMClinicStaff,planningobj.HMOrganizationalUnit,appointment.HMResourceSchedulingTypeCode);
+            //object.parmNextAvlblTime(time2StrHMLeadingZero(hmResourceSchedulingOpenTimeSlotsTmpLocal.Time));
+    
+            hmResourceSchedulingOpenTimeSlotsTmpLocal = openSlotSearchObj.searchOpenTimeSlot(appointment.HMResourceSchedulingPlanningObject,
+                                                        appointment.AppointmentDate,
+                                                        appointment.AppointmentDate +HMParameters::find().OpenSlots,
+                                                        false,
+                                                        appointment.HMResourceSchedulingTypeCode,
+                                                        false,
+                                                        [false,false,false,false,false,false,false]);
+    
+    
+        delete_from hmResourceSchedulingOpenTimeSlotsTmpLocal
+         where
+                        (hmResourceSchedulingOpenTimeSlotsTmpLocal.Time < appointment.AppointmentTime
+                        &&  hmResourceSchedulingOpenTimeSlotsTmpLocal.Date == appointment.AppointmentDate);
+    
+    
+    
+            select firstOnly  hmResourceSchedulingOpenTimeSlotsTmpLocal;
+            object.parmNextAvlblDate(date2strUsr(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date));
+            object.parmNextAvlblTime(strDel(time2str(hmResourceSchedulingOpenTimeSlotsTmpLocal.Time,TimeSeparator::Colon,TimeFormat::AMPM),6,3));
+    
+            l.addEnd(object);
+    
+        }
+    
+        return l;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentSchduleType</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Int64,extendedTypeStr(RecId),Types::String,extendedTypeStr(Description))]
+    public Map getAppointmentSchduleType()
+    {
+        HMResourceSchedulingTypeCode    HMResourceSchedulingTypeCode;
+        Map                             map = new Map(Types::Int64,Types::String);
+    
+        while select * from HMResourceSchedulingTypeCode
+            where HMResourceSchedulingTypeCode.HMMedisysScheduleType != HMMedisysScheduleType::Break
+        {
+            map.insert(HMResourceSchedulingTypeCode.RecId, HMResourceSchedulingTypeCode.Description);
+        }
+    
+        return map;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentServicesDetail</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMInventItemContract))]
+    public List getAppointmentServicesDetail(RecId _appointmentRecId)
+    {
+        HMResourceSchedulingAppointmentInvent appInvent;
+        List list = new List(Types::Class);
+        HMInventItemContract contract;
+        HMExamCodeNotes examnotes;
+        DocuRef docuRef;
+        str notes;
+        while select * from appInvent
+            where appInvent.HMResourceSchedulingAppointment == _appointmentRecId
+        {
+            contract = new HMInventItemContract();
+            contract.parmItemID(appInvent.InventTable);
+            contract.parmItemName(InventTable::find(appInvent.InventTable).itemDescriptionOrName());
+            switch(appInvent.PatientResponsibility)
+            {
+                case HMPatientPaymentResponsibility::Client:
+                    contract.parmSalesPrice(HMSalesOrderInvoiceGenerator::getItemPricePrice(appInvent.InventTable,
+                        CustTable::findRecId(HMPatient::find(HMResourceSchedulingAppointment::find(appInvent.HMResourceSchedulingAppointment).HMPatient).Client).AccountNum));
+                    break;
+                case HMPatientPaymentResponsibility::Government:
+                    contract.parmSalesPrice(HMSalesOrderInvoiceGenerator::getItemPricePrice(appInvent.InventTable,
+                        CustTable::findRecId(HMInsuranceCarrier::find(HMPatient::find(HMResourceSchedulingAppointment::find(appInvent.HMResourceSchedulingAppointment).HMPatient).getPrimaryInsurance()).CustTable).AccountNum));
+                    break;
+                case HMPatientPaymentResponsibility::Patient:
+                    contract.parmSalesPrice(HMSalesOrderInvoiceGenerator::getItemPricePrice(appInvent.InventTable,
+                        HMPatient::find(HMResourceSchedulingAppointment::find(appInvent.HMResourceSchedulingAppointment).HMPatient).patientChartNum()));
+                    break;
+            }
+            notes= '';
+            while select * from examnotes
+                where examnotes.ItemId == appInvent.InventTable
+            {
+                notes+=   examnotes.Notes + '\r\n';
+            }
+            contract.parmNotes(notes);
+            //contract.parmItemImage(HMInventItem::GetItemImageWithInvent(appInvent.InventTable));
+            contract.parmCoverage(enum2str(appInvent.PatientResponsibility));
+            List.addEnd(contract);
+        }
+        return list;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClinics</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Int64,extendedTypeStr(RecId),Types::String,extendedTypeStr(Description))]
+    public Map getClinics()
+    {
+        HMOrganizationalUnit    HMOrganizationalUnit;
+        Map                     map = new Map(Types::Int64,Types::String);
+    
+        while select * from HMOrganizationalUnit
+        {
+            map.insert(HMOrganizationalUnit.RecId, HMOrganizationalUnit.Description);
+        }
+    
+        return map;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCSRAppointments</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMAppointmentDataContract))]
+    public List getCSRAppointments(date _fromDate, date _toDate)
+    {
+        HMAppointmentDataContract object;
+        HMResourceSchedulingAppointment appointment;
+    
+        RecId                       recId;
+        List                        l = new List(Types::Class);
+    
+        object = new HMAppointmentDataContract();
+    
+        while select * from appointment
+            where appointment.AppointmentDate >=  _fromDate && appointment.AppointmentDate <= _toDate
+            && appointment.AppointmentStatus != HMResourceSchedulingAppointmentStatus::Cancelled
+        {
+            object = new HMAppointmentDataContract();
+    
+            object.parmApptdate(date2strUsr(appointment.AppointmentDate));
+            object.parmApptRecId(int642str(appointment.RecId));
+            object.parmApptStatus(appointment.showAppointmentStatus());
+            object.parmApptTime(appointment.displayTimeWithoutSec());
+            object.parmApptType(HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode).Description);
+            object.parmClinic(appointment.showClinic());
+            object.parmPhysician(appointment.getAppointmentPhysician());
+            object.parmPatientFileNumber(appointment.getPatientChartNum());
+            object.parmPatientName(appointment.getPatientName());
+            object.parmPatientRecId(int642str(appointment.HMPatient));
+            object.parmApptConfrmStatus(enum2str(appointment.HMConfirmationStatus));
+            l.addEnd(object);
+    
+        }
+    
+        return l;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFeedbackAppointments</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMAppointmentDataContract))]
+    public List getFeedbackAppointments(recid _appointmentRecId)
+    {
+        HMResourceSchedulingOpenTimeSlotsSearch  openSlotSearchObj =  new HMResourceSchedulingOpenTimeSlotsSearch();
+        HMAppointmentDataContract object;
+        HMResourceSchedulingAppointment appointment;
+        HMResourceSchedulingOpenTimeSlotsTmp                        hmResourceSchedulingOpenTimeSlotsTmpLocal;
+        HMResourceSchedulingPlanningObject planningobj;
+    
+        RecId                       recId;
+        List                        l = new List(Types::Class);
+        int counter;
+    
+        appointment = HMResourceSchedulingAppointment::find(_appointmentRecId);
+    
+        hmResourceSchedulingOpenTimeSlotsTmpLocal = openSlotSearchObj.searchOpenTimeSlot(appointment.HMResourceSchedulingPlanningObject,
+                                                        appointment.AppointmentDate,
+                                                        appointment.AppointmentDate +HMParameters::find().OpenSlots,
+                                                        false,
+                                                        5637144593,
+                                                        false,
+                                                        [false,false,false,false,false,false,false]);
+    
+        while select * from hmResourceSchedulingOpenTimeSlotsTmpLocal
+        {
+            object = new HMAppointmentDataContract();
+    
+            if(Counter==4)
+                break;
+    
+            Counter++;
+    
+            planningobj = HMResourceSchedulingPlanningObject::find(appointment.HMResourceSchedulingPlanningObject);
+    
+            object.parmApptdate(date2strUsr(hmResourceSchedulingOpenTimeSlotsTmpLocal.Date));
+            object.parmApptTime(hmResourceSchedulingOpenTimeSlotsTmpLocal.displayTimeWithoutSec());
+            object.parmPhysician(HMClinicStaff::getPhysicianNameByRecId(hmResourceSchedulingOpenTimeSlotsTmpLocal.HMClinicStaff));
+            object.parmDuration(hmResourceSchedulingOpenTimeSlotsTmpLocal.Duration);
+    
+            l.addEnd(object);
+        }
+    
+        return l;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientAppointments</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMAppointmentDataContract))]
+    public List getPatientAppointments(recid patientRecId,date _fromDate, date _toDate)
+    {
+        HMAppointmentDataContract object;
+        HMResourceSchedulingAppointment appointment;
+    
+        RecId                       recId;
+        List                        l = new List(Types::Class);
+    
+        while select * from appointment
+            where appointment.HMPatient == patientRecId
+            && appointment.AppointmentDate >=  _fromDate && appointment.AppointmentDate <= _toDate
+            && (appointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            || appointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Edited)
+        {
+            object = new HMAppointmentDataContract();
+    
+            object.parmApptdate(date2strUsr(appointment.AppointmentDate));
+            object.parmApptRecId(int642str(appointment.RecId));
+            object.parmApptStatus(appointment.showAppointmentStatus());
+            object.parmApptTime(appointment.displayTimeWithoutSec());
+            object.parmApptType(HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode).Description);
+            object.parmClinic(appointment.showClinic());
+            object.parmPhysician(appointment.getAppointmentPhysician());
+            object.parmConfirmationStatus(enum2str(appointment.HMConfirmationStatus));
+            object.parmPatientRecId(int642str(appointment.HMPatient));
+            object.parmApptConfrmStatus(enum2str(appointment.HMConfirmationStatus));
+            l.addEnd(object);
+    
+        }
+    
+        return l;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientImage</Name>
+				<Source><![CDATA[
+    public str getPatientImage(RecId _patientRecId)
+    {
+        //TODO: AX7 code conflict
+        //BinData binData = new BinData();
+        //DocuRef             documentRef = DocuRef::findRecId(HMPatient::find(_patientRecId).DocuRef);
+        //URL                 url;
+        //if (documentRef.completeFilename())
+        //{
+        //    url = documentRef.completeFilename();
+        //    BinData.loadFile(url);
+        //    return binData.base64Encode();
+        //}
+        return '';
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientImageByteArray</Name>
+				<Source><![CDATA[
+    public System.Byte[] getPatientImageByteArray(str patientRecId)
+    {
+        RecId _patientRecID;
+        //DocuRef documentRef;
+        System.Byte[] byteArray;
+        str name;
+        _patientRecID = str2int64(patientRecId);
+    
+        //documentRef = DocuRef::findRecId(HMPatient::find(_patientRecId).DocuRef);
+        //if(documentRef.recid > 0)
+        //{
+        //    name  = documentRef.completeFilename();
+        //    if(name != '')
+        //    {
+        //        byteArray = System.IO.File::ReadAllBytes(name);
+        //        return byteArray;
+        //    }
+        //}
+        return byteArray;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientImageInBytes</Name>
+				<Source><![CDATA[
+    public System.Byte[] getPatientImageInBytes(int64 patientRecId)
+    {
+        RecId _patientRecID;
+        //DocuRef documentRef;
+        System.Byte[] byteArray;
+        //str name;
+        //_patientRecID = patientRecId;
+
+        //documentRef = DocuRef::findRecId(HMPatient::find(_patientRecId).DocuRef);
+        //if(documentRef.recid > 0)
+        //{
+        //    name  = documentRef.completeFilename();
+        //    if(System.IO.File::Exists(name))
+        //    {
+        //        byteArray = System.IO.File::ReadAllBytes(name);
+        //        return byteArray;
+        //    }
+        //}
+        return byteArray;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPhysicianEmailDetails</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::String)]
+    public List getPhysicianEmailDetails(recId _apptRecId)
+    {
+        SysEmailTable           emailTable      = SysEmailTable::find(HMParameters::find().AppointmentSysEmailTable);
+        List                     list = new List(Types::String);
+        HcmWorker        hcmWorker;
+        HMResourceSchedulingAppointment hmResourceSchedulingAppointment = HMResourceSchedulingAppointment::find(_apptRecId);
+    
+        str subject = strFmt('%1 - %2', HMResourceSchedulingTypeCode::find(hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode).HMMedisysScheduleType,hmResourceSchedulingAppointment.getPatientName());
+        str body = strFmt(SysLabel::labelId2String2('@MAZ11108'), hmResourceSchedulingAppointment.getPatientName());
+        str location = hmResourceSchedulingAppointment.showClinic();
+        utcdatetime startTime;
+        utcdatetime endTime;
+        SMTPPassword pass;
+        SysEmailParameters parm=SysEmailParameters::find();
+    
+        hcmWorker = HcmWorker::find(HMClinicStaff::find(HMResourceSchedulingPlanningObject::find(hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject).HMClinicStaff).HcmWorker);
+    
+        startTime = DateTimeUtil::newDateTime(hmResourceSchedulingAppointment.AppointmentDate, hmResourceSchedulingAppointment.AppointmentTime);
+        endTime = DateTimeUtil::newDateTime(hmResourceSchedulingAppointment.AppointmentEndDate, hmResourceSchedulingAppointment.AppointmentEndTime);
+    
+        pass = SysEmailParameters::password();
+    
+        list.addStart(emailTable.SenderAddr);
+        list.addStart(emailTable.SenderName);
+        list.addStart(hcmWorker.email());
+        list.addStart(hcmWorker.name());
+        list.addStart(subject);
+        list.addStart(body);
+        list.addStart(DateTimeUtil::toStr(startTime));
+        list.addStart(DateTimeUtil::toStr(endTime));
+        list.addStart(location);
+        list.addStart(parm.SMTPRelayServerName);
+        list.addStart(int2str(parm.SMTPPortNumber));
+        list.addStart(parm.SMTPUserName);
+        list.addStart(pass);
+    
+        return list;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPhysicians</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Int64,extendedTypeStr(RecId),Types::String,extendedTypeStr(Description))]
+    public Map getPhysicians(RecId  _clinicRecId)
+    {
+        HMClinicStaff           HMClinicStaff;
+        HMStaffNursingUnit      HMStaffNursingUnit;
+        HMOrganizationalUnit    HMOrganizationalUnit;
+    
+        Map                     map = new Map(Types::Int64,Types::String);
+    
+        while select * from HMClinicStaff
+            join * from HMStaffNursingUnit
+            where HMStaffNursingUnit.HMClinicStaff == HMClinicStaff.RecId
+            join * from HMOrganizationalUnit
+            where HMOrganizationalUnit.RecId == HMStaffNursingUnit.HMOrganizationalUnit
+            && HMOrganizationalUnit.RecId == _clinicRecId
+        {
+            map.insert(HMClinicStaff.RecId, HMClinicStaff.getPhysicianName());
+        }
+    
+        return map;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTimeSLots</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::String)]
+    public List getTimeSLots(TransDate _date,RecId _physicianRecId, recId _scheduleType)
+    {
+        HMResourceSchedulingOpenTimeSlotsTmp    hmResourceSchedulingOpenTimeSlotsTmpLocal;
+        HMResourceSchedulingOpenTimeSlotsSearch hmResourceSchedulingOpenTimeSlotsSearch=new HMResourceSchedulingOpenTimeSlotsSearch();
+        HMResourceSchedulingPlanningObject hmResourceSchedulingPlanningObjectMain = HMResourceSchedulingPlanningObject::findByClinicStaff(_physicianRecId);
+    
+        List                     list = new List(Types::String);
+    
+        hmResourceSchedulingOpenTimeSlotsTmpLocal=hmResourceSchedulingOpenTimeSlotsSearch.searchOpenTimeSlot(hmResourceSchedulingPlanningObjectMain.RecId,_date,_date,false,_scheduleType,true,[false,false,false,false,false,false,false]);
+    
+        while select * from hmResourceSchedulingOpenTimeSlotsTmpLocal
+        {
+            list.addEnd(hmResourceSchedulingOpenTimeSlotsTmpLocal.displayTimeWithoutSec());
+        }
+    
+        return list;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTodaysApptPatientDetails</Name>
+				<Source><![CDATA[
+    [ AifCollectionTypeAttribute('return', Types::Class, classstr(HMAppointmentDataContract))]
+    public List getTodaysApptPatientDetails()
+    {
+        HMAppointmentDataContract object;
+        HMResourceSchedulingAppointment appointment;
+        Query                       query = new Query(queryStr(HMAppointmentsQuery));
+        QueryRun qryRun;
+        HMPatient patient;
+        HMPatientInfoServiceContract infoserviceObjClass;
+    
+        RecId                       recId;
+        List                        l = new List(Types::Class);
+    
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment, AppointmentDate)).value(SysQuery::value(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())));
+        query.dataSourceTable(tableNum(HMResourceSchedulingAppointment)).addRange(fieldNum(HMResourceSchedulingAppointment, AppointmentStatus)).value(SysQuery::valueNot(HMResourceSchedulingAppointmentStatus::Cancelled));
+    
+        qryRun = new QueryRun(query);
+    
+        while(qryRun.next())
+        {
+            object = new HMAppointmentDataContract();
+    
+            patient = qryRun.get(tableNum(HMPatient));
+            appointment = qryRun.get(tableNum(HMResourceSchedulingAppointment));
+    
+            object.parmPatientName(patient.patientName());
+    
+            infoserviceObjClass = new HMPatientInfoServiceContract();
+            object.parmPatientImage2(infoserviceObjClass.getPatientImage(int642str(Patient.RecId)));
+            object.parmPatientRecId(int642str(patient.RecId));
+            object.parmPatientDOB(patient.patientBirthDate());
+            object.parmPhysician(appointment.getAppointmentPhysician());
+            object.parmClientName(CustTable::findRecId(patient.Client).name());
+            object.parmApptdate(date2strUsr(appointment.AppointmentDate));
+            object.parmApptRecId(int642str(appointment.RecId));
+            object.parmApptStatus(appointment.showAppointmentStatus());
+            object.parmApptTime(appointment.displayTimeWithoutSec());
+            object.parmApptType(HMResourceSchedulingTypeCode::find(appointment.HMResourceSchedulingTypeCode).Description);
+            object.parmClinic(appointment.showClinic());
+            object.parmConfirmationStatus(enum2str(appointment.HMConfirmationStatus));
+            object.parmApptConfrmStatus(enum2str(appointment.HMConfirmationStatus));
+            object.parmApptnum(appointment.AppointmentNumber);
+    
+            l.addEnd(object);
+        }
+    
+        return l;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getUserRecId</Name>
+				<Source><![CDATA[
+    public int64 getUserRecId(UserName _userName, boolean _forPatient)
+    {
+        UserInfo        userInfo;
+        DirPersonUser   dirPersonUser;
+        HcmWorker       hcmWorker;
+        HMClinicStaff   hmClinicStaff;
+        HMPatient hmpatient;
+        CustTable custTable;
+       RefRecId recidUser;
+    
+        if(_forPatient)
+        {
+            select * from hmpatient
+                join * from custTable
+                join User,PersonParty from dirPersonUser
+                join networkAlias,id from userInfo
+            where hmpatient.CustTable == custTable.RecId
+            && custTable.Party == dirPersonUser.PersonParty
+            && dirPersonUser.User == userInfo.id
+            && userInfo.networkAlias == _userName;
+    
+            recidUser = hmpatient.RecId;
+        }
+        else
+        {
+            select HcmWorker,RecId from hmClinicStaff
+            join Person,RecId from hcmWorker
+            join User,PersonParty from dirPersonUser
+            join networkAlias,id from userInfo
+                where hmClinicStaff.HcmWorker == hcmWorker.RecId
+                && hcmWorker.Person == dirPersonUser.PersonParty
+                && dirPersonUser.User == userInfo.id
+                && userInfo.networkAlias == _userName;
+    
+            recidUser = hmClinicStaff.RecId;
+        }
+    
+        return recidUser;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>gteCLinicStaffNAme</Name>
+				<Source><![CDATA[
+    public Description255 gteCLinicStaffNAme(RecId _recid)
+    {
+        return HMClinicStaff::find(_recid).physicianName();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateUserWithAppointment</Name>
+				<Source><![CDATA[
+    public boolean validateUserWithAppointment(RecId _appointmentRecId, RecId _patientRecId)
+    {
+        return HMResourceSchedulingAppointment::find(_appointmentRecId).HMPatient == _patientRecId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMADTCSVIntegrationBatch</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMADTCSVIntegrationBatch extends RunBaseBatch
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        CommaStreamIo file;
+        container line;
+        UtcDateTime     dateTime = DateTimeUtil::getSystemDateTime();
+        HMCase hmCase;
+        HMPatient hmPatient;
+        FileIoPermission perm;
+        str dateTimeStr;
+        str fileName;
+    
+        System.DateTime sysDateTime;
+        sysDateTime =  dateTime;
+        select RecId from HMCase
+        join hmPatient
+            where hmPatient.RecId == hmCase.HMPatient
+            && HMCase.CSVFileGenerated == NoYes::No;
+    
+        if(!hmCase)
+        {
+            throw warning("No new case has been creating since last batch");
+        }
+        dateTimeStr = sysDateTime.ToString("yyyy-MM-dd HHmm");
+        #File
+        fileName = HMParameters::find().ADTIntegrationCSVLocation;
+        if(!fileName)
+        {
+            throw error("File location is not defined in parameters");
+        }
+        fileName += strFmt(@"\\%1.%2",dateTimeStr,"csv");
+        perm = new FileIoPermission(fileName, #io_write);
+        perm.assert();
+    
+        //TODO: cannot implicitly convert CommaIo to CommaStreamIo
+        //file = new CommaIo(fileName, #io_write);
+        file.outFieldDelimiter(',');// for semicolon separator
+    
+        if (!file || file.status() != IO_Status::Ok)
+        {
+            throw error("File cannot be opened.");
+        }
+        ttsBegin;
+        while select forUpdate HMCase
+        join * from hmPatient
+            where hmPatient.RecId == hmCase.HMPatient
+            && HMCase.CSVFileGenerated == NoYes::No
+        {
+            line = [hmPatient.patientFirstName(),
+                    hmPatient.patientLastName(),
+                    hmPatient.patientMiddleName(),
+                    enum2str(hmCase.HMCaseType),
+                    hmPatient.patientChartNum(),
+                    hmCase.CaseNo,
+                    hmPatient.patientGender(),
+                    hmPatient.patientBirthDate(),
+                    DateTimeUtil::toStr(hmCase.AddmisionDate),
+                    DateTimeUtil::toStr(hmCase.DischargeDate),
+                    HMResourceMaster::find(hmCase.OperatingPhysician).Description,
+                    HMResourceMaster::find(hmCase.HMResourceMaster).Description];
+    
+            file.writeExp(line);
+            HMCase.CSVFileGenerated = NoYes::Yes;
+            HMCase.update();
+        }
+        ttsCommit;
+        CodeAccessPermission::revertAssert();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    client server static ClassDescription description()
+    {
+        return "ADT Transcription";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    static void main(Args _args)
+    {
+        HMADTCSVIntegrationBatch objClass = new HMADTCSVIntegrationBatch();
+        if (objClass.prompt())
+        {
+            objClass.run();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,835 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_dev_la_optum_outbound_autosync_name": {
+            "defaultValue": "dev-la-optum-outbound-autosync",
+            "type": "String"
+        },
+        "connections_dynamicsax_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/dynamicsax",
+            "type": "String"
+        },
+        "connections_office365_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/office365",
+            "type": "String"
+        },
+        "connections_sftpwithssh_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/sftpwithssh",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_dev_la_optum_outbound_autosync_name')]",
+            "location": "centralus",
+            "tags": {
+                "displayName": "LogicApp"
+            },
+            "properties": {
+                "state": "Disabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "AlertRecipient": {
+                            "defaultValue": "ORx_MS_dynamics_RCM_Support_Group@ds.uhc.com",
+                            "type": "String"
+                        },
+                        "D365FODMFDefinitionGroupId": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "D365FOLegalEntity": {
+                            "defaultValue": "OIS",
+                            "type": "String"
+                        },
+                        "D365FOURL": {
+                            "defaultValue": "optum-perf.sandbox.operations.dynamics.com",
+                            "type": "String"
+                        },
+                        "EntityName": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "FileName": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "LogicAppState": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "RecurrenceFrequency": {
+                            "defaultValue": "Day",
+                            "type": "String"
+                        },
+                        "RecurrenceInterval": {
+                            "defaultValue": 1,
+                            "type": "Int"
+                        },
+                        "RecurrenceTimeZone": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "SFTPExportPath": {
+                            "defaultValue": "",
+                            "type": "String"
+                        },
+                        "sftp_Connection_Name": {
+                            "defaultValue": "sftpwithssh",
+                            "type": "String"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "@parameters('RecurrenceFrequency')",
+                                "interval": "@parameters('RecurrenceInterval')",
+                                "timeZone": "@parameters('RecurrenceTimeZone')"
+                            },
+                            "evaluatedRecurrence": {
+                                "frequency": "Day",
+                                "interval": 1,
+                                "timeZone": "GMT Standard Time"
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "Check_execution_status": {
+                            "actions": {
+                                "If_ExportToPackage_succeeded": {
+                                    "actions": {
+                                        "Check_status_until_export_is_complete": {
+                                            "actions": {
+                                                "Delay": {
+                                                    "runAfter": {},
+                                                    "type": "Wait",
+                                                    "inputs": {
+                                                        "interval": {
+                                                            "count": 10,
+                                                            "unit": "Second"
+                                                        }
+                                                    }
+                                                },
+                                                "GetExecutionSummaryStatus": {
+                                                    "runAfter": {
+                                                        "Delay": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "body": {
+                                                            "executionId": "@{body('ExportToPackage')?['OutputParameters']?['value']}"
+                                                        },
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "post",
+                                                        "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('DataManagementDefinitionGroups/Microsoft.Dynamics.DataEntities.GetExecutionSummaryStatus'))}"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {},
+                                            "expression": "@not(or(equals(body('GetExecutionSummaryStatus')?['value'], 'NotRun'), equals(body('GetExecutionSummaryStatus')?['value'], 'Executing')))",
+                                            "limit": {
+                                                "count": 60,
+                                                "timeout": "PT1H"
+                                            },
+                                            "type": "Until"
+                                        },
+                                        "If_GetExecutionSummaryStatus_succeeded": {
+                                            "actions": {
+                                                "Get_Success_result": {
+                                                    "runAfter": {},
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "body": {
+                                                            "_executionId": "@body('ExportToPackage')?['OutputParameters']?['value']"
+                                                        },
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "post",
+                                                        "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('ActiveUserListExports/Microsoft.Dynamics.DataEntities.GetExportSuccessResults'))}"
+                                                    }
+                                                },
+                                                "If_GetExportFileUrl_succeeded": {
+                                                    "actions": {
+                                                        "Download_file": {
+                                                            "runAfter": {},
+                                                            "type": "Http",
+                                                            "inputs": {
+                                                                "method": "GET",
+                                                                "uri": "@body('GetExportFileUrl')?['OutputParameters']?['value']"
+                                                            }
+                                                        },
+                                                        "Is_Download_file_succeeded": {
+                                                            "actions": {
+                                                                "Create_csv_file_in_SFTP": {
+                                                                    "runAfter": {},
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "body": "@body('Download_file')",
+                                                                        "headers": {
+                                                                            "ReadFileMetadataFromServer": false
+                                                                        },
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['sftpwithssh']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "path": "/datasets/default/files",
+                                                                        "queries": {
+                                                                            "folderPath": "@parameters('SFTPExportPath')",
+                                                                            "name": "@{concat(parameters('FileName'),'.csv')}",
+                                                                            "queryParametersSingleEncoded": false
+                                                                        }
+                                                                    },
+                                                                    "runtimeConfiguration": {
+                                                                        "contentTransfer": {
+                                                                            "transferMode": "Chunked"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "If_file_uploaded_to_SFTP_success": {
+                                                                    "actions": {
+                                                                        "Send_email_that_data_is_upload_from_LogicApp_to_SFTP_location": {
+                                                                            "runAfter": {},
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "body": {
+                                                                                    "Body": "<p>The csv file uploaded from LogicApps to SFTP location with file name @{concat(parameters('FileName'),'.csv')}:<br>\n<br>\n@{replace(variables('HTMLTemplate'),'{Entities}',variables('EntitiesBody'))}</p>",
+                                                                                    "Importance": "Normal",
+                                                                                    "Subject": "@{concat('Data uploaded from LogicApp to SFTP location','_',variables('CurrentDateTime'))}",
+                                                                                    "To": "@parameters('AlertRecipient')"
+                                                                                },
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "post",
+                                                                                "path": "/v2/Mail"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "runAfter": {
+                                                                        "Create_csv_file_in_SFTP": [
+                                                                            "Succeeded",
+                                                                            "TimedOut",
+                                                                            "Failed",
+                                                                            "Skipped"
+                                                                        ]
+                                                                    },
+                                                                    "else": {
+                                                                        "actions": {
+                                                                            "Send_an_email_as_file_upload_to_SFTP_failed": {
+                                                                                "runAfter": {},
+                                                                                "type": "ApiConnection",
+                                                                                "inputs": {
+                                                                                    "body": {
+                                                                                        "Body": "<p>@{concat('Error code: ',outputs('Create_csv_file_in_SFTP')['statusCode'])}<br>\n<br>\n@{concat('Error message: ',body('Create_csv_file_in_SFTP')?['error']?['message'])}</p>",
+                                                                                        "Importance": "Normal",
+                                                                                        "Subject": "@{concat('File upload to SFTP failed','_',variables('CurrentDateTime'))}",
+                                                                                        "To": "@parameters('AlertRecipient')"
+                                                                                    },
+                                                                                    "host": {
+                                                                                        "connection": {
+                                                                                            "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                                        }
+                                                                                    },
+                                                                                    "method": "post",
+                                                                                    "path": "/v2/Mail"
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "expression": {
+                                                                        "or": [
+                                                                            {
+                                                                                "equals": [
+                                                                                    "@outputs('Create_csv_file_in_SFTP')['statusCode']",
+                                                                                    200
+                                                                                ]
+                                                                            },
+                                                                            {
+                                                                                "equals": [
+                                                                                    "@outputs('Create_csv_file_in_SFTP')['statusCode']",
+                                                                                    404
+                                                                                ]
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "type": "If"
+                                                                }
+                                                            },
+                                                            "runAfter": {
+                                                                "Download_file": [
+                                                                    "Succeeded",
+                                                                    "Failed"
+                                                                ]
+                                                            },
+                                                            "else": {
+                                                                "actions": {
+                                                                    "Parse_JSON_Error": {
+                                                                        "runAfter": {},
+                                                                        "type": "ParseJson",
+                                                                        "inputs": {
+                                                                            "content": "@json(xml(body('Download_file')))",
+                                                                            "schema": {
+                                                                                "properties": {
+                                                                                    "?xml": {
+                                                                                        "properties": {
+                                                                                            "@@encoding": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "@@version": {
+                                                                                                "type": "string"
+                                                                                            }
+                                                                                        },
+                                                                                        "type": "object"
+                                                                                    },
+                                                                                    "Error": {
+                                                                                        "properties": {
+                                                                                            "AuthenticationErrorDetail": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "Code": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "Message": {
+                                                                                                "type": "string"
+                                                                                            }
+                                                                                        },
+                                                                                        "type": "object"
+                                                                                    }
+                                                                                },
+                                                                                "type": "object"
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    "Send_email_on_Download_file_from_blob_failed": {
+                                                                        "runAfter": {
+                                                                            "Parse_JSON_Error": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "body": {
+                                                                                "Body": "<p>Error code : @{body('Parse_JSON_Error')?['Error']?['Code']}<br>\n<br>\nError message : @{body('Parse_JSON_Error')?['Error']?['Message']}</p>",
+                                                                                "Importance": "Normal",
+                                                                                "Subject": "@{concat('Download file from Azure Blob failed','_',variables('CurrentDateTime'))}",
+                                                                                "To": "@parameters('AlertRecipient')"
+                                                                            },
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "path": "/v2/Mail"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "expression": {
+                                                                "and": [
+                                                                    {
+                                                                        "equals": [
+                                                                            "@outputs('Download_file')['statusCode']",
+                                                                            200
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "type": "If"
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Until_GetExportFileUrl_succeeded": [
+                                                            "Succeeded",
+                                                            "Failed"
+                                                        ]
+                                                    },
+                                                    "else": {
+                                                        "actions": {
+                                                            "Send_email_that_export_file_URL_failed": {
+                                                                "runAfter": {},
+                                                                "type": "ApiConnection",
+                                                                "inputs": {
+                                                                    "body": {
+                                                                        "Body": "<p>@{concat('Error code: ',outputs('GetExportFileUrl')?['statusCode'])}<br>\n<br>\n@{concat('Error message: ',body('GetExportFileUrl')?['error']?['message'])}</p>",
+                                                                        "Importance": "Normal",
+                                                                        "Subject": "@{concat('Export file URL failed','_',variables('CurrentDateTime'))}",
+                                                                        "To": "@parameters('AlertRecipient')"
+                                                                    },
+                                                                    "host": {
+                                                                        "connection": {
+                                                                            "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                        }
+                                                                    },
+                                                                    "method": "post",
+                                                                    "path": "/v2/Mail"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "equals": [
+                                                                    "@outputs('GetExportFileUrl')['statusCode']",
+                                                                    200
+                                                                ]
+                                                            },
+                                                            {
+                                                                "startsWith": [
+                                                                    "@body('GetExportFileUrl')?['OutputParameters']?['value']",
+                                                                    "https"
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": "If"
+                                                },
+                                                "If_Get_Success_result_succeeded": {
+                                                    "actions": {
+                                                        "Iterate_to_get_all_entitites": {
+                                                            "foreach": "@body('Parse_Actual_JSON')?['EntitiesList']",
+                                                            "actions": {
+                                                                "Append_to_entities_list": {
+                                                                    "runAfter": {},
+                                                                    "type": "AppendToStringVariable",
+                                                                    "inputs": {
+                                                                        "name": "EntitiesBody",
+                                                                        "value": "<tr style=\"border: 1px solid black; text-align:center\">\n    <td>@{items('Iterate_to_get_all_entitites')?['EntityName']}</td>\n    <td>@{items('Iterate_to_get_all_entitites')?['EntityStatus']}</td>\n    <td>@{items('Iterate_to_get_all_entitites')?['TotalEntityRecords']}</td>\n  </tr>"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "runAfter": {
+                                                                "Set_HTML_Template": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "Foreach"
+                                                        },
+                                                        "Parse_Actual_JSON": {
+                                                            "runAfter": {
+                                                                "Parse_Success_Result": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "ParseJson",
+                                                            "inputs": {
+                                                                "content": "@body('Parse_Success_Result')",
+                                                                "schema": {
+                                                                    "properties": {
+                                                                        "body": {
+                                                                            "properties": {
+                                                                                "DataProjectName": {
+                                                                                    "type": "string"
+                                                                                },
+                                                                                "EndDateTime": {
+                                                                                    "type": "string"
+                                                                                },
+                                                                                "EntitiesList": {
+                                                                                    "items": {
+                                                                                        "properties": {
+                                                                                            "EntityName": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "EntityStatus": {
+                                                                                                "type": "string"
+                                                                                            },
+                                                                                            "TotalEntityRecords": {
+                                                                                                "type": "integer"
+                                                                                            }
+                                                                                        },
+                                                                                        "required": [
+                                                                                            "EntityName",
+                                                                                            "EntityStatus",
+                                                                                            "TotalEntityRecords"
+                                                                                        ],
+                                                                                        "type": "object"
+                                                                                    },
+                                                                                    "type": "array"
+                                                                                },
+                                                                                "ErrorRecords": {
+                                                                                    "type": "integer"
+                                                                                },
+                                                                                "ExecutionId": {
+                                                                                    "type": "string"
+                                                                                },
+                                                                                "ExecutionStatus": {
+                                                                                    "type": "string"
+                                                                                },
+                                                                                "StartDateTime": {
+                                                                                    "type": "string"
+                                                                                }
+                                                                            },
+                                                                            "type": "object"
+                                                                        }
+                                                                    },
+                                                                    "type": "object"
+                                                                }
+                                                            }
+                                                        },
+                                                        "Parse_Success_Result": {
+                                                            "runAfter": {},
+                                                            "type": "ParseJson",
+                                                            "inputs": {
+                                                                "content": "@body('Get_Success_result')?['value']",
+                                                                "schema": {
+                                                                    "properties": {
+                                                                        "@@odata.context": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "value": {
+                                                                            "type": "string"
+                                                                        }
+                                                                    },
+                                                                    "type": "object"
+                                                                }
+                                                            }
+                                                        },
+                                                        "Send_email_that_data_is_exported_from_D365_to_LogicApp": {
+                                                            "runAfter": {
+                                                                "Iterate_to_get_all_entitites": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "body": {
+                                                                    "Body": "<p>The records exported from D365 to LogicApp:<br>\n<br>\n@{replace(variables('HTMLTemplate'),'{Entities}',variables('EntitiesBody'))}</p>",
+                                                                    "Importance": "Normal",
+                                                                    "Subject": "@{concat('Data exported from D365 to LogicApp','_',variables('CurrentDateTime'))}",
+                                                                    "To": "@parameters('AlertRecipient')"
+                                                                },
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "post",
+                                                                "path": "/v2/Mail"
+                                                            }
+                                                        },
+                                                        "Set_HTML_Template": {
+                                                            "runAfter": {
+                                                                "Parse_Actual_JSON": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "SetVariable",
+                                                            "inputs": {
+                                                                "name": "HTMLTemplate",
+                                                                "value": "<table style=\"border: 1px solid black; width:100%;border-collapse: collapse;\">\n  <tr style=\"border: 1px solid black;\">\n    <th style=\"text-align:left\">Data project name</th>\n    <td>@{body('Parse_Actual_JSON')?['DataProjectName']}</td>\n  </tr>\n  <tr style=\"border: 1px solid black;\">\n    <th style=\"text-align:left\">Job ID</th>\n    <td>@{body('Parse_Actual_JSON')?['ExecutionId']}</td>\n  </tr>\n  <tr style=\"border: 1px solid black;\">\n    <th style=\"text-align:left\">Execution status</th>\n    <td>@{body('Parse_Actual_JSON')?['ExecutionStatus']}</td>\n  </tr>\n    <tr style=\"border: 1px solid black;\">\n    <th style=\"text-align:left\">Start time</th>\n    <td>@{addSeconds('1970-01-01T00:00:00Z', div(int(replace(replace(body('Parse_Actual_JSON')?['StartDateTime'],'/Date(',''),')/','')), 1000), 'MM-dd-yyyy HH:mm:ss tt')}</td>\n  </tr>\n    <tr style=\"border: 1px solid black;\">\n    <th style=\"text-align:left\">End time</th>\n    <td>@{addSeconds('1970-01-01T00:00:00Z', div(int(replace(replace(body('Parse_Actual_JSON')?['EndDateTime'],'/Date(',''),')/','')), 1000), 'MM-dd-yyyy HH:mm:ss tt')}</td>\n  </tr>\n    <tr style=\"border: 1px solid black;\">\n    <th style=\"text-align:left\">With errors</th>\n    <td>@{body('Parse_Actual_JSON')?['ErrorRecords']}</td>\n  </tr>\n</table>\n\n<br/>\n\n<table style=\"border: 1px solid black; width:100%; border-collapse: collapse\">\n  <tr style=\"border: 1px solid black;\">\n    <th>Entity</th>\n    <th>Status</th>\n    <th>No. of records exported</th>\n  </tr>\n{Entities}\n</table>"
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Get_Success_result": [
+                                                            "Succeeded",
+                                                            "Failed"
+                                                        ]
+                                                    },
+                                                    "else": {
+                                                        "actions": {
+                                                            "Send_email_as_success_result_fetching_failed": {
+                                                                "runAfter": {},
+                                                                "type": "ApiConnection",
+                                                                "inputs": {
+                                                                    "body": {
+                                                                        "Body": "<p>@{concat('Error code: ',outputs('Get_Success_result')['statusCode'])}<br>\n<br>\n@{concat('Error message: ',body('Get_Success_result')?['error']?['message'])}</p>",
+                                                                        "Importance": "Normal",
+                                                                        "Subject": "@{concat('Get Success result fetching failed','_',variables('CurrentDateTime'))}",
+                                                                        "To": "@parameters('AlertRecipient')"
+                                                                    },
+                                                                    "host": {
+                                                                        "connection": {
+                                                                            "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                        }
+                                                                    },
+                                                                    "method": "post",
+                                                                    "path": "/v2/Mail"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "equals": [
+                                                                    "@outputs('Get_Success_result')['statusCode']",
+                                                                    200
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": "If"
+                                                },
+                                                "Until_GetExportFileUrl_succeeded": {
+                                                    "actions": {
+                                                        "GetExportFileUrl": {
+                                                            "runAfter": {},
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "body": {
+                                                                    "entityName": "@parameters('EntityName')",
+                                                                    "executionId": "@body('ExportToPackage')?['OutputParameters']?['value']"
+                                                                },
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "post",
+                                                                "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('DataManagementDefinitionGroups/Microsoft.Dynamics.DataEntities.GetExportedFileUrl'))}"
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "If_Get_Success_result_succeeded": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "expression": "@not(equals(body('GetExportFileUrl')?['value'], ''''''))",
+                                                    "limit": {
+                                                        "count": 60,
+                                                        "timeout": "PT1H"
+                                                    },
+                                                    "type": "Until"
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Check_status_until_export_is_complete": [
+                                                    "Succeeded",
+                                                    "Failed"
+                                                ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Send_email_as_execution_summary_status_failed": {
+                                                        "runAfter": {},
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "body": {
+                                                                "Body": "<p>@{concat('Error code: ',outputs('GetExecutionSummaryStatus')['statusCode'])}<br>\n<br>\n@{concat('Error message: ',body('GetExecutionSummaryStatus')?['error']?['message'])}</p>",
+                                                                "Importance": "Normal",
+                                                                "Subject": "@{concat('Get Execution Summary Status failed','_',variables('CurrentDateTime'))}",
+                                                                "To": "@parameters('AlertRecipient')"
+                                                            },
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['office365']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "path": "/v2/Mail"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "equals": [
+                                                            "@outputs('GetExecutionSummaryStatus')['statusCode']",
+                                                            200
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If"
+                                        }
+                                    },
+                                    "runAfter": {},
+                                    "else": {
+                                        "actions": {
+                                            "Send_email_as_export_to_package_failed": {
+                                                "runAfter": {},
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "body": {
+                                                        "Body": "<p>@{concat('Error code: ',outputs('ExportToPackage')['statusCode'])}<br>\n<br>\n@{concat('Error message: ',body('ExportToPackage')?['error']?['message'])}</p>",
+                                                        "Importance": "Normal",
+                                                        "Subject": "@{concat('Export To Package failed','_',variables('CurrentDateTime'))}",
+                                                        "To": "@parameters('AlertRecipient')"
+                                                    },
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['office365']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "post",
+                                                    "path": "/v2/Mail"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "equals": [
+                                                    "@outputs('ExportToPackage')['statuscode']",
+                                                    200
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                }
+                            },
+                            "runAfter": {
+                                "Initiate_Export_To_Package": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "Skipped"
+                                ]
+                            },
+                            "type": "Scope"
+                        },
+                        "Initialize_CurrentDateTime_variable": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "CurrentDateTime",
+                                        "type": "string",
+                                        "value": "@{utcNow('yyyy-MM-dd_hh_mm')}"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_EntitiesBody_template": {
+                            "runAfter": {
+                                "Initialize_HTML_Template": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "EntitiesBody",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_HTML_Template": {
+                            "runAfter": {
+                                "Initialize_CurrentDateTime_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "HTMLTemplate",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initiate_Export_To_Package": {
+                            "actions": {
+                                "ExportToPackage": {
+                                    "runAfter": {},
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": {
+                                            "definitionGroupId": "@parameters('D365FODMFDefinitionGroupId')",
+                                            "executionId": "@{guid()}",
+                                            "legalEntityId": "@parameters('D365FOLegalEntity')",
+                                            "packageName": "@{guid()}",
+                                            "reExecute": true
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['dynamicsax']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/datasets/@{encodeURIComponent(encodeURIComponent(parameters('D365FOURL')))}/procedures/@{encodeURIComponent(encodeURIComponent('DataManagementDefinitionGroups/Microsoft.Dynamics.DataEntities.ExportToPackage'))}"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_EntitiesBody_template": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Scope"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "dynamicsax": {
+                                "connectionId": "[parameters('connections_dynamicsax_externalid')]",
+                                "connectionName": "dynamicsax",
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/dynamicsax"
+                            },
+                            "office365": {
+                                "connectionId": "[parameters('connections_office365_externalid')]",
+                                "connectionName": "office365",
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/office365"
+                            },
+                            "sftpwithssh": {
+                                "connectionId": "[parameters('connections_sftpwithssh_externalid')]",
+                                "connectionName": "sftpwithssh",
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/sftpwithssh"
+                            }
+                        }
+                    },
+                    "D365FODMFDefinitionGroupId": {
+                        "value": "OutboundAutosync"
+                    },
+                    "D365FOLegalEntity": {
+                        "value": "OIS"
+                    },
+                    "EntityName": {
+                        "value": "Active user list"
+                    },
+                    "FileName": {
+                        "value": "orxmsdynamicsrcm_prod"
+                    },
+                    "LogicAppState": {
+                        "value": "Disabled"
+                    },
+                    "RecurrenceInterval": {
+                        "value": 1
+                    },
+                    "RecurrenceTimeZone": {
+                        "value": "GMT Standard Time"
+                    },
+                    "SFTPExportPath": {
+                        "value": "/Dynamics_365/to_Secure_Autosync"
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDataPrepForCalcClaimPoolBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMDataPrepForCalcClaimPoolBusinessLogic
+{
+    SysGuid         currentGuid;
+    int             taskNumber;
+    RecId           hmClaimBatchJobLogsHeader;
+    HMClaimJobType  jobType;
+    boolean         exceptionOccured = false;
+    
+    #OCCRetryCount
+
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMDataPrepForCalcClaimPoolBusinessLogic construct()
+    {
+        return new HMDataPrepForCalcClaimPoolBusinessLogic();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void processInit(QueryRun _queryRun, int _taskNumber = 0, RecId _hmClaimBatchJobLogsHeader = 0)
+    {
+        try
+        {
+            currentGuid                 = newGuid();
+            taskNumber                  = _taskNumber;
+            hmClaimBatchJobLogsHeader   = _hmClaimBatchJobLogsHeader;
+            
+            this.insertDataIntoHMClaimQualifiedForPoolAssignment(_queryRun);
+        }
+        catch
+        {
+            throw;
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoHMClaimQualifiedForPoolAssignment</Name>
+				<Source><![CDATA[
+    public void insertDataIntoHMClaimQualifiedForPoolAssignment(QueryRun _queryRun)
+    {
+        HMClaimTable                        claimTable;
+        HMClaimQualifiedForPoolAssignment   hmClaimQualifiedForPoolAssignment;
+        RecordInsertList                    recordInsertList = new RecordInsertList(tableNum(HMClaimQualifiedForPoolAssignment));
+        RecordInsertList                    insertRecListForClaimLogs = new RecordInsertList(tableNum(HMClaimBatchJobsLogs));
+        HMClaimBatchJobsLogs                hmClaimBatchJobsLogs;
+        HMClaimProcessingStatus             claimProcessingStatus;
+        str                                 validationMsg = "";
+
+        _queryRun = this.addZeroClaimRange(_queryRun);
+
+        while(_queryRun.next())
+        {
+            claimTable = _queryRun.get(tableNum(HMClaimTable));
+
+            hmClaimQualifiedForPoolAssignment = this.fillDataIntoHMClaimQualifiedForPoolAssignment(claimTable);
+
+            if(hmClaimQualifiedForPoolAssignment.validateWrite())
+            {
+                recordInsertList.add(hmClaimQualifiedForPoolAssignment);
+
+                claimProcessingStatus = HMClaimProcessingStatus::Successful;
+            }
+            else
+            {
+                claimProcessingStatus   = HMClaimProcessingStatus::Failed;
+                validationMsg           = strFmt("@MAZ:TempTableValidationFailedMSG", "HMClaimQualifiedForPoolAssignment", claimtable.ClaimID);
+            }
+
+            hmClaimBatchJobsLogs = HMClaimBatchJobsLogs::createData(jobType
+                                                                    , claimtable.ClaimID
+                                                                    , claimTable.PoolName
+                                                                    , ""
+                                                                    , taskNumber
+                                                                    , claimProcessingStatus
+                                                                    , validationMsg
+                                                                    , hmClaimBatchJobLogsHeader);
+
+            insertRecListForClaimLogs.add(hmClaimBatchJobsLogs);
+
+        }
+
+        try
+        {
+            ttsbegin;
+
+            recordInsertList.insertDatabase();
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error("@MAZ:FailedToInsertDataOnTempTable");
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error("@MAZ:FailedToInsertDataOnTempTable");
+            }
+            else
+            {
+                retry;
+            }
+        }
+        finally
+        {
+            if(this.insertDataIntoClaimBatchLogsTable(insertRecListForClaimLogs))
+            {
+                if(exceptionOccured)
+                {
+                    this.updateDataIntoClaimBatchLogsTable();
+                }
+
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>addZeroClaimRange</Name>
+				<Source><![CDATA[
+    public QueryRun addZeroClaimRange(QueryRun _queryRun)
+    {
+        jobType = HMClaimJobType::PoolDataPrep;
+
+        return _queryRun;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDataIntoClaimBatchLogsTable</Name>
+				<Source><![CDATA[
+    public void updateDataIntoClaimBatchLogsTable()
+    {
+        HMClaimBatchJobsLogs hmClaimBatchJobsLogs;
+
+        try
+        {
+            ttsbegin;
+
+            update_recordset hmClaimBatchJobsLogs
+            setting ClaimProcessingStatus = HMClaimProcessingStatus::Failed
+            , ErrorLog = "@MAZ:FailedToInsertDataOnTempTable"
+            where hmClaimBatchJobsLogs.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeader
+                && hmClaimBatchJobsLogs.BatchThreadNumbers == taskNumber;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoClaimBatchLogsTable</Name>
+				<Source><![CDATA[
+    public boolean insertDataIntoClaimBatchLogsTable(RecordInsertList _insertRecListForClaimLogs)
+    {
+        boolean isLogsCreated = true;
+
+        try
+        {
+            ttsbegin;
+               
+            _insertRecListForClaimLogs.insertDatabase();
+                
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                isLogsCreated = false;
+
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                isLogsCreated = false;
+
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+        return isLogsCreated;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillDataIntoHMClaimQualifiedForPoolAssignment</Name>
+				<Source><![CDATA[
+    public HMClaimQualifiedForPoolAssignment fillDataIntoHMClaimQualifiedForPoolAssignment(HMClaimTable _hmClaimTable)
+    {
+        HMClaimQualifiedForPoolAssignment hmClaimQualifiedForPoolAssignment;
+
+        hmClaimQualifiedForPoolAssignment.clear();
+        hmClaimQualifiedForPoolAssignment.ClaimID                               = _hmClaimTable.ClaimID;
+        hmClaimQualifiedForPoolAssignment.ClaimQualifiedForPoolAssignmentGuid   = currentGuid;
+        hmClaimQualifiedForPoolAssignment.TaskNumberForDataPreparation          = taskNumber;
+        hmClaimQualifiedForPoolAssignment.OldPoolName                           = _hmClaimTable.PoolName;
+        hmClaimQualifiedForPoolAssignment.HMClaimBatchJobLogsHeader             = hmClaimBatchJobLogsHeader;
+
+        return hmClaimQualifiedForPoolAssignment;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

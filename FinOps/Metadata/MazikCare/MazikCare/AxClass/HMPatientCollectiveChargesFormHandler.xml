@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientCollectiveChargesFormHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientCollectiveChargesFormHandler
+{
+    RecId       payerAppointmentRecId;
+    real        taxAmount,amountInclTax;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getAmounts</Name>
+				<Source><![CDATA[
+    public container getAmounts()
+    {
+        return [taxAmount,amountInclTax];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPatientAndAppointmentNum</Name>
+				<Source><![CDATA[
+    public container getPatientAndAppointmentNum(SalesId _salesId)
+    {
+        HMResourceSchedulingAppointmentSalesTbl apptSalestable;
+        HMResourceSchedulingAppointment         appt;
+        HMPatient                               hmPatient;
+    
+        select HMPatient, AppointmentNumber from appt
+        join apptSalestable where appt.recid == apptSalesTable.HMResourceSchedulingAppointment
+        && apptSalestable.SalesTable == _salesId;
+    
+        return [appt.AppointmentNumber,appt.getPatientName()];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRelativesSalesIdListAndAmount</Name>
+				<Source><![CDATA[
+    public List getRelativesSalesIdListAndAmount()
+    {
+        DirPartyRelationship            dirPartyRelationship;
+        CustTable                       custTable;
+        DirPartyTable                   dirPartyTable;
+        HMPatient                       hmPatient;
+        HMResourceSchedulingAppointment appt;
+        RecId                           partyRecId,relativePartyRecId;
+        date                            payerAppointmentDate;
+        SalesId                         salesId;
+        List                            salesIdlist;
+        SalesTotals                     salesTotals;
+        SalesTable                      salesTable;
+        container                       displayFields,conResult;
+    
+        try
+        {
+            select Party from custTable
+            join hmpatient
+            join AppointmentDate from appt
+            where appt.RecId == payerAppointmentRecId
+            && appt.HMPatient == hmPatient.RecId
+            && hmPatient.CustTable == custTable.RecId;
+    
+            partyRecId = custTable.Party;
+            payerAppointmentDate = appt.AppointmentDate;
+    
+            if(partyRecId)
+            {
+                salesIdlist = new List(Types::String);
+                salesId = this.getSalesId(payerAppointmentRecId);
+                salesIdlist.addEnd(salesId);
+                salesTable = salesTable::find(salesId);
+                salesTotals  =  SalesTotals::construct(salesTable, salesUpdate::All);
+                salesTotals.calc();
+                displayFields =  salesTotals.displayFieldsCurrency(salesTotals.currencyCode());
+                taxAmount += conpeek(displayFields, TradeTotals::posTaxTotal());
+                amountInclTax   += conpeek(displayFields, TradeTotals::posTotalAmount());
+    
+                while select * from dirPartyRelationship
+                    where (dirPartyRelationship.ChildParty == custTable.Party
+                    || dirPartyRelationship.ParentParty == custTable.Party)
+                {
+                    salesId = '';
+                    if(partyRecId == dirPartyRelationship.ParentParty)
+                    {
+                        relativePartyRecId = dirPartyRelationship.ChildParty;
+                    }
+                    else
+                    {
+                        relativePartyRecId = dirPartyRelationship.ParentParty;
+                    }
+    
+                    select firstOnly Party from custTable
+                    join hmpatient
+                    join AppointmentDate,RecId from appt
+                    where hmPatient.CustTable == custTable.RecId
+                    && appt.HMPatient == hmPatient.RecId
+                    && custTable.Party == relativePartyRecId
+                    && appt.AppointmentDate == payerAppointmentDate;
+    
+                    if(appt.RecId)
+                    {
+                        salesId = this.getSalesId(appt.RecId);
+                        if(salesId)
+                        {
+                            salesIdlist.addEnd(salesId);
+                            salesTable = salesTable::find(salesId);
+                            salesTotals  =  SalesTotals::construct(salesTable, salesUpdate::All);
+                            salesTotals.calc();
+                            displayFields =  salesTotals.displayFieldsCurrency(salesTotals.currencyCode());
+                            taxAmount += conpeek(displayFields, TradeTotals::posTaxTotal());
+                            amountInclTax   += conpeek(displayFields, TradeTotals::posTotalAmount());
+                        }
+                        else
+                        {
+                            warning("@MAZ10781");
+                            return null;
+                        }
+                    }
+                }
+                return salesIdlist;
+            }
+            else
+            {
+                warning("@MAZ10782");
+                return null;
+            }
+        }
+        catch
+        {
+            warning("@SYS138340");
+            return null;
+        }
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getSalesId</Name>
+				<Source><![CDATA[
+    private SalesId getSalesId(RecId _apptRecId)
+    {
+        HMResourceSchedulingAppointmentSalesTbl     HMResourceSchedulingAppointmentSalesTbl;
+    
+        select SalesTable from HMResourceSchedulingAppointmentSalesTbl
+                where HMResourceSchedulingAppointmentSalesTbl.HMResourceSchedulingAppointment == _apptRecId
+                && HMResourceSchedulingAppointmentSalesTbl.Responsibility == HMPatientPaymentResponsibility::Patient;
+        return HMResourceSchedulingAppointmentSalesTbl.salesTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPayerAppointmentRecId</Name>
+				<Source><![CDATA[
+    public RecId parmPayerAppointmentRecId(RecId _payerAppointmentRecId = payerAppointmentRecId)
+    {
+        payerAppointmentRecId = _payerAppointmentRecId;
+    
+        return payerAppointmentRecId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

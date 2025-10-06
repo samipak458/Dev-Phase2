@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMCopyPriorityCriteria</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMCopyPriorityCriteria extends FormRun
+{
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertPriority</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inserts the copied criteria priority in <c>HMClaimPriorityTable</c>
+    /// </summary>
+    public void insertPriority()
+    {
+        HMClaimPriorityTable            hmClaimPriorityTable,hmClaimPriorityTableCR;
+        FormDataSource                  fds;
+        CustCollectionsPoolQueryPacked  queryPacked;
+        
+        fds = element.args().record().dataSource();
+
+        hmClaimPriorityTableCR = fds.cursor();
+
+        try
+        {
+            ttsbegin;
+
+            hmClaimPriorityTable.clear();
+            hmClaimPriorityTable.Priority               = str2Int(PriorityId.text());
+            hmClaimPriorityTable.Description            = Description.text();
+            hmClaimPriorityTable.HMPriorityStrategyID   = PriorityStrategy.text();
+            hmClaimPriorityTable.insert();
+
+            hmClaimPriorityTable.selectForUpdate(true);
+
+            hmClaimPriorityTable.QueryPacked = hmClaimPriorityTableCR.QueryPacked;
+            hmClaimPriorityTable.update();
+
+            ttscommit;
+        }
+        catch
+        {
+            throw error(strFmt("@Optum:HMUnableToUpdateRecord",PriorityId.text(),PriorityStrategy.text()));
+        }
+
+        fds.refresh();
+        fds.research();
+
+        fds.findRecord(hmClaimPriorityTable);
+
+        int position = fds.getPosition();
+
+        fds.setPosition(position);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Inserts record in the <c>HMClaimPriorityTable</c> on button OK.
+    /// </summary>
+    public void closeOk()
+    {  
+        FormRun                 formRun = element.args().caller();
+        HMClaimPriorityTable    hmClaimPriorityTable;
+        HMPriorityStrategy      hmPriorityStrategy;
+        formDataSource          fds;
+        str                     errorMsg = '';
+       
+        fds = element.args().record().dataSource();
+
+        hmClaimPriorityTable = fds.cursor();
+
+        if(PriorityStrategy.text() != '')
+        {
+            select firstonly RecId from hmPriorityStrategy
+                    where hmPriorityStrategy.HMPriorityStrategyID == PriorityStrategy.text();
+
+            if (hmPriorityStrategy.RecId == 0)
+            {
+                this.clearPriorityStrategyId();
+                throw warning("@Optum:PriorityStrategyDoesNotExistErrorMsg");
+            }
+        }
+
+        if(!Description.text() || !PriorityId.text())
+        {
+            errorMsg = PriorityId.text() == '' ? "@Optum:MAZOPT0074" : "@Optum:MAZOPT0081";
+
+            throw warning(strFmt("@Optum:MAZOPT0090",errorMsg));
+        }
+        else
+        {
+            this.insertPriority();
+        }
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearPriorityStrategyId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Clears the Priority strategy string control.
+    /// </summary>
+    public void clearPriorityStrategyId()
+    {
+        PriorityStrategy.text('');
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void init()
+    {
+        QueryBuildDataSource    qbds;
+        HMClaimPriorityTable    hmClaimPriorityTable;
+
+        super();
+
+        hmClaimPriorityTable = element.args().record() as HMClaimPriorityTable;
+
+        ContentSectionGroup.caption(strFmt("@Optum:HMCopyPriorityCaption",hmClaimPriorityTable.Priority,hmClaimPriorityTable.HMPriorityStrategyID));
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>PriorityStrategy</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        /// Creates the lookup for <c>HMPriorityStrategy</c>
+        /// </summary>
+        public void lookup()
+        {
+            Query                   query = new Query();
+            QueryBuildDataSource    qbds;
+
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tableNum(HMPriorityStrategy), this);
+    
+            sysTableLookup.addLookupField(fieldNum(HMPriorityStrategy, HMPriorityStrategyID));
+            sysTableLookup.addLookupField(fieldNum(HMPriorityStrategy, HMPriorityStrategyDescription));
+    
+            qbds = query.addDataSource(tableNum(HMPriorityStrategy));
+           
+            sysTableLookup.parmQuery(query);
+
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@Optum:HMCopyPriority</Caption>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>ContentSectionGroup</Name>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>Custom</Pattern>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>PriorityId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:MAZOPT0074</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Description</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMClaimPriorityDescription</ExtendedDataType>
+						<Label>@Optum:MAZOPT0081</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>PriorityStrategy</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:HMPriorityStrategy</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Caption>abc</Caption>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OkButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>CommandButton</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CancelButton</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612734</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+						<SaveRecord>No</SaveRecord>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

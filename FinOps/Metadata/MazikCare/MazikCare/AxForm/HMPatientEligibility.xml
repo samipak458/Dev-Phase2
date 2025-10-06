@@ -1,0 +1,493 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMPatientEligibility</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMPatientEligibility extends FormRun
+{
+    HMPatientEligibility        hmPatientEligibilityClass;
+
+    recId                       bypassReasonRecId, patientRecId, patientInsuranceRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        hmPatientEligibilityClass = new HMPatientEligibility();
+        patientRecId = element.args().record().RecId;
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeReason</Name>
+				<Source><![CDATA[
+    public void storeReason(ReasonTable  _reasonTable)
+    {
+        bypassReasonRecId = _reasonTable.RecId;
+        BypassEligibiltiy.text(_reasonTable.Description);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validate</Name>
+				<Source><![CDATA[
+    public boolean validate()
+    {
+        boolean ret = true;
+    
+        if(!MembershipId.valueStr())
+        {
+            warning(strFmt("@SYS84753","@MAZ12985"));
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>BypassEligibility</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+        
+            if(!BypassEligibiltiy.valueStr())
+            {
+                warning(strFmt("@SYS84753","@MAZ12991"));
+            }
+            else
+            {
+                Eligible.selection(NoYes::Yes);
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>MembershipId</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            SysTableLookup sysTableLookup = SysTableLookup::newParameters(tablenum(HMPatientInsurance),this,true);
+        
+            Query query;
+            QueryBuildDataSource queryBuildDataSource;
+        
+            sysTableLookup.addLookupfield(fieldnum(HMPatientInsurance,HMPatientInsuranceMembershipId),true);
+            sysTableLookup.addLookupfield(fieldnum(HMPatientInsurance,InsuranceCarrier));
+            sysTableLookup.addLookupMethod(tableMethodStr(HMPatientInsurance, carrierName));
+        
+            query = new Query();
+        
+            queryBuildDataSource = query.addDataSource(tablenum(HMPatientInsurance));
+        
+            queryBuildDataSource.addRange(fieldnum(HMPatientInsurance,HMPatient)).value(queryvalue(patientRecId));
+        
+            sysTableLookup.parmQuery(query);
+            sysTableLookup.parmUseLookupValue(true);
+        
+            sysTableLookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMPatientInsurance      hmPatientInsurance;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if (this.valueStr() != "")
+                {
+                    hmPatientInsurance = HMlookupClass::checkValidPatientInsurance(patientRecId, this.valueStr());
+        
+                    if (hmPatientInsurance.RecId)
+                    {
+                        patientInsuranceRecId = hmPatientInsurance.RecId;
+                        InsuranceProviderId.text(HMInsuranceCarrier::findByCode(hmPatientInsurance.InsuranceCarrier).HMProviderID);
+                    }
+        
+                    else
+                    {
+                        warning(strFmt("@SYS316757","@MAZ1254"));
+                        this.text(HMPatientInsurance::find(patientInsuranceRecId).HMPatientInsuranceMembershipId);
+                    }
+                }
+                else
+                {
+                    patientInsuranceRecId = 0;
+                    InsuranceProviderId.text('');
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>BypassEligibiltiy</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            Args                             args;
+            MenuFunction                     menuFunction;
+        
+            args = new Args();
+            args.caller(element);
+        
+            menuFunction = new MenuFunction(menuitemdisplaystr(HMEligibilityBypassReason),MenuItemType::Display);
+        
+            menuFunction.run(args);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMReasonsLookup));
+            args.caller(element);
+            args.parm('EligibilityBypass');
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            ReasonTable             reasonTable;
+            boolean                 ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (BypassEligibiltiy.valueStr() != "")
+                {
+                    select * from reasonTable
+                        where
+                        reasonTable.Description == BypassEligibiltiy.valueStr()
+                        &&  reasonTable.EligibilityBypass == NoYes::Yes;
+        
+                        if (reasonTable.RecId)
+                        {
+                            //flag = true;
+                            bypassReasonRecId = reasonTable.RecId;
+                        }
+        
+                        else
+                        {
+                           
+                            warning(strFmt("@SYS316757","@MAZ12991"));
+                        //todo: ax7 reason
+                        /*
+                            BypassEligibiltiy.text(ReasonTable::findByRecid(bypassReasonRecId).Description);
+                        */
+                        
+                        }
+                }
+                else
+                {
+                    bypassReasonRecId = 0;
+        
+                }
+        
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>OKButton</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            if(element.validate())
+            {
+                hmPatientEligibilityClass.createEligibilityLog(patientRecId, patientInsuranceRecId,MembershipId.valueStr(),
+                        Eligible.selection(), bypassReasonRecId);
+        
+                super();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">@MAZ7533</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">Dialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>357913941</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTab</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPaneTab</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>ButtonGroup</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ButtonGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>CheckEligibiltity</Name>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13224</HelpText>
+										<Type>Button</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+										<ImageLocation>AOTResource</ImageLocation>
+										<NormalImage>HM_Patient_Eligibility</NormalImage>
+										<Text>@MAZ12994</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormButtonControl">
+										<Name>BypassEligibility</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@MAZ13225</HelpText>
+										<Type>Button</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+										<ImageLocation>AOTResource</ImageLocation>
+										<NormalImage>HM_Bypass</NormalImage>
+										<Text>Bypass eligibility</Text>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+				<Style>Strip</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>894784852</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>MembershipId</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>715827882</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMInsuranceMembershipId</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>InsuranceProviderId</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1073741823</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HelpText>Provider Id assigned by BUPA Arabia</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>HMProviderID</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormComboBoxControl">
+						<Name>Eligible</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HelpText>Is patient Eligible?</HelpText>
+						<Type>ComboBox</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>NoYesId</ExtendedDataType>
+						<Label>@MAZ6248</Label>
+						<Items />
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>BypassEligibiltiy</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1789569705</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HelpText>Select reason to bypass eligibility</HelpText>
+						<Type>String</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@MAZ12991</Label>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>CopyOfButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>Cancel</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+						<Text>@SYS301993</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAllClaimExportMainMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMAllClaimExportMainMultiThreadBatchJob extends RunBaseBatch
+{
+    QueryRun            gQueryRun;
+    BatchHeader         batchHeader;
+    HMNumberOfThreads   numberOfThreads;
+    DialogField         dlgHMNumberOfThreads;
+    DialogRunbase       dlg;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        numberOfThreads
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMAllClaimExportMainMultiThreadBatchJob construct()
+    {
+        return new HMAllClaimExportMainMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    static ClassDescription description()
+    {
+        return "@Optum:AllClaimExportMultipleThreadBatchJobs";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void run()
+    {
+        HMDataPrepForAllClaimExportMultiThreadBatchJob   hmDataPrepForAllClaimExportMultiThreadBatchJob;
+        int                                                     recordsToProcess, perThreadRecordsRound, additionalRecordsRound;
+        HMOneDecimal                                            additionalRecords;
+        real                                                    perThreadRecords, diffPerThread;
+        RecId                                                   hmClaimBatchJobLogsHeaderDataPrep, batchJobId;
+        HMAllClaimExport                                        hmAllClaimExport;
+
+        try
+        {
+            ttsbegin;
+
+            delete_from hmAllClaimExport;
+              
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable","HMAllClaimExport"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable","HMAllClaimExport"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+        try
+        {
+            
+            if(this.isInBatch())
+            {
+                numberOfThreads = numberOfThreads == 0 ? 1 : numberOfThreads < 0 ? numberOfThreads * -1 : numberOfThreads;
+
+                recordsToProcess = SysQuery::countLoops(gQueryRun);
+                
+                Info(strFmt("@MAZ:NoOfRecordsPicked", recordsToProcess));
+
+                if(recordsToProcess <= numberOfThreads)
+                {
+                    numberOfThreads = 1;
+                    Info("@MAZ:RecordsLesserThanNumberOfThreads");
+                }
+
+                perThreadRecords        = recordsToProcess / numberOfThreads;
+                perThreadRecordsRound   = perThreadRecords;
+                diffPerThread           = perThreadRecords - perThreadRecordsRound;
+                additionalRecords       = diffPerThread * numberOfThreads;
+                additionalRecords       = roundUp(additionalRecords, 1);
+                additionalRecordsRound  = additionalRecords;
+
+                if(perThreadRecordsRound + additionalRecordsRound > 0)
+                {
+                    if(!batchHeader)
+                    {
+                        batchJobId = this.parmCurrentBatch().BatchJobId;
+
+                        batchHeader = BatchHeader::construct(batchJobId);
+                    }
+
+                    hmDataPrepForAllClaimExportMultiThreadBatchJob = HMDataPrepForAllClaimExportMultiThreadBatchJob::construct();
+                    hmDataPrepForAllClaimExportMultiThreadBatchJob.parmQueryRun(gQueryRun);
+                    hmDataPrepForAllClaimExportMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    hmDataPrepForAllClaimExportMultiThreadBatchJob.parmPerThreadRecordsRound(perThreadRecordsRound);
+                    hmDataPrepForAllClaimExportMultiThreadBatchJob.parmAdditionalRecords(additionalRecordsRound);
+                    hmDataPrepForAllClaimExportMultiThreadBatchJob.parmTaskDescription("@MAZ:DataPreparation");
+
+                    hmClaimBatchJobLogsHeaderDataPrep = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::AllClaimExport//need to change with allclaimexport
+                                                                                    , batchJobId
+                                                                                    , recordsToProcess
+                                                                                    , numberOfThreads);
+
+                    hmDataPrepForAllClaimExportMultiThreadBatchJob.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeaderDataPrep);
+
+                    batchHeader.addRuntimeTask(hmDataPrepForAllClaimExportMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+
+                }
+                else
+                {
+                    Info("@MAZ:NoRecordsFoundForProcessing");
+                }
+
+            }
+            else
+            {
+                // execute your code here when not running in batch
+                try
+                {
+                    HMDataPrepForAllClaimExportBusinessLogic hmDataPrepForAllClaimExportBusinessLogic = HMDataPrepForAllClaimExportBusinessLogic::construct();
+                   
+
+                    hmClaimBatchJobLogsHeaderDataPrep = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::AllClaimExport
+                                                                                    , 0
+                                                                                    , recordsToProcess
+                                                                                    , numberOfThreads);
+
+                    hmDataPrepForAllClaimExportBusinessLogic.processInit(gQueryRun, 0, hmClaimBatchJobLogsHeaderDataPrep);
+                }
+                catch
+                {
+                    warning(strFmt("%1",xSession::xppCallStack()));
+                }
+            }
+
+            if(batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();//BatchStatus::Hold);
+            }
+
+        }
+        catch
+        {
+            throw error(strFmt("@MAZ:BatchJobInitiationFailed",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatch</Name>
+				<Source><![CDATA[
+    //Needs to be set to true so class can be ran in a batch
+    boolean canGoBatch()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+        return [#CurrentVersion] + [pack] + [#CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #CurrentList] = packedClass;
+
+                if (SysQuery::isPackedOk(packedQuery))
+                {
+                    gQueryRun   = new QueryRun(packedQuery);
+                    ret         = true;
+                }
+                break;
+
+            default:
+                ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    //Determines whether to run on server or client
+    //True - Server; False - Client
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "args"></param>
+    public static void main(Args args)
+    {
+        HMAllClaimExportMainMultiThreadBatchJob hmAllClaimExportMainMultiThreadBatchJob = HMAllClaimExportMainMultiThreadBatchJob::construct();
+
+        hmAllClaimExportMainMultiThreadBatchJob.caption();
+        hmAllClaimExportMainMultiThreadBatchJob.initQueryRun();
+
+        if (hmAllClaimExportMainMultiThreadBatchJob.prompt())
+        {
+            hmAllClaimExportMainMultiThreadBatchJob.run();
+        }
+            
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatchJournal</Name>
+				<Source><![CDATA[
+    public boolean canGoBatchJournal()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryRun</Name>
+				<Source><![CDATA[
+    public QueryRun queryRun()
+    {
+        return gQueryRun;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQueryRun</Name>
+				<Source><![CDATA[
+     public void initQueryRun()
+    {
+        Query   query;
+        
+        query = new Query (queryStr(HMAllClaimExportQuery));
+
+        gQueryRun = new QueryRun(query);
+        gQueryRun.saveUserSetup(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void initParmDefault()
+    {
+        this.initQueryRun();
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>showQueryValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// </summary>
+    /// <returns></returns>
+    public boolean showQueryValues()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    public Object dialog()
+    {
+        DialogRunbase dialog = super();
+
+        dlgHMNumberOfThreads = dialog.addFieldValue(extendedTypeStr(HMNumberOfThreads), numberOfThreads);
+
+        return dialog;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getFromDialog</Name>
+				<Source><![CDATA[
+    public boolean getFromDialog()
+    {
+        numberOfThreads = dlgHMNumberOfThreads.value();
+
+        return super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

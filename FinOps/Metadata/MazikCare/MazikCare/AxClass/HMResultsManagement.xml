@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResultsManagement</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMResultsManagement
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkVisitDetailStatus</Name>
+				<Source><![CDATA[
+    public static Set checkVisitDetailStatus(FormDataSource _fds)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+        HMResourceSchedulingAppointmentInvent       hmResourceSchedulingAppointmentInvent;
+        Set setVisit = new Set(Types::String);
+    
+        try
+        {
+            for (hmResourceSchedulingAppointment = _fds.getFirst(true) ? _fds.getFirst(true) : _fds.cursor(); hmResourceSchedulingAppointment; hmResourceSchedulingAppointment = _fds.getNext())
+            {
+                select count(RecId) from hmResourceSchedulingAppointmentInvent
+                    where hmResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == hmResourceSchedulingAppointment.RecId
+                    && (hmResourceSchedulingAppointmentInvent.ResultStatus == HMResultStatus::AbnormalReceived
+                    || hmResourceSchedulingAppointmentInvent.ResultStatus == HMResultStatus::AwaitingResult);
+    
+                if(hmResourceSchedulingAppointmentInvent.RecId > 0)
+                {
+                    setVisit.add(hmResourceSchedulingAppointment.AppointmentNumber);
+                }
+            }
+        }
+        catch
+        {
+            setVisit = new Set(Types::String);
+        }
+    
+        return setVisit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createResultLog</Name>
+				<Source><![CDATA[
+    public static boolean createResultLog(RecId _serviceRecId, HMResultStatus _status, TransDate _logDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+    {
+        HMResultsLog                            hmresultsLog;
+    
+        try
+        {
+            ttsBegin;
+            hmresultsLog.LogDate                                    = _logDate;
+            hmresultsLog.LogTime                                    = DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone());
+            hmresultsLog.HMResourceSchedulingAppointmentInvent      = _serviceRecId;
+            hmresultsLog.Status                                     = _status;
+    
+            hmresultsLog.insert();
+            ttsCommit;
+        }
+        catch
+        {
+            return false;
+        }
+    
+        return  true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createResultVisitLog</Name>
+				<Source><![CDATA[
+    public static boolean createResultVisitLog(RecId _apptRecId, HMResultVisitStatus _status)
+    {
+        HMResultsVisitLog             hmResultsVisitLog;
+    
+        try
+        {
+            ttsBegin;
+    
+            hmResultsVisitLog.HMResourceSchedulingAppointment      = _apptRecId;
+            hmResultsVisitLog.Status                               = _status;
+            hmResultsVisitLog.insert();
+    
+            ttsCommit;
+        }
+        catch
+        {
+            return false;
+        }
+    
+        return  true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getExpectedDate</Name>
+				<Source><![CDATA[
+    public static TransDate getExpectedDate(ItemId _itemId, boolean _isExternal)
+    {
+        HMInventTable               hmInventTable;
+        HMRealWithoutZero           TAT;
+        int i;
+        TransDate expectedDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+    
+        select firstOnly TAT, ExternalTAT from hmInventTable
+            where hmInventTable.InventTable == _itemId;
+    
+        i = 1;
+    
+        TAT = _isExternal ? hmInventTable.ExternalTAT : hmInventTable.TAT;
+    
+        while(i <= TAT)
+        {
+            if(HMResourceSchedulingHelper::isWeekday(expectedDate +1))
+            {
+                expectedDate = expectedDate + 1;
+                i++;
+            }
+            else
+            {
+                expectedDate = expectedDate + 1;
+            }
+        }
+    
+        return expectedDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>Main</Name>
+				<Source><![CDATA[
+    public static void Main(Args _args)
+    {
+        #task
+        FormRun  formRun = _args.caller();
+    
+        switch(_args.menuItemName())
+        {
+            //todo: ax7 uncomment at the time if results management
+            /*
+            case menuitemActionStr(HMResultReceivedDelete):
+                if(HMResultsManagement::updateDetailStatus(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), HMResultStatus::Deleted, FormDataUtil::getFormDataSource(_args.record())))
+                {
+                    info("@MAZ12572");
+                    formRun.task(#taskRefresh);
+                }
+                else
+                {
+                    warning("@MAZ12592");
+                }
+                break;
+            case menuitemActionStr(HMResultsDetailsUndo):
+                if(HMResultsManagement::updateDetailStatus(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()), HMResultStatus::AwaitingResult, FormDataUtil::getFormDataSource(_args.record())))
+                {
+                    info("@MAZ12591");
+                    formRun.task(#taskRefresh);
+                }
+                else
+                {
+                    warning("@MAZ12573");
+                }
+                break;
+            case menuitemActionStr(HMResultVisitDelete):
+                if(HMResultsManagement::updateVisitStatus(HMResultVisitStatus::Deleted, FormDataUtil::getFormDataSource(_args.record())))
+                {
+                    info("@MAZ12645");
+                    formRun.task(#taskRefresh);
+                }
+                else
+                {
+                    warning("@MAZ12646");
+                }
+                break;
+            case menuitemActionStr(HMResultsVisitUndo):
+                if(HMResultsManagement::updateVisitStatus(HMResultVisitStatus::AwaitingCompletion, FormDataUtil::getFormDataSource(_args.record())))
+                {
+                    info("@MAZ12647");
+                    formRun.task(#taskRefresh);
+                }
+                else
+                {
+                    warning("@MAZ12648");
+                }
+                break;
+                */
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDetailStatus</Name>
+				<Source><![CDATA[
+    public static boolean updateDetailStatus(TransDate _receivedDate, HMResultStatus _status, FormDataSource _fds, RecId _resourceVendorRecId = 0)
+    {
+        HMResourceSchedulingAppointmentInvent       hmResourceSchedulingAppointmentInvent, hmResourceSchedulingAppointmentInventUpdate;
+        boolean ret;
+    
+        try
+        {
+            ttsBegin;
+    
+            for (hmResourceSchedulingAppointmentInvent = _fds.getFirst(true) ? _fds.getFirst(true) : _fds.cursor(); hmResourceSchedulingAppointmentInvent; hmResourceSchedulingAppointmentInvent = _fds.getNext())
+            {
+                select forUpdate hmResourceSchedulingAppointmentInventUpdate where hmResourceSchedulingAppointmentInventUpdate.RecId == hmResourceSchedulingAppointmentInvent.RecId;
+    
+                hmResourceSchedulingAppointmentInventUpdate.ResultStatus = _status;
+                hmResourceSchedulingAppointmentInventUpdate.VendTableResult = _resourceVendorRecId;
+    
+                hmResourceSchedulingAppointmentInventUpdate.update();
+    
+                HMResultsManagement::createResultLog(hmResourceSchedulingAppointmentInventUpdate.RecId,
+                    hmResourceSchedulingAppointmentInventUpdate.ResultStatus, _receivedDate);
+            }
+    
+            ttsCommit;
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateVisitResultStatus</Name>
+				<Source><![CDATA[
+    public static boolean updateVisitResultStatus(RecId _apptRecId)
+    {
+        HMResourceSchedulingAppointmentInvent       hmResourceSchedulingAppointmentInvent;
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        try
+        {
+            select count(RecId) from hmResourceSchedulingAppointmentInvent
+                where hmResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == _apptRecId
+                && hmResourceSchedulingAppointmentInvent.HMServiceStatus == HMServiceStatus::Complete;
+    
+            ttsBegin;
+    
+            if(hmResourceSchedulingAppointmentInvent.RecId > 0)
+            {
+                select forUpdate hmResourceSchedulingAppointment
+                    where hmResourceSchedulingAppointment.RecId == _apptRecId;
+    
+                if(hmResourceSchedulingAppointment.ResultVisitStatus == HMResultVisitStatus::None)
+                {
+                    hmResourceSchedulingAppointment.ResultVisitStatus = HMResultVisitStatus::AwaitingCompletion;
+                    hmResourceSchedulingAppointment.ResultExpectedDate = hmResourceSchedulingAppointment.ResultExpectedDate();
+                    hmResourceSchedulingAppointment.update();
+    
+                    HMResultsManagement::createResultVisitLog(hmResourceSchedulingAppointment.RecId,
+                    hmResourceSchedulingAppointment.ResultVisitStatus);
+                }
+            }
+            else
+            {
+                select forUpdate hmResourceSchedulingAppointment
+                    where hmResourceSchedulingAppointment.RecId == _apptRecId;
+    
+                hmResourceSchedulingAppointment.ResultVisitStatus = HMResultVisitStatus::None;
+                hmResourceSchedulingAppointment.ResultExpectedDate = dateNull();
+                hmResourceSchedulingAppointment.update();
+    
+                HMResultsManagement::createResultVisitLog(hmResourceSchedulingAppointment.RecId,
+                    hmResourceSchedulingAppointment.ResultVisitStatus);
+            }
+    
+            ttsCommit;
+        }
+        catch
+        {
+            return false;
+        }
+    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateVisitStatus</Name>
+				<Source><![CDATA[
+    public static boolean updateVisitStatus(HMResultVisitStatus _status, FormDataSource _fds, boolean _updateDetails = false)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment, hmResourceSchedulingAppointmentUpdate;
+        HMResourceSchedulingAppointmentInvent       hmResourceSchedulingAppointmentInvent;
+        boolean ret;
+    
+        try
+        {
+            ttsBegin;
+    
+            for (hmResourceSchedulingAppointment = _fds.getFirst(true) ? _fds.getFirst(true) : _fds.cursor(); hmResourceSchedulingAppointment; hmResourceSchedulingAppointment = _fds.getNext())
+            {
+                select forUpdate hmResourceSchedulingAppointmentUpdate where hmResourceSchedulingAppointmentUpdate.RecId == hmResourceSchedulingAppointment.RecId;
+    
+                hmResourceSchedulingAppointmentUpdate.ResultVisitStatus = _status;
+    
+                hmResourceSchedulingAppointmentUpdate.update();
+    
+                HMResultsManagement::createResultVisitLog(hmResourceSchedulingAppointmentUpdate.RecId,
+                    hmResourceSchedulingAppointmentUpdate.ResultVisitStatus);
+    
+                if(_updateDetails)
+                {
+                    while select forUpdate hmResourceSchedulingAppointmentInvent
+                        where hmResourceSchedulingAppointmentInvent.HMResourceSchedulingAppointment == hmResourceSchedulingAppointment.RecId
+                        && (hmResourceSchedulingAppointmentInvent.ResultStatus == HMResultStatus::AbnormalReceived
+                        || hmResourceSchedulingAppointmentInvent.ResultStatus == HMResultStatus::AwaitingResult)
+                    {
+                        hmResourceSchedulingAppointmentInvent.ResultStatus = HMResultStatus::ResultReceived;
+                        hmResourceSchedulingAppointmentInvent.VendTableResult = 0;
+    
+                        hmResourceSchedulingAppointmentInvent.update();
+    
+                        HMResultsManagement::createResultLog(hmResourceSchedulingAppointmentInvent.RecId,
+                            hmResourceSchedulingAppointmentInvent.ResultStatus, DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+                    }
+                }
+            }
+    
+            ttsCommit;
+            ret = true;
+        }
+        catch
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

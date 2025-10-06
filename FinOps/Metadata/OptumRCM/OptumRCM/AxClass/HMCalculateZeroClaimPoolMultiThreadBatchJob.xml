@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCalculateZeroClaimPoolMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used as the main batch job class for assignment of pool batch job for $0 denied claims
+/// </summary>
+class HMCalculateZeroClaimPoolMultiThreadBatchJob extends RunBaseBatch
+{
+    BatchHeader         batchHeader;
+    HMNumberOfThreads   numberOfThreads;
+    static str          taskDescription;
+    RecId               hmClaimBatchJobLogsHeader, hmClaimBatchJobLogsHeaderDataPrep;
+
+    #define.CurrentVersion(1)
+    #localmacro.NumberOfThreads
+        numberOfThreads
+    #endmacro
+    #LOCALMACRO.TaskDescription
+        taskDescription
+    #ENDMACRO
+    #LOCALMACRO.HMClaimBatchJobLogsHeader
+        hmClaimBatchJobLogsHeader
+    #ENDMACRO
+    #LOCALMACRO.HMClaimBatchJobLogsHeaderDataPrep
+        hmClaimBatchJobLogsHeaderDataPrep
+    #ENDMACRO
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMCalculateZeroClaimPoolMultiThreadBatchJob construct()
+    {
+        return new HMCalculateZeroClaimPoolMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of the task
+    /// </summary>
+    /// <returns>Return description of the task</returns>
+    static ClassDescription description()
+    {
+        return taskDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method initiated the task for assignment of pool batch job for $0 denied claims
+    /// </summary>
+    public void run()
+    {
+        HMCalculateZeroClaimPoolMultiThreadTask hmCalculateZeroClaimPoolMultiThreadTask;
+
+        try
+        {
+            if(this.isInBatch())
+            {
+                for(int i = 1; i <= numberOfThreads; i++)
+                {
+                    if(!batchHeader)
+                    {
+                        batchHeader = BatchHeader::construct(this.parmCurrentBatch().BatchJobId);
+                    }
+
+                    hmCalculateZeroClaimPoolMultiThreadTask = HMCalculateZeroClaimPoolMultiThreadTask::construct();
+                    hmCalculateZeroClaimPoolMultiThreadTask.parmTaskDescription(strFmt("@Optum:AssignmentOfPoolsOnZeroClaimsMultipleThreadTask", i));
+                    hmCalculateZeroClaimPoolMultiThreadTask.parmTaskNumber(i);
+                    hmCalculateZeroClaimPoolMultiThreadTask.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeader);
+                    hmCalculateZeroClaimPoolMultiThreadTask.parmHMClaimBatchJobLogsHeaderDataPrep(hmClaimBatchJobLogsHeaderDataPrep);
+
+                    // add tasks to the batch header
+                    batchHeader.addRuntimeTask(hmCalculateZeroClaimPoolMultiThreadTask, this.parmCurrentBatch().RecId);
+                }
+
+            }
+
+            if(batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();
+            }
+
+        }
+        catch
+        {
+            throw Error(strFmt("@MAZ:PoolAssignmentBatchJobFailed", xSession::xppCallStack()));
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        return [#CurrentVersion] + [#NumberOfThreads] + [#TaskDescription] + [#HMClaimBatchJobLogsHeader] + [#HMClaimBatchJobLogsHeaderDataPrep];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret     = true;
+        int         version = RunBase::getVersion(packedClass);
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, #NumberOfThreads, #TaskDescription, #HMClaimBatchJobLogsHeader, #HMClaimBatchJobLogsHeaderDataPrep] = packedClass;
+                break;
+            default:
+                ret = false;
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNumberOfThreads</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the numberOfThreads value
+    /// </summary>
+    /// <param name="_numberOfThreads"><c>HMNumberOfThreads</c> value</param>
+    public void parmNumberOfThreads(HMNumberOfThreads _numberOfThreads)
+    {
+        numberOfThreads = _numberOfThreads;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmTaskDescription</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the taskDescription value
+    /// </summary>
+    /// <param name="_taskDescription">Task description value</param>
+    public void parmTaskDescription(str _taskDescription)
+    {
+        taskDescription = _taskDescription;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMClaimBatchJobLogsHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the hmClaimBatchJobLogsHeader value
+    /// </summary>
+    /// <param name="_hmClaimBatchJobLogsHeader"><c>HMClaimBatchJobLogsHeader</c> record id</param>
+    public void parmHMClaimBatchJobLogsHeader(RecId _hmClaimBatchJobLogsHeader)
+    {
+        hmClaimBatchJobLogsHeader = _hmClaimBatchJobLogsHeader;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMClaimBatchJobLogsHeaderDataPrep</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the hmClaimBatchJobLogsHeaderDataPrep value
+    /// </summary>
+    /// <param name="_hmClaimBatchJobLogsHeaderDataPrep"><c>HMClaimBatchJobLogsHeader</c> record id</param>
+    public void parmHMClaimBatchJobLogsHeaderDataPrep(RecId _hmClaimBatchJobLogsHeaderDataPrep)
+    {
+        hmClaimBatchJobLogsHeaderDataPrep = _hmClaimBatchJobLogsHeaderDataPrep;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

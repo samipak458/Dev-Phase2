@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDataPrepForAllClaimExportBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMDataPrepForAllClaimExportBusinessLogic
+{
+    const str adjustment    = "ADJUSTMENT";
+    const str payment       = "PAYMENT";
+    const str denial        = "DENIAL";
+
+    SysGuid                 currentGuid;
+    int                     taskNumber,timelyFillingDays;
+    Integer                 timelyFilingLimit, denialCount,paymentCount,adjustmentCount;
+    TransDate               lastDenialDate;
+    real                    paidAmount;
+    HMClaimPaymentPosting   hmClaimPaymentPosting;
+    RecId                   hmClaimBatchJobLogsHeader;
+    HMClaimTableDetails     hmClaimTableDetails;
+    str                     lastDenialCode,accountNumber;
+    NoYes                   passedFollowupDate,workIndicator;
+    CustTable               custtable;
+    HMPatient               hmPatient;
+
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMDataPrepForAllClaimExportBusinessLogic construct()
+    {
+        return new HMDataPrepForAllClaimExportBusinessLogic();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void processInit(QueryRun _queryRun, int _taskNumber = 0, RecId _hmClaimBatchJobLogsHeader = 0)
+    {
+        try
+        {
+            currentGuid                 = newGuid();
+            taskNumber                  = _taskNumber;
+            hmClaimBatchJobLogsHeader   = _hmClaimBatchJobLogsHeader;
+
+            this.insertDataIntoHMAllClaimExport(_queryRun);
+        }
+        catch
+        {
+            throw;
+        }
+        
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoHMAllClaimExport</Name>
+				<Source><![CDATA[
+    public void insertDataIntoHMAllClaimExport(QueryRun _queryRun)
+    {
+        HMClaimTable            claimTable;
+        HMInsuranceCarrier      hmInsuranceCarrier;
+        HMAllClaimExport        hmAllClaimExport;
+        HMClaimProcessStatus    hmClaimProcessStatus;
+        RecordInsertList        recordInsertList = new RecordInsertList(tableNum(HMAllClaimExport));
+        HMClaimBatchJobsLogs    hmClaimBatchJobsLogs;
+        RecordInsertList        insertRecListForClaimLogs = new RecordInsertList(tableNum(HMClaimBatchJobsLogs));
+        boolean                 exceptionOccured = false;   
+        HMClaimProcessingStatus claimProcessingStatus;
+        str                     validationMsg = "";
+
+        while(_queryRun.next())
+        {
+            claimTable = _queryRun.get(tableNum(HMClaimTable));
+            hmClaimProcessStatus = _queryRun.get(tableNum(HMClaimProcessStatus));
+            hmInsuranceCarrier =   _queryRun.get(tableNum(HMInsuranceCarrier));
+
+            this.getCalculatedFields(claimTable);
+
+            hmAllClaimExport.clear();
+            hmAllClaimExport.ClaimID              = claimtable.ClaimID;
+            hmAllClaimExport.BilledSite           = claimTable.HMSite;
+            hmAllClaimExport.AgentName            = claimTable.AgentName;
+            hmAllClaimExport.BilledDate           = claimTable.HMClaimDate;
+            hmAllClaimExport.AgingDays            = claimTable.MzkClaimAgingDays;
+            hmAllClaimExport.ClaimProcessStatus   = claimTable.HMClaimProcessStatus;
+            hmAllClaimExport.DateOfServiceEnd     = claimTable.HMDateOfServiceEnd;
+            hmAllClaimExport.DateOfServiceStart   = claimTable.HMDateOfServiceStart;
+            hmAllClaimExport.PayorName            = claimTable.PayorName;
+            hmAllClaimExport.InvoiceNo            = claimTable.CaseNo;
+            hmAllClaimExport.HMBalanceAmount      = claimTable.HMBalanceAmount;
+            hmAllClaimExport.HMResponsibleGroup   = claimTable.HMResponsibleGroup;
+            hmAllClaimExport.PatientName          = claimTable.PatientName;
+            hmAllClaimExport.PoolName             = claimTable.PoolName;
+            hmAllClaimExport.TimelyFillingLimit   = hmInsuranceCarrier.CutOffDays-claimTable.MzkClaimAgingDays;
+            hmAllClaimExport.NextFollowupDate     = claimTable.HMFollowUp;
+            hmAllClaimExport.WorkIndicator        = workIndicator;
+            hmAllClaimExport.Description          = hmClaimProcessStatus.Description;
+            hmAllClaimExport.Patient_MRN          = claimTable.PatientAccountNum;
+            hmAllClaimExport.DenialCount          = denialCount;
+            hmAllClaimExport.PaymentCount         = paymentCount;
+            hmAllClaimExport.AdjustmentCount      = adjustmentCount;
+            hmAllClaimExport.PaidAmount           = paidAmount;
+            hmAllClaimExport.PassedFollowupDate   = passedFollowupDate;
+            hmAllClaimExport.LastDenialDate       = lastDenialDate;
+            hmAllClaimExport.LastDenialCode       = lastDenialCode;
+            hmAllClaimExport.TimelyFillingDays    = hmInsuranceCarrier.CutOffDays;
+
+            if(hmAllClaimExport.validateWrite())
+            {
+                recordInsertList.add(hmAllClaimExport);
+
+                claimProcessingStatus = HMClaimProcessingStatus::Successful;
+            }
+            else 
+            {
+                claimProcessingStatus   = HMClaimProcessingStatus::Failed;
+                validationMsg           = strFmt("@MAZ:TempTableValidationFailedMSG", "HMAllClaimExport", claimtable.ClaimID);
+            }
+
+            hmClaimBatchJobsLogs = HMClaimBatchJobsLogs::createData(HMClaimJobType::AllClaimExport
+                                                                    , claimtable.ClaimID
+                                                                    , ""
+                                                                    , ""
+                                                                    , taskNumber
+                                                                    , claimProcessingStatus
+                                                                    , validationMsg
+                                                                    , hmClaimBatchJobLogsHeader);
+
+            if (hmClaimBatchJobsLogs.validateWrite())
+            {
+                insertRecListForClaimLogs.add(hmClaimBatchJobsLogs);
+            }
+     
+        }
+
+        try
+        {
+            ttsbegin;
+
+            recordInsertList.insertDatabase();
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error("@MAZ:FailedToInsertDataOnTempTable");
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+
+                throw error("@MAZ:FailedToInsertDataOnTempTable");
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        finally
+        {
+            if (this.insertDataIntoClaimBatchLogsTable(insertRecListForClaimLogs))
+            {
+                if (exceptionOccured)
+                {
+                    this.updateDataIntoClaimBatchLogsTable();
+                }
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDataIntoClaimBatchLogsTable</Name>
+				<Source><![CDATA[
+    public void updateDataIntoClaimBatchLogsTable()
+    {
+        HMClaimBatchJobsLogs hmClaimBatchJobsLogs;
+
+        try
+        {
+            ttsbegin;
+
+            update_recordset hmClaimBatchJobsLogs
+            setting ClaimProcessingStatus = HMClaimProcessingStatus::Failed
+            , ErrorLog = "@MAZ:FailedToInsertDataOnTempTable"
+            where hmClaimBatchJobsLogs.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeader
+                && hmClaimBatchJobsLogs.BatchThreadNumbers == taskNumber;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToUpdateDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoClaimBatchLogsTable</Name>
+				<Source><![CDATA[
+    public boolean insertDataIntoClaimBatchLogsTable(RecordInsertList _insertRecListForClaimLogs)
+    {
+        boolean isLogsCreated = true;
+
+        try
+        {
+            ttsbegin;
+               
+            _insertRecListForClaimLogs.insertDatabase();
+                
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                isLogsCreated = false;
+
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                isLogsCreated = false;
+
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+        return isLogsCreated;
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCalculatedFields</Name>
+				<Source><![CDATA[
+    public void getCalculatedFields(HMClaimTable _claimTable)
+    {
+        date todayDate = DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(),DateTimeUtil::getCompanyTimeZone()));
+
+        timelyFilingLimit = 0;
+        denialCount       = 0;
+        paymentCount      = 0;
+        adjustmentCount   = 0;
+
+
+        if (_claimTable.HMFollowUp == dateNull())
+        {
+            workIndicator=NoYes::No;
+        }
+        else
+        {
+            workIndicator=NoYes::Yes;
+        }
+
+
+        select count(RecId) from hmClaimPaymentPosting
+            where hmClaimPaymentPosting.ClaimID == _claimTable.ClaimID
+                && hmClaimPaymentPosting.Type == denial;
+        
+        denialCount=hmClaimPaymentPosting.RecId;
+      
+
+        select count(RecId) from hmClaimPaymentPosting
+            where hmClaimPaymentPosting.ClaimID == _claimTable.ClaimID
+                && hmClaimPaymentPosting.Type == payment;
+        
+        paymentCount = hmClaimPaymentPosting.RecId;
+      
+
+        select count(RecId) from hmClaimPaymentPosting
+            where hmClaimPaymentPosting.ClaimID == _claimTable.ClaimID
+                && hmClaimPaymentPosting.Type == adjustment;
+        
+        adjustmentCount = hmClaimPaymentPosting.RecId;
+
+
+        select  firstonly Code_Cheque,DatePosted from hmClaimPaymentPosting
+            order by hmClaimPaymentPosting.DatePosted desc
+                where hmClaimPaymentPosting.ClaimID == _claimTable.ClaimID
+                    && hmClaimPaymentPosting.Type == denial;
+               
+        lastDenialCode = hmClaimPaymentPosting.Code_Cheque;               
+        lastDenialDate = hmClaimPaymentPosting.DatePosted;
+
+
+        select firstonly HMAmountPaid from hmClaimTableDetails
+            order by hmClaimTableDetails.CreatedDateTime desc
+                where hmClaimTableDetails.HMClaimTable == _claimTable.RECID;
+            
+        paidAmount = hmClaimTableDetails.HMAmountPaid;
+
+        if (_claimTable.HMFollowUp == dateNull())
+        {
+            passedFollowupDate = NoYes::No;
+            
+        }
+        else if (_claimTable.HMFollowUp < todayDate)
+        {
+            passedFollowupDate = NoYes::Yes;
+        }
+        else
+        {
+            passedFollowupDate = NoYes::No;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

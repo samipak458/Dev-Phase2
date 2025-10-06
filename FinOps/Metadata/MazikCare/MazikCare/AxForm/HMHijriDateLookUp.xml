@@ -1,0 +1,1128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMHijriDateLookUp</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMHijriDateLookUp extends FormRun
+{
+    #Task
+
+    date    initialDate;
+    date    monthShown;
+    date    selectedValue;
+    date    systemDate;
+
+    boolean todayPressed;
+    boolean monthPressed;
+
+    int firstDayOfWeek;    // Variable holding the registry value.
+    int firstWeekOfYear;   // Variable holding the registry value.
+
+    #define.maxDate('31-12-2153')
+    #define.minDate('01-01-1901')
+
+    // BASIS bidi
+    boolean arabicCalendar;
+    CalendarConverter calendarConverter;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeSelect</Name>
+				<Source><![CDATA[
+    // v-artemt 1 Dec 2003
+    public void closeSelect(str _p1)
+    {
+        FormRun fr;
+        FormDateControl currentControl;
+        FormDateTimeControl currentDateTimeControl;
+        DateFormat dateFormat;
+        int i = -1;
+        FormControl fc;
+        int timeValue;
+        utcdatetime dateTimeValue;
+        str datestr;
+        ;
+    
+        if (todayPressed)
+        {
+            selectedValue = systemDate;
+        }
+        else if (monthPressed)
+        {
+            selectedValue = monthShown;
+        }
+        else
+        {
+            if (arabicCalendar)
+                selectedValue = hiddenDaystable.cell(daystable.column(), daystable.row()).data();
+        }
+    
+        // get selected control from the parent form
+        fr = element.args().caller();
+    
+        if (fr)
+        {
+    //        fc = fr.selectedControl();
+    //
+    //        // check for correct Form Control
+    //        if (classnum(FormDateControl) == fc.handle())
+    //        {
+    //            currentControl = fc;
+    //            // get date format specified on the control
+    //            dateFormat = currentControl.dateFormat();
+    //            i = dateFormat;
+    //
+    //            // now we will convert dateFormat value to apropriate date2str value
+    //            switch (i)
+    //            {
+    //                case 1:
+    //                    i = 321;
+    //                    break;
+    //                case 2:
+    //                    i = 312;
+    //                    break;
+    //                case 3:
+    //                    i = 231;
+    //                    break;
+    //                case 4:
+    //                    i = 132;
+    //                    break;
+    //                case 5:
+    //                    i = 213;
+    //                    break;
+    //                case 6:
+    //                    i = 123;
+    //                    break;
+    //                default:
+    //    // already initialized from the beginning
+    //    //                  i = -1;
+    //            }
+    //            super(date2str(selectedValue,i,-1,-1,-1,-1,4, DateFlags::None));
+    //
+    //        }
+    //        else if (classnum(FormDateTimeControl) == fc.handle())
+    //        {
+    //            currentDateTimeControl = fc;
+    //
+    //            // Retrieve time value from control
+    //            timeValue = DateTimeUtil::time(currentDateTimeControl.dateTimeValue());
+    //
+    //
+    //            // UTC string (YYYY-MM-DDTHH:MM:SS) required by DateTime control
+    //            //dateTimeValue = DateTimeUtil::newDateTime(selectedValue,timeValue);
+    //            super(DateTimeUtil::toStr(dateTimeValue));
+    //
+    //        }
+    //        else if (classnum(FormStringControl) == fc.handle())
+    //        {
+    //            // Convert date to Arabic string for FormStringControl since it does not know
+    //            // how to display Date based on current locale.
+    //              super(date2str(selectedValue,i,-1,-1,-1,-1,4, DateFlags::FormatAll));
+    //
+    //
+    //        }
+    //
+            //Added By Minhaj
+            datestr = element.getHijri(selectedValue);
+            super(datestr);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>drawMonth</Name>
+				<Source><![CDATA[
+    void drawMonth()
+    {
+        #define.SLASH('/')
+        #define.JAN('1')
+        #define.Y2004('2004')
+    
+        date selectedDateBeforeDrawing;
+        date drawingDate = monthShown;
+        int d,w, id,iw;
+        int dow, _d;
+        container c;
+        date tempDate;
+        str sDate;
+    
+        montViewer.dateValue(drawingDate);
+        selectedDateBeforeDrawing = selectedDate.dateValue();
+    
+        if (arabicCalendar)
+        {
+            montViewer.visible(false);
+            arabicMontViewer.helpText('');
+            arabicMontViewer.text(calendarConverter.monthName(drawingDate)+' '+calendarConverter.yearStr(drawingDate));
+            arabicMontViewer.visible(true);
+            drawingDate = calendarConverter.dateStartMth(drawingDate);
+            dow = calendarConverter.dayofwk(drawingDate);
+            drawingDate -= (dow - 1 - firstDayOfWeek + (dow > firstDayOfWeek ? 0 : 7));
+            if (calendarConverter.dayofmth(drawingDate) == 1)
+                drawingDate -= 7;
+        }
+        else
+        {
+            drawingDate = dateStartMth(drawingDate);
+            dow = dayofwk(drawingDate);
+            drawingDate -= (dow - 1 - firstDayOfWeek + (dow > firstDayOfWeek ? 0 : 7));
+            if (dayofmth(drawingDate) == 1)
+                drawingDate -= 7;
+        }
+    
+        daysTable.visible(false);   // this makes SetRowLabel writes to the screen
+    
+        for (w = 1; w <= 6; w++)
+        {
+            //  DaysTable.ShowRowLabels() must be on
+            if (drawingDate >= str2date(#maxDate, 123))
+            {
+                daysTable.setRowLabel(w,num2str(1,2,0,0,0));
+            }
+            else
+            {
+                // Adjust week numbering.
+                daysTable.setRowLabel(w,num2str(weekOfYear(drawingDate+firstDayOfWeek),2,0,0,0));
+            }
+            for (d = 1; d <= 7; d++)
+            {
+                if (arabicCalendar)
+                {
+                    // convert to arabic date
+                    c = calendarConverter.gregorianToPreferredDate(drawingDate);
+                    _d = conpeek(c,3);
+                    // we are faking a "gregorian" date with the correct Arabic day value.
+                    // this is to make the kernel date handling code happy. For display only.
+                    sDate = #JAN + #SLASH + int2str(_d) + #SLASH + #Y2004;
+                    tempDate = str2date(sDate, 213); // 213 = MDy
+                    // BP deviation documented
+                    daysTable.cell(d, w).data(tempDate);
+                    // update the hiddenDaysTable, which must mirror the daysTable, holding Gregorian days.
+                    // BP deviation documented
+                    hiddenDaysTable.cell(d, w).data(drawingDate);
+                }
+                else
+                {
+                    // BP deviation documented
+                    daysTable.cell(d, w).data(drawingDate);
+                }
+                if (drawingDate == selectedDateBeforeDrawing)
+                {
+                    id = d;
+                    iw = w;
+                }
+    
+                drawingDate++;
+            }
+        }
+    
+        daysTable.visible(true);    // ..
+    
+        daysTable.visible(false);    // ..
+        daysTable.column(1);
+        daysTable.row(1);
+        daysTable.visible(true);    // ..
+    
+        if (id && iw)
+        {
+            daysTable.column(id);
+            daysTable.row(iw);
+            daysTable.setFocus();
+            if (arabicCalendar)
+            {
+                hiddenDaysTable.column(id);
+                hiddenDaysTable.row(iw);
+                // NOTE: We don't call hiddenDaysTable.setFocus, because focus will be lost in a nonvisible element.
+            }
+        }
+        else
+        {
+            daysTable.setFocus();      // a non visible place away from the table!
+        }
+        selectedValue = selectedDateBeforeDrawing;
+        element.enableNextButton();
+        element.enablePrevButton();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>enableNextButton</Name>
+				<Source><![CDATA[
+    void enableNextButton()
+    {
+        if (year(monthShown)    == year(str2date(#maxDate,123)) &&
+            mthofyr(monthShown) == mthofyr(str2date(#maxDate,123)))
+        {
+            buttonNextMonth.enabled(false);
+        }
+        else
+        {
+            buttonNextMonth.enabled(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>enablePrevButton</Name>
+				<Source><![CDATA[
+    void enablePrevButton()
+    {
+        if (year(monthShown)    == year(str2date(#minDate,123)) &&
+            mthofyr(monthShown) == mthofyr(str2date(#minDate,123)))
+        {
+            buttonPrevMonth.enabled(false);
+        }
+        else
+        {
+            buttonPrevMonth.enabled(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHijri</Name>
+				<Source><![CDATA[
+    //Added By Minhaj
+    str getHijri(date _date)
+    {
+        System.Globalization.Calendar           Calendar = new System.Globalization.HijriCalendar();
+        System.Globalization.DateTimeFormatInfo HijriDTFI;
+        System.Globalization.CultureInfo        ToCultureInfo = new System.Globalization.CultureInfo("ar-sa",false);
+        System.DateTime dt;
+    
+        ;
+        dt = _date;
+        HijriDTFI = ToCultureinfo.get_DateTimeFormat();
+    
+        HijriDTFI.set_Calendar(Calendar);
+        HijriDTFI.set_ShortDatePattern("dd/MM/yyyy");
+        return dt.ToString(hijriDTFI);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    void init()
+    {
+        FormRun formRun;
+        PreferredCalendar cal;
+    
+        super();
+    
+    //    cal = DateTimeUtil::getUserPreferredCalendar();
+        cal = PreferredCalendar::Hijri;
+        arabicCalendar = (cal == PreferredCalendar::Hijri || cal == PreferredCalendar::UmAlQura);
+        calendarConverter = new CalendarConverter(cal);
+    
+    //    firstDayOfWeek  = firstDayOfWeek();    // Initialize our variable.
+        firstDayOfWeek  = 5;    // Initialize our variable.
+        firstWeekOfYear = firstWeekOfYear();   // Initialize our variable.
+    
+        systemDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+    
+        if (element.args() &&
+            element.args().caller()  &&
+            SysDictClass::isEqualOrSuperclass(classidget(element.args().caller()), classnum(FormRun)))
+        {
+            formRun = element.args().caller();
+            if (formRun.name() == formstr(SystemDate))
+            {
+                systemDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>monthViewerContextCommon</Name>
+				<Source><![CDATA[
+    /* TODO: (Code Upgrade) The PopupMenu API has been deprecated.  Please use the ContextMenu APIs instead. */
+    void monthViewerContextCommon(ContextMenu contextMenu)
+    {
+        int         choicePrev,choiceNext,
+                    choice;
+    
+        choicePrev = contextMenu.ContextMenuOptions().addEnd("@SYS16527");
+        choiceNext = contextMenu.ContextMenuOptions().addEnd("@SYS10078"); 
+        //choice = contextMenu.ContextMenuOptions().
+    
+        switch (choice)
+        {
+            case choicePrev:
+                monthShown = calendarConverter.prevmth(monthShown);
+                element.drawMonth();
+                element.updateTable(daysTable);
+                if (arabicCalendar)
+                    element.updateTable(hiddenDaysTable);
+                break;
+            case choiceNext:
+                monthShown = calendarConverter.nextmth(monthShown);
+                element.drawMonth();
+                element.updateTable(daysTable);
+                if (arabicCalendar)
+                    element.updateTable(hiddenDaysTable);
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>nextDay</Name>
+				<Source><![CDATA[
+    void nextDay(int keyPressed)
+    {
+        #define.FirstRow(1)
+        #define.FirstColumn(1)
+        #define.MaxRow(6)
+        #define.MaxColumn(7)
+        boolean doUnlock;
+        date    nextDate;
+    
+        /* TODO: (Code Upgrade) The lockWindowUpdate method is deprecated and no longer needed. You can safely remove calls to this method */
+        doUnlock = true; /* element.lockWindowUpdate(true) */
+    
+        switch (keyPressed)
+        {
+            case #taskArrowLeft:
+                if (daysTable.column() == #FirstColumn)
+                {
+                    if (daysTable.row() == #FirstRow)
+                    {
+                        nextDate = daysTable.data(daysTable.column(), daysTable.row());
+                        element.nextMonth(#taskPageUp);
+                        daysTable.row(#MaxRow-1);
+                        daysTable.column(#MaxColumn);
+                        if (arabicCalendar)
+                        {
+                            hiddenDaysTable.row(#MaxRow-1);
+                            hiddenDaysTable.column(#MaxColumn);
+                        }
+    
+                        while (daysTable.data(daysTable.column(), daysTable.row()) > (nextDate-1) &&
+                               daysTable.row() > #FirstRow &&
+                               daysTable.row() < #MaxRow)
+                        {
+                            daysTable.row(daysTable.row()-1);
+                            if (arabicCalendar)
+                                hiddenDaysTable.row(daysTable.row()-1);
+                        }
+                    }
+                    else
+                    {
+                        daysTable.row(daysTable.row()-1);
+                        daysTable.column(#MaxColumn);
+                        if (arabicCalendar)
+                        {
+                            hiddenDaysTable.row(daysTable.row()-1);
+                            hiddenDaysTable.column(#MaxColumn);
+                        }
+                    }
+                }
+                else
+                {
+                    daysTable.column(daysTable.column()-1);
+                    if (arabicCalendar)
+                        hiddenDaysTable.column(daysTable.column()-1);
+                }
+                break;
+    
+            case #taskArrowRight:
+                if (daysTable.column() == #MaxColumn)
+                {
+                    if (daysTable.row() == #MaxRow)
+                    {
+                        nextDate = daysTable.data(daysTable.column(), daysTable.row());
+                        element.nextMonth(#taskPageDown);
+                        daysTable.row(#FirstRow+1);
+                        daysTable.column(#FirstColumn);
+                        if (arabicCalendar)
+                        {
+                            hiddenDaysTable.row(#FirstRow+1);
+                            hiddenDaysTable.column(#FirstColumn);
+                        }
+    
+                        while (daysTable.data(daysTable.column(), daysTable.row()) < (nextDate+1) &&
+                               daysTable.row() > #FirstRow &&
+                               daysTable.row() < #MaxRow)
+                        {
+                            daysTable.row(daysTable.row()+1);
+                            if (arabicCalendar)
+                                hiddenDaysTable.row(daysTable.row()+1);
+                        }
+                    }
+                    else
+                    {
+                        daysTable.row(daysTable.row()+1);
+                        daysTable.column(#FirstColumn);
+                        if (arabicCalendar)
+                        {
+                            hiddenDaysTable.row(daysTable.row()+1);
+                            hiddenDaysTable.column(#FirstColumn);
+                        }
+                    }
+                }
+                else
+                {
+                    daysTable.column(daysTable.column()+1);
+                    if (arabicCalendar)
+                        hiddenDaysTable.column(daysTable.column()+1);
+                }
+                break;
+    
+            case #taskArrowUp:
+                if (daysTable.row() == #FirstRow)
+                {
+                    nextDate = daysTable.data(daysTable.column(), daysTable.row());
+                    element.nextMonth(#taskPageUp);
+                    daysTable.row(#MaxRow);
+                    if (arabicCalendar)
+                        hiddenDaysTable.row(#MaxRow);
+                }
+                break;
+    
+            case #taskArrowDown:
+                if (daysTable.row() == #MaxRow)
+                {
+                    nextDate = daysTable.data(daysTable.column(), daysTable.row());
+                    element.nextMonth(#taskPageDown);
+                    daysTable.row(#FirstRow);
+                    if (arabicCalendar)
+                        hiddenDaysTable.row(#FirstRow);
+                }
+                break;
+    
+            default :
+                return;
+        }
+        daysTable.setFocus();
+    
+        //if (doUnlock)
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>nextMonth</Name>
+				<Source><![CDATA[
+    void nextMonth(int keyPressed)
+    {
+        /* TODO: (Code Upgrade) The lockWindowUpdate method is deprecated and no longer needed. You can safely remove calls to this method */
+        boolean doUnlock = true; /* element.lockWindowUpdate(true) */
+        switch (keyPressed)
+        {
+            case #taskPageDown :
+                monthShown = calendarConverter.nextmth(monthShown);
+                break;
+            case #taskPageUp   :
+                monthShown = calendarConverter.prevmth(monthShown);
+                break;
+            default :
+                return;
+        }
+        element.drawMonth();
+        element.updateTable(daysTable);
+        if (arabicCalendar)
+            element.updateTable(hiddenDaysTable);
+    
+        // update selected value
+        daysTable.activeCellChanged();
+        if (arabicCalendar)
+            hiddenDaysTable.activeCellChanged();
+    
+        daysTable.setFocus();
+    
+        //if (doUnlock)
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    void run()
+    {
+        initialDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        //FormDateTimeControl hostDatetimeControl = element.selectTarget();
+        //FormDateControl hostDateControl = element.selectTarget();
+        int             d;
+        int             dayNo;
+        str 1           dayLetter;
+        ;
+        /*
+        if (hostDateControl &&
+            classnum(FormDateControl) == classidget(hostDateControl) &&
+            hostDateControl.dateValue())
+        {
+            initialDate = hostDateControl.dateValue();
+        }
+        else if (hostDatetimeControl &&
+            classnum(FormDateTimeControl) == classidget(hostDatetimeControl) &&
+            DateTimeUtil::date(hostDatetimeControl.dateTimeValue()))
+        {
+            initialDate = DateTimeUtil::date(hostDatetimeControl.dateTimeValue());
+        }
+        else
+        {
+            initialDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        }
+        */
+        selectedDate.dateValue(initialDate);
+        selectedValue   = initialDate;
+        monthShown      = initialDate;
+    
+        // Adjust column labels to different offset.
+        daysTable.showColLabels(true);
+    
+        for (d = 1; d <= 7; d++)
+        {
+            dayNo = (d+firstDayOfWeek)>7 ? d + firstDayOfWeek - 7 : d + firstDayOfWeek;
+            // BASIS bidi
+            // todo :: ax7 
+            //calendarConverter.dayLetter() depricated and not allowerd to use // implentation
+            //dayLetter = calendarConverter.dayLetter(dayNo);
+            daysTable.setColLabel(d,dayLetter);
+        }
+    
+        this.drawMonth();
+        super();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>task</Name>
+				<Source><![CDATA[
+    int task(int p1)
+    {
+        int ret = true;
+        ;
+        switch (p1)
+        {
+            case #taskPageUp:
+                element.nextMonth(p1);
+                break;
+            case #taskPageDown:
+                element.nextMonth(p1);
+                break;
+            case #taskArrowLeft:
+                element.nextDay(p1);
+                break;
+            case #taskArrowRight:
+                element.nextDay(p1);
+                break;
+            case #taskArrowUp:
+                element.nextDay(p1);
+                ret = super(p1);
+                break;
+            case #taskArrowDown:
+                element.nextDay(p1);
+                ret = super(p1);
+                break;
+            default :
+                ret = super(p1);
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateTable</Name>
+				<Source><![CDATA[
+    void updateTable(FormTableControl _formTableControl)
+    {
+        int c,r;
+    
+        for (c = 1; c <= _formTableControl.columns(); c++)
+            for (r = 1; r <= _formTableControl.rows(); r++)
+                _formTableControl.updateCell(c, r);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>ButtonPrevMonth</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void clicked()
+        {
+            //copy from mouseup as mouseup is deprecated 
+            element.nextMonth(#taskPageUp);
+        
+            // update current selected date
+            if (arabicCalendar)
+                selectedValue = hiddenDaysTable.data(daysTable.column(), daysTable.row());
+            else
+                selectedValue = daysTable.data(daysTable.column(), daysTable.row());
+        
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ButtonNextMonth</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void clicked()
+        {
+            //copy from mouseup as mouseup is depricateds
+            // update current selected date
+            if (arabicCalendar)
+                selectedValue = hiddenDaysTable.data(daysTable.column(), daysTable.row());
+            else
+                selectedValue = daysTable.data(daysTable.column(), daysTable.row());
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>DaysTable</Name>
+				<Type>Table</Type>
+				<Methods>
+					<Method>
+						<Name>activeCellChanged</Name>
+						<Source><![CDATA[
+        void activeCellChanged()
+        {
+            super();
+            selectedValue = this.data(this.column(), this.row());
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>editControl</Name>
+						<Source><![CDATA[
+        FormControl editControl(int column, int row)
+        {
+            date            drawingDate;
+        
+            if (arabicCalendar)
+                drawingDate = hiddenDaysTable.data(column, row);
+            else
+                drawingDate = this.data(column, row);
+        
+            if (dateCell)
+            {
+                dateCell.backgroundColor(WindowsPalette::WindowBackground);
+                // do something special for the cell with todays date
+                if (drawingDate == DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()))
+                {
+                    dateCell.backgroundColor(WindowsPalette::TooltipBackground);
+                }
+        
+                if (arabicCalendar)
+                {
+                    // normal display for the selected month
+                    if (calendarConverter.mthofyr(drawingDate) == calendarConverter.mthofyr(montViewer.dateValue()))
+                    {
+                       // dateCell.foregroundColor(WindowsPalette::WindowText);
+                    }
+                    // dimmed display (not selected month)
+                    else
+                    {
+                       // dateCell.foregroundColor(WindowsPalette::DisabledText);
+                    }
+                }
+                else
+                {
+                    // normal display for the selected month
+                    if (mthofyr(drawingDate) == mthofyr(montViewer.dateValue()))
+                    {
+                       // dateCell.foregroundColor(WindowsPalette::WindowText);
+                    }
+                    // dimmed display (not selected month)
+                    else
+                    {
+                      //  dateCell.foregroundColor(WindowsPalette::DisabledText);
+                    }
+                }
+            }
+        
+            return dateCell;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>SystemDate</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+        
+            super();
+            todayPressed = true;
+            element.closeOk();
+        
+        }
+        /*
+        //BP Deviation documented.
+        int mouseDown(int x, int y, int button, boolean ctrl, boolean shift)
+        {
+            int ret;
+        
+            if (button == 1)
+                todayPressed = true;
+        
+            ret = super(x, y, button, ctrl, shift);
+        
+            return ret;
+        }
+        */
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HiddenDaysTable</Name>
+				<Type>Table</Type>
+				<Methods>
+					<Method>
+						<Name>activeCellChanged</Name>
+						<Source><![CDATA[
+        void activeCellChanged()
+        {
+            super();
+            selectedValue = this.data(this.column(), this.row());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<AllowUserSetup xmlns="">No</AllowUserSetup>
+		<BackgroundColor xmlns="">MenuBackground</BackgroundColor>
+		<BottomMargin xmlns="">3</BottomMargin>
+		<BottomMarginMode xmlns="">Fixed</BottomMarginMode>
+		<Caption xmlns="">Hijri date lookup</Caption>
+		<Frame xmlns="">Border</Frame>
+		<HeightMode xmlns="">SizeToContent</HeightMode>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<LeftMargin xmlns="">3</LeftMargin>
+		<LeftMarginMode xmlns="">Fixed</LeftMarginMode>
+		<RightMargin xmlns="">3</RightMargin>
+		<RightMarginMode xmlns="">Fixed</RightMarginMode>
+		<SetCompany xmlns="">No</SetCompany>
+		<Style xmlns="">Lookup</Style>
+		<TopMargin xmlns="">3</TopMargin>
+		<TopMarginMode xmlns="">Fixed</TopMarginMode>
+		<WidthMode xmlns="">SizeToAvailable</WidthMode>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>MainGroup</Name>
+				<ElementPosition>1073741823</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>Auto</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>Auto</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>MonthGroup</Name>
+						<ElementPosition>613566756</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>3</VerticalSpacing>
+						<VerticalSpacingMode>Fixed</VerticalSpacingMode>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>ButtonPrevMonth</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>715827882</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Height>16</Height>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@SYS76652</HelpText>
+								<LeftMode>LeftEdge</LeftMode>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Width>25</Width>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Border>Flat</Border>
+								<ShowShortCut>No</ShowShortCut>
+								<Text>@SYS76523</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>arabicMontViewer</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741823</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Height>16</Height>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@SYS76652</HelpText>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Border>None</Border>
+								<Text>@SYS76523</Text>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>MontViewer</Name>
+								<AlignControl>No</AlignControl>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Height>16</Height>
+								<HeightMode>Auto</HeightMode>
+								<Skip>Yes</Skip>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Alignment>Center</Alignment>
+								<BackgroundColor>ButtonFace3D</BackgroundColor>
+								<Bold>Normal</Bold>
+								<Border>None</Border>
+								<DateDay>None</DateDay>
+								<DateMonth>Long</DateMonth>
+								<DateSeparator>None_Space</DateSeparator>
+								<DateYear>Digits4</DateYear>
+								<ForegroundColor>ButtonText</ForegroundColor>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonControl">
+								<Name>ButtonNextMonth</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1789569705</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Height>16</Height>
+								<HeightMode>Auto</HeightMode>
+								<HelpText>@SYS76653</HelpText>
+								<LeftMode>RightEdge</LeftMode>
+								<Skip>Yes</Skip>
+								<Type>Button</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Width>25</Width>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Border>Flat</Border>
+								<ShowShortCut>No</ShowShortCut>
+								<Text>@SYS75360</Text>
+							</AxFormControl>
+						</Controls>
+						<BottomMargin>0</BottomMargin>
+						<BottomMarginMode>Fixed</BottomMarginMode>
+						<Columns>3</Columns>
+						<Columnspace>0</Columnspace>
+						<ColumnspaceMode>Fixed</ColumnspaceMode>
+						<TopMargin>0</TopMargin>
+						<TopMarginMode>Fixed</TopMarginMode>
+						<BackgroundColor>WindowBackground</BackgroundColor>
+						<FrameType>None</FrameType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTableControl">
+						<Name>DaysTable</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>920350134</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Table</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>DateCell</Name>
+								<AlignControl>No</AlignControl>
+								<AllowEdit>No</AllowEdit>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Alignment>Right</Alignment>
+								<ColorScheme>WindowsPalette</ColorScheme>
+								<DateDay>Digits2</DateDay>
+								<DateMonth>None</DateMonth>
+								<DateSeparator>None_None</DateSeparator>
+								<DateYear>None</DateYear>
+								<FontSize>7</FontSize>
+								<LabelBold>Normal</LabelBold>
+								<LookupButton>Never</LookupButton>
+								<ShowLabel>No</ShowLabel>
+							</AxFormControl>
+						</Controls>
+						<BackgroundColor>WindowBackground</BackgroundColor>
+						<Column>4</Column>
+						<Columns>7</Columns>
+						<Row>3</Row>
+						<Rows>6</Rows>
+						<ShowRowLabels>No</ShowRowLabels>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormDateControl">
+						<Name>SelectedDate</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1227133512</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>Date</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>TransDate</ExtendedDataType>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>SystemDate</Name>
+						<ElementPosition>1533916890</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@SYS76651</HelpText>
+						<LeftMode>Center</LeftMode>
+						<Skip>Yes</Skip>
+						<Type>Button</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@SYS57439</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormTableControl">
+						<Name>HiddenDaysTable</Name>
+						<AllowEdit>No</AllowEdit>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1840700268</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<LeftMode>LeftEdge</LeftMode>
+						<TopMode>TopEdge</TopMode>
+						<Type>Table</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Visible>No</Visible>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormDateControl">
+								<Name>HiddenDateCell</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Date</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<Visible>No</Visible>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<BackgroundColor>ButtonFace3D</BackgroundColor>
+							</AxFormControl>
+						</Controls>
+						<Columns>7</Columns>
+						<Rows>6</Rows>
+						<ShowRowLabels>No</ShowRowLabels>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<BottomMargin>3</BottomMargin>
+				<BottomMarginMode>Fixed</BottomMarginMode>
+				<LeftMargin>3</LeftMargin>
+				<LeftMarginMode>Fixed</LeftMarginMode>
+				<RightMargin>3</RightMargin>
+				<RightMarginMode>Fixed</RightMarginMode>
+				<TopMargin>3</TopMargin>
+				<TopMarginMode>Fixed</TopMarginMode>
+				<BackgroundColor>WindowBackground</BackgroundColor>
+				<FramePosition>Center</FramePosition>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>FormGridControl1</Name>
+				<AllowEdit>No</AllowEdit>
+				<HeightMode>SizeToContent</HeightMode>
+				<Type>Grid</Type>
+				<Visible>No</Visible>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<Style>Tabular</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMUnassignClaimsFromDisabledUsers</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMUnassignClaimsFromDisabledUsers extends RunBaseBatch
+{
+    QueryRun            gQueryRun;
+    BatchHeader         batchHeader;
+
+    #define.CurrentVersion(0)
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMUnassignClaimsFromDisabledUsers construct()
+    {
+        return new HMUnassignClaimsFromDisabledUsers();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    static ClassDescription description()
+    {
+        return "@Optum:HMUnassignClaimsFromDisabledUsers";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    public void run()
+    {
+        HMDisablePersonFromUser disablePersonFromUser;
+        CustCollectionsAgent    custCollectionAgent;
+        HMClaimTable            hmClaimTable;
+        DirPartyRelationship    dirPartyRelationship;
+        OMTeam                  team;
+
+        CustCollectionsAgent    custCollAgent;
+        DirPartyRelationship    dirPartyRelship;
+
+        try
+        {
+            while select forupdate JobFinished, CustCollectionsAgent from disablePersonFromUser
+            where disablePersonFromUser.JobFinished == NoYes::No
+            {
+                ttsbegin;
+
+                update_recordset hmClaimTable
+            setting
+                ClaimAgent = 0,
+                AgentName = ""
+                where hmClaimTable.ClaimAgent == disablePersonFromUser.CustCollectionsAgent;
+
+                disablePersonFromUser.JobFinished = NoYes::Yes;
+                disablePersonFromUser.update();
+
+                select firstonly DirPartyRelationship from custCollectionAgent
+            where custCollectionAgent.RecId == disablePersonFromUser.CustCollectionsAgent;
+
+                update_recordset custCollAgent
+                    setting 
+                        HMSupervisor = 0
+                    join dirPartyRelship
+                    where custCollAgent.HMSupervisor == dirPartyRelship.ChildParty
+                    && dirPartyRelship.RecId == custCollectionAgent.DirPartyRelationship;
+
+
+                delete_from dirPartyRelationship
+            where dirPartyRelationship.RecId == custCollectionAgent.DirPartyRelationship;
+
+
+
+                delete_from custCollectionAgent
+            where custCollectionAgent.RecId == disablePersonFromUser.CustCollectionsAgent;
+
+                ttscommit;
+            }
+        }
+        catch
+        {
+            info(strFmt("%1",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatch</Name>
+				<Source><![CDATA[
+    //Needs to be set to true so class can be ran in a batch
+    boolean canGoBatch()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return conNull();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    public boolean unpack(container packedClass)
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>runsImpersonated</Name>
+				<Source><![CDATA[
+    //Determines whether to run on server or client
+    //True - Server; False - Client
+    public boolean runsImpersonated()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "args"></param>
+    public static void main(Args args)
+    {
+        HMUnassignClaimsFromDisabledUsers unassignClaimsFromDisabledUsers = HMUnassignClaimsFromDisabledUsers::construct();
+
+        unassignClaimsFromDisabledUsers.caption();
+
+        if (unassignClaimsFromDisabledUsers.prompt())
+        {
+            unassignClaimsFromDisabledUsers.run();
+        }
+            
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

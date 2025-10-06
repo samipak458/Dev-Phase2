@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMAssignedPriorityToClaims</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMAssignedPriorityToClaims extends FormRun
+{   
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>assignPriority</Name>
+				<Source><![CDATA[
+    public void assignPriority(HMClaimTable _hmClaimTable)
+    {
+        _hmClaimTable.selectForUpdate(true);
+        _hmClaimTable.HMClaimPriority       = Priority.value();
+        _hmClaimTable.IsClaimPriorityManual = NoYes::Yes;
+        _hmClaimTable.HMPriorityStrategyID  = PriorityStrategy.text();
+        _hmClaimTable.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createClaimChangeLog</Name>
+				<Source><![CDATA[
+    public void createClaimChangeLog(HMClaimTable _hmClaimTable)
+    {
+        HMClaimChangeLogTable hmClaimChangeLogTable;
+
+        hmClaimChangeLogTable.ClaimID          = _hmClaimTable.ClaimID;
+        hmClaimChangeLogTable.OldValue         = strFmt("@Optum:HMClaimPriorityChangeLog",int2Str(_hmClaimTable.HMClaimPriority),_hmClaimTable.HMPriorityStrategyID);
+        hmClaimChangeLogTable.NewValue         = strFmt("@Optum:HMClaimPriorityChangeLog",int2Str(Priority.value()),PriorityStrategy.text());
+        hmClaimChangeLogTable.ReasonCode       = ReasonCode.text();
+        hmClaimChangeLogTable.HMAssignmentType = HMAssignmentType::Priority;
+        hmClaimChangeLogTable.insert();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void closeOk()
+    {
+        FormRun                 formRun = element.args().caller();
+        formDataSource          fds;
+        MultiSelectionHelper    helper;
+        HMClaimTable		    claimTable;
+        str                     errorMsg;
+            
+        if (Priority.value() == 0 || ReasonCode.text() == "" || PriorityStrategy.text() == "")
+        {
+            errorMsg = Priority.value() == 0 ? "@Optum:PriorityMustBeSelected" 
+                        : PriorityStrategy.text() == '' ?  "@Optum:PriorityStrategyMustBeSelected"
+                        : "@Optum:ReasonCodeMustBeSelected";
+
+            throw Error(strFmt("%1",errorMsg));
+        }
+        else
+        {
+            element.validateData();
+        }
+        
+        fds = formRun.dataSource(1);
+
+        helper = MultiSelectionHelper::construct();
+        helper.parmDatasource(element.args().record().dataSource());
+
+        claimTable = helper.getFirst();
+
+        while (claimTable.RecId != 0)
+        {
+            try
+            {
+                ttsbegin;
+
+                element.createClaimChangeLog(claimTable);
+                element.assignPriority(claimTable);
+                
+                ttscommit;
+            }
+            catch
+            {
+                warning(strFmt('@Optum:UnableToAssingPriorityToClaimID',claimTable.ClaimID));
+            }
+
+            claimTable = helper.getNext();
+        }
+
+        if(formRun.name() == formStr(HMAllClaims))
+        {
+            fds.reread();
+        }
+        else
+        {
+            fds.refresh();
+            fds.research();
+        }
+        
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateData</Name>
+				<Source><![CDATA[
+    public void validateData()
+    {
+        HMClaimPriorityTable    hmClaimPriority;
+        ReasonTable             reasonTable;
+        HMPriorityStrategy      hmPriorityStrategy;
+
+        select firstonly RecId from hmPriorityStrategy
+            where hmPriorityStrategy.HMPriorityStrategyID == PriorityStrategy.text();
+            
+        if (hmPriorityStrategy.RecId == 0)
+        {
+            throw Error("@Optum:PriorityStrategyDoesNotExistErrorMsg");
+        }
+        
+        select firstonly RecId from hmClaimPriority
+            where hmClaimPriority.Priority == Priority.value()
+                && hmClaimPriority.HMPriorityStrategyID == PriorityStrategy.text();
+
+        if (hmClaimPriority.RecId == 0)
+        {
+            throw Error("@Optum:PriorityDoesNotExistErrorMsg");
+        }
+           
+        select firstonly RecId from reasonTable
+            where reasonTable.Reason == ReasonCode.text();
+
+        if (reasonTable.RecId == 0)
+        {
+            throw Error("@Optum:ReasonCodeNotExistErrorMsg");
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>PriorityStrategy</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            SysTableLookup          sysTableLookUp;
+            QueryBuildDataSource    qbds;
+            Query		            query = new Query();
+    
+            qbds = query.addDataSource(tableNum(HMPriorityStrategy));
+           
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(HMPriorityStrategy), this);
+            sysTableLookUp.addLookupfield(fieldNum(HMPriorityStrategy, HMPriorityStrategyID), true);
+            sysTableLookUp.addLookupfield(fieldNum(HMPriorityStrategy, HMPriorityStrategyDescription));
+
+            sysTableLookUp.parmQuery(query);
+            sysTableLookUp.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Priority</Name>
+				<Type>Integer</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            SysTableLookup          sysTableLookUp;
+            QueryBuildDataSource    qbds;
+            QueryBuildRange         qbr;
+            Query		            query = new Query();
+    
+            qbds = query.addDataSource(tableNum(HMClaimPriorityTable));
+           
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(HMClaimPriorityTable), this);
+            sysTableLookUp.addLookupfield(fieldNum(HMClaimPriorityTable, Priority), true);
+            sysTableLookUp.addLookupfield(fieldNum(HMClaimPriorityTable, Description));
+
+            qbr = qbds.addRange(fieldNum(HMClaimPriorityTable,HMPriorityStrategyID));
+            qbr.value(PriorityStrategy.valueStr());
+
+            sysTableLookUp.parmQuery(query);
+            sysTableLookUp.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ReasonCode</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        /// <summary>
+        ///
+        /// </summary>
+        public void lookup()
+        {
+            SysTableLookup			sysTableLookUp;
+            QueryBuildDataSource    qbds;
+            Query					query = new Query();
+
+            qbds = query.addDataSource(tableNum(ReasonTable));
+            qbds.addRange(fieldNum(ReasonTable,Claim)).value(SysQuery::value(NoYes::Yes));
+           
+            sysTableLookUp = SysTableLookup::newParameters(tableNum(ReasonTable), this);
+            sysTableLookUp.addLookupfield(fieldNum(ReasonTable, Reason), true);
+            sysTableLookUp.addLookupfield(fieldNum(ReasonTable, Description));
+
+
+            sysTableLookUp.parmQuery(query);
+            sysTableLookUp.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@Optum:AssignPriority</Caption>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>PriorityStrategy</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@Optum:HMPriorityStrategy</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormIntegerControl">
+						<Name>Priority</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Integer</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Label>@SYS313409</Label>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>ReasonCode</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<ExtendedDataType>ReasonCode</ExtendedDataType>
+						<Mandatory>Yes</Mandatory>
+					</AxFormControl>
+				</Controls>
+				<ColumnsMode>Fill</ColumnsMode>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<Type>ButtonGroup</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandOK</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<AutoRefreshData>Yes</AutoRefreshData>
+						<ButtonDisplay>TextOnly</ButtonDisplay>
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>@MAZ6110</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMOrganizationalUnitHelper</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMOrganizationalUnitHelper
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>buildOUTree</Name>
+				<Source><![CDATA[
+    public void buildOUTree(FormTreeControl _tree, TreeItemIdx _RecId,int64 _RecIdx)
+    {
+        TreeItemIdx                     parentItemIdx;
+        HMOrganizationalUnit            hmOrganizationalUnitlocalForChildCheck;
+        HMOrganizationalUnit            hmOrganizationalUnitForTree;
+        HMOrganizationaCategory         hmOrganizationaCategory;
+        HMOrganizationaCategory         hmOrganizationaCategoryChilCheck;
+        FormTreeItem                    formTreeItem;
+    
+        while select HMOrganizationalUnit, HMOrganizationaCategory, IsBlocked, FromDate, ToDate, RecId, Description, FileLocationType from hmOrganizationalUnitForTree
+            where hmOrganizationalUnitForTree.HMOrganizationalUnit == _RecIdx
+            join RecId,Indicator from hmOrganizationaCategory
+            where hmOrganizationalUnitForTree.HMOrganizationaCategory == hmOrganizationaCategory.RecId
+            && hmOrganizationalUnitForTree.IsBlocked == NoYes::No
+            && (hmOrganizationalUnitForTree.FromDate <= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmOrganizationalUnitForTree.ToDate >= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+        {
+            // if the OU is not blocked and its validity period is true
+    
+            select count(recId) from hmOrganizationalUnitlocalForChildCheck
+                join * from hmOrganizationaCategoryChilCheck
+                where hmOrganizationalUnitlocalForChildCheck.HMOrganizationalUnit == hmOrganizationalUnitForTree.RecId
+                && hmOrganizationalUnitlocalForChildCheck.HMOrganizationaCategory == hmOrganizationaCategoryChilCheck.RecId;
+    
+    
+            if(hmOrganizationalUnitlocalForChildCheck.RecId>0)
+            {
+                formTreeItem = new FormTreeItem();
+                //BP deviation documented
+                formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                parentItemIdx = _tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+    
+                this.buildOUTree(_tree, parentItemIdx,hmOrganizationalUnitForTree.RecId);
+            }
+            else
+            {
+                if(hmOrganizationalUnitForTree.FileLocationType != HMFileLocationType::None )
+                {
+                    formTreeItem = new FormTreeItem();
+                    //BP deviation documented
+                    formTreeItem.text(hmOrganizationalUnitForTree.Description);
+                    formTreeItem.data(hmOrganizationalUnitForTree.RecId);
+    
+                    parentItemIdx = _tree.addItem(_RecId,FormTreeAdd::Sort,formTreeItem);
+                }
+    
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getBogusClient</Name>
+				<Source><![CDATA[
+    public static CustAccount getBogusClient(RecId _clinicRecId)
+    {
+        HMOrganizationalUnit hmOrganizationalUnit;
+        CustTable       custTable;
+    
+        select BogusClient from hmOrganizationalUnit where hmOrganizationalUnit.RecId == _clinicRecId
+            join AccountNum from custTable where custTable.RecId == hmOrganizationalUnit.BogusClient;
+    
+        return custTable.AccountNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getWorkerOU</Name>
+				<Source><![CDATA[
+    public static RecId getWorkerOU(RecId _hcmWorkerRecId = HcmWorkerLookup::currentWorker())
+    {
+        HMResourceOrganizationalUnit        hmResourceOrganizationalUnit;
+    
+        if(_hcmWorkerRecId)
+        {
+            select firstOnly HMOrganizationalUnit from hmResourceOrganizationalUnit
+                where hmResourceOrganizationalUnit.HcmWorker == _hcmWorkerRecId;
+        }
+    
+        return hmResourceOrganizationalUnit.HMOrganizationalUnit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getWorkerOUCount</Name>
+				<Source><![CDATA[
+    public static RecId getWorkerOUCount(RecId _hcmWorkerRecId = HcmWorkerLookup::currentWorker())
+    {
+        HMResourceOrganizationalUnit        hmResourceOrganizationalUnit;
+    
+        if(_hcmWorkerRecId)
+        {
+            select count(RecId) from hmResourceOrganizationalUnit
+                where hmResourceOrganizationalUnit.HcmWorker == _hcmWorkerRecId;
+        }
+    
+        return hmResourceOrganizationalUnit.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isOUNotDept</Name>
+				<Source><![CDATA[
+    public static boolean isOUNotDept(RecId _organizationalUnitRecId)
+    {
+        HMOrganizationalUnit         hmOrganizationalingUnit;
+        HMOrganizationaCategory      hmOrganizationaCategory;
+        boolean ret;
+    
+        select RecId from hmOrganizationalingUnit
+        join Indicator from hmOrganizationaCategory
+            where hmOrganizationalingUnit.HMOrganizationaCategory == hmOrganizationaCategory.RecId
+            && hmOrganizationalingUnit.RecId == _organizationalUnitRecId;
+    
+        if(hmOrganizationalingUnit.RecId)
+        {
+            if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit)
+            {
+                ret = false;
+            }
+            else
+            {
+                ret = true;
+            }
+        }
+        else
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isOUNotDeptWorker</Name>
+				<Source><![CDATA[
+    public static boolean isOUNotDeptWorker(RecId _organizationalUnitRecId)
+    {
+        HMOrganizationalUnit         hmOrganizationalingUnit;
+        HMOrganizationaCategory      hmOrganizationaCategory;
+        boolean ret;
+    
+        select crosscompany RecId from hmOrganizationalingUnit
+        join Indicator from hmOrganizationaCategory
+            where hmOrganizationalingUnit.HMOrganizationaCategory == hmOrganizationaCategory.RecId
+            && hmOrganizationalingUnit.RecId == _organizationalUnitRecId;
+           // && hmOrganizationalingUnit.dataAreaId == curext()
+            //&& hmOrganizationaCategory.dataAreaId == curext();
+    
+        if(hmOrganizationalingUnit.RecId)
+        {
+            if(hmOrganizationaCategory.Indicator == HMOrganizationalCategoryIndicator::DepartmentalUnit)
+            {
+                ret = false;
+            }
+            else
+            {
+                ret = true;
+            }
+        }
+        else
+        {
+            ret = false;
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

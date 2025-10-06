@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>InventTableHM</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class InventTableHM
+{
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>InventTable_Post_initFromEcoResProduct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="args"></param>
+    [PostHandlerFor(tableStr(InventTable), tableMethodStr(InventTable, initFromEcoResProduct))]
+    public static void InventTable_Post_initFromEcoResProduct(XppPrePostArgs args)
+    {
+        ecoResProduct _ecoResProduct = Args.getArg('_ecoResProduct') as ecoResProduct;
+
+        InventTable _this = Args.getThis();
+        _this.HMProductType = _ecoResProduct.HMProductType;
+        
+        if(_this.HMProductType != HMInventType::None)
+        {
+            _this.PmfProductType = PmfProductType::None;
+        }
+ 
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>InventTable_Post_initValue</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="args"></param>
+    [PostHandlerFor(tableStr(InventTable), tableMethodStr(InventTable, initValue))]
+    public static void InventTable_Post_initValue(XppPrePostArgs args)
+    {
+        InventTable _this = Args.getThis();
+        if (isConfigurationkeyEnabled(configurationKeyNum(MaterialManagement)))
+        {
+            _this.Chargable = NoYes::Yes;
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertIntoHMInventTable</Name>
+				<Source><![CDATA[
+    private void insertIntoHMInventTable(InventTable _inventTable)
+    {
+        HMInventTable hminventTable;
+        select RecId from hminventTable
+    where hminventTable.InventTable == _inventTable.ItemId;
+        if(hminventTable.RecId == 0)
+        {
+            hminventTable.InventTable = _inventTable.ItemId;
+            if(_inventTable.PmfProductType == PmfProductType::None)
+            {
+                hminventTable.ChargeType = HMChargeType::Immediate;
+                hminventTable.Status = NoYes::Yes;
+            }
+            hminventTable.insert();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>HMfindAlternativeItem</Name>
+				<Source><![CDATA[
+    //Below methods are commented against Task 7544 - BPErrorNotAllowedDisplayMethod 11-Aug-2022 _Syed Fahad Jawed
+    ////BP deviation documented.
+    //public display Description itemDescriptionId(Inventtable _this)
+    //{
+    //    return _this.itemDescriptionOrName() + '(' + _this.ItemId + ')';
+    //}
+
+    ////BP deviation documented.
+    //public display  EcoResProductName showExamName(Inventtable _this)
+    //{
+
+    //    return InventTable::find(_this.ItemId).itemDescriptionOrName();
+    //}
+
+    public static boolean HMfindAlternativeItem (Inventtable _this,
+    ItemId          _itemId,
+    InventDim       _inventDim,
+    InventQty       _qty,
+    HMInventAlternativeItem  _hmInventAlternativeItem,
+    Inventdim       _toInventDim)
+    {
+        InventDimParm               inventDimParm;
+        InventDim                   inventDim;
+        InventOnHandQty             inventOnHandQty;
+        boolean                     ret,checkOnHand,isOnHand;
+        int                         a;
+        Set                         visitedItems    = new Set(Types::String);
+        NoYes                       nextItem;
+        ItemId                      newItemId       = _itemId;
+        InventTable                 inventTable     = InventTable::find(_itemId);
+        InventTable                 toInventTable     = InventTable::find(_hmInventAlternativeItem.AltItemId);
+        EcoResProductDimGroupSetup  dimSetup        = EcoResProductDimGroupSetup::newInventTable(inventTable);
+
+        dimSetup.copyProductDimensions(_inventDim, inventDim);
+        inventDimParm = dimSetup.inventDimParmActiveDimensions();
+        a = 1;
+        checkOnHand = 0;
+        if (inventTable.UseAltItemId != ItemNumAlternative::Never)
+        {
+            if  (_hmInventAlternativeItem.AltItemId)
+            {
+                for (a=1; a < 3; a++)
+                {
+                    switch (inventTable.UseAltItemId)
+                    {
+                        case ItemNumAlternative::Never          :   ret = false;
+                            nextItem    = NoYes::No;
+                            break;
+
+                        case ItemNumAlternative::InventWhen0   :
+                            isOnHand = true;
+                            inventOnHandQty = InventOnHandQty::newParameters(
+                                                   newItemId,
+                                                  _inventDim,
+                                                  inventDimParm);
+
+                            if (inventOnHandQty.availPhysical() >= _qty)
+                            {
+                                checkOnHand  = true;
+                                nextItem    = NoYes::No;
+                                ret = true;
+                                break;
+                            }
+                            else
+                            {
+                                nextItem                = NoYes::Yes;
+                                ret = false;
+                                break;
+                            }
+
+                        case ItemNumAlternative::Always         :
+
+                            ret = true;
+                            nextItem                = NoYes::Yes;
+                            break;
+                    }
+                    if (nextItem)
+                    {
+                        newItemId = toInventTable.ItemId;
+                        inventDim.ConfigId      = _toInventDim.configId;
+                        inventDim.InventSizeId  = _toInventDim.InventSizeId;
+                        inventDim.InventColorId = _toInventDim.InventColorId;
+                        inventDim.InventStyleId = _toInventDim.InventStyleId;
+                        inventDimParm           = dimSetup.inventDimParmActiveDimensions();
+                        continue;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                if (isOnHand)
+                {
+                    if (!checkOnHand)
+                    {
+                        ret =  checkFailed("@MAZ12705");
+                    }
+                }
+            }
+        }
+
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

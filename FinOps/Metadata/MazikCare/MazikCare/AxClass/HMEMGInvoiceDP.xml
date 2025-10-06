@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMEMGInvoiceDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SRSReportParameterAttribute(classstr(HMEMGInvoiceContract))]
+class HMEMGInvoiceDP extends SRSReportDataProviderBase
+{
+    HMEMGInvoiceTmp    hmEMGInvoicTmp;
+    
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMEMGInvoiceTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMEMGInvoiceTmp')]
+    public HMEMGInvoiceTmp getHMEMGInvoiceTmp()
+    {
+        select hmEMGInvoicTmp;
+    
+        return hmEMGInvoicTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    public void process()
+    {
+        HMEMGInvoiceContract        contract;
+        HMCase                      hmCase;
+        HMCaseTrans                 hmCaseTrans;
+        HMClaimTable                hmClaimTable;
+        HMPatientChargeEntryTable   hmPatientChargeEntryTable;
+
+        contract = this.parmDataContract() as HMEMGInvoiceContract;
+        hmCase = HMCase::find(contract.parmHMCaseRecId());
+
+        if (hmCase)
+        {
+            select * from hmClaimTable
+                join hmPatientChargeEntryTable
+                where hmPatientChargeEntryTable.HMCase == hmCase.RecId;
+
+            while select * from hmCaseTrans
+                where hmCaseTrans.HMCase == hmCase.RecId
+            {
+                hmEMGInvoicTmp.PhysicianName = HMResourceMaster::find(hmCase.HMResourceMaster).physicianName();
+                hmEMGInvoicTmp.HMClaimNumber = hmClaimTable.ClaimID;
+                hmEMGInvoicTmp.PatientName = CustTable::findRecId(HMPatient::find(hmCase.HMPatient).CustTable).name();
+                hmEMGInvoicTmp.Description = hmCaseTrans.ItemName;
+                hmEMGInvoicTmp.BilledAmount = hmCaseTrans.SalesPrice;
+                hmEMGInvoicTmp.DateOfService = DateTimeUtil::date(hmCaseTrans.CreatedDateTime);
+                hmEMGInvoicTmp.HMCaseNo = hmCase.CaseNo;
+                hmEMGInvoicTmp.CaseDate = DateTimeUtil::date(hmCase.AddmisionDate);
+                hmEMGInvoicTmp.insert();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

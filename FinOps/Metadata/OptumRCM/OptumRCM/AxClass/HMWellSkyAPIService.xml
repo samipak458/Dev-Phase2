@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMWellSkyAPIService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Newtonsoft.Json;
+
+/// <summary>
+/// The class <c>HMWellSkyAPIService</c> is used to send data to service bus.
+/// </summary>
+class HMWellSkyAPIService extends SysOperationServiceBase
+{
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Send the records to service bus.
+    /// </summary>
+    public void process() 
+    {
+        HMwellSkyAPIRequest                             hmWellSkyAPIRequest;
+        str                                             connectionString, queueName, messageBody, createdDateTime,followupDateTime, errorMsg;
+        Counter                                         messageRetryCount;
+        Microsoft.ServiceBus.Messaging.BrokeredMessage  brokeredMessage;
+        Microsoft.ServiceBus.Messaging.QueueClient      queueClient;
+        Microsoft.ServiceBus.Messaging.MessageSession   responseMessage;
+        HMWellSkyAPIRequestData                         hmWellSkyAPIRequestData;
+        HMBillParameters                                hmBillParameters;
+        System.Text.UTF8Encoding                        encoding;
+        System.Byte[]                                   byteArray;
+        System.IO.MemoryStream                          memoryStream;
+
+        
+        select HMWellskyConnectionString, HMWellskyQueueName, HMWellskyMessageRetryCount
+            from hmBillParameters;
+
+        if(hmBillParameters.HMWellskyQueueName != '' && hmBillParameters.HMWellskyConnectionString != '' && hmBillParameters.HMWellskyMessageRetryCount > 0)
+        {  
+            queueName         = hmBillParameters.HMWellskyQueueName;
+            connectionString  = hmBillParameters.HMWellskyConnectionString;
+            messageRetryCount = hmBillParameters.HMWellskyMessageRetryCount;
+            queueClient       = Microsoft.ServiceBus.Messaging.QueueClient::CreateFromConnectionString(connectionString, queueName);
+
+            while select hmWellSkyAPIRequest
+                order by createdDateTime
+                where hmWellSkyAPIRequest.MessageSent == NoYes::No
+                    && hmWellSkyAPIRequest.MessageRetryCount < messageRetryCount
+            {
+                if (connectionString && queueName)
+                {
+                    createdDateTime = DateTimeUtil::toStr(hmWellSkyAPIRequest.CreatedDateAndTime);
+                    followupDateTime = DateTimeUtil::toStr(hmWellSkyAPIRequest.FollowupDate);
+                
+                    hmWellSkyAPIRequestData = new HMWellSkyAPIRequestData();
+
+                    //hmWellSkyAPIRequestData.parmClaimID(hmWellSkyAPIRequest.ClaimID);
+                    hmWellSkyAPIRequestData.parmHmUniqueId(hmWellSkyAPIRequest.HMUniqueID);
+                    hmWellSkyAPIRequestData.parmClaimProcessingStatus(hmWellSkyAPIRequest.ClaimStatus);
+                    hmWellSkyAPIRequestData.parmActionType(hmWellSkyAPIRequest.ActionType);
+                    hmWellSkyAPIRequestData.parmNotes(hmWellSkyAPIRequest.Notes);
+                    hmWellSkyAPIRequestData.parmAuthor(hmWellSkyAPIRequest.Author);
+                    hmWellSkyAPIRequestData.parmFollowupDate(followupDateTime);
+                    hmWellSkyAPIRequestData.parmCreatedDateTime(createdDateTime);
+                    hmWellSkyAPIRequestData.parmRequestRecId(hmWellSkyAPIRequest.RecId);
+
+                    try
+                    {
+                        messageBody     = FormJsonSerializer::serializeClass(hmWellSkyAPIRequestData);
+                        encoding        = new System.Text.UTF8Encoding();
+                        byteArray       = encoding.GetBytes(messageBody);
+                        memoryStream    = new System.IO.MemoryStream(byteArray);
+
+                        brokeredMessage = new Microsoft.ServiceBus.Messaging.BrokeredMessage(memoryStream);
+                        brokeredMessage.SessionId = hmWellSkyAPIRequest.HMUniqueID;
+                        queueClient.Send(brokeredMessage);
+
+                        ttsbegin;
+                        hmWellSkyAPIRequest.selectForUpdate(true);
+                        hmWellSkyAPIRequest.MessageSent = NoYes::Yes;
+                        hmWellskyAPIRequest.MessageRetryCount += 1;
+                        hmWellSkyAPIRequest.update();
+                        ttscommit;
+                    }
+                    catch (Exception::Error)
+                    {                        
+                        throw error(strFmt('%1 %2', CLRInterop::getLastException(), hmWellSkyAPIRequest.ClaimID));
+                    }
+                    catch (Exception::Deadlock)
+                    {
+                        if (xSession::currentRetryCount() >= #RetryNum)
+                        {                            
+                            throw error(strFmt('%1', CLRInterop::getLastException()));
+                        }
+                        else
+                        {
+                            retry;
+                        }
+
+                    }
+                    catch
+                    {
+                        if (xSession::currentRetryCount() >= #RetryNum)
+                        {
+                            throw error(strFmt('%1 %2', CLRInterop::getLastException(), hmWellSkyAPIRequest.ClaimID));
+                        }
+                        else
+                        {
+                            retry;
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            errorMsg = hmBillParameters.HMWellskyQueueName == '' ? 'Well sky Queue name is empty' : hmBillParameters.HMWellskyConnectionString == '' ? 'Well sky Connection string is empty' : hmBillParameters.HMWellskyMessageRetryCount == 0 ? 'Well sky message retry count is zero' : 'error';
+            throw error(errorMsg);
+        }
+        
+     }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

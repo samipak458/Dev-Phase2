@@ -1,0 +1,2227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMBillPaymentPosting</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMBillPaymentPosting
+{
+    Map                         openCustTransMap;
+    //Zain - PreventiceDemo
+    Map                         deniedCustTransMap;
+    Integer                     mapIndex = 0;
+    //Zain - PreventiceDemo
+    Map                         patientPaymentMap;
+    Map                         appointment_ledgerTransMap;
+    HMBillPaymentSettlementTmp  paymentSettlement;
+    AccountNum                  invoiceAccount,custAccount;
+    LedgerJournalTrans          ledgerJournalTrans;
+    //Zain  -- Deprecated in AX7
+    //AxLedgerJournalTable        journalTable;
+    //AxLedgerJournalTrans        journalTrans;
+    LedgerJournalTable          ledgerJournalTable;
+    JournalCheckPost            journalCheckPost;
+    //Zain
+    LedgerJournalName           journalName;
+    PaymMode                    paymMode;
+    str                         paymentNotes;
+    boolean                     transactionHasPaymentPosting;
+    boolean                     transactionHasWriteOff;
+    boolean                     transactionHasTransfer;
+    //Zain - PreventiceDemo
+    boolean                     transactionDeniedPayment;
+    //Zain - PreventiceDemo
+    AmountMst                   remainingAmount;
+    RecId                       encounterRecId,appointmentRecId;
+    boolean                     paymentPostedSuccess, TranferPostedSucess, WriteOffPostedSuccess;
+    HMClaimTable                hmClaimTable;
+    HMPatientChargeEntryLine    HMPatientChargeEntryLine;
+    HMPatientChargeEntryTable   HMPatientChargeEntryTableLocal;
+    Map                         mapDocumentControlNumber;
+    MzkClaimAdjustment          claimAdjustment;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>parmMzkClaimAdjustment</Name>
+				<Source><![CDATA[
+    public MzkClaimAdjustment parmMzkClaimAdjustment(MzkClaimAdjustment _claimAdjustment = claimAdjustment)
+    {
+        claimAdjustment = _claimAdjustment; 
+
+        return claimAdjustment;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkTransactionActions</Name>
+				<Source><![CDATA[
+    private void checkTransactionActions()
+    {
+        MapEnumerator enumerator, 
+                      //Zain - PreventiceDemo
+                      enumeratorNew;
+        deniedCustTransMap = new Map(Types::Integer, Types::Int64);
+                      //Zain - PreventiceDemo 
+        enumerator = openCustTransMap.getEnumerator();
+        while(enumerator.moveNext())
+        {
+            //Zain  - PreventiceDemo
+            mapIndex++;
+            //Zain  - PreventiceDemo
+    
+            if(!transactionHasPaymentPosting)
+            {
+                select firstonly RecId from paymentSettlement
+                where paymentSettlement.CustTransOpenRecId == enumerator.current()
+                && paymentSettlement.AmountPaid > 0;
+                if(paymentSettlement.RecId != 0 || !patientPaymentMap.empty())
+                {
+                    transactionHasPaymentPosting = true;
+                }
+            }
+            if(!transactionHasWriteOff)
+            {
+                select firstonly RecId from paymentSettlement
+                where paymentSettlement.CustTransOpenRecId== enumerator.current()
+                && (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::WriteOff
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::Discount);
+                if(paymentSettlement.RecId != 0)
+                {
+                    transactionHasWriteOff = true;
+                }
+                if(!transactionHasWriteOff)
+                {
+                    select firstonly RecId from paymentSettlement
+                    where paymentSettlement.CustTransOpenRecId== enumerator.current()
+                    && (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff);
+                    if(paymentSettlement.RecId != 0)
+                    {
+                        transactionHasWriteOff = true;
+                    }
+                }
+            }
+            if(!transactionHasTransfer)
+            {
+                select firstonly RecId from paymentSettlement
+                where paymentSettlement.CustTransOpenRecId == enumerator.current()
+                && (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToInsurance
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToPatient)
+                || (paymentSettlement.CoPayAmount > 0
+                || paymentSettlement.CoInsuranceAmount > 0
+                || paymentSettlement.Deductible > 0);
+                if(paymentSettlement.RecId != 0)
+                {
+                    transactionHasTransfer = true;
+                }
+                if(!transactionHasTransfer)
+                {
+                    select firstonly RecId from paymentSettlement
+                    where paymentSettlement.CustTransOpenRecId== enumerator.current()
+                    && (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff);
+                    if(paymentSettlement.RecId != 0)
+                    {
+                        transactionHasTransfer = true;
+                    }
+                }
+            }
+            
+    
+            if(transactionHasTransfer == true
+                && transactionHasWriteOff == true
+                && transactionHasPaymentPosting == true)
+            {
+                break;
+            }
+        }
+
+        enumeratorNew = openCustTransMap.getEnumerator();
+       
+        while (enumeratorNew.moveNext())
+        {
+            //Zain - PreventiceDemo
+            select firstonly RecId, CustTransOpenRecId from paymentSettlement
+                where paymentSettlement.CustTransOpenRecId == enumeratorNew.current()
+                && (paymentSettlement.LineStatus == HMInvoiceLineStatus::Denied);
+            if(paymentSettlement.RecId != 0)
+            {
+                if(!deniedCustTransMap.exists(paymentSettlement.CustTransOpenRecId))
+                {
+                    deniedCustTransMap.insert(mapIndex, paymentSettlement.CustTransOpenRecId);
+                    transactionDeniedPayment = true;       
+                }
+                   
+            }
+            //Zain - PreventiceDemo
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAdditionalTransactionInvoice</Name>
+				<Source><![CDATA[
+    private RecId createAdditionalTransactionInvoice(RecId _custTransOpenRecId, HMCaseTransDetailTransactionType transType, LedgerJournalTrans _ledgerJournalTrans)
+    {
+        boolean isFirst = true;
+        CustTransOpen               custTransOpen;
+        CustTrans                   custTrans;
+        HMCustInvoiceClass          hmCustInvoiceClass;
+        RecId                       custInvoiceTableRecId,custInvoiceLineRecId;
+        CustInvoiceTable            custInvoiceTable, custInvoiceTableNew;
+        str                         invoiceId;
+        HMCaseTrans                 HMCaseTrans;
+        real                        totalAMount;
+        RecId                       custTransRecId;
+    
+        while select * from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+            && paymentSettlement.AdditionalAmount != 0
+        {
+            if(isFirst)
+            {
+                hmCustInvoiceClass = new hmCustInvoiceClass();
+                custTransOpen = custTransOpen::find(_custTransOpenRecId);
+                custTrans = custTransOpen.custTrans();
+                custInvoiceTable = custTrans.custInvoiceJour_RU().custInvoiceTable();
+                custInvoiceTableRecId = hmCustInvoiceClass.createCustInvoiceTable(custInvoiceTable.OrderAccount,HMInsuranceCarrierBatchDetails::find(custInvoiceTable.HMInsuranceCarrierBatchDetails).BatchNumber,custInvoiceTable.HMCase);
+                custInvoiceTableNew = custInvoiceTable::findRecId(custInvoiceTableRecId);
+                isFirst = false;
+                //invoiceId = custInvoiceTableNew.InvoiceId;
+                //buf2Buf(custInvoiceTable,custInvoiceTableNew);
+                //custInvoiceTableNew.invoiceid = InvoiceId;
+                //custInvoiceTableNew.update();
+            }
+            select * from HMCaseTrans
+            join * from HMPatientChargeEntryLine
+            where HMPatientChargeEntryLine.HMCaseTrans == HMCaseTrans.RecId
+            && HMCaseTrans.RecId == paymentSettlement.HMCaseTrans;
+    
+            totalAMount = abs(paymentSettlement.AdditionalAmount);
+    
+            custInvoiceLineRecId = hmCustInvoiceClass.createCustInvoiceLine(custInvoiceTableNew, HMPatientChargeEntryLine, hmCaseTrans,totalAmount);
+    
+            HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,transType, custInvoiceLineRecId, tableNum(CustInvoiceLine), totalAmount);
+        }
+        if(!isFirst)
+        {
+            hmCustInvoiceClass.post(custInvoiceTableNew);
+            custTransRecId = custInvoiceTableNew.custInvoiceJour().custTrans().RecId;
+            return custTransRecId;
+        }
+        return 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAndPostPaymentJournal</Name>
+				<Source><![CDATA[
+    private void createAndPostPaymentJournal()
+    {
+        MapEnumerator           enumerator;
+        ledgerJournalCheckPost  ledgerJournalCheckPost;
+        container               custTransContainer;
+        RecId                   transRecId;
+    
+        if(transactionHasPaymentPosting)
+        {
+            this.createJournalHeader(HMInvoiceNextAction::None);
+    
+            enumerator = openCustTransMap.getEnumerator();
+            while(enumerator.moveNext())
+            {
+                custTransContainer = enumerator.currentValue();
+                if(this.paymentTransactionExist(conPeek(custTransContainer,1)))
+                {
+                    transRecId = this.createPaymentLines(conPeek(custTransContainer,1));
+    
+                    if(transRecId != 0)
+                    {
+                        this.insertEncounterLedgerTransMap(conPeek(custTransContainer,3),transRecId);
+                    }
+                }
+            }
+            ledgerJournalCheckPost = ledgerJournalCheckPost::newLedgerJournalTable(ledgerJournalTable, NoYes::Yes);//journalTable.ledgerJournalTable(),NoYes::Yes);
+    
+            ledgerJournalCheckPost.run();
+    
+    
+    
+            infolog.clear();
+    
+            paymentPostedSuccess = true;
+    
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAndPostTransferJournal</Name>
+				<Source><![CDATA[
+    private void createAndPostTransferJournal()
+    {
+        MapEnumerator enumerator;
+        ledgerJournalCheckPost  ledgerJournalCheckPost;
+        RecId                   transRecId;
+        container               custTransContainer;
+        RecId                   custTransOpenRecId;
+        if(transactionHasTransfer)
+        {
+            //if(CustTable::find(invoiceAccount).CustType != CustType::Patient)
+            {
+                //this.createJournalHeader(HMInvoiceNextAction::TransferToPatient);
+                enumerator = openCustTransMap.getEnumerator();
+                while(enumerator.moveNext())
+                {
+                    custTransContainer = enumerator.currentValue();
+                    custTransOpenRecId = conPeek(custTransContainer,1);
+                    select RecId from paymentSettlement
+                    where paymentSettlement.CustTransOpenRecId == custTransOpenRecId
+                    && ((paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToInsurance
+                    || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToPatient
+                    || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff)
+                    || (paymentSettlement.CoPayAmount> 0
+                    || paymentSettlement.CoInsuranceAmount > 0
+                    || paymentSettlement.Deductible > 0
+                    || paymentSettlement.TransferAmount > 0
+                    || paymentSettlement.BalanceAmount>0));
+                    if(paymentSettlement)
+                    {
+                        this.createCreditNotAndSettle(custTransOpenRecId);
+                    }
+                    //if(this.transferTransactionExist(conPeek(custTransContainer,1)))
+                    //{
+                        //transRecId = this.createTransferLines(conPeek(custTransContainer,1));
+                        //if(transRecId != 0)
+                        //{
+                            //this.insertEncounterLedgerTransMap(conPeek(custTransContainer,3),transRecId);
+                        //}
+                    //}
+                }
+                //ledgerJournalCheckPost = ledgerJournalCheckPost::newLedgerJournalTable(journalTable.ledgerJournalTable(),NoYes::Yes);
+                //ledgerJournalCheckPost.run();
+                infolog.clear();
+                TranferPostedSucess  = true;
+            }
+    
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAndPostWriteOffJournal</Name>
+				<Source><![CDATA[
+    private void createAndPostWriteOffJournal()
+    {
+        MapEnumerator           enumerator;
+        ledgerJournalCheckPost  ledgerJournalCheckPost;
+        container               custTransContainer;
+        RecId                   transRecId;
+        if(transactionHasWriteOff)
+        {
+            this.createJournalHeader(HMInvoiceNextAction::WriteOff);
+            enumerator = openCustTransMap.getEnumerator();
+            while(enumerator.moveNext())
+            {
+                custTransContainer = enumerator.currentValue();
+                if(this.writeOffTransactionExist(conPeek(custTransContainer,1)))
+                {
+                    transRecId = this.createWriteOffLines(conPeek(custTransContainer,1));
+                    if(transRecId != 0)
+                    {
+                        this.insertEncounterLedgerTransMap(conPeek(custTransContainer,3),transRecId);
+                    }
+                }
+            }
+            ledgerJournalCheckPost = ledgerJournalCheckPost::newLedgerJournalTable(ledgerJournalTable,NoYes::Yes);
+            ledgerJournalCheckPost.run();
+            infolog.clear();
+            WriteOffPostedSuccess= true;
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createApprovedAmountTransactionDetails</Name>
+				<Source><![CDATA[
+    private void createApprovedAmountTransactionDetails()
+    {
+        CustTrans   custTransOpen;
+        CustTable   custTable;
+        HMCaseTrans hmCaseTransUpdate;
+
+        while select * from paymentSettlement
+        {
+            select recid from custTable
+            where CustTable.AccountNum == CustTransOpen::find(paymentSettlement.CustTransOpenRecId).custTrans().OrderAccount;
+            HMCaseTransDetail::createCaseTransDetail(paymentSettlement.HMCaseTrans,HMCaseTransDetailTransactionType::ApprovedAmount,custTable.RecId,tableNum(CustTable),paymentSettlement.AmountMST);
+            //Zain - for one call
+            select forupdate hmCaseTransUpdate
+                where hmCaseTransUpdate.RecId == paymentSettlement.HMCaseTrans;
+
+            if (hmCaseTransUpdate)
+            {   
+                ttsbegin;
+                hmCaseTransUpdate.BillingStatus = HMBillStatus::Settled;
+                hmCaseTransUpdate.doUpdate();
+                ttscommit;
+            }
+            //Zain - for one call
+            //CustDisputeCustTrans custDisputeCustTrans = CustDisputeCustTrans::construct(custTransOpen, CustVendDisputeStatus::Disputed, reasonCode, _reasonComment);
+            //custDisputeCustTrans.run();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCreditNotAndSettle</Name>
+				<Source><![CDATA[
+    private void createCreditNotAndSettle(RecId _custTransOpenRecId, boolean cashCreditNote = false)
+    {
+        HMCustInvoiceClass                      custInvoiceClass = new HMCustInvoiceClass();
+        HMCustInvoiceClass                      custInvoiceClassInsurance,custInvoiceClassPatient;
+        HMCaseTrans                             hmCaseTrans;
+        CustInvoiceTable                        custInvoiceTable;
+        RecId                                   custInvoiceTableRecId,custInvoiceTableInsuranceRecId,custInvoiceTablePatientRecId;
+        CustTrans                               custTrans,custTransCreditNote;
+        CustInvoiceJour                         CustInvoiceJour;
+        CustTable                               custTable;
+        custtransopen                           custTransOpen = custTransOpen::find(_custTransOpenRecId);
+        custInvoiceTable                        custInvoiceTableLocal, custInvoiceTableInsurance, custInvoiceTablePatient;
+        RecId                                   custInvoiceLineRecid, custInvoiceLineInsRecId, custInvoiceLinePatRecId;
+        HMPatientChargeEntryCustInvoiceTable    HMPatientChargeEntryCustInvoiceTable;
+        HMCase                                  hmCase;
+        HMCaseInsurance                         hmCaseInsurance, hmCaseInsuranceUpdate;
+        Args                                    args;
+        HMPatientChargeEntryTable               hmPatientChargeEntryTable;
+        AmountMST                               patientLineAmount,insuranceLineAmount;
+        HMCasePaymtReceivedDetails              HMCasePaymtReceivedDetails;
+        boolean                                 hasCopayDeductibleTrans = false;
+        AccountNum                              guarantorAccount;
+        boolean                                 trasnferToPatient = false;
+    
+        custtrans = custTransOpen.custTrans();
+    
+        custTable = custTable::find(invoiceAccount);
+        if(custTable.InvoiceAccount)
+        {
+           invoiceAccount = custTable.InvoiceAccount ;
+        }
+        custInvoiceTableRecId = custInvoiceClass.createCustInvoiceTable(invoiceAccount,HMInsuranceCarrierBatchDetails::find(custTrans.HMInsuranceCarrierBatchDetails).BatchNumber,custTrans.HMCase);
+        custInvoiceTable = CustInvoiceTable::findRecId(custInvoiceTableRecId);
+        if(custInvoiceTableRecId)
+        {
+            while select AmountCur,HMInvoiceNextAction,AmountPaid,HMCaseTrans,CoPayAmount,CoInsuranceAmount,Deductible,BalanceAmount,TransferAmount,CustTransOpenRecId from paymentSettlement
+                where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+                && ((paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToInsurance
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToPatient
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff)
+                || (paymentSettlement.CoPayAmount> 0
+                || paymentSettlement.CoInsuranceAmount > 0
+                || paymentSettlement.Deductible > 0
+                || paymentSettlement.TransferAmount > 0))
+                || cashCreditNote
+            {
+                if(paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToPatient)
+                {
+                    trasnferToPatient = true;
+                }
+                select * from hmPatientChargeEntryLine
+                join forupdate hmCaseTrans
+                where hmPatientChargeEntryLine.HMCaseTrans == hmCaseTrans.RecId
+                && hmCaseTrans.RecId == paymentSettlement.HMCaseTrans;
+    
+                hmCaseTrans.RemainingBillAmount = paymentSettlement.BalanceAmount + paymentSettlement.TransferAmount;
+                if(hmCaseTrans.RemainingBillAmount <= 0 && paymentSettlement.CoInsuranceAmount + paymentSettlement.CoPayAmount + paymentSettlement.Deductible <= 0)
+                {
+                    continue;
+                }
+                if(paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToInsurance
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff)
+                {
+                    if(!custInvoiceClassInsurance)
+                    {
+                        select  forupdate priority,IsActive from HMCaseInsurance
+                        where HMCaseInsurance.HMCase == hmCaseTrans.HMCase
+                        && hmCaseInsurance.IsActive == NoYes::Yes;
+    
+                        select forUpdate hmCaseInsuranceUpdate
+                        where hmCaseInsuranceUpdate.HMCase == hmcasetrans.HMCase
+                        && hmCaseInsuranceUpdate.Priority == hmCaseInsurance.Priority + 1;
+                        if(!hmCaseInsuranceUpdate)
+                        {
+                            throw error("No next insurance exist for transfer");
+                        }
+                        hmCaseInsuranceUpdate.IsActive = NoYes::Yes;
+                        hmCaseInsuranceUpdate.update();
+    
+                        hmCase = hmCase::find(hmCaseInsuranceUpdate.HMCase,true);
+    
+                        if(custTable::find(hmCaseInsuranceUpdate.InsuranceCarrier).CustType == CustType::Patient)
+                        {
+                            hmCase.HMFinancialClass = HMFinancialClass::findByCode(HMBillParameters::find().HMFinancialClass).RecId;
+    
+                        }
+                        else
+                        {
+                            hmCase.HMFinancialClass = HMInsuranceCarrier::getFinancialClass(hmCaseInsuranceUpdate.InsuranceCarrier).RecId;
+                        }
+                        hmCase.update();
+    
+    
+                        select forUpdate hmClaimTable
+                        where hmClaimTable.HMPatientChargeEntryTable==HMPatientChargeEntryLine.HMPatientChargeEntryTable;
+    
+                        hmClaimTable.HMInsuranceCarrier = HMInsuranceCarrier::findByCode(hmCaseInsuranceUpdate.InsuranceCarrier).RecId;
+                        hmClaimTable.HMLastEdiGeneratedDateTime = utcDateTimeNull();
+                        hmClaimTable.update();
+    
+                        HMCaseInsurance.IsActive = NoYes::No;
+                        HMCaseInsurance.update();
+    
+                        custInvoiceClassInsurance = new HMCustInvoiceClass();
+                        custInvoiceTableInsuranceRecId = custInvoiceClassInsurance.createCustInvoiceTable(hmCaseInsuranceUpdate.InsuranceCarrier,'',hmCaseTrans.HMCase);
+                        custInvoiceTableInsurance = custInvoiceTable::findRecId(custInvoiceTableInsuranceRecId);
+                    }
+                    if(custInvoiceTableInsurance)
+                    {
+                        custInvoiceLineInsRecId = custInvoiceClassInsurance.createCustInvoiceLine(custInvoiceTableInsurance,hmPatientChargeEntryLine,hmCaseTrans,hmCaseTrans.RemainingBillAmount);
+                        HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,HMCaseTransDetailTransactionType::InsuranceInvoice, custInvoiceLineInsRecId , tableNum(CustInvoiceLine), hmCaseTrans.RemainingBillAmount);
+                    }
+    
+                }
+                if(paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToPatient || paymentSettlement.CoInsuranceAmount> 0 || paymentSettlement.CoPayAmount> 0 || paymentSettlement.Deductible > 0)
+                {
+                    if(paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferToPatient)
+                    {
+                        patientLineAmount = hmCaseTrans.RemainingBillAmount + paymentSettlement.CoPayAmount + paymentSettlement.CoInsuranceAmount + paymentSettlement.Deductible;
+                    }
+                    else
+                    {
+                        hasCopayDeductibleTrans = true;
+                        patientLineAmount = paymentSettlement.CoInsuranceAmount + paymentSettlement.CoPayAmount + paymentSettlement.Deductible;
+                    }
+                    if(!custInvoiceClassPatient)
+                    {
+    
+                        //select  forupdate priority,IsActive from HMCaseInsurance
+                        //where HMCaseInsurance.HMCase == hmCaseTrans.HMCase
+                        //&& hmCaseInsurance.IsActive == NoYes::Yes;
+    
+                        custInvoiceClassPatient = new HMCustInvoiceClass();
+                        select * from hmPatientChargeEntryTable
+                        where hmPatientChargeEntryTable.RecId == HMPatientChargeEntryLine.HMPatientChargeEntryTable;
+    
+    
+    
+                        //Noman
+                        guarantorAccount = hmPatientChargeEntryTable.getGuarantorNum();
+    
+                        if (guarantorAccount)
+                        {
+                            custInvoiceTablePatientRecId = custInvoiceClassPatient.createCustInvoiceTable(guarantorAccount,'',hmCaseTrans.HMCase);
+                            custInvoiceTablePatient = custInvoiceTable::findRecId(custInvoiceTablePatientRecId);
+                        }
+                        else
+                        {
+                            custInvoiceTablePatientRecId = custInvoiceClassPatient.createCustInvoiceTable(hmPatientChargeEntryTable.patientChartNum(),'',hmCaseTrans.HMCase);
+                            custInvoiceTablePatient = custInvoiceTable::findRecId(custInvoiceTablePatientRecId);
+                        }
+                        //Noman
+                    }
+                    if(custInvoiceTablePatient )
+                    {
+                        custInvoiceLinePatRecId = custInvoiceClassPatient.createCustInvoiceLine(custInvoiceTablePatient,hmPatientChargeEntryLine,hmCaseTrans,patientLineAmount,paymentSettlement.CoPayAmount,paymentSettlement.Deductible,paymentSettlement.CoInsuranceAmount );
+                        HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,HMCaseTransDetailTransactionType::PatientInvoice, custInvoiceLineInsRecId , tableNum(CustInvoiceLine), patientLineAmount);
+                    }
+                }
+                insuranceLineAmount = hmCaseTrans.RemainingBillAmount + paymentSettlement.CoInsuranceAmount + paymentSettlement.CoPayAmount + paymentSettlement.Deductible;
+                custInvoiceLineRecId = custInvoiceClass.createCustInvoiceLine(custInvoiceTable,hmPatientChargeEntryLine,hmCaseTrans, -insuranceLineAmount);
+                HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,custTable.custtype == CustType::Patient ? HMCaseTransDetailTransactionType::PatientCreditNote : HMCaseTransDetailTransactionType::InsuranceCreditNote, custInvoiceLineInsRecId , tableNum(CustInvoiceLine), -insuranceLineAmount);
+                if(cashCreditNote)
+                {
+                    hmCaseTrans.BillingStatus = HMBillStatus::NotPaid;
+                }
+                hmCaseTrans.update();
+            }
+            custInvoiceClass.post(custInvoiceTable);
+            if(custInvoiceTableInsurance)
+            {
+                custInvoiceClassInsurance.post(custInvoiceTableInsurance);
+            }
+            if(custInvoiceTablePatient)
+            {
+                custInvoiceClassPatient.post(custInvoiceTablePatient);
+                if(trasnferToPatient)
+                {
+                    hmCase = hmCase::find(hmPatientChargeEntryTable.HMCase,true);
+                    hmCase.HMFinancialClass = HMFinancialClass::findByCode(HMBillParameters::find().HMFinancialClass).RecId;
+                    hmCase.update();
+    
+                }
+            }
+        }
+        custInvoiceTable = custInvoiceTable::findRecId(custInvoiceTable.RecId);
+        select * from CustInvoiceJour
+        where CustInvoiceJour.InvoiceId == custInvoiceTable.InvoiceId
+        && CustInvoiceJour.InvoiceDate == custInvoiceTable.InvoiceDate
+        && CustInvoiceJour.numberSequenceGroup == custInvoiceTable.numberSequenceGroup;
+    
+        custTrans.transData().markForSettlement(custTable);
+        CustInvoiceJour.custTrans().transData().markForSettlement(custTable);
+        CustTrans::settleTransact(custTable);
+    
+        if(custInvoiceTablePatient)
+        {
+            this.settlePatientAdvances(custInvoiceTablePatient);
+        }
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createInvoicePaymentLines</Name>
+				<Source><![CDATA[
+    private RecId createInvoicePaymentLines(RecId _custTransOpenRecId)
+    {
+        CustTrans           custTrans;
+        CustTransOpen       custTransOpen;
+        custPaymModeTable   custPaymModeTable;
+        MainAccountNum      mainAccountId;
+        NumberSeq           numberSeq;
+        SpecTrans           specTrans;
+        SpecTransManager    SpecTransManager;
+        HMCase              hmcase;
+        RefRecId            defaultDimension;
+        CustTable           custTable;
+        LedgerJournalName   ledgerJournalName;
+        //Zain
+        LedgerJournalTrans  ledgerJournalTransLocal;
+        HMCaseTrans         hmCaseTrans;
+        RecId               custTransRecId;
+        custTransOpen       custTransOpenLocal;
+        custTrans           custTransLocal;
+        CustTransOpenLine   custTransOpenLineLocal;
+        CustInvoiceTrans    custInvoiceTrans;
+        real                totalAmount;
+        HMFinancialDimensionHelper              dimensionHelper = new HMFinancialDimensionHelper();
+    
+        select * from custPaymModeTable where custPaymModeTable.PaymMode == PaymMode;
+    
+        ledgerJournalName = LedgerJournalName::find(ledgerJournalTable.JournalName);
+        custTransOpen = CustTransOpen::find(_custTransOpenRecId);
+        custTrans = custTransOpen.custTrans();
+    
+        select CustType from custTable where custTable.AccountNum == custTrans.AccountNum;
+    
+        defaultDimension = dimensionHelper.GetDefaultDimensionForAdvancePaymentER(hmcase::find(custTrans.HMCase));
+    
+        this.createLines(custTrans, custTransOpen,defaultDimension);
+    
+        //ledgerJournalTrans = journalTrans.ledgerJournalTrans();
+        ledgerJournalTransLocal = ledgerJournalTrans;
+        numberSeq    =   NumberSeq::newGetVoucherFromId((ledgerjournalname.NumberSequenceTable));
+        ledgerJournalTransLocal.Voucher                  =   numberSeq.voucher();
+        ledgerJournalTransLocal.initFromCustPaymModeTable(custPaymModeTable);
+        ledgerJournalTransLocal.CurrencyCode             =   CompanyInfoHelper::standardCurrency();
+        ledgerJournalTransLocal.ExchRate                 =   ExchangeRateHelper::exchRate(LedgerjournalTrans.CurrencyCode);
+        ledgerJournalTransLocal.TransactionType          =   LedgerTransType::Payment;
+    
+        ledgerJournalTransLocal.MarkedInvoice = "*";//parmMarkedInvoice("*");
+        
+        
+    
+        if(custPaymModeTable.AccountType == LedgerJournalACType::Ledger)
+        {
+            mainAccountId = MainAccount::findByLedgerDimension(custPaymModeTable.PaymentLedgerDimension).MainAccountId;
+    
+            //LedgerjournalTrans.OffsetAccountType        =   LedgerJournalACType::Ledger;
+            //LedgerjournalTrans.OffsetLedgerDimension    =   HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, defaultDimension);
+            ledgerJournalTransLocal.OffsetAccountType = LedgerJournalACType::Ledger;
+            ledgerJournalTransLocal.OffsetLedgerDimension = HMDimensionClass::defaultDimension2ledgerDimension(mainAccountId, defaultDimension);
+        }
+        else
+        {
+            //LedgerjournalTrans.OffsetAccountType        =   custPaymModeTable.AccountType;
+            //LedgerjournalTrans.OffsetLedgerDimension    =   custPaymModeTable.PaymentLedgerDimension;
+            ledgerJournalTransLocal.OffsetAccountType = custPaymModeTable.AccountType;
+            ledgerJournalTransLocal.OffsetLedgerDimension =  custPaymModeTable.PaymentLedgerDimension;
+        }
+        //journalTrans.ledgerJournalTrans().insert();
+        ledgerJournalTransLocal.insert();
+        ledgerJournalTransLocal.selectForUpdate(true);
+        SpecTransManager=SpecTransManager::construct(ledgerJournalTransLocal);
+        
+        
+        
+        select sum(AmountPaid) from paymentSettlement
+        where paymentSettlement.CustTransOpenRecId ==  _custTransOpenRecId;
+        ledgerJournalTransLocal.AmountCurCredit = paymentSettlement.AmountPaid;
+
+        specTrans = SpecTransManager.insertSpec(
+                    specTrans,
+                    custTransOpen.company(),
+                    custTransOpen.TableId,
+                    custTransOpen.RecId,
+                    paymentSettlement.AmountPaid,
+                    custTrans.CurrencyCode);
+    
+        while select * from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+        {
+            totalAmount = paymentSettlement.AmountPaid - paymentSettlement.AdditionalAmount;
+            SpecTransManager.insertLine(curext(),
+                                        tableNum(CustTransOpen),
+                                        paymentSettlement.CustTransOpenRecId,
+                                        specTrans.RecId,
+                                        paymentSettlement.CustTransOpenLine,
+                                        totalAmount);
+            hmCaseTrans = hmCaseTrans::find(paymentSettlement.HMCaseTrans,true, ConcurrencyModel::Auto );
+            hmCaseTrans.RemainingBillAmount -= paymentSettlement.AmountPaid;
+            if(hmCaseTrans.RemainingBillAmount < 0)
+            {
+                hmCaseTrans.RemainingBillAmount = 0;
+            }
+            hmCaseTrans.update();
+            HMCaseTransDetail::createCaseTransDetail(paymentSettlement.HMCaseTrans,custTable.CustType == CustType::Patient ? HMCaseTransDetailTransactionType::PatientPayment : HMCaseTransDetailTransactionType::InsurancePayment, ledgerJournalTrans.RecId, tableNum(ledgerJournalTrans),  paymentSettlement.AmountPaid);
+    
+        }
+        //for settling additional amount
+        custTransRecId = this.createAdditionalTransactionInvoice(_custTransOpenRecId,custTable.CustType == CustType::Patient ? HMCaseTransDetailTransactionType::PatientInvoice: HMCaseTransDetailTransactionType::InsuranceInvoice,ledgerJournalTrans);
+    
+        if(custTransRecId )
+        {
+            select * from custtransOpenLocal
+                join * from custTransLocal
+                where custTransLocal.RecId == custTransRecId
+                && custtransOpenLocal.RefRecId == custTransLocal.RecId
+                && custtransOpenLocal.AccountNum == custTransLocal.AccountNum;
+    
+            specTrans = SpecTransManager.insertSpec(
+                    specTrans,
+                    custtransOpenLocal.company(),
+                    custtransOpenLocal.TableId,
+                    custtransOpenLocal.RecId,
+                    custtransOpenLocal.AmountCur,
+                    custTransLocal.CurrencyCode);
+    
+            while select * from CustTransOpenLineLocal
+                join custtransOpenLocal
+                join hmcase from custTransLocal
+                where custTransLocal.RecId == custTransRecId
+                && custTransOpenLineLocal.CustTransOpen == custTransOpenLocal.RecId
+                && custtransOpenLocal.RefRecId == custTransLocal.RecId
+                && custTransOpenLocal.AccountNum == custTransLocal.AccountNum
+            {
+                SpecTransManager.insertLine(curext(),
+                                        tableNum(CustTransOpen),
+                                        custtransOpenLocal.RecId,
+                                        specTrans.RecId,
+                                        CustTransOpenLineLocal.RecId,
+                                        CustTransOpenLineLocal.AmountCur);
+    
+                select hmcasetrans from custInvoiceTrans
+                where custInvoiceTrans.CustInvoiceLineIdRef == CustTransOpenLineLocal.CustInvoiceLineIdRef;
+    
+                HMCaseTransDetail::createCaseTransDetail(custInvoiceTrans.HMCaseTrans,custTable.CustType == CustType::Patient ? HMCaseTransDetailTransactionType::PatientPayment : HMCaseTransDetailTransactionType::InsurancePayment, ledgerJournalTrans.RecId, tableNum(ledgerJournalTrans),  CustTransOpenLineLocal.AmountCur);
+    
+            }
+        }
+        //journalTrans.save();
+        ledgerJournalTransLocal.update();        
+    
+        return ledgerJournalTrans.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createJournalHeader</Name>
+				<Source><![CDATA[
+    private void createJournalHeader(HMInvoiceNextAction _action)
+    {
+        str journalNum;
+        ledgerJournalTable.clear();
+        JournalTableData journalTableData =
+            JournalTableData::newTable(ledgerJournalTable);
+      
+        
+        //Zain
+        //journalTable = new AxLedgerJournalTable();
+        if(_action == HMInvoiceNextAction::None)
+            journalName = LedgerJournalName::find(HMBillParameters::getDefaultJournalName());
+        else if(_action == HMInvoiceNextAction::TransferToPatient)
+            journalName = LedgerJournalName::find(HMBillParameters::find().LedgerJournalNamePaymentTransfer);
+        else if(_action == HMInvoiceNextAction::WriteOff)
+            journalName = LedgerJournalName::find(CustParameters::find().CollectionsWriteOffLedgerJournalName);
+
+        //Zain
+        //journalTable.parmJournalName(journalName.JournalName);
+        //journalTable.parmOffsetAccountType(journalName.OffsetAccountType);
+        //journalTable.parmOffsetLedgerDimension(journalName.OffsetLedgerDimension);
+        //journalTable.save();
+        ledgerJournalTable.JournalType = LedgerJournalType::CustPayment;
+        ledgerJournalTable.JournalName = journalName.JournalName;    
+        ledgerJournalTable.OffsetAccountType = journalName.OffsetAccountType;
+        ledgerJournalTable.OffsetLedgerDimension = journalName.OffsetLedgerDimension;
+        ledgerJournalTable.JournalNum = journalTableData.nextJournalId();
+        //journalTableData.initFromJournalName(journalName);
+       
+        ledgerJournalTable.insert();
+        
+        
+        
+        //Zain
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createLines</Name>
+				<Source><![CDATA[
+    private void createLines(CustTrans _custTrans, CustTransOpen _custTransOpen, RecId _defaultDimension = 0)
+    {
+
+        LedgerJournalName ledgerJournalName = LedgerJournalName::find(ledgerJournalTable.JournalName);
+        ledgerJournalTrans.clear();
+        //journalTrans = new AxLedgerJournalTrans();
+        //journalTrans.parmJournalNum(journalTable.ledgerJournalTable().JournalNum);
+        //journalTrans.parmTransDate(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+        ledgerJournalTrans.JournalNum = ledgerJournalTable.JournalNum;
+        ledgerJournalTrans.TransDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+    
+        //journalTrans.parmAccountType(LedgerJournalACType::Cust);
+        //journalTrans.parmLedgerDimension(LedgerDynamicAccountHelper::getDynamicAccountFromAccountNumber(_custTrans.AccountNum,LedgerJournalACType::Cust));
+        //journalTrans.parmPaymMode(PaymMode);
+        //journalTrans.parmPaymentNotes(paymentNotes);
+        //journalTrans.parmPaymReference(paymentNotes);
+        //journalTrans.parmSettleVoucher(SettlementType::SelectedTransact);
+        ledgerJournalTrans.AccountType = LedgerJournalACType::cust;
+        ledgerJournalTrans.LedgerDimension = LedgerDynamicAccountHelper::getDynamicAccountFromAccountNumber(_custTrans.AccountNum,LedgerJournalACType::Cust);
+        ledgerJournalTrans.PaymMode = paymMode;
+        ledgerJournalTrans.PaymentNotes = paymentNotes;
+        ledgerJournalTrans.PaymReference = paymentNotes;
+        ledgerJournalTrans.SettleVoucher = SettlementType::SelectedTransact;
+    
+    
+        //journalTrans.parmCurrencyCode(_custTrans.CurrencyCode);
+        //journalTrans.parmMarkedInvoice(_custTrans.Invoice);
+        //journalTrans.parmMarkedInvoiceCompany(_custTrans.company());
+        //journalTrans.parmMarkedInvoiceRecId(_custTransOpen.RecId);
+        ledgerJournalTrans.CurrencyCode = _custTrans.CurrencyCode;
+        ledgerJournalTrans.MarkedInvoice = _custTrans.Invoice;
+        ledgerJournalTrans.MarkedInvoiceCompany = _custTrans.company();
+        ledgerJournalTrans.MarkedInvoiceRecId = _custTransOpen.RecId;
+        //journalTrans.parmApproved(NoYes::Yes);
+        ledgerJournalTrans.Approved = NoYes::Yes;
+        //Zain
+
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPatientPaymentLines</Name>
+				<Source><![CDATA[
+    private RecId createPatientPaymentLines(RecId _custTransOpenRecId)
+    {
+        /*CustTrans           custTrans;
+        CustTransOpen       custTransOpen;
+        LedgerJournalTrans  ledgerJournalTrans;
+        HMCase              hmcase;
+        HMCaseTrans         hmCaseTrans;
+        AmountMST           paymentAmount;
+        SpecTransManager    SpecTransManager;
+        RefRecId            defaultDimension;
+    
+        custTransOpen = CustTransOpen::find(_custTransOpenRecId);
+        custTrans = custTransOpen.custTrans();
+    
+        this.createLines(custTrans, custTransOpen);
+    
+    
+    
+        journalTrans.parmDefaultDimension(defaultDimension);
+        journalTrans.parmOffsetAccountType(journalName.OffsetAccountType);
+        ledgerJournalTrans = journalTrans.ledgerJournalTrans();
+        ledgerJournalTrans.OffsetLedgerDimension = journalName.OffsetLedgerDimension;
+        journalTrans.parmApproved(NoYes::Yes);
+    
+        if (!journalTrans.parmOffsetLedgerDimension())
+        {
+            throw error("@SYS122148");
+        }
+        journalTrans.parmMarkedInvoice("*");
+        journalTrans.save();
+    
+        SpecTransManager=SpecTransManager::construct(journalTrans.ledgerJournalTrans());
+    
+        paymentAmount = patientPaymentMap.lookup(_custTransOpenRecId);
+    
+        journalTrans.parmAmountCurCredit(paymentAmount);
+    
+        SpecTransManager.insert(
+    
+        custTransOpen.company(),
+        custTransOpen.TableId,
+        custTransOpen.RecId,
+        paymentAmount,
+        custTrans.CurrencyCode);
+    
+        journalTrans.save();
+        return journalTrans.parmRecId();*/
+        return 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createPaymentLines</Name>
+				<Source><![CDATA[
+    private RecId createPaymentLines(RecId _custTransOpenRecId)
+    {
+    
+        CustTrans           custTrans;
+        CustTransOpen       custTransOpen;
+        CustTransIdRef      custTransIdRef;
+        custTransOpen = CustTransOpen::find(_custTransOpenRecId);
+        custTrans = custTransOpen.custTrans();
+
+        if(this.parmMzkClaimAdjustment().RecId)
+        {
+            MzkClaimAdjustment claimAdjUpd;
+
+            select forupdate * from  claimAdjUpd
+                where claimAdjUpd.RecId == this.parmMzkClaimAdjustment().RecId;
+
+            claimAdjUpd.CustTransPaym = custTrans.RecId;
+            claimAdjUpd.update();
+        }
+
+        return this.createInvoicePaymentLines(_custTransOpenRecId);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createTransferLines</Name>
+				<Source><![CDATA[
+    private RecId createTransferLines(RecId _custTransOpenRecId)
+    {
+        /*CustTransOpenLine   custTransOpenLine;
+        CustTrans           custTrans;
+        CustTransOpen       custTransOpen;
+        LedgerJournalTrans  ledgerJournalTrans;
+        NumberSeq           numberSeq;
+        SpecTransManager    SpecTransManager;
+        SpecTrans           specTrans;
+    
+        custTransOpen = CustTransOpen::find(_custTransOpenRecId);
+        custTrans = custTransOpen.custTrans();
+    
+        this.createLines(custTrans,custTransOpen);
+        journalTrans.parmOffsetAccountType(LedgerJournalACType::Cust);
+        ledgerJournalTrans = journalTrans.ledgerJournalTrans();
+    
+        ledgerJournalTrans.OffsetLedgerDimension = DimensionStorage::getDynamicAccount(custAccount,LedgerJournalACType::Cust);
+        numberSeq=NumberSeq::newGetVoucherFromCode(NumberSequenceTable::find(journalTable.ledgerJournalTable().NumberSequenceTable).NumberSequence);
+        journalTrans.parmVoucher(numberSeq.voucher());
+    
+        if (!journalTrans.parmOffsetLedgerDimension())
+        {
+            throw error("@SYS122148");
+        }
+    
+        journalTrans.parmTransactionType(LedgerTransType::Payment);
+    
+        journalTrans.save();
+    
+        SpecTransManager=SpecTransManager::construct(journalTrans.ledgerJournalTrans());
+        select sum(PatientResponsibility) from paymentSettlement
+        where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId;
+    
+    
+        journalTrans.parmAmountCurCredit(paymentSettlement.PatientResponsibility);
+    
+        specTrans = SpecTransManager.insertSpec(
+                    specTrans,
+                    custTransOpen.company(),
+                    custTransOpen.TableId,
+                    custTransOpen.RecId,
+                    paymentSettlement.PatientResponsibility,
+                    custTrans.CurrencyCode);
+    
+        while select PatientResponsibility,CustTransOpenRecId from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+    
+        {
+            SpecTransManager.insertLine(curext(),
+                                        tableNum(CustTransOpen),
+                                        paymentSettlement.CustTransOpenRecId,
+                                        specTrans.RecId,
+                                        paymentSettlement.CustTransOpenLine,
+                                        paymentSettlement.PatientResponsibility);
+        }
+        journalTrans.save();
+        return journalTrans.parmRecId();*/
+        return 0;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createWriteOffLines</Name>
+				<Source><![CDATA[
+    private RecId createWriteOffLines(RecId _custTransOpenRecId)
+    {
+        Query               query;
+        QueryRun            queryRun;
+        CustTransOpenLine   custTransOpenLine;
+        CustTrans           custTrans;
+        CustTransOpen       custTransOpen;
+        SpecTrans           specTrans;
+        RecId               defaultAccount;
+        SpecTransManager    SpecTransManager;
+        AmountMST           amountCurrency;
+        RecId               customerLedgerTransRecId;
+        RefRecId            defaultDimension;
+        CustTable           custTable;
+        HMCaseTrans         HMCaseTrans;
+        NumberSeq           numberSeq;
+        LedgerJournalName   ledgerJournalName;
+        CustLedgerAccounts CustLedgerAccounts;
+        Voucher            Voucher;
+
+
+    
+        HMFinancialDimensionHelper              dimensionHelper = new HMFinancialDimensionHelper();
+        custTransOpen = CustTransOpen::find(_custTransOpenRecId);
+        custTrans = custTransOpen.custTrans();
+        this.createLines(custTrans,custTransOpen);
+    
+        select custType from custTable
+        where custTable.AccountNum == custTrans.AccountNum;
+    
+        defaultDimension = dimensionHelper.GetDefaultDimensionForAdvancePaymentER(HMCase::find(custTrans.HMCase));
+        //Zain
+        //journalTrans.parmDelayTaxCalculation(defaultDimension);
+        ledgerJournalTrans.DelayTaxCalculation = defaultDimension;
+        ledgerJournalName = LedgerJournalName::find(ledgerJournalTable.JournalName);
+        //journalTrans.parmOffsetAccountType(journalName.OffsetAccountType);
+        //journalTrans.parmTransactionType(LedgerTransType::WriteOff);
+        ledgerJournalTrans.TransactionType = LedgerTransType::WriteOff;
+        ledgerJournalTrans.OffsetAccountType = journalName.OffsetAccountType;
+        numberSeq    =   NumberSeq::newGetVoucherFromId((ledgerjournalname.NumberSequenceTable));
+        Voucher =   numberSeq.voucher();
+        ledgerJournalTrans.Voucher                  =   Voucher;
+        ledgerJournalTrans.ExchRate = 1.0;
+        //journalTrans.save();
+        ledgerJournalTrans.insert();
+        ledgerJournalTrans.selectForUpdate(true);
+        SpecTransManager=SpecTransManager::construct(ledgerJournalTrans);//journalTrans.ledgerJournalTrans());
+    
+        select sum(BalanceAMount) from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+            && (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::WriteOff
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::Discount);
+    
+        amountCurrency = paymentSettlement.BalanceAmount;
+    
+        select sum(WriteOffAmount) from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+            && (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff
+            || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::WriteOff);
+    
+        amountCurrency += paymentSettlement.WriteOffAmount;
+    
+        //journalTrans.parmAmountCurCredit(amountCurrency);
+        ledgerJournalTrans.AmountCurCredit = amountCurrency;
+    
+        specTrans = SpecTransManager.insertSpec(
+                    specTrans,
+                    custTransOpen.company(),
+                    custTransOpen.TableId,
+                    custTransOpen.RecId,
+                    amountCurrency,
+                    custTrans.CurrencyCode);
+    
+        while select * from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+            && (paymentSettlement.BalanceAMount > 0
+            || paymentSettlement.WriteOffAmount > 0)
+            && (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::WriteOff
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::Discount
+                || paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff)
+        {
+            SpecTransManager.insertLine(curext(),
+                                        tableNum(CustTransOpen),
+                                        paymentSettlement.CustTransOpenRecId,
+                                        specTrans.RecId,
+                                        paymentSettlement.CustTransOpenLine,
+                                        paymentSettlement.BalanceAmount + paymentSettlement.WriteOffAmount);
+            if(custTable.CustType != CustType::Patient)
+            {
+                this.updateCaseTrans(paymentSettlement.CustTransOpenLine,paymentSettlement.BalanceAmount + paymentSettlement.WriteOffAmount);
+            }
+            else
+            {
+                this.updateCaseTrans(0,0,true);
+            }
+        }
+        //Zain
+        //journalTrans.save();
+        ledgerJournalTrans.update();
+        customerLedgerTransRecId = ledgerJournalTrans.RecId;//journalTrans.parmRecId();
+    
+        //journalTrans = new AxLedgerJournalTrans();
+        //journalTrans.parmJournalNum(journalTable.ledgerJournalTable().JournalNum);
+        //journalTrans.parmTransDate(DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+        //journalTrans.parmCurrencyCode(custTrans.CurrencyCode);
+        ledgerJournalTrans.clear();
+        ledgerJournalTrans.JournalNum = ledgerJournalTable.JournalNum;
+        ledgerJournalTrans.TransDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        ledgerJournalTrans.CurrencyCode = custTrans.CurrencyCode;
+        
+        //TODO: CustLedgerAccounts does not contain writeOffLedgerDimension method
+        defaultAccount =CustLedgerAccounts.writeOffLedgerDimension(invoiceAccount,CustParameters::find().PostingProfile);
+        //defaultAccount = CustLedgerAccounts::writeOffLedgerDimension(invoiceAccount, CustParameters::find().PostingProfile);
+        defaultAccount = LedgerDimensionFacade::serviceCreateLedgerDimension(defaultAccount,custTrans.DefaultDimension);
+        //journalTrans.parmAccountType(LedgerJournalACType::Ledger);
+        //journalTrans.parmLedgerDimension(defaultAccount);
+        ledgerJournalTrans.AccountType = LedgerJournalACType::Ledger;
+        ledgerJournalTrans.LedgerDimension = defaultAccount;
+    
+        //journalTrans.parmOffsetAccountType(journalName.OffsetAccountType);
+
+        //journalTrans.parmPaymMode(PaymMode);
+        //journalTrans.parmPaymentNotes(paymentNotes);
+        //journalTrans.parmSettleVoucher(SettlementType::SelectedTransact);
+
+        //journalTrans.parmMarkedInvoice(custTrans.Invoice);
+        //journalTrans.parmMarkedInvoiceCompany(custTrans.company());
+        //journalTrans.parmMarkedInvoiceRecId(custTransOpen.RecId);
+        //journalTrans.parmTransactionType(LedgerTransType::WriteOff);
+
+        //JournalTrans.parmAmountCurDebit(amountCurrency);
+        //journalTrans.save();
+        ledgerJournalTrans.Voucher                  =   Voucher;
+        ledgerJournalTrans.OffsetAccountType = journalName.OffsetAccountType;
+        ledgerJournalTrans.PaymMode = paymMode;
+        ledgerJournalTrans.PaymentNotes = paymentNotes;
+        ledgerJournalTrans.SettleVoucher = SettlementType::SelectedTransact;
+        ledgerJournalTrans.MarkedInvoice = custTrans.Invoice;
+        ledgerJournalTrans.MarkedInvoiceCompany = custTrans.company();
+        ledgerJournalTrans.TransactionType = LedgerTransType::WriteOff;
+        ledgerJournalTrans.AmountCurDebit = amountCurrency;
+        ledgerJournalTrans.ExchRate = 1.0;
+        ledgerJournalTrans.insert();
+    
+        HMCaseTransDetail::createCaseTransDetail(custTrans.HMCase,HMCaseTransDetailTransactionType::WriteOff, ledgerJournalTrans.recID, tableNum(LedgerJournalTrans),  amountCurrency);
+        return customerLedgerTransRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCaseTransQuery</Name>
+				<Source><![CDATA[
+    private Query getCaseTransQuery(HMPatientChargeEntryTable _chargeEntryTable)
+    {
+        Query query;
+        QueryRun queryRun;
+        query = new query();
+        query.addDataSource(tableNum(hmCaseTrans)).addDataSource(tablenum(HMPatientChargeEntryLine)).relations(true);
+        if(_chargeEntryTable)
+        {
+            query.dataSourceTable(tableNum(HMPatientChargeEntryLine)).addRange(fieldNum(HMPatientChargeEntryLine,HMPatientChargeEntryTable)).value(SysQuery::value(_chargeEntryTable.RecId));
+        }
+    
+        if(hmClaimTable)
+        {
+            query.dataSourceTable(tableNum(HMPatientChargeEntryLine)).addDataSource(tableNum(hmClaimChargeLine)).relations(true);
+            query.dataSourceTable(tableNum(hmClaimChargeLine)).addRange(fieldNum(HMClaimChargeLine,HMClaimTable)).value(SysQuery::value(hmClaimTable.RecId));
+        }
+        query.dataSourceTable(tableNum(HMCaseTrans)).addRange(fieldNum(HMCaseTrans,HMServiceStatus)).value(SysQuery::value(HMServiceStatus::Complete));
+    
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCasePaymReceivedDetails</Name>
+				<Source><![CDATA[
+    private void insertCasePaymReceivedDetails()
+    {
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCaseTracking</Name>
+				<Source><![CDATA[
+    private void insertCaseTracking(HMCaseTrackingLineTransactionType _transactionType)
+    {
+
+        while select RecId, CustTransId, AmountCurCredit,AmountCurDebit, TransDate, LedgerDimension from ledgerJournalTrans
+            where ledgerJournalTrans.JournalNum == ledgerJournalTable.JournalNum//JournalTable.ledgerJournalTable().JournalNum
+        {
+            if(appointment_ledgerTransMap.exists(ledgerJournalTrans.RecId))
+            {
+     /*           HMCaseTracking::insert(appointment_ledgerTransMap.lookup(ledgerJournalTrans.RecId),
+                                        0,
+                                        _transactionType,
+                                        ledgerJournalTrans.AmountCurCredit,
+                                        ledgerJournalTrans.TransDate,
+                                        true,
+                                        ledgerJournalTrans.CustTransId,
+                                        tableNum(CustTrans),
+                                        conPeek(AxdDimensionUtil::getLedgerAccountValue(ledgerJournalTrans.LedgerDimension),1));
+        */    }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertEncounterLedgerTransMap</Name>
+				<Source><![CDATA[
+    private void insertEncounterLedgerTransMap(RecId _appointmentRecId, RecId _journalTransRecId)
+    {
+        appointment_ledgerTransMap.insert(_journalTransRecId,_appointmentRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>lineLeftForInvoicing</Name>
+				<Source><![CDATA[
+    private boolean lineLeftForInvoicing(HMCaseTransDetailTransactionType _transType = HMCaseTransDetailTransactionType::InsuranceInvoice)
+    {
+        HMBillParameters _hmbillparameters;
+        Query query;
+        QueryRun queryRun;
+        query = this.getCaseTransQuery(HMPatientChargeEntryTableLocal);
+        select  IsServiceStatusCompleted from _hmbillparameters;
+        
+        if(_transType == HMCaseTransDetailTransactionType::InsuranceInvoice)
+        {
+            query.dataSourceTable(tableNum(hmCaseTrans)).addRange(fieldNum(hmCaseTrans,RemainingBillAmount)).value(">0");
+        }
+        else if(_transType == HMCaseTransDetailTransactionType::PatientInvoice)
+        {
+            query.dataSourceTable(tableNum(hmCaseTrans)).addRange(fieldNum(hmCaseTrans,CashAmount)).value(">0");
+        }
+        if(_hmbillparameters.IsServiceStatusCompleted == noyes::Yes)
+        {
+            query.dataSourceTable(tableNum(hmCaseTrans)).addRange(fieldNum(HMCaseTrans,HMServiceStatus)).value(SysQuery::value(HMServiceStatus::Complete));
+        }
+        else
+        {
+            query.dataSourceTable(tableNum(hmCaseTrans)).addRange(fieldNum(HMCaseTrans,HMServiceStatus)).value(SysQuery::valueNot(HMServiceStatus::Cancelled));
+        }
+        //NS: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+        query.dataSourceTable(tableNum(hmCaseTrans)).addSelectionField(fieldNum(hmCaseTrans, RecId));
+        query.dataSourceTable(tableNum(HMPatientChargeEntryLine)).addSelectionField(fieldNum(HMPatientChargeEntryLine, RecId));
+        //NE: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+
+        queryRun = new queryRun(query);
+        while(queryRun.next())
+        {
+            return true;
+        }
+    
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    void new(Map                        _openCustTransMap,
+            Map                         _patientPaymentMap,
+            HMBillPaymentSettlementTmp  _paymentSettlement,
+            AccountNum                  _invoiceAccount,
+            PaymMode                    _paymMode,
+            str                         _paymentNotes,
+            AmountMst                   _remainingAmount = 0,
+            AccountNum                  _custAccount = "",
+            RecId                       _encounterRecId = 0,
+            RecId                       _appointmentRecId= 0)
+    {
+        openCustTransMap = _openCustTransMap;
+        paymentSettlement = _paymentSettlement;
+        invoiceAccount = _invoiceAccount;
+        paymMode = _paymMode;
+        paymentNotes = _paymentNotes;
+        remainingAmount = _remainingAmount;
+        custAccount = _custAccount;
+        patientPaymentMap = _patientPaymentMap;
+        encounterRecId = _encounterRecId;
+        appointmentRecId = _appointmentRecId;
+        appointment_ledgerTransMap = new Map(Types::Int64,Types::Int64);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmMapDocumentControlNumber</Name>
+				<Source><![CDATA[
+    public Map parmMapDocumentControlNumber(Map _mapDocumentControlNumber = mapDocumentControlNumber)
+    {
+        mapDocumentControlNumber = _mapDocumentControlNumber;
+    
+        return mapDocumentControlNumber;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>patientBatchCashInvoiceSettlePost</Name>
+				<Source><![CDATA[
+    public void patientBatchCashInvoiceSettlePost(HMPaymentCentreCashInvoiceTmp _HMPaymentCentreCashInvoiceTmp)
+    {
+        HMPatientChargeEntryPayment chargeEntryPayment;
+        HMCasePaymtReceivedDetails  HMCasePaymtReceivedDetails;
+        boolean                     openPaymExist = false;
+        HMSalesInvoiceCreateFormHandler HMSalesInvoiceCreateFormHandler;
+        try
+        {
+            ttsBegin;
+            while select * from _HMPaymentCentreCashInvoiceTmp
+            {
+                openPaymExist = true;
+                HMCasePaymtReceivedDetails.clear();
+                HMCasePaymtReceivedDetails.HMCase = _HMPaymentCentreCashInvoiceTmp.HMCase;
+                HMCasePaymtReceivedDetails.AmountPaid = _HMPaymentCentreCashInvoiceTmp.AmoutReceived;
+                HMCasePaymtReceivedDetails.CustPaymModeTable = _HMPaymentCentreCashInvoiceTmp.PaymMode;
+                HMCasePaymtReceivedDetails.PatientPaymentType = HMPatientPaymentType::Miscellaneous;
+                HMCasePaymtReceivedDetails.PaymentNotes = _HMPaymentCentreCashInvoiceTmp.PaymentNotes;
+                HMCasePaymtReceivedDetails.PaymReference = _HMPaymentCentreCashInvoiceTmp.PaymReference;
+                HMCasePaymtReceivedDetails.TransDate = _HMPaymentCentreCashInvoiceTmp.TransDate;
+                HMCasePaymtReceivedDetails.insert();
+                chargeEntryPayment.clear();
+                chargeEntryPayment.HMCase = HMCasePaymtReceivedDetails.HMCase;
+                chargeEntryPayment.Amount = HMCasePaymtReceivedDetails.AmountPaid;
+                chargeEntryPayment.PaymMode =  HMCasePaymtReceivedDetails.CustPaymModeTable;
+                chargeEntryPayment.PaymentResp = HMPatientPaymentResponsibility::Patient;
+                chargeEntryPayment.PaymentNotes = HMCasePaymtReceivedDetails.PaymentNotes;
+                chargeEntryPayment.PaymReference = HMCasePaymtReceivedDetails.PaymReference;
+                chargeEntryPayment.HMCasePaymtReceivedDetails = HMCasePaymtReceivedDetails.RecId;
+                chargeEntryPayment.TransDate = HMCasePaymtReceivedDetails.TransDate;
+                chargeEntryPayment.insert();
+    
+    
+            }
+            if(openPaymExist)
+            {
+                HMSalesInvoiceCreateFormHandler = new HMSalesInvoiceCreateFormHandler();
+                HMSalesInvoiceCreateFormHandler.postPaymentFromBatchInvoice(chargeEntryPayment);
+                this.settleBatchCashInvoice(_HMPaymentCentreCashInvoiceTmp);
+            }
+            else
+            {
+                throw warning("No open patient payment exist for posting");
+            }
+            ttsCommit;
+            delete_from _HMPaymentCentreCashInvoiceTmp;
+        }
+        catch
+        {
+            throw warning("Unable to process payment");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paymentTransactionExist</Name>
+				<Source><![CDATA[
+    private boolean paymentTransactionExist(RecId _custTransOpenRecId)
+    {
+        select count(RecId) from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+            && paymentSettlement.AmountMST > 0;
+        if(paymentSettlement.RecId == 0)
+        {
+            return patientPaymentMap.exists(_custTransOpenRecId);
+        }
+    
+        return paymentSettlement.RecId == 0 ? false : true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postChargeEntry</Name>
+				<Source><![CDATA[
+    public void postChargeEntry(Args _args)
+    {
+        AccountNum                              customerAccount;
+        HMCase                                  hmCase;
+        HMCaseTrans                             hmCasetrans,hmCasetransPPSUpdate;
+        Query                                   query;
+        RecId                                   custInvoiceTableRecId;
+        HMCustInvoiceClass                      hmCustInvoiceClass;
+        HMPatientChargeEntryCustInvoiceTable    HMPatientChargeEntryCustInvoiceTable;
+        QueryRun                                queryRun;
+        CustInvoiceTable                        custInvoiceTable, custInvoiceTableLocal;
+        real                                    totalAmount;
+        RecId                                   custInvoiceLIne;
+        boolean                                 patientInvoice = false;
+        HMInventTable                           hmInventTable;
+        InventTable                             inventTable;
+        HMItemCptPcsCodes                       hmItemCPTPcsCode;
+        HMProcedureCodeMaster                   hmProcedureCodeMaster;
+    
+        HMPatientChargeEntryTable               HMPatientChargeEntryTable;
+    
+        HMCaseTransDetailTransactionType        transType = HMCaseTransDetailTransactionType::InsuranceInvoice;
+    
+        try
+        {
+            if(_args.record().TableId == tableNum(hmClaimTable))
+            {
+                hmClaimTable = _args.record();
+                if(!hmClaimTable)
+                {
+                    throw error("Unable to find claim record");
+                }
+            }
+            else if(_args.record().TableId == tableNum(HMPatientChargeEntryTable))
+            {
+                HMPatientChargeEntryTable = _args.record();
+                HMPatientChargeEntryTableLocal = HMPatientChargeEntryTable;
+    
+                if(!HMPatientChargeEntryTable)
+                {
+                    throw error("Unable to find charge entry record");
+                }
+            }
+            if(!HMPatientChargeEntryTable)
+            {
+                HMPatientChargeEntryTable = HMPatientChargeEntryTable::find(hmClaimTable.HMPatientChargeEntryTable);
+                HMPatientChargeEntryTableLocal = HMPatientChargeEntryTable;
+            }
+            hmCase = HMCase::find(HMPatientChargeEntryTable.HMCase);
+            if(!hmCase)
+            {
+                throw error("Couldn't find case record");
+            }
+            customerAccount = HMPatientChargeEntryTable.getCaseInsuranceNum();
+            if(!customerAccount && hmClaimTable)
+            {
+                customerAccount = HMPatientChargeEntryTable.getGuarantorNum();
+                if (!customerAccount)
+                {
+                    customerAccount = HMPatientChargeEntryTable.patientChartNum();
+                }
+                patientInvoice = true;
+                transType = HMCaseTransDetailTransactionType::PatientInvoice;
+            }
+    
+            //Noman
+            if(!customerAccount)
+            {
+                customerAccount = HMPatientChargeEntryTable.getGuarantorNum();
+                if (!customerAccount)
+                {
+                    customerAccount = HMPatientChargeEntryTable.patientChartNum();
+                }
+                patientInvoice = true;
+                transType = HMCaseTransDetailTransactionType::PatientInvoice;
+            }
+            //Noman
+    
+            if(this.lineLeftForInvoicing())
+            {
+                ttsBegin;
+                invoiceAccount = CustTable::find(customerAccount).InvoiceAccount;
+                if(!invoiceAccount)
+                {
+                    invoiceAccount = customerAccount;
+                }
+                hmCustInvoiceClass = new HMCustInvoiceClass();
+                custInvoiceTableRecId = hmCustInvoiceClass.createCustInvoiceTable(invoiceAccount,'', hmPatientChargeEntryTable.HMCase);
+    
+                HMPatientChargeEntryCustInvoiceTable.HMPatientChargeEntryTable = hmPatientChargeEntryTable.RecId;
+                HMPatientChargeEntryCustInvoiceTable.CustInvoiceTable = custInvoiceTableRecId;
+                HMPatientChargeEntryCustInvoiceTable.HMClaimTable = hmClaimTable.RecId;
+                HMPatientChargeEntryCustInvoiceTable.insert();
+    
+                HMCaseNotes::createCaseIdentificationNotes(HMPatientChargeEntryTable.HMCase,HMCaseNotesIdentification::Invoiced,"",invoiceAccount);
+    
+                custInvoiceTable = custInvoiceTable::findRecId(custInvoiceTableRecId);
+                if(hmCase.HMPPSCode == 0
+                   || !HMPatientChargeEntryTable.getCaseInsuranceNum())
+                   //todo: ammar 
+                     /*
+                    //CS: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+                    //|| !HMPatientChargeEntryTable.getCaseInsuranceNum())
+                    || !hmCase.caseActiveInsuranceExists())
+                    //CE: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+                    */
+                {
+                    query = this.getcaseTransQuery(HMPatientChargeEntryTable);
+                    //query.dataSourceTable(tableNum(hmCaseTrans)).addRange(fieldNum(hmCaseTrans,BillingStatus)).value(SysQuery::value(HMBillStatus::NotPosted));
+                    //NS: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+                   //todo: ammar Ali
+                     /*
+                    query.dataSourceTable(tableNum(hmCaseTrans)).addSelectionField(fieldNum(hmCaseTrans, ItemId));
+                    query.dataSourceTable(tableNum(hmCaseTrans)).addSelectionField(fieldNum(hmCaseTrans, RecId));
+                    query.dataSourceTable(tableNum(hmCaseTrans)).addSelectionField(fieldNum(hmCaseTrans, HMResourceSchedulingAppointment));
+                    query.dataSourceTable(tableNum(hmCaseTrans)).addSelectionField(fieldNum(hmCaseTrans, HMCase));
+                    query.dataSourceTable(tableNum(hmCaseTrans)).addSelectionField(fieldNum(hmCaseTrans, PatientResponsibility));
+                    query.dataSourceTable(tableNum(hmCaseTrans)).addSelectionField(fieldNum(hmCaseTrans, HMClaimTableSetup_PatientStatus));
+                   
+                    query.dataSourceTable(tableNum(HMPatientChargeEntryLine)).addSelectionField(fieldNum(HMPatientChargeEntryLine, HMInsuranceCarrierBatchDetails));
+                    //NE: Bug 3277:Fti generation and posting is taking too much time by Ammar.Ali
+                    */
+                    queryRun = new QueryRun(query);
+                    while(queryRun.next())
+                    {
+                        HMPatientChargeEntryLine = queryRun.get(tableNum(HMPatientChargeEntryLine));
+                        hmCaseTrans = queryRun.get(tableNum(hmCaseTrans));
+                        totalAmount = hmCaseTrans.RemainingBillAmount;
+                        custInvoiceLIne = hmCustInvoiceClass.createCustInvoiceLine(custInvoiceTable, HMPatientChargeEntryLine, hmCaseTrans,totalAmount);
+    
+                        HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,transType, custInvoiceLIne, tableNum(CustInvoiceLine), totalAmount);
+                    }
+                }
+                else
+                {
+                    select * from inventTable
+                    join hmInventTable
+                    where hmInventTable.InventTable == inventTable.ItemId
+                    && hmInventTable.PPSCode == hmCase.HMPPSCode;
+                    if(inventTable)
+                    {
+                        select firstonly RecId from  hmItemCPTPcsCode
+                        join HMProcedureCodeMaster where HMProcedureCodeMaster.RecId == hmItemCPTPcsCode.HMProcedureCodeMaster
+                        && HMProcedureCodeMaster.Type == HMProcCodeSearchType::Revenue
+                        && hmItemCPTPcsCode.itemid == inventTable.ItemId;
+    
+                        hmCasetrans = hmCasetrans::find(hmCasetrans::createCaseTrans(inventTable.ItemId,'',HMServiceStatus::Ordered,HMPatientPaymentResponsibility::Client,'',HMPreAuthorizationStatus::None,DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),hmCase.RecId,
+                                                                        HMPatientChargeEntryTable.HMResourceSchedulingAppointment,0), false, ConcurrencyModel::Auto);
+                        hmCasetrans.selectForUpdate(true);
+                        hmCasetrans.isPPS = true;
+                        hmCasetrans.InsuranceAmount = inventTable.salesPcsPrice();
+                        hmCasetrans.RemainingBillAmount = hmCasetrans.InsuranceAmount;
+                        hmCasetrans.update();
+                        totalAmount = hmCaseTrans.RemainingBillAmount;
+                        HMPatientChargeEntryLine.clear();
+                        HMPatientChargeEntryLine.HMCaseTrans = hmCasetrans.RecId;
+                        HMPatientChargeEntryLine.CPTCodes = hmCase.HMPPSCode;
+                        HMPatientChargeEntryLine.FROMDATE = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                        HMPatientChargeEntryLine.RevenueCode = hmItemCPTPcsCode.RecId;
+                        HMPatientChargeEntryLine.HMPatientChargeEntryTable = hmPatientChargeEntryTable.RecId;
+                        HMPatientChargeEntryLine.insert();
+    
+                        custInvoiceLIne = hmCustInvoiceClass.createCustInvoiceLine(custInvoiceTable, HMPatientChargeEntryLine, hmCaseTrans,totalAmount);
+                        HMCaseTransDetail::createCaseTransDetail(hmCaseTrans.RecId,transType, custInvoiceLIne, tableNum(CustInvoiceLine), totalAmount);
+    
+                        update_recordSet hmCasetransPPSUpdate
+                        setting RemainingBillAmount = 0
+                        where hmCasetransPPSUpdate.HMCase == hmCase.RecId
+                        && hmCasetransPPSUpdate.recid != hmCasetrans.RecId;
+                    }
+                    else
+                    {
+                        throw error ("Association of service item with PPS code not found");
+                    }
+                }
+    
+                hmCustInvoiceClass.post(custInvoiceTable);
+    
+                this.updateChargeEntryInvoiceStatus(HMPatientChargeEntryTable);
+    
+                //Post advance payments
+                if (patientInvoice)
+                {
+                    custInvoiceTableLocal = CustInvoiceTable::findRecId(custInvoiceTable.RecId);
+                    this.settleCashInvoices(custInvoiceTableLocal.InvoiceId, CustTable::find(customerAccount), hMCase);
+                }
+    
+                ttsCommit;
+            }
+            else
+            {
+                throw warning("No line left for invoicing");
+            }
+        }
+        catch
+        {
+            ttsAbort;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postTransaction</Name>
+				<Source><![CDATA[
+    public boolean postTransaction()
+    {
+    
+        try
+        {
+            paymentPostedSuccess = false;
+            TranferPostedSucess = false ;
+            WriteOffPostedSuccess = false;
+    
+            this.checkTransactionActions();
+            if(transactionHasPaymentPosting == true
+                || transactionHasWriteOff ==  true
+                || transactionHasTransfer == true 
+                //Zain - PreventiceDemo
+                || transactionDeniedPayment == true
+                //Zain - PreventiceDemo
+                )
+            {
+                ttsbegin;
+                this.createApprovedAmountTransactionDetails();
+                this.createAndPostPaymentJournal();
+                this.createAndPostWriteOffJournal();
+                this.createAndPostTransferJournal();
+                this.updateDocumentControlNumber();
+                this.updateDisruptedCaseTrans();
+                ttsCommit;
+                //if(paymentPostedSuccess)
+                //{
+                    //info("@MAZ10543");
+                //}
+                //if(TranferPostedSucess)
+                //{
+                    //info("@MAZ10544");
+                //}
+                //if(WriteOffPostedSuccess)
+                //{
+                    //info("@MAZ10545");
+                //}
+                if(paymentPostedSuccess || TranferPostedSucess || WriteOffPostedSuccess)
+                {
+                    info("Payment successfully posted");
+                }
+                return true;
+            }
+            else
+            {
+                warning("@MAZ10546");
+                return false;
+            }
+        }
+        catch
+        {
+            ttsAbort;
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>reverseChargeEntry</Name>
+				<Source><![CDATA[
+    private void reverseChargeEntry(CustTrans _custTrans)
+    {
+        HMCase hmcase               = hmcase::find(_custTrans.HMCase);
+        HMCaseInsurance             hmCaseInsurance;
+        CustTable                   custTable;
+        CustTransOpenLine           custTransOpenLIne;
+        CustTransOpen               custTransOpen;
+        CustInvoiceTrans            CustInvoiceTransLocal;
+        HMPatientChargeEntryTable   HMPatientChargeEntryTable;
+        HMCaseTrans                 hmCaseTrans;
+        try
+        {
+            select CustType from custTable
+            where custTable.AccountNum == _custTrans.AccountNum;
+            invoiceAccount = _custTrans.AccountNum;
+    
+    
+            //if(custTable.CustType != CustType::Patient)
+            //{
+                //throw error("Credit note can only be generated against patient invoice");
+            //}
+            select firstOnly RecId from hmCaseInsurance
+            where hmCaseInsurance.HMCase == hmcase.RecId;
+    
+            //if(hmCaseInsurance)
+            //{
+                //throw error("Cannot create credit note against insurance case");
+            //}
+    
+            select RecId from custTransOpen
+            where custTransOpen.RefRecId == _custTrans.RecId
+            && custTransOpen.AccountNum == _custTrans.AccountNum;
+            if(Box::yesNo("Create credit note against selected invoice, Continue?", DialogButton::No, "Confirmation") == DialogButton::Yes)
+            {
+                ttsBegin;
+                if(custTable.CustType != CustType::Patient)
+                {
+                    this.reverseInsuranceCase(_custTrans);
+                }
+                while select RecId,AmountCur,CustInvoiceLineIdRef from custTransOpenLIne
+                    where custTransOpenLine.CustTransOpen == custTransOpen.recid
+                {
+                    select HMCaseTrans from CustInvoiceTransLocal
+                            where CustInvoiceTransLocal.CustInvoiceLineIdRef == CustTransOpenLine.CustInvoiceLineIdRef;
+    
+                    paymentSettlement.AmountMST = 0.00;
+                    paymentSettlement.CustTransOpenLine = CustTransOpenLine.RecId;
+                    paymentSettlement.CustTransOpenRecId = CustTransOpen.RecId;
+                    paymentSettlement.AmountCur = custTransOpenLine.AmountCur;
+                    paymentSettlement.HMCaseTrans = CustInvoiceTransLocal.HMCaseTrans;
+                    paymentSettlement.BalanceAmount = custTransOpenLine.AmountCur;
+                    paymentSettlement.insert();
+                }
+    
+                this.reverseCustClosedTransaction(_custTrans.Invoice);
+                //this.createCreditNotAndSettle(_custTrans.RecId,true);
+                this.createCreditNotAndSettle(custTransOpen.RecId,true);
+                select forUpdate HMPatientChargeEntryTable
+                where HMPatientChargeEntryTable.HMCase == hmcase.RecId;
+    
+                if(HMPatientChargeEntryTable)
+                {
+                    HMPatientChargeEntryTable.Status = HMBillStatus::NotPosted;
+                    HMPatientChargeEntryTable.update();
+                }
+                ttsCommit;
+            }
+        }
+        catch
+        {
+            throw error("Credit note creation failed");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>reverseCustClosedTransaction</Name>
+				<Source><![CDATA[
+    public boolean reverseCustClosedTransaction(InvoiceId _custInvoiceId)
+    {
+        SpecTransManager specTransManager;
+        CustTable custTable;
+        CustSettlement custSettlement;
+        CustTrans custTrans, fromCustTrans;
+        boolean success = false;
+        boolean hasTransaction = false;
+        while select custSettlement
+            join custTrans
+            where custSettlement.TransRecId == custTrans.RecId
+                && custSettlement.AccountNum == custTrans.AccountNum
+                && custSettlement.TransCompany == custTrans.dataAreaId
+            join fromCustTrans
+            where fromCustTrans.Voucher == CustTrans.LastSettleVoucher
+            && fromCustTrans.Invoice == _custInvoiceId
+        {
+    
+            custTable = CustTable::find(custTrans.AccountNum);
+    
+            //Todo return custTrans.Voucher for payment reversing.
+    
+            specTransManager = SpecTransManager::newRefTableId(custTable, tableNum(CustSettlement), true);
+            specTransManager.insert(custSettlement.dataAreaId, custSettlement.TableId, custSettlement.RecId, custSettlement.SettleAmountCur, custTrans.CurrencyCode);
+    
+            //TODO: CustVendSettlement::markOffsets is not available in AX7 and map extensions are not allowed in AX7
+            //custSettlement.CustVendSettlement::markOffsets(specTransManager, custTrans.CurrencyCode, true);
+            custSettlement.CustVendSettlement::markThisAndRelatedOffsets(specTransManager,custTrans.CurrencyCode);
+            hasTransaction = true;
+        }
+        if(hasTransaction)
+        {
+            if (CustTrans::reverseTransact(custTable, null, SettleDatePrinc::DateOfPayment, custSettlement.TransDate))
+            {
+                specTransManager.deleteAll();
+                success = true;
+            }
+        }
+        else
+        {
+            success = true;
+        }
+    
+        return success;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>reverseInsuranceCase</Name>
+				<Source><![CDATA[
+    private void reverseInsuranceCase(CustTrans _custTrans)
+    {
+        HMCase hmcase               = hmcase::find(_custTrans.HMCase);
+        HMPatientChargeEntryTable   HMPatientChargeEntryTable;
+        CustTrans                   custTrans;
+        CustTable                   custTable;
+        hmClaimTable                hmClaimTableLocal;
+        HMClaimVersion              hmClaimVersion;
+    
+        select count(RecId) from custTrans
+        join custTable
+        where custTable.AccountNum == custTrans.AccountNum
+        && custTrans.HMCase == hmcase.RecId
+        && custTable.custtype != CustType::Patient
+        && custTrans.TransType != LedgerTransType::Cust;
+    
+        if(custTrans.RecId)
+        {
+            throw warning("Case can only be reversed with invoice transaction");
+        }
+    
+        select * from HMPatientChargeEntryTable
+        where HMPatientChargeEntryTable.HMCase == hmcase.RecId;
+    
+        if(!HMPatientChargeEntryTable)
+        {
+            throw error("No charge entry record found");
+        }
+    
+        if(!hmcase)
+        {
+            throw error("No case record found");
+        }
+        hmcase.selectForUpdate(true);
+        hmcase.CaseStatus = HMCaseStatus::Open;
+        hmcase.update();
+    
+        select forupdate hmClaimTableLocal
+        join hmClaimVersion
+        where hmClaimTableLocal.RecId == hmClaimVersion.HMClaimTable
+        && hmClaimVersion.Status != HMClaimStatus::Reversed
+        && hmClaimTableLocal.HMPatientChargeEntryTable == HMPatientChargeEntryTable.RecId;
+    
+        if(!hmClaimVersion)
+        {
+            throw error("No claim record found");
+        }
+        hmClaimVersion.clear();
+        hmClaimTableLocal.delete();
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>settleBatchCashInvoice</Name>
+				<Source><![CDATA[
+    private void settleBatchCashInvoice(HMPaymentCentreCashInvoiceTmp _HMPaymentCentreCashInvoiceTmp)
+    {
+        while select * from _HMPaymentCentreCashInvoiceTmp
+        {
+            this.settleCashInvoices(_HMPaymentCentreCashInvoiceTmp.Invoice, CustTable::find(_HMPaymentCentreCashInvoiceTmp.CustAccount), HMCase::find(_HMPaymentCentreCashInvoiceTmp.HMCase));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>settleCashInvoices</Name>
+				<Source><![CDATA[
+    private void settleCashInvoices(InvoiceId _invoice, CustTable _custTable, HMCase _hmCase)
+    {
+        HMCasePaymtReceivedDetails  paymtReceivedDetails;
+        LedgerJournalTrans          ledgerJournalTransLocal;
+        CustTrans                   custTrans;
+        CustTransOpen               custTransOpen;
+        HMCase                      hmCase;
+        CustInvoiceJour             custInvoiceJour;
+        int                         counter;
+    
+        CustTable custTable = CustTable::find(_custTable.AccountNum);
+    
+        //Pick payments
+        while select * from CustTransOpen
+        join CustTrans
+        join ledgerJournalTrans
+        join paymtReceivedDetails
+        join hmCase
+            where CustTransOpen.RefRecId == custTrans.RecId
+                && ledgerJournalTrans.CustTransId == custTrans.RecId
+                && paymtReceivedDetails.LedgerJournalTrans == ledgerJournalTrans.RecId
+                && paymtReceivedDetails.HMCase == hmCase.RecId
+                && hmCase.recid == _hmCase.RecId
+        {
+            counter++;
+            custTrans.transData().markForSettlement(custTable);
+        }
+    
+        //Pick invoice
+        if (counter > 0)
+        {
+            while select * from CustTransOpen
+            join CustTrans
+            join custInvoiceJour
+            where CustTransOpen.RefRecId == custTrans.RecId
+                && custTrans.Invoice == CustInvoiceJour.InvoiceId
+                && custTrans.AccountNum == CustInvoiceJour.InvoiceAccount
+                && custtrans.TransDate == custinvoicejour.InvoiceDate
+                && custtrans.Voucher == CustInvoiceJour.LedgerVoucher
+                && custTrans.Invoice == _invoice
+    
+            {
+                custTrans.transData().markForSettlement(custTable);
+                //info('found');
+            }
+    
+            //custTrans.transData().markForSettlement(custTable);
+            CustTrans::settleTransact(custTable);
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>settleCoPayDeductible</Name>
+				<Source><![CDATA[
+    private void settleCoPayDeductible(CustInvoiceTable _custInvoiceTable, HMPatientPaymentType _patientPaymentType)
+    {
+        HMCasePaymtReceivedDetails      hmCasePaymtReceivedDetails;
+        SpecTransManager                specOffsetVoucher;
+        CustTrans                       paymTrans;
+        CustTransOpen                   custTransOpen,paymTransOpen;
+        CustTransOpenLine               custTransOpenLine;
+        CustInvoiceTrans                custInvoiceTrans;
+        ledgerJournalTrans              ledgerJournalTransLocal;
+        CustTable                       custTable;
+        Query                           query;
+        QueryRun                        queryRun;
+        AmountMST                       settleAmount;
+        SpecTrans                       specTrans;
+        RecId                           specRecId;
+        query = new query(queryStr(HMBillPaymentCopayDeducPatientSettlement));
+    
+        query.dataSourceTable(tableNum(custInvoiceJour)).addRange(fieldNum(CustInvoiceJour,InvoiceId)).value(SysQuery::value(_custInvoiceTable.InvoiceId));
+        //if(_patientPaymentType == HMPatientPaymentType::CoPayCoIns)
+        //{
+            //query.dataSourceTable(tableNum(custInvoiceTrans)).addRange(fieldNum(custInvoiceTrans,CoPayCoInsuranceAmount)).value(SysQuery::value('>0'));
+        //}
+        //else if(_patientPaymentType == HMPatientPaymentType::Deductible)
+        //{
+            //query.dataSourceTable(tableNum(custInvoiceTrans)).addRange(fieldNum(custInvoiceTrans,Deductible)).value(SysQuery::value('>0'));
+        //}
+    
+        custTable = custTable::find(_custInvoiceTable.InvoiceAccount);
+    
+    
+        while select forUpdate hmCasePaymtReceivedDetails
+            join CustTransId from ledgerJournalTransLocal
+            where hmCasePaymtReceivedDetails.RemainingAmountForSettlement > 0
+            && hmCasePaymtReceivedDetails.HMCase == _custInvoiceTable.HMCase
+            && hmCasePaymtReceivedDetails.PatientPaymentType == _patientPaymentType
+            && hmCasePaymtReceivedDetails.LedgerJournalTrans == ledgerjournalTransLocal.RecId
+        {
+            paymTrans = custTrans::find(ledgerJournalTransLocal.custtransid);
+    
+            select * from paymTransOpen
+            where paymTransOpen.AccountNum == paymTrans.AccountNum
+            && paymTransOpen.RefRecId == paymTrans.RecId;
+            if(!paymTransOpen)
+            {
+                continue;
+            }
+            specOffsetVoucher = SpecTransManager::construct(custTable);
+            QueryRun = new queryRun(query);
+            while (queryRun.next())
+            {
+                settleAmount = 0;
+                custTransOpen = queryRun.get(tableNum(custTransOpen));
+                custTransOpenLine = queryRun.get(tableNum(custTransOpenLine));
+                custInvoiceTrans = queryRun.get(tableNum(custInvoiceTrans));
+    
+                select firstonly * from paymentSettlement
+                where (paymentSettlement.CoPayAmount > 0
+                || paymentSettlement.CoInsuranceAmount > 0
+                || paymentSettlement.Deductible > 0)
+                && paymentSettlement.HMCaseTrans == custInvoiceTrans.HMCaseTrans;
+    
+                if(!paymentSettlement.recid)
+                {
+                    continue;
+                }
+                if(hmCasePaymtReceivedDetails.PatientPaymentType == HMPatientPaymentType::CoPay)
+                {
+                    settleAmount = paymentSettlement.CoPayAmount;
+                }
+                else if(hmCasePaymtReceivedDetails.PatientPaymentType == HMPatientPaymentType::CoIns)
+                {
+                    settleAmount = paymentSettlement.CoInsuranceAmount;
+                }
+                else if(hmCasePaymtReceivedDetails.PatientPaymentType == HMPatientPaymentType::Deductible)
+                {
+                    settleAmount = paymentSettlement.Deductible;
+                }
+    
+                if(hmCasePaymtReceivedDetails.RemainingAmountForSettlement - settleAmount < 0)
+                {
+                    settleAmount = hmCasePaymtReceivedDetails.RemainingAmountForSettlement;
+                    hmCasePaymtReceivedDetails.RemainingAmountForSettlement = 0;
+                    hmCasePaymtReceivedDetails.update();
+                }
+                else
+                {
+                    hmCasePaymtReceivedDetails.RemainingAmountForSettlement -= settleAmount;
+                    hmCasePaymtReceivedDetails.update();
+                }
+                specOffsetVoucher.insert(paymTransOpen.dataAreaId, paymTransOpen.TableId, paymTransOpen.RecId, -settleAmount, paymTrans.CurrencyCode, true);
+                specTrans = specOffsetVoucher.insertSpec(specTrans,custTransOpen.dataAreaId, custTransOpen.TableId, custTransOpen.RecId, CustTransOpen.AmountCur, custTransOpen.custTrans().CurrencyCode);
+                specOffsetVoucher.insertLine(custTransOpenLine.dataAreaId, custTransOpen.TableId, custTransOpen.RecId, specTrans.RecId, custTransOpenLine.RecId, settleAmount);
+    
+                specOffsetVoucher.updateMarkedPayment(paymTransOpen.dataAreaId, paymTransOpen.TableId, paymTransOpen.RecId, true);
+                CustTrans::settleTransact(custTable::find(_custInvoiceTable.InvoiceAccount));
+                if(hmCasePaymtReceivedDetails.RemainingAmountForSettlement == 0)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>settlePatientAdvances</Name>
+				<Source><![CDATA[
+    private void settlePatientAdvances(CustInvoiceTable _custInvoiceTable)
+    {
+        this.settleCoPayDeductible(_custInvoiceTable,HMPatientPaymentType::CoIns);
+        this.settleCoPayDeductible(_custInvoiceTable,HMPatientPaymentType::CoPay);
+        this.settleCoPayDeductible(_custInvoiceTable,HMPatientPaymentType::Deductible);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>transferTransactionExist</Name>
+				<Source><![CDATA[
+    private boolean transferTransactionExist(RecId _custTransOpenRecId)
+    {
+        select firstonly RecId from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+            && (paymentSettlement.HMInvoiceNextAction> HMInvoiceNextAction::TransferToInsurance
+            || paymentSettlement.HMInvoiceNextAction> HMInvoiceNextAction::TransferToPatient);
+    
+        return paymentSettlement.RecId == 0 ? false : true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTrans</Name>
+				<Source><![CDATA[
+    private void updateCaseTrans(RecId _custTransOpenLineRecId, AmountMST _settledAmount, boolean _isPatient = false)
+    {
+        CustTransOpenLine       custTransOpenLine;
+        CustInvoiceTrans        custInvoiceTrans;
+        CustInvoiceLineIdRef    CustInvoiceLineIdRef;
+        HMCaseTrans     hmCaseTrans;
+    
+        select forupdate HMCaseTrans
+        join custInvoiceTrans
+        join CustInvoiceLineIdRef
+        join custTransOpenLine
+        where hmCaseTrans.RecId == custInvoiceTrans.HMCaseTrans
+        && custInvoiceTrans.CustInvoiceLineIdRef == CustInvoiceLineIdRef.RecId
+        && custTransOpenLine.CustInvoiceLineIdRef == CustInvoiceLineIdRef.RecId
+        && custTransOpenLine.RecId == _custTransOpenLineRecId;
+    
+        if(hmcaseTrans)
+        {
+            hmCaseTrans.RemainingBillAmount -= _settledAmount;
+            hmCaseTrans.update();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateChargeEntryInvoiceStatus</Name>
+				<Source><![CDATA[
+    private void updateChargeEntryInvoiceStatus(HMPatientChargeEntryTable _hmChargeEntry)
+    {
+        HMCaseTrans     hmCaseTransLocal;
+        HMPatientChargeEntryTable chargeEntryTable;
+    
+        update_recordSet hmCaseTransLocal
+        setting BillingStatus = HMBillStatus::Posted
+        where hmCaseTransLocal.HMCase == _hmChargeEntry.HMCase;
+    
+    
+        update_recordSet chargeEntryTable
+        setting Status = HMBillStatus::Posted
+        where chargeEntryTable.HMCase == _hmChargeEntry.HMCase;
+    
+        //select forupdate HMCaseTrans
+        //where hmCaseTrans.HMCase == _hmChargeEntry.HMCase;
+    //
+        //if(hmcaseTrans)
+        //{
+            //hmCaseTrans.BillingStatus = HMBillStatus::Posted;
+            //hmCaseTrans.update();
+        //}
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDisruptedCaseTrans</Name>
+				<Source><![CDATA[
+    private void updateDisruptedCaseTrans()
+    {
+        CustTransOpen   custTransOpenLocal;
+        RecId           custTransOpenId;
+        CustTrans       custTransLocal;
+        MapEnumerator   mapEnumerator;
+        mapEnumerator = deniedCustTransMap.getEnumerator();
+
+        while (mapEnumerator.moveNext())
+        {
+            custTransOpenId = mapEnumerator.currentValue();
+            //custTransOpenLocal = CustTransOpen::find(custTransOpenId);
+
+            select * from custTransLocal
+                join * from custTransOpenLocal
+                where custTransOpenLocal.RecId == custTransOpenId
+                && custTransLocal.RecId == custTransOpenLocal.RefRecId
+                && custTransLocal.AccountNum == custTransOpenLocal.AccountNum;
+
+            //custTransLocal = CustTrans::fin(custTransOpenId);
+            CustDisputeCustTrans custDisputeCustTrans = CustDisputeCustTrans::construct(custTransLocal, CustVendDisputeStatus::Disputed, "42", "Invalid ICD10 code");
+            custDisputeCustTrans.run();
+            this.createCaseForDisruptedTrans(custTransLocal.AccountNum,HMCase::find(custTransLocal.HMCase).CaseNo);
+        }
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseForDisruptedTrans</Name>
+				<Source><![CDATA[
+    public void createCaseForDisruptedTrans(AccountNum _accountNum, HMCaseNo _invoiceId)
+    {
+        CustCollectionsCaseDetail CD;
+        CustTable CT;
+        CaseDetailForm caseDetailForm = new CaseDetailForm();
+        NumberSeq numberSeq = NumberSeq::newGetNum(CaseDetailForm::numRefCaseId());
+
+        //CT = CustTable::find('BCBS');
+        CT = CustTable::find(_accountNum);
+        CaseCategoryHierarchyDetail CCHD;
+   
+        select RecId from CCHD
+            where CCHD.CategoryType == CaseCategoryType::Project
+            && CCHD.CaseCategory == "Denial";
+
+        ttsbegin;
+        CD.Party = CT.Party;
+        CD.Description = "Disputed case for " + _invoiceId;
+        CD.CaseId = numberSeq.num();
+        CD.CategoryRecId = CCHD.RecId;
+        CD.Status = CaseStatus::InProcess;
+        CD.insert();
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDocumentControlNumber</Name>
+				<Source><![CDATA[
+    private void updateDocumentControlNumber()
+    {
+        MapEnumerator mapEnumerator;
+        HMCase hMCaseLocal;
+        mapEnumerator = mapDocumentControlNumber.getEnumerator();
+    
+        while(mapEnumerator.moveNext())
+        {
+            hMCaseLocal = HMCase::find(MapEnumerator.currentKey(), true);
+            if(hMCaseLocal)
+            {
+                hMCaseLocal.DocumentControlNumber = mapEnumerator.currentValue();
+                hMCaseLocal.update();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>writeOffTransactionExist</Name>
+				<Source><![CDATA[
+    private boolean writeOffTransactionExist(RecId _custTransOpenRecId)
+    {
+        select firstonly RecID from paymentSettlement
+            where paymentSettlement.CustTransOpenRecId == _custTransOpenRecId
+            && ((paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::WriteOff)
+            || (paymentSettlement.HMInvoiceNextAction == HMInvoiceNextAction::TransferAndWriteOff
+            && (paymentSettlement.WriteOffAmount > 0||paymentSettlement.BalanceAmount>0)));
+    
+        return paymentSettlement.RecId == 0 ? false : true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMBillPaymentPosting posting;
+        if(_args.menuItemName() == menuitemActionStr(HMBillPaymentPosting_PostInvoice)
+            || _args.menuItemName() == menuitemActionStr(HMCMSClaimGenerateChargeEntry))
+        {
+            posting = new HMBillPaymentPosting(null,null,null,'','','');
+            posting.postChargeEntry(_args);
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMPaymentCentreCashInvoicePost))
+        {
+            posting = new HMBillPaymentPosting(null,null,null,'','','');
+            posting.patientBatchCashInvoiceSettlePost(_args.record());
+        }
+        else if(_args.menuItemName() == menuitemActionStr(HMBillPaymentPostingCreditNote))
+        {
+            posting = new HMBillPaymentPosting(null,null,null,'','','');
+            posting.reverseChargeEntry(_args.record());
+        }
+        else
+        {
+            posting = _args.caller().initializeClass(posting);
+            if(posting.postTransaction())
+            {
+                _args.caller().resetAll();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

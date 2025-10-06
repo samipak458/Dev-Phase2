@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimNotes_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[ExtensionOf(tableStr(HMClaimNotes))]
+internal final class HMClaimNotes_Extension
+{
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        next insert();
+
+        HMWellSkyAPIRequest hmWellSkyAPIRequest;
+        HMClaimTable        hmClaimTable;
+        UserInfo            userInfo;
+        HcmWorker           hcmWorker;
+        DirPerson           dirPerson;
+        DirPersonName       dirPersonName;
+        str                 authorName = '';
+
+        select firstonly ClaimID, HMUniqueID from hmClaimTable
+            where hmClaimTable.RecId == this.HMClaimTable;
+
+        try
+        {
+            select firstonly userInfo
+                where userInfo.id == this.CreatedBy;
+
+            select firstonly Person from hcmWorker
+                where hcmWorker.RecId == HcmWorker::userId2Worker(userInfo.id);
+
+            if (hcmWorker.RecId != 0)
+            {
+                select firstonly dirPerson
+                where dirPerson.RecId == hcmWorker.Person;
+
+                select firstonly dirPersonName
+                where dirPersonName.Person == dirPerson.RecId;
+                
+
+                authorName += (dirPersonName.FirstName != '') ? (authorName == '') ? dirPersonName.FirstName : ' ' + dirPersonName.FirstName : '';
+                authorName += (dirPersonName.LastName != '') ? (authorName == '') ? dirPersonName.LastName : ' ' + dirPersonName.LastName : '';
+            }
+            else
+            {
+                authorName = userInfo.name;
+            }
+
+            ttsbegin;
+
+            hmWellSkyAPIRequest.ClaimID             = hmClaimTable.ClaimID;
+            hmWellSkyAPIRequest.HMUniqueID          = hmClaimTable.HMUniqueID;
+            hmWellSkyAPIRequest.Notes               = this.Notes;
+            hmWellSkyAPIRequest.ActionType          = this.HMActionType;
+            hmWellSkyAPIRequest.ClaimStatus         = this.HMClaimProcessStatus;
+            hmWellSkyAPIRequest.FollowupDate        = this.HMFollowUp;
+            hmWellSkyAPIRequest.Author              = authorName;
+            hmWellSkyAPIRequest.CreatedDateAndTime  = this.CreatedDateTime;
+            hmWellSkyAPIRequest.MessageSent         = NoYes::No;
+            hmWellSkyAPIRequest.insert();
+
+            ttscommit;
+        }
+        catch (Exception::Error)
+        {
+            Info('Error');
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@Optum:HMWellSkyAPIRequest"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@Optum:HMWellSkyAPIRequest"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

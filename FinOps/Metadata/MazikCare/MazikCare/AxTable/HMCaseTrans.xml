@@ -1,0 +1,1790 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCaseTrans</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMCaseTrans extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>amountAfterDiscount</Name>
+				<Source><![CDATA[
+    public display AmountMST amountAfterDiscount()
+    {
+        return this.TotalAmount - this.DiscountAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createChildCaseTrans</Name>
+				<Source><![CDATA[
+    public void createChildCaseTrans()
+    {
+        BOM             bomTable;
+        BOMVersion      bomVersion;
+        InventTable     inventTableLocal;
+        int             i;
+        int             bomQty;
+        HMResourceSchedulingAppointmentInvent   apptInvent,apptInventNew;
+    
+        select firstonly bomVersion
+            where bomVersion.ItemId == this.ItemId
+            && bomVersion.Active
+            && bomVersion.FromDate <= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone())
+            && (!bomVersion.ToDate || bomVersion.ToDate >= DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()));
+    
+        select * from apptInvent
+        where apptInvent.RecId == this.HMResourceSchedulingAppointmentInvent;
+    
+        if(bomVersion)
+        {
+            while select * from bomTable
+                    where bomTable.BOMId == bomVersion.BOMId
+                    join ItemId,ItemType from inventTableLocal
+                    where bomTable.ItemId == inventTableLocal.ItemId
+            {
+                if(inventTableLocal.ItemType == ItemType::Service)
+                {
+                    bomQty=bomTable.BOMQty;
+                    for(i=0;i<bomQty;i++)
+                    {
+                        buf2Buf(apptInvent,apptInventNew);
+                        apptInventNew.InventTable = bomTable.ItemId;
+                        apptInventNew.Protocol = this.ItemId;
+                        apptInventNew.insert();
+                        HMCaseTrans::createCaseTrans(bomTable.ItemId,this.ItemId,
+                                                HMServiceStatus::Ordered,
+                                                this.PatientResponsibility,
+                                                this.PreAuthorizationNumber,
+                                                this.PreAuthorizationStatus,
+                                                this.PreAuthValidDate,
+                                                this.HMCase,
+                                                this.HMResourceSchedulingAppointment,
+                                                apptInventNew.RecId,
+                                                1,
+                                                emptyGuid(),
+                                                bomTable.UnitId,
+                                                this.RecId);
+                    }
+                }
+                else
+                {
+                    buf2Buf(apptInvent,apptInventNew);
+                    apptInventNew.InventTable = bomTable.ItemId;
+                    apptInventNew.Protocol = this.ItemId;
+                    apptInventNew.insert();
+                    HMCaseTrans::createCaseTrans(bomTable.ItemId,this.ItemId,
+                                                HMServiceStatus::Ordered,
+                                                this.PatientResponsibility,
+                                                this.PreAuthorizationNumber,
+                                                this.PreAuthorizationStatus,
+                                                this.PreAuthValidDate,
+                                                this.HMCase,
+                                                this.HMResourceSchedulingAppointment,
+                                                apptInventNew.RecId,
+                                                bomTable.BOMQty,
+                                                emptyGuid(),
+                                                bomTable.UnitId,
+                                                this.RecId);
+                }
+    
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dueFromPatient</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountMST dueFromPatient()
+    {
+        return this.DeductibleActual + this.CashAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getitemname</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    Public display ItemName getitemname()
+    {
+        return HMInventTableClass::showDescription(this.ItemId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insert</Name>
+				<Source><![CDATA[
+    public void insert()
+    {
+        HMCase hmCase;
+        if(this.HMClaimTableSetup_PatientStatus == 0)
+        {
+            select HMPatientStatus from hmCase
+            where hmCase.RecId == this.HMCase;
+    
+            this.HMClaimTableSetup_PatientStatus = hmCase.HMPatientStatus;
+        }
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isBOM</Name>
+				<Source><![CDATA[
+    public boolean isBOM()
+    {
+        InventTable inventTable;
+        select PmfProductType from inventTable
+        where inventTable.ItemId == this.ItemId;
+        return inventTable.PmfProductType == PmfProductType::BOM;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>modifiedField</Name>
+				<Source><![CDATA[
+    public void modifiedField(FieldId _fieldId)
+    {
+        HMOrganizationalUnit unit;
+        InventDim            inventDimLocal;
+        InventLocation       warehouse;
+    
+        super(_fieldId);
+        if(fieldNum(HMCaseTrans,Qty))
+        {
+            this.updateQty();
+        }
+    
+        if (_fieldId == fieldNum(HMCaseTrans, TotalAmount))
+        {
+            info(strFmt("%1", this.TotalAmount));
+        }
+
+        if(_fieldId == fieldNum(HMCaseTrans, HMOrganizationalUnit))
+        {
+            unit = HMOrganizationalUnit::find(this.HMOrganizationalUnit);
+            wareHouse = InventLocation::find(unit.InventLocation);
+            inventDimLocal.InventLocationId = wareHouse.InventLocationId;
+            inventDimLocal.InventSiteId = wareHouse.InventSiteId;
+            this.InventDim = InventDim::findOrCreate(inventDimLocal).inventDimId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>relatedAppointmentNumber</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display  HMAppointmentNumber relatedAppointmentNumber()
+    {
+        HMResourceSchedulingAppointment appt;
+        if(this.RelatedAppointmentRecId)
+        {
+            select AppointmentNumber from appt
+            where appt.RecId == this.RelatedAppointmentRecId;
+        }
+        return appt.AppointmentNumber;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>salesUnitId</Name>
+				<Source><![CDATA[
+    public display SalesUnit  salesUnitId()
+    {
+        return InventTableModule::find(this.ItemId,ModuleInventPurchSales::Sales).UnitId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAmountAndDiscount</Name>
+				<Source><![CDATA[
+    public str updateAmountAndDiscount()
+    {
+    
+        // Marij
+        CustTable   custTable = CustTable::findRecId(hmpatient::find(HMCase::find(this.HMCase).HMPatient).CustTable);
+        Price           myPrice;
+        container       priceContainer;
+        InventDim       inventDimLocal;
+        HMCase          hmCaseBuffer          = HMCase::find(this.HMCase);
+        InventDim       inventDimBuffer       = InventDim::find(this.InventDim);
+        InventTable     inventTableBuffer     = InventTable::find(this.ItemId);
+        HMPatientChargeEntryLine    hmPatientChargeEntryLine = HMPatientChargeEntryLine::findByCaseTrans(this.RecId);
+        HMCaseInsurance hmCaseInsuranceBuffer = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance hmPatientInsurance = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode(hmPatientInsurance.InsuranceCarrier).RecId).RecId);//HMInsuranceContract::findByInsuranceCarrier(hmPatientInsurance.HMInsuranceCarrier, false,ConcurrencyModel::Auto);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::find(hmPatientInsurance.HMInsuranceContractClassOrPlans, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        container   priceAgreementContainer;
+        //Zain
+        HMPriceDisc priceDisc;
+        //PriceDisc   PriceDisc;
+        //Zain
+        AmountMST   price;
+        // Marij
+        //HMPatientInsurance                      HMPatientInsurance;
+        HMCase                                  hmcase;
+        HMInsuranceContractClassOrPlans         HMInsuranceContractClassOrPlans;
+        HMInsuranceContractClassDeductible      HMInsuranceContractClassDeductible;
+        str                                     warningMsg;
+        container                               priceCon,discCon;
+        DiscPct                                 dsc1,dsc2;
+        boolean                                 applyBasePrice = true;
+        HMTPA                                   hmTPA;
+      //  HMInsuranceContract                     HMInsuranceContract;
+        HMCaseInsurance                         hmCaseInsurance;
+        PriceDiscJournalNum                     priceDiscJournalId;
+        HMInsuranceContractCarrierCombination   HMInsuranceContractCarrierCombination;
+
+
+        //select * from hmcase
+        //    join hmCaseInsurance where hmCaseInsurance.HMCase == hmcase.RecId
+        //    join HMPatientInsurance where hmCaseInsurance.HMPatientInsurance == HMPatientInsurance.RecId
+        //    outer join PriceDiscAdmTable,RecId,PriceDiscAdmTableDiscount from HMInsuranceContractClassOrPlans
+        //    where HMInsuranceContractClassOrPlans.RecId == HMPatientInsurance.HMInsuranceContractClassOrPlans
+        //        && HMInsuranceContractClassOrPlans.HMContractClassStatus == HMContractClassStatus::Active
+        //        && hmcase.RecId == this.HMCase
+        //        && hmCaseInsurance.IsActive == NoYes::Yes;
+
+        select * from HMPatientInsurance
+                join hmCaseInsurance where HMPatientInsurance.RecId == hmCaseInsurance.HMPatientInsurance
+                outer join HMInsuranceContractClassOrPlans
+                where HMPatientInsurance.HMInsuranceContractClassOrPlans == HMInsuranceContractClassOrPlans.RecId
+                && HMInsuranceContractClassOrPlans.HMContractClassStatus == HMContractClassStatus::Active
+                && hmCaseInsurance.HMCase == this.HMCase
+                && hmCaseInsurance.IsActive == noyes::Yes;
+
+        //if(hmcase.HMPatientInsurance != 0)
+        if(hmCaseInsuranceBuffer)
+        {
+
+            // Marij
+            if(!hmCaseInsuranceBuffer) //self-pay
+            {
+                inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                inventDimLocal.wMSLocationId = inventDimBuffer.wMSLocationId;
+                inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;//selectedInventBatchId;
+                inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+
+                priceDisc = new HMPriceDisc(ModuleInventPurchSales::Sales, inventTableBuffer.ItemId,
+                    inventDimBuffer,
+                    this.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    CustTable.AccountNum,
+                    CustTable::find(CustTable.AccountNum).Currency);
+
+                if (priceDisc.findPrice(CustTable.PriceGroup, 0, 0, 0, hmCaseBuffer.HMCaseType))
+                    price = priceDisc.price();
+                else if (priceDisc.findItemPrice())
+                    price = priceDisc.price();
+            }
+            // Marij
+            else //insurance
+            {
+              
+                inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+          //      inventDimLocal.wMSLocationId = inventDimBuffer.wMSLocationId;
+                inventDimLocal.inventBatchId = inventDimBuffer.inventBatchId;
+                //inventDimLocal.inventBatchId = selectedInventBatchId;
+                inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+                this.InventDim = inventDimBuffer.inventDimId;
+
+                priceAgreementContainer = HMPriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Sales,
+                                                                              inventTableBuffer.ItemId,
+                                                                              inventDimLocal,//inventDimBuffer,
+                                                                              this.salesUnitId(),
+                                                                              DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                              (this.Qty == 0) ? 1 : this.Qty,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(hmCase.RecId).InsuranceCarrier).AccountNum,//CustTable::findRecId(HMInsuranceCarrier::findByCode(HMPatientInsurance::getPrimaryInsurance(hmPatientInsurance.HMPatient)).CustTable).AccountNum,
+                                                                              CustTable::find(CustTable.AccountNum).Currency,
+                                                                              '', //PriceGroup
+                                                                              hmInsuranceContract.RecId,
+                                                                              contractClassOrPlans.RecId,
+                                                                              insuranceNetworkBuffer.RecId,
+                                                                              hmCaseBuffer.HMCaseType,
+                                                                              hmPatientChargeEntryLine.RevenueCode,
+                                                                              hmPatientChargeEntryLine.CPTCodes,
+                                                                              hmPatientChargeEntryLine.Modifier1,
+                                                                              hmPatientChargeEntryLine.Modifier2,
+                                                                              hmPatientChargeEntryLine.Modifier3,
+                                                                              hmPatientChargeEntryLine.Modifier4);
+                                                                              
+
+                price = conPeek(priceAgreementContainer, 1);
+                //Zain
+                
+                if(price == 0)
+                {
+                    InventTable::find(this.itemId).salesPcsPrice();
+                }
+                
+                this.SalesPrice = price;
+            }
+
+            this.TotalAmount = this.SalesPrice * this.Qty;
+            this.CashAmount  = this.TotalAmount;
+            if(this.PatientResponsibility == HMPatientPaymentResponsibility::Patient)
+            {
+                this.CashAmount = this.TotalAmount;
+            }
+            else
+            {
+                this.CashAmount = 0;
+                //Zain
+                if(HMBillParameters::find().DeductiblePerService)
+                {
+                    this.updateCaseTransDeductibe(this.HMResourceSchedulingAppointment, this.HMCase);
+                }
+                //Zain
+                this.InsuranceAmount = this.TotalAmount - this.DeductibleActual -  this.DiscountAmount;
+            }
+                //}
+            
+        }
+    
+        //Zain -- commented by Zain
+        //if(this.PatientResponsibility == HMPatientPaymentResponsibility::Patient)
+        //{
+        //    //Marij
+        //    AmountMST       price;
+        //    PriceDisc       priceDisc;
+        //    container       priceContaner;
+        //    InventDim       inventDimBuffer       = InventDim::find(this.InventDim);
+        //    InventTable     inventTableBuffer     = InventTable::find(this.ItemId);
+        //    HMCaseInsurance hmCaseInsuranceBuffer = HMCaseInsurance::find(this.HMCase, false, ConcurrencyModel::Auto);
+        //    //Zain
+        //    HMPatientInsurance hmPatientInsuranceLocal = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        //    HMInsuranceContract hmInsuranceContractLocal = HMInsuranceContract::findByInsuranceCarrier(hmPatientInsuranceLocal.HMInsuranceCarrier, false,ConcurrencyModel::Auto);
+        //    HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::findByContractId(hmInsuranceContractLocal.RecId, false, ConcurrencyModel::Auto);
+        //    HMInsuranceNetwork insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        //    //Zain
+
+        //    if(!hmCaseInsuranceBuffer) //self-billed
+        //    {
+        //        CustTable custTableBuffer = CustTable::findRecId(HMPatient::find(this.HMPatient).CustTable);
+
+        //        priceDisc = new PriceDisc(ModuleInventPurchSales::Sales, 
+        //            inventTableBuffer.ItemId,
+        //            inventDimBuffer,
+        //            inventTableBuffer.salesUnitId(),
+        //            DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+        //            1,
+        //            custTableBuffer.AccountNum,
+        //            CustTable::find(custTableBuffer.AccountNum).Currency);
+
+        //        if (priceDisc.findPrice(custTableBuffer.PriceGroup))
+        //            price = priceDisc.price();
+        //        else if (priceDisc.findItemPrice())
+        //            price = priceDisc.price();
+
+        //        this.SalesPrice = price;
+        //    }
+        //    else //insurance
+        //    {
+        //        //Zain
+        //        //this.SalesPrice = InventTable::find(this.ItemId).salesPcsPrice();
+        //        //this.SalesPrice = this.getPriceFromTradeAgreement(inventTableBuffer.ItemId,
+        //        //                                                  DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+        //        //                                                  ModuleInventCustVend::Cust,
+        //        //                                                  inventDimBuffer.inventDimId,
+        //        //                                                  inventTableBuffer.salesUnitId(),
+        //        //                                                  0, //networklevel
+        //        //                                                  0, //contractID
+        //        //                                                  0, //planId
+        //        //                                                  HMCase::find(this.HMCase).HMCaseType,
+        //        //                                                  0, //revenueCode
+        //        //                                                  0, //CPTCode
+        //        //                                                  0, //Modifier1
+        //        //                                                  0, //Modifier2
+        //        //                                                  0, //Modifier3
+        //        //                                                  0); //Modifier4
+        //        this.SalesPrice = HMPriceAgreementJournalClass::getPriceFromTradeAgreement(inventTableBuffer.ItemId,
+        //                                                          DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+        //                                                          ModuleInventCustVend::Cust,
+        //                                                          inventDimBuffer.inventDimId,
+        //                                                          inventTableBuffer.salesUnitId(),
+        //                                                          insuranceNetworkBuffer.RecId, //networklevel
+        //                                                          hmInsuranceContractLocal.RecId, //contractID
+        //                                                          contractClassOrPlans.RecId, //planId
+        //                                                          HMCase::find(this.HMCase).HMCaseType,
+        //                                                          0, //revenueCode
+        //                                                          0, //CPTCode
+        //                                                          0, //Modifier1
+        //                                                          0, //Modifier2
+        //                                                          0, //Modifier3
+        //                                                          0); //Modifier4
+
+        //        //Zain
+        //    }
+        //    //Marij
+        //Zain -- commented by Zain
+
+            //this.TotalAmount = this.SalesPrice * this.Qty;
+            //this.CashAmount  = this.TotalAmount;
+        //}
+        else
+        {
+            if(applyBasePrice)
+            {
+                this.InsuranceAmount = this.TotalAmount - this.DeductibleActual -  this.DiscountAmount;
+                this.updateCaseTransDeductibe(this.HMResourceSchedulingAppointment, this.HMCase);
+            }
+        }
+        this.RemainingBillAmount = this.TotalAmount;
+        return warningMsg;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCaseTransDeductibe</Name>
+				<Source><![CDATA[
+    public void updateCaseTransDeductibe(RecId _apptRecId, RecId _caseRecId)
+    {
+        HMInsuranceContractClassOrPlans         HMInsuranceContractClassOrPlans;
+        HMInsuranceContractClassDeductible      HMInsuranceContractClassDeductible;
+        HMPatientInsurance                      HMPatientInsurance;
+        HMCaseInsurance                         hmCaseInsurance;
+        HMResourceSchedulingAppointment         appt, previousAppointment;
+        HMInsuranceCarrier                      HMInsuranceCarrier;
+        HMCase                                  hmCase;
+        if(_apptRecId)
+        {
+            select HMResourceSchedulingPlanningObject, HMPatientInsurance, HMScheduleType, HMPatient, RecId from appt
+                join HMPatientInsurance where appt.HMPatientInsurance == HMPatientInsurance.RecId
+                join PriceDiscAdmTable,RecId from HMInsuranceContractClassOrPlans
+                where HMInsuranceContractClassOrPlans.RecId == HMPatientInsurance.HMInsuranceContractClassOrPlans
+                && HMInsuranceContractClassOrPlans.HMContractClassStatus == HMContractClassStatus::Active
+                && appt.RecId == _apptRecId;
+        }
+        else
+        {
+            if(_caseRecId)
+            {
+                //select HMPatientInsurance, HMPatient, RecId from hmCase
+                //join HMPatientInsurance where hmCase.HMPatientInsurance == HMPatientInsurance.RecId
+                //join PriceDiscAdmTable,RecId from HMInsuranceContractClassOrPlans
+                //where HMInsuranceContractClassOrPlans.RecId == HMPatientInsurance.HMInsuranceContractClassOrPlans
+                //&& HMInsuranceContractClassOrPlans.HMContractClassStatus == HMContractClassStatus::Active
+                //&& hmCase.RecId == _caseRecId;
+                select HMPatientInsurance, HMPatient, RecId from hmCase
+                    join hmCaseInsurance where hmCase.RecId == hmCaseInsurance.HMCase
+                    join HMPatientInsurance where hmCaseInsurance.HMPatientInsurance == HMPatientInsurance.RecId
+                    join PriceDiscAdmTable,RecId from HMInsuranceContractClassOrPlans
+                    where HMInsuranceContractClassOrPlans.RecId == HMPatientInsurance.HMInsuranceContractClassOrPlans
+                        && HMInsuranceContractClassOrPlans.HMContractClassStatus == HMContractClassStatus::Active
+                        && hmCase.RecId == _caseRecId;
+            }
+        }
+    
+        select HMDeductibleMainMemberPercentage,HMDeductibleMainMemberAmount from HMInsuranceContractClassDeductible
+        where HMInsuranceContractClassDeductible.HMInsuranceContractClassOrPlans == HMInsuranceContractClassOrPlans.RecId
+        && HMInsuranceContractClassDeductible.HMCaseType == HMCase::find(_caseRecId).HMCaseType;
+    
+        if (HMInsuranceContractClassDeductible)
+        {
+            if (HMInsuranceContractClassDeductible.HMDeductibleMainMemberPercentage > 0)
+            {
+                this.updateDeductible(HMInsuranceContractClassDeductible.HMDeductibleMainMemberPercentage,false);
+            }
+            else if (HMInsuranceContractClassDeductible.HMDeductibleMainMemberAmount > 0)
+            {
+                this.updateDeductible(HMInsuranceContractClassDeductible.HMDeductibleMainMemberAmount,true);
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDeductible</Name>
+				<Source><![CDATA[
+    private void updateDeductible(real _value, boolean _updateAmount)
+    {
+        if (HMBillParameters::find().DeductiblePerService == NoYes::Yes)
+        {
+            if(_updateAmount)
+            {
+                this.DeductiblePerUnit = _value;
+                this.Deductible = this.DeductiblePerUnit * this.Qty;
+            }
+            else
+            {
+                this.DeductiblePercentage = _value;
+                this.DeductiblePerUnit = (this.SalesPrice - this.DiscountAmount) * (this.DeductiblePercentage/100);
+                this.Deductible = this.DeductiblePerUnit * this.Qty;
+            }
+        }
+       
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createCaseTrans</Name>
+				<Source><![CDATA[
+    public client static RecId createCaseTrans(ItemId _itemid,
+                                    ItemId _protocolId,
+                                    HMServiceStatus _serviceStatus,
+                                    HMPatientPaymentResponsibility _paymentResp,
+                                    String30 _preAuthNumber,
+                                    HMPreAuthorizationStatus _preAuthStatus,
+                                    date _preAuthDate,
+                                    RecId _caseRecId,
+                                    RecId _apptRecId,
+                                    RecId _apptInventRecId,
+                                    int   _quantity = 1,
+                                    guid _crmOrderId = emptyGuid(),
+                                    UnitIDBase  _CRMunitId = '',
+                                    RecId       _parentRecId = 0,
+                                    HMUrgency _urgency = HMUrgency::None,
+                                    RecId _treatmentLocation = 0,
+                                    HMAlternatDrugStatus _alternateDrugStatus = HMAlternatDrugStatus::None)
+    {
+    
+        str                                     warningMsg,errorMsg;
+        HMCaseTrans                             hmCaseTrans;
+        InventTable                             inventTable;
+        real                                    quantityAfterConv;
+        InventDim                               inventDim;
+        boolean                                 applyBasePrice = true;
+        HMResourceSchedulingAppointment         appt;
+        HMOrganizationalUnit                    orgUnit;
+        InventDimParm                           inventDimParm;
+        HMCase                                  hmCase;
+        RecId                                   clinicRecId;
+        HMOrganizationalUnit                    treatmentLocation;
+        HMPatient                               hmPatient = HMPatient::find(HMCase::find(_caseRecId).HMPatient);
+        CustTable   custTable = CustTable::findRecId(HMCase::find(_caseRecId).HMPatient);
+        // Marij
+        Price           myPrice;
+        container       priceContainer;
+        HMCase          hmCaseBuffer          = HMCase::find(_caseRecId);
+       // InventDim       inventDimBuffer ;      //= InventDim::find(HMCaseTrans.InventDim);
+      //  InventTable     inventTableBuffer;     //= InventTable::find(HMCaseTrans.ItemId);
+        HMCaseInsurance hmCaseInsuranceBuffer  = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance hmPatientInsurance = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode(hmPatientInsurance.InsuranceCarrier).RecId).RecId);//HMInsuranceContract::findByInsuranceCarrier(hmPatientInsurance.HMInsuranceCarrier, false,ConcurrencyModel::Auto);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::findByContractId(hmInsuranceContract.RecId, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        container   priceAgreementContainer;
+        PriceDisc   PriceDisc;
+        AmountMST   price;
+        HMOrganizationalUnit unit;
+        InventDim            inventDimLocal;
+        InventLocation       warehouse;
+        // Marij
+        try
+        {
+            hmCaseTrans.initValue();
+            inventTable = InventTable::find(_itemid);
+            hmCase = hmCase::find(_caseRecId);
+            if(inventTable)
+            {
+                quantityAfterConv = _quantity;
+                inventDimParm =  InventDimParm::activeDimFlag(InventDimGroupSetup::newInventTable(inventTable));
+                if(_CRMunitId != inventTable.inventTableModuleSales().UnitId)
+                {
+                    quantityAfterConv = UnitOfMeasureConverter::convert(_quantity,
+                    UnitOfMeasure::unitOfMeasureIdBySymbol(_CRMunitId),
+                    UnitOfMeasure::unitOfMeasureIdBySymbol(inventTable.inventTableModuleSales().UnitId),
+                    NoYes::No,
+                    inventTable.Product);
+                }
+                inventDim = inventDim::findOrCreateBlank();
+                if(!_treatmentLocation)
+                {
+                    //if (hmCase.HMCaseType == HMCaseType::OutPatient)
+                    //{
+                    //    select HMResourceSchedulingPlanningObject from appt
+                    //where appt.RecId == _apptRecId;
+                    //    clinicRecId = appt.getClinicRecId();
+                    //}
+                    //else if(hmCase.HMCaseType == HMCaseType::Emergency)
+                    //{
+                        clinicRecId = hmCase.Clinic;
+                    //}
+                }
+                else
+                {
+                    clinicRecId = _treatmentLocation;
+                }
+
+                if(clinicRecId)
+                {
+                    select InventLocation,WMSLocation from orgunit
+                where orgUnit.recid == clinicRecId;
+
+                    if (orgUnit)
+                    {
+                        inventDim.clear();
+                        inventDim.InventLocationId = orgUnit.InventLocation;
+                        inventDim.InventSiteId = InventLocation::find(orgUnit.InventLocation).InventSiteId;
+                        inventDim.wMSLocationId = orgUnit.WMSLocation;
+                        //commented as per requirement
+                        //if(inventDimParm.InventBatchIdFlag)
+                        //{
+                        //if(_urgency == HMUrgency::Stat)
+                        //{
+                        //inventDim.inventBatchId = hmCaseTrans.pickBatchId(inventTable.ItemId, inventDim);
+                        //}
+                        //}
+                        inventDim = InventDim::findOrCreate(inventDim);
+                    }
+                }
+                hmCaseTrans.HMCase = _caseRecId;
+                hmCaseTrans.HMPatient = HMCase::find(_caseRecId).HMPatient;
+                hmCaseTrans.HMResourceSchedulingAppointment = _apptRecId;
+                hmCaseTrans.HMResourceSchedulingAppointmentInvent = _apptInventRecId;
+                hmCaseTrans.Qty = quantityAfterConv;
+                hmCaseTrans.OrderedQty = hmCaseTrans.Qty;
+                hmCaseTrans.ItemId = _itemid;
+                hmCaseTrans.Protocol = _protocolId;
+                hmCaseTrans.Urgency = _urgency;
+                hmCaseTrans.HMServiceStatus = _serviceStatus;
+                hmCaseTrans.PatientResponsibility = _paymentResp;
+                hmCaseTrans.PreAuthorizationNumber = _preAuthNumber;
+                hmCaseTrans.PreAuthorizationStatus = _preAuthStatus;
+                hmCaseTrans.PreAuthValidDate = _preAuthDate;
+                hmCaseTrans.CRMOrderId = _crmOrderId;
+                //Musab Hashmi
+                hmCaseTrans.HMOrganizationalUnit = clinicRecId;
+                hmCaseTrans.InventDim = inventDim.inventDimId;
+                //if (hmCaseTrans.HMOrganizationalUnit)
+                //{
+
+
+                //    unit = HMOrganizationalUnit::find(hmCaseTrans.HMOrganizationalUnit);
+                //    wareHouse = InventLocation::find(unit.InventLocation);
+                //    inventDimLocal.InventLocationId = wareHouse.InventLocationId;
+                //    inventDimLocal.InventSiteId = wareHouse.InventSiteId;
+                //    hmCaseTrans.InventDim = InventDim::findOrCreate(inventDimLocal).inventDimId;
+                //}
+                // Musab Hashmi
+                //Zain
+                // Marij
+               // HMCase          hmCaseBuffer          =  HMCase::find(HMPatientChargeEntryTable.HMCase);
+               
+                if(!hmCaseInsuranceBuffer) //self-pay
+                {
+                    priceDisc = new PriceDisc(ModuleInventPurchSales::Sales, hmCaseTrans.ItemId,
+                    inventDimLocal,
+                    HMCaseTrans.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    CustTable.AccountNum,
+                    CustTable::find(CustTable.AccountNum).Currency);
+
+                    if (priceDisc.findPrice(CustTable.PriceGroup))
+                    price = priceDisc.price();
+                    else if (priceDisc.findItemPrice())
+                    price = priceDisc.price();
+                }
+                // Marij
+                else //insurance
+                {
+                   // inventDimLocal.InventSiteId = inventDimBuffer.InventSiteId;
+                  //  inventDimLocal.InventLocationId = inventDimBuffer.InventLocationId;
+                  //  inventDimLocal.inventBatchId = selectedInventBatchId;
+                  //  inventDimLocal = InventDim::findOrCreate(inventDimLocal);
+                 //   HMCaseTrans.InventDim = inventDimLocal.inventDimId;
+
+                    priceAgreementContainer = HMPriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Sales,
+                                                                              hmCaseTrans.ItemId,
+                                                                              inventDimLocal,//inventDimBuffer,
+                                                                              HMCaseTrans.salesUnitId(),
+                                                                              DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                              (HMCaseTrans.Qty == 0) ? 1 : HMCaseTrans.Qty,
+                                                                              CustTable::findRecId(HMInsuranceCarrier::findByCode(HMPatientInsurance::getPrimaryInsurance(hmPatientInsurance.HMPatient)).CustTable).AccountNum,
+                                                                              CustTable::find(CustTable.AccountNum).Currency,
+                                                                              '', //PriceGroup
+                                                                                hmInsuranceContract.RecId,
+                                                                              contractClassOrPlans.RecId,
+                                                                              insuranceNetworkBuffer.RecId,
+                                                                              hmCaseBuffer.HMCaseType,
+                                                                              0,
+                                                                              0,
+                                                                              0,
+                                                                              0,
+                                                                              0,
+                                                                              0);
+                                                                              
+                                                
+                    price = conPeek(priceAgreementContainer, 1);
+                    if(price == 0)
+                    {
+                        price = InventTable::find(hmcaseTrans.itemId).salesPcsPrice();
+                    }
+                }
+                
+                
+                HMCaseTrans.SalesPrice = price;
+                hmCaseTrans.TotalAmount = hmCaseTrans.getTotalAmount();
+                //hmCaseTrans.InventDim = inventDim.inventDimId;
+                hmCaseTrans.ParentCaseTransId = _parentRecId;
+                if(inventTable::find(_itemid).HMProductType == HMInventType::Medication)
+                {
+                    hmCaseTrans.AlternatDrugStatus = _alternateDrugStatus;
+                }
+                if(_parentRecId == 0)
+                {
+                    warningmsg = hmCaseTrans.updateAmountAndDiscount();
+                }
+    
+    
+                if(hmCaseTrans.validateWrite())
+                {
+                    hmCaseTrans.insert();
+                    if(inventTable.PmfProductType == PmfProductType::BOM)
+                    {
+                        HMCaseTrans.createChildCaseTrans();
+                    }
+                }
+                else
+                {
+                    errorMsg = "@MAZ13343";
+                }
+            }
+            else
+            {
+                errorMsg = "@MAZ13460";
+            }
+    
+        }
+        catch
+        {
+            errorMsg = "@MAZ13343";
+        }
+        if(warningMsg)
+        {
+           warning(warningMsg);
+        }
+        if(errorMsg)
+        {
+            return checkFailed(errorMsg);
+        }
+        return hmCaseTrans.RecId;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>find</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Finds the specified record in the <c>HMCaseTrans</c> table.
+    /// </summary>
+    /// <param name="_recId">
+    /// The record ID of the <c>HMCaseTrans</c> record to find.
+    /// </param>
+    /// <param name="_forupdate">
+    /// A Boolean value that indicates whether to read the record for update; optional.
+    /// </param>
+    /// <param name="_concurrencyModel">
+    /// The concurrency model option to use when it reads the record; optional.
+    /// </param>
+    /// <returns>
+    /// A record in the <c>HMCaseTrans</c> table; otherwise, an empty record.
+    /// </returns>
+    public static HMCaseTrans find(
+        RecId _recId,
+        boolean _forupdate = false,
+        ConcurrencyModel _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMCaseTrans HMCaseTrans;
+    
+        if (_recId)
+        {
+            HMCaseTrans.selectForUpdate(_forupdate);
+            if (_forupdate  && _concurrencyModel != ConcurrencyModel::Auto)
+            {
+                HMCaseTrans.concurrencyModel(_concurrencyModel);
+            }
+    
+            select firstonly
+                    HMCaseTrans
+                where
+                    HMCaseTrans.RecId == _recId;
+        }
+    
+        return HMCaseTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentDeductibleAmount</Name>
+				<Source><![CDATA[
+    public amount getAppointmentDeductibleAmount()
+    {
+        HMCaseTrans                 caseTransLocal;
+        HMCaseTransDetail           caseTransDetail;
+        HMPatientChargeEntryLine    chargeLine;
+    
+        select sum(deductibleActual)
+            from caseTransLocal
+            where caseTransLocal.HMResourceSchedulingAppointment == this.HMResourceSchedulingAppointment
+            && caseTransLocal.BillingStatus != HMBillStatus::NotPaid
+           // && caseTransLocal.BillingStatus != HMBillStatus::Reveresed
+                join CaseTransDetail
+                where CaseTransDetail.HMCaseTrans == caseTransLocal.RecId
+                && !caseTransDetail.Reversed
+                && ( caseTransDetail.TransactionType == 1 || caseTransDetail.TransactionType == 2)
+                    join chargeLine
+                    where chargeLine.HMCaseTrans == caseTransLocal.RecId;
+    
+        return caseTransLocal.DeductibleActual;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCaseTransPrice</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display Price getCaseTransPrice()
+    {
+        if (this.Qty>0)
+        {
+            return this.InsuranceAmount/ this.Qty;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCaseType</Name>
+				<Source><![CDATA[
+    public HMCaseType getCaseType()
+    {
+        HMCase hmCase;
+        select HMCaseType from hmCase
+        where hmCase.RecId == this.HMCase;
+        return hmCase.HMCaseType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemSalesPrice</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display Price getItemSalesPrice()
+    {
+        return InventTableModule::find(this.ItemId, ModuleInventPurchSales::Sales).price;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getOrgName</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    Public display Description getOrgName()
+    {
+        return  HMOrganizationalUnit::find(this.HMOrganizationalUnit).Description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalAmount</Name>
+				<Source><![CDATA[
+    [SysClientCacheDataMethodAttribute(true)]
+    public display AmountMST getTotalAmount()
+    {
+        return this.TotalAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initValue</Name>
+				<Source><![CDATA[
+    public void initValue()
+    {
+        this.BillingStatus = HMBillStatus::NotPaid;
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isCaseTransClaimGenerated</Name>
+				<Source><![CDATA[
+    public boolean isCaseTransClaimGenerated()
+    {
+        HMClaimChargeLine claimChargeLine;
+        select count(recID) from claimChargeline
+        where claimChargeLine.HMCaseTrans == this.RecId;
+        return claimChargeLine.RecId != 0 ? true : false;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pickBatchId</Name>
+				<Source><![CDATA[
+    public InventBatchId pickBatchId(ItemId _itemid, InventDim _inventDim)
+    {
+        InventSum InventSum;
+        InventDim inventDim;
+        InventJournalTrans inventJournalTrans;
+        InventBatch inventBatch;
+    
+        SELECT firstOnly inventBatchId
+        FROM InventDim
+        order by inventBatch.expDate ASC
+        group by inventDim.inventBatchId, inventBatch.expDate
+        WHERE InventDim.inventBatchId != ''
+        && inventDim.InventLocationId == _inventDim.InventLocationId
+        && inventDim.inventSiteId == _inventDim.InventSiteId
+        && inventDim.wMSLocationId  == _inventDim.wMSLocationId
+        join inventBatch where inventBatch.inventBatchId == inventDim.inventBatchId
+        JOIN SUM(PostedQty), SUM(PostedValue), SUM(PhysicalValue), SUM(Deducted), SUM(Registered), SUM(Received),
+        SUM(Picked), SUM(ReservPhysical), SUM(ReservOrdered), SUM(OnOrder), SUM(Ordered), SUM(Arrived),
+        SUM(QuotationReceipt), SUM(QuotationIssue), SUM(PhysicalInvent), SUM(AvailPhysical),
+        SUM(AvailOrdered), SUM(PdsCWPostedQty), SUM(PdsCWDeducted), SUM(PdsCWRegistered),
+        SUM(PdsCWReceived), SUM(PdsCWPicked), SUM(PdsCWReservPhysical), SUM(PdsCWReservOrdered),
+        SUM(PdsCWOnOrder), SUM(PdsCWOrdered), SUM(PdsCWArrived), SUM(PdsCWQuotationReceipt),
+        SUM(PdsCWQuotationIssue), SUM(PdsCWPhysicalInvent), SUM(PdsCWAvailPhysical), SUM(PdsCWAvailOrdered)
+        FROM InventSum
+        WHERE InventDim.inventDimId == InventSum.InventDimId
+        && ((InventSum.Closed == 0)) && ((InventSum.ClosedQty == 0))
+        && InventSum.ItemId == _itemId
+        join InventJournalTrans where InventJournalTrans.ItemId==InventSum.ItemId;
+    
+    
+        return inventDim.inventBatchId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateQty</Name>
+				<Source><![CDATA[
+    public void updateQty()
+    {
+        this.Deductible = this.DeductiblePerUnit * this.Qty;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>defaultHmCaseTrans</Name>
+				<Source><![CDATA[
+    public static HMCaseTrans defaultHmCaseTrans(RecId _hmcase)
+    {
+        HMCaseTrans hMCaseTrans;
+    
+        select firstOnly hMCaseTrans
+             order by CreatedDateTime desc
+                where hMCaseTrans.HMCase==_hmcase;
+    
+        return hMCaseTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>defaultPCSCode</Name>
+				<Source><![CDATA[
+    public static int64 defaultPCSCode(ItemId _itemid)
+    {
+        HMItemCptPcsCodes       hMItemCptPcsCodes1;
+        HMProcedureCodeMaster   hMProcedureCodeMaster;
+    
+        select firstonly RecId,HMProcedureCodeMaster,ItemId from hMItemCptPcsCodes1
+            order by CreatedDateTime ASC
+            where hMItemCptPcsCodes1.ItemId==_itemid
+        join hMProcedureCodeMaster
+            where hMProcedureCodeMaster.RecId==hMItemCptPcsCodes1.HMProcedureCodeMaster
+            && hMProcedureCodeMaster.Type==HMProcCodeSearchType::CPT_HCPS;
+    
+        return hMProcedureCodeMaster.RecId;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>defaultRevenueCode</Name>
+				<Source><![CDATA[
+    public static int64 defaultRevenueCode(ItemId _itemid)
+    {
+        HMItemCptPcsCodes       hMItemCptPcsCodes1;
+        HMProcedureCodeMaster   hMProcedureCodeMaster;
+    
+        select firstonly RecId,HMProcedureCodeMaster,ItemId from hMItemCptPcsCodes1
+            order by CreatedDateTime ASC
+            where hMItemCptPcsCodes1.ItemId==_itemid
+        join hMProcedureCodeMaster
+            where hMProcedureCodeMaster.RecId==hMItemCptPcsCodes1.HMProcedureCodeMaster
+            && hMProcedureCodeMaster.Type==HMProcCodeSearchType::Revenue;
+    
+        return hMProcedureCodeMaster.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findstatus</Name>
+				<Source><![CDATA[
+    public static boolean findstatus(RecId _recId)
+    {
+     HMCaseTrans    hMCaseTrans;
+     boolean        rtnvalue;
+     int value;
+    
+        while select hMCaseTrans where hMCaseTrans.HMCase==_recId
+        {
+            if(hMCaseTrans.HMServiceStatus!=HMServiceStatus::Complete)
+            {
+                 value=1;
+            }
+    
+        }
+    
+        if(value==1)
+        {
+            rtnvalue=false;
+        }
+       else
+        {
+            rtnvalue=true;
+        }
+    
+    
+        return rtnvalue;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>findUnpostedCaseTrans</Name>
+				<Source><![CDATA[
+    public static HMCaseTrans findUnpostedCaseTrans(
+        RecId _hmCaseRecId,
+        HMServiceStatus _serviceStatus,
+        boolean _forupdate = false,
+        ConcurrencyModel _concurrencyModel = ConcurrencyModel::Auto)
+    {
+        HMCaseTrans HMCaseTrans;
+    
+        if (_hmCaseRecId)
+        {
+            HMCaseTrans.selectForUpdate(_forupdate);
+            if (_forupdate  && _concurrencyModel != ConcurrencyModel::Auto)
+            {
+                HMCaseTrans.concurrencyModel(_concurrencyModel);
+            }
+    
+            select firstonly
+                    HMCaseTrans
+                where
+                    HMCaseTrans.HMCase == _hmCaseRecId
+                    && HMCaseTrans.HMServiceStatus == _serviceStatus;
+        }
+    
+        return HMCaseTrans;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getBillingStatus</Name>
+				<Source><![CDATA[
+    public static HMBillStatus getBillingStatus(RecId _caseTransRecid)
+    {
+        HMCaseTrans hmCaseTrans;
+    
+        select BillingStatus from hmCaseTrans
+        where hmCaseTrans.RecId == _caseTransRecid;
+    
+        return hmCaseTrans.BillingStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getItemGroup</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Added by  musab.
+    /// </summary>
+    [SysClientCacheDataMethodAttribute(true)]
+    Public display ItemGroupId getItemGroup()
+    {
+        return InventItemGroupItem::itemGroupId(this.ItemId, this.dataAreaId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCoPayByCaseId</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    [SysClientCacheDataMethodAttribute]
+    public display AmountMST getCoPayByCaseId()
+    {
+        HMCasePaymtReceivedDetails paymentDetails;
+
+        select sum(AmountPaid) from paymentDetails group by paymentDetails.HMCase
+            where paymentDetails.HMCase == this.HMCase && paymentDetails.PatientPaymentType == HMPatientPaymentType::CoPay;
+        return paymentDetails.AmountPaid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNetPaid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    [SysClientCacheDataMethodAttribute]
+    public display AmountMST getNetPaid()
+    {
+        HMCase hmCase;
+
+        hmCase = HMCase::find(this.HMCase);
+        return (this.SalesPrice - hmCase.getCoPayByCaseId());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>update</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///
+    /// </summary>
+    public void update()
+    {
+        super();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<Label>@MAZ13180</Label>
+	<TableGroup>WorksheetLine</TableGroup>
+	<TitleField1>HMCase</TitleField1>
+	<TitleField2>HMServiceStatus</TitleField2>
+	<CacheLookup>NotInTTS</CacheLookup>
+	<CreatedBy>Yes</CreatedBy>
+	<CreatedDateTime>Yes</CreatedDateTime>
+	<ModifiedBy>Yes</ModifiedBy>
+	<ModifiedDateTime>Yes</ModifiedDateTime>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields>
+				<AxTableFieldGroupField>
+					<DataField>HMCase</DataField>
+				</AxTableFieldGroupField>
+			</Fields>
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>BillingStatus</Name>
+			<EnumType>HMBillStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>CashAmount</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<HelpText>@MAZ13198</HelpText>
+			<Label>@MAZ85</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldGuid">
+			<Name>CRMOrderId</Name>
+			<Label>@MAZ:HMCRMOrderId</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>Deductible</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<HelpText>@MAZ4692</HelpText>
+			<Label>@MAZ4692</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DeductibleActual</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<HelpText>@MAZ13227</HelpText>
+			<Label>@MAZ13227</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>DeductibleCollectionDate</Name>
+			<Label>@MAZ13229</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DeductiblePercentage</Name>
+			<ExtendedDataType>PercentPositive</ExtendedDataType>
+			<HelpText>@MAZ13440</HelpText>
+			<Label>@MAZ13440</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DeductiblePerUnit</Name>
+			<Label>@MAZ:HMDeductiblePerUnit</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>Discount</Name>
+			<ExtendedDataType>HMAmountMSTNoNegative</ExtendedDataType>
+			<HelpText>@MAZ13606</HelpText>
+			<Label>@MAZ13607</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiscountAmount</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>HMAmountMSTNoNegative</ExtendedDataType>
+			<HelpText>@MAZ13540</HelpText>
+			<Label>@SYS182433</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiscPercent1</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>DiscPct</ExtendedDataType>
+			<HelpText>@SYS69418</HelpText>
+			<Label>@SYS901</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>DiscPercent2</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>DiscPct</ExtendedDataType>
+			<HelpText>@SYS69418</HelpText>
+			<Label>@SYS902</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMCase</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMPatient</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMResourceSchedulingAppointment</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMResourceSchedulingAppointmentInvent</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>HMServiceStatus</Name>
+			<EnumType>HMServiceStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Instructions</Name>
+			<HelpText>Service/item instructions</HelpText>
+			<Label>@MAZ204</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>InsuranceAmount</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<HelpText>@MAZ13197</HelpText>
+			<Label>@MAZ3355</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>InventDim</Name>
+			<Label>@MAZ:HMCaseCartLineInventDim</Label>
+			<StringSize>20</StringSize>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemId</Name>
+			<ExtendedDataType>ItemId</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>ParentCaseTransId</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PatientResponsibility</Name>
+			<EnumType>HMPatientPaymentResponsibility</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PreAuthorizationNumber</Name>
+			<ExtendedDataType>String30</ExtendedDataType>
+			<HelpText>@MAZ13234</HelpText>
+			<Label>@MAZ13234</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>PreAuthorizationStatus</Name>
+			<EnumType>HMPreAuthorizationStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>PreAuthValidDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>@MAZ13233</HelpText>
+			<Label>@MAZ13233</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Protocol</Name>
+			<ExtendedDataType>ItemId</ExtendedDataType>
+			<Label>@MAZ10609</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>Qty</Name>
+			<ExtendedDataType>HMQty</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>RelatedAppointmentRecId</Name>
+			<Label>@MAZ11527</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>SalesPrice</Name>
+			<ExtendedDataType>SalesPrice</ExtendedDataType>
+			<HelpText>@SYS1174</HelpText>
+			<Label>@SYS11770</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>TotalAmount</Name>
+			<AllowEdit>No</AllowEdit>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<HelpText>@SYS3494</HelpText>
+			<Label>@SYS3494</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>WriteOff</Name>
+			<ExtendedDataType>HMAmountMSTNoNegative</ExtendedDataType>
+			<Label>@SYS316545</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>AlternatDrugStatus</Name>
+			<EnumType>HMAlternatDrugStatus</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>AlternatePrimaryCaseTransId</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMClaimTableSetup_PatientStatus</Name>
+			<Label>Patient status</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMItemCptPcsCodes</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>HMOrganizationalUnit</Name>
+			<ExtendedDataType>RefRecId</ExtendedDataType>
+			<Label>Location</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>IsPPS</Name>
+			<Label>@MAZ:HMIsPPS</Label>
+			<EnumType>NoYes</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ItemName</Name>
+			<ExtendedDataType>Description</ExtendedDataType>
+			<Label>Item description</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>OrderedQty</Name>
+			<ExtendedDataType>Qty</ExtendedDataType>
+			<HelpText>@SYS129035</HelpText>
+			<Label>@SYS129035</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PharmacyBatchId</Name>
+			<Label>@MAZ:HMPharmacyBatchId</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>RemainingBillAmount</Name>
+			<Label>@MAZ:HMRemainingBillAmount</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>ReportUrl</Name>
+			<ExtendedDataType>URL</ExtendedDataType>
+			<Label>@MAZ5021</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>SettledAmount</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<HelpText>@SYS317152</HelpText>
+			<Label>@SYS317152</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldEnum">
+			<Name>Urgency</Name>
+			<EnumType>HMUrgency</EnumType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt64">
+			<Name>DefaultDimension</Name>
+			<ExtendedDataType>LedgerDefaultDimensionValueSet</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ExpectedAmount</Name>
+			<ExtendedDataType>Amount</ExtendedDataType>
+			<Label>Expected amount</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>HMPayer</Name>
+			<ExtendedDataType>CustAccount</ExtendedDataType>
+			<Label>Payer</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes>
+		<AxTableIndex>
+			<Name>HMResourceSchedulingAppointmentInvent</Name>
+			<AllowDuplicates>Yes</AllowDuplicates>
+			<Fields>
+				<AxTableIndexField>
+					<DataField>HMResourceSchedulingAppointmentInvent</DataField>
+				</AxTableIndexField>
+			</Fields>
+		</AxTableIndex>
+	</Indexes>
+	<Mappings />
+	<Relations>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMCase</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Cascade</OnDelete>
+			<RelatedTable>HMCase</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMCase</Name>
+					<Field>HMCase</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMCaseTrans</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMCaseTrans</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ParentCaseTransId</Name>
+					<Field>ParentCaseTransId</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMPatient</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMPatient</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPatient</Name>
+					<Field>HMPatient</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMResourceSchedulingAppointment</Name>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMResourceSchedulingAppointment</RelatedTable>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMResourceSchedulingAppointment</Name>
+					<Field>HMResourceSchedulingAppointment</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMResourceSchedulingAppointmentInvent</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMResourceSchedulingAppointmentInvent</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMResourceSchedulingAppointmentInvent</Name>
+					<Field>HMResourceSchedulingAppointmentInvent</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>InventDim</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>InventDim</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>InventDim</Name>
+					<Field>InventDim</Field>
+					<RelatedField>inventDimId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>DimIdIdx</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>InventTable_ItemId</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>InventTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>InventTable_ItemId</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>ItemId</Name>
+					<Field>ItemId</Field>
+					<RelatedField>ItemId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>ItemIdx</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>InventTable_Protocol</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>InventTable</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>InventTable_Protocol</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>Protocol</Name>
+					<Field>Protocol</Field>
+					<RelatedField>ItemId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>ItemIdx</Index>
+		</AxTableRelation>
+		<AxTableRelation>
+			<Name>HMClaimTableSetup_PatientStatus</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<RelatedTable>HMClaimTableSetup</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>HMClaimEnumList</Name>
+					<RelatedField>HMClaimEnumList</RelatedField>
+					<Value>25</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMClaimTableSetup_PatientStatus</Name>
+					<Field>HMClaimTableSetup_PatientStatus</Field>
+					<RelatedField>Recid</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMOrganizationalUnit</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMOrganizationalUnit</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>HMOrganizationalUnit</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>FileLocationType</Name>
+					<RelatedField>FileLocationType</RelatedField>
+					<Value>2</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintRelatedFixed">
+					<Name>FileLocationType_1</Name>
+					<RelatedField>FileLocationType</RelatedField>
+					<Value>6</Value>
+				</AxTableRelationConstraint>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMOrganizationalUnit</Name>
+					<Field>HMOrganizationalUnit</Field>
+					<RelatedField>Recid</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>DefaultDimension</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>DimensionAttributeValueSet</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelatedTableRole>DimensionAttributeValueSet</RelatedTableRole>
+			<RelationshipType>Association</RelationshipType>
+			<Role>DimensionAttributeValueSet</Role>
+			<UseDefaultRoleNames>No</UseDefaultRoleNames>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>DefaultDimension</Name>
+					<Field>DefaultDimension</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>HMItemCptPcsCodes</Name>
+			<Cardinality>ZeroMore</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>HMItemCptPcsCodes</RelatedTable>
+			<RelatedTableCardinality>ZeroOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMItemCptPcsCodes</Name>
+					<Field>HMItemCptPcsCodes</Field>
+					<RelatedField>RecId</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+			<Index>RecId</Index>
+		</AxTableRelation>
+		<AxTableRelation xmlns=""
+			i:type="AxTableRelationForeignKey">
+			<Name>CustTable</Name>
+			<Cardinality>ZeroOne</Cardinality>
+			<OnDelete>Restricted</OnDelete>
+			<RelatedTable>CustTable</RelatedTable>
+			<RelatedTableCardinality>ExactlyOne</RelatedTableCardinality>
+			<RelationshipType>Association</RelationshipType>
+			<Constraints>
+				<AxTableRelationConstraint xmlns=""
+					i:type="AxTableRelationConstraintField">
+					<Name>HMPayer</Name>
+					<Field>HMPayer</Field>
+					<RelatedField>AccountNum</RelatedField>
+				</AxTableRelationConstraint>
+			</Constraints>
+		</AxTableRelation>
+	</Relations>
+	<StateMachines />
+</AxTable>

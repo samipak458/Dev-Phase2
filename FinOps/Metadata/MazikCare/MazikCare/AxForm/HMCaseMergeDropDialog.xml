@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMCaseMergeDropDialog</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+/* TODO: (Code Upgrade) Removed unused footnote group. */
+[Form]
+public class HMCaseMergeDropDialog extends FormRun
+{
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>closeOk</Name>
+				<Source><![CDATA[
+    public void closeOk()
+    {
+        HMMergeCase                 mergeCase, mergeCaseParent, mergeCaseDelete;
+        HMCase                      hmCaseUpdate;
+        HMCaseTrans                 hmCaseTrans;
+        CustTrans                   custTrans;
+        LedgerJournalTrans          ledgerJournalTrans;
+        HMCaseNo                    hmParentCaseNo;
+        RefRecId                    parentRecId;
+        HMPatientChargeEntryLine    HMPatientChargeEntryLine;
+        HMCasePaymtReceivedDetails  HMCasePaymtReceivedDetails;
+        HMPatientChargeEntryTable   parentChargeEntryTable, childChargeEntryTable;
+        //super();
+    
+        //first save all changes so later we can query the record
+        HMMergeCase.write();
+    
+        //finding parentCaseNo from HMMergeCase
+        select * from mergeCaseParent
+            where mergeCaseParent.MarkAsParent == NoYes::Yes;
+    
+        if (mergeCaseParent)
+        {
+            hmParentCaseNo = mergeCaseParent.ParentCaseNo;
+            parentRecId = HMCase::findByCase(hmParentCaseNo).RecId;
+    
+    
+            select RecId from parentChargeEntryTable
+            where parentChargeEntryTable.HMCase == parentRecId;
+            try
+            {
+                ttsBegin;
+                while select * from mergeCase
+                    where mergeCase.MarkAsParent == NoYes::No
+                                                                                                                                                                                    {
+    
+                //Updating ParentCaseNo number in child HMCases
+                select forUpdate hmCaseUpdate
+                    where hmCaseUpdate.CaseNo == mergeCase.ChildCaseNo;
+    
+                select RecId from childChargeEntryTable
+                where childChargeEntryTable.HMCase == hmCaseUpdate.RecId;
+    
+                hmCaseUpdate.HMParentCase = hmParentCaseNo;
+                hmCaseUpdate.doUpdate();
+    
+                //Changing HMCaseTrans with ParentCaseNo
+                while select forUpdate hmCaseTrans
+                    where hmCaseTrans.HMCase == hmCaseUpdate.RecId
+                {
+                    hmCaseTrans.HMCase = parentRecId;
+                    hmCaseTrans.doUpdate();
+                }
+    
+                //Changing CustTrans with ParentCaseNo
+                while select forUpdate custTrans
+                    where custTrans.HMCase == hmCaseUpdate.RecId
+                {
+                    custTrans.HMCase = parentRecId;
+                    custTrans.doUpdate();
+                }
+    
+                //Changing LedgerJournalTrans with ParentCaseNo
+                while select forUpdate ledgerJournalTrans
+                    where ledgerJournalTrans.HMCase == hmCaseUpdate.RecId
+                {
+                    ledgerJournalTrans.HMCase = parentRecId;
+                    ledgerJournalTrans.doUpdate();
+                }
+    
+    
+                while select forUpdate HMPatientChargeEntryLine
+                    where HMPatientChargeEntryLine.HMPatientChargeEntryTable == childChargeEntryTable.RecId
+                {
+                    HMPatientChargeEntryLine.HMPatientChargeEntryTable = parentChargeEntryTable.RecId;
+                    HMPatientChargeEntryLine.update();
+                }
+    
+                while select forUpdate HMCasePaymtReceivedDetails
+                    where HMCasePaymtReceivedDetails.HMCase == hmCaseUpdate.RecId
+                {
+                    HMCasePaymtReceivedDetails.HMCase = parentRecId;
+                    HMCasePaymtReceivedDetails.update();
+                }
+            }
+    
+    
+                //Deleting records from HMMergeCase table
+                delete_from mergeCaseDelete;
+                ttsCommit;
+                info(strFmt("Cases merged sucessfully and Primary-CaseNo: %1", hmParentCaseNo));
+    
+                element.close();
+            }
+            catch
+            {
+                throw error("Merging of case failed");
+            }
+        }
+        else
+        {
+            warning("Please, mark one case as primary");
+        }
+    
+    
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+         container   con;
+        int         i;
+        str         multipleRecords;
+        HMCase      hmCase;
+        RefRecId    hmCaseRecId;
+        HMMergeCase mergeCase, mergeCaseUpdate, mergeCaseDelete;
+        str         menuItemName;
+    
+        super();
+    
+        menuItemName = element.args().menuItemName();
+    
+        if (element.args().menuItemName() == menuitemDisplayStr(HMCaseMergeDialog))
+        {
+            // getting string value from caller
+            multipleRecords = element.args().parm();
+    
+            // string to container
+            con = str2con(multipleRecords,",");
+    
+            //deleting previous record first
+            delete_from mergeCaseDelete;
+    
+            //for sorting
+            for (i = 1;i <= conLen(con); i++)
+            {
+                hmCaseRecId = conPeek(con, i);
+    
+                select * from hmCase
+                    where hmCase.RecId == hmCaseRecId;
+    
+                if (hmCase)
+                {
+                    select * from mergeCaseUpdate
+                        where mergeCaseUpdate.ChildCaseNo == hmCase.CaseNo;
+    
+                    if (!mergeCaseUpdate)
+                    {
+                        mergeCase.clear();
+                        mergeCase.ChildCaseNo = hmCase.CaseNo;
+                        mergeCase.insert();
+                    }
+                    else
+                    {
+                        info(strFmt("Case No: %1, already merged before.", hmCase.CaseNo));
+                    }
+                }
+    
+            }
+        }
+        else
+        {
+            warning("Form cannot be open with invalid record set");
+            element.close();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMMergeCase</Name>
+				<Methods>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int             ret;
+            HMMergeCase     mergeCase;
+        
+            ret = super();
+        
+            select * from mergeCase
+                where mergeCase.MarkAsParent == NoYes::Yes;
+        
+            if (mergeCase && HMMergeCase.MarkAsParent == NoYes::Yes)
+                HMMergeCase_Ds.object(fieldNum(HMMergeCase, MarkAsParent)).allowEdit(true);
+            else if (mergeCase)
+                HMMergeCase_Ds.object(fieldNum(HMMergeCase, MarkAsParent)).allowEdit(false);
+            else
+                HMMergeCase_Ds.object(fieldNum(HMMergeCase, MarkAsParent)).allowEdit(true);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields>
+					<Field>
+						<DataField>MarkAsParent</DataField>
+						<Methods>
+							<Method>
+								<Name>modified</Name>
+								<Source><![CDATA[
+            public void modified()
+            {
+                 HMMergeCase     mergeCase;
+            
+                if (HMMergeCase.MarkAsParent == NoYes::Yes)
+                {
+                    HMMergeCase.ParentCaseNo = HMMergeCase.ChildCaseNo;
+                }
+                else if (HMMergeCase.MarkAsParent == NoYes::No)
+                {
+                    HMMergeCase.ParentCaseNo = "";
+                }
+            }
+
+]]></Source>
+							</Method>
+						</Methods>
+					</Field>
+				</Fields>
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="" />
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMMergeCase</Name>
+			<Table>HMMergeCase</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CaseMergeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ChildCaseNo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkAsParent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ParentCaseNo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<BackgroundColor xmlns="">WindowBackground</BackgroundColor>
+		<Caption xmlns="">Case merge</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Frame xmlns="">Dialog</Frame>
+		<HeightMode xmlns="">Column</HeightMode>
+		<HideToolbar xmlns="">Yes</HideToolbar>
+		<Pattern xmlns="">DropDialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Style xmlns="">DropDialog</Style>
+		<WidthMode xmlns="">Column</WidthMode>
+		<WindowType xmlns="">Popup</WindowType>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>DialogContent</Name>
+				<ElementPosition>805306366</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Pattern>ToolbarList</Pattern>
+				<PatternVersion>1.2</PatternVersion>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGridControl">
+						<Name>Grid</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<Type>Grid</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormCheckBoxControl">
+								<Name>HMMergeCase_MarkAsParent</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>CheckBox</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<BackgroundColor>WindowBackground</BackgroundColor>
+								<DataField>MarkAsParent</DataField>
+								<DataSource>HMMergeCase</DataSource>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>HMMergeCase_ChildCaseNo</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>String</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<DataField>ChildCaseNo</DataField>
+								<DataSource>HMMergeCase</DataSource>
+							</AxFormControl>
+						</Controls>
+						<DataSource>HMMergeCase</DataSource>
+					</AxFormControl>
+				</Controls>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup</Name>
+				<ElementPosition>1073741822</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>OKButton</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>OK</Command>
+						<DefaultButton>Yes</DefaultButton>
+						<Text>Merge</Text>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

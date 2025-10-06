@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCustWriteOff</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCustWriteOff extends CustWriteOff
+{
+    JournalId journalId;
+    //Zain
+    CustTransOpen   custTransOpenGlobal;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>createWriteOffJournalHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Creates the <c>LedgerJournalTable</c> record for the write-off journal.
+    /// </summary>
+    /// <param name="_companyId">
+    ///    The company where the write-off journal will be created.
+    /// </param>
+    /// <param name="_custAccountNum">
+    ///    The customer account number for the write-off journal.
+    /// </param>
+    /// <returns>
+    ///    The <c>LedgerJournalTable</c> record that was created.
+    /// </returns>
+    protected LedgerJournalTable createWriteOffJournalHeader(CompanyId _companyId, CustVendAC _custAccountNum)
+    {
+        LedgerJournalNameId     journalNameId;
+        LedgerJournalTable      ledgerJournalTable;
+        //Zain  -- Deprecated in AX7
+        //AxLedgerJournalTable    axLedgerJournalTable;
+        ;
+    
+        changecompany(_companyId)
+        {
+            journalNameId = CustParameters::find().CollectionsWriteOffLedgerJournalName;
+    
+            ledgerJournalTable.clear();
+            ledgerJournalTable.initValue();
+
+            //Zain
+    
+            //axLedgerJournalTable = AxLedgerJournalTable::construct();
+            //axLedgerJournalTable.ledgerJournalTable(ledgerJournalTable);
+
+            //axLedgerJournalTable.parmJournalName(journalNameId);
+            //axLedgerJournalTable.parmName(
+            //    strFmt("@SYS133612", _custAccountNum, CustTable::find(tmpTrans.AccountNum).name()));
+
+            //ledgerJournalTable.defaultRow(axLedgerJournalTable);
+            //ledgerJournalTable.write();
+
+            ledgerJournalTable.JournalName = journalNameId;
+            ledgerJournalTable.Name = strFmt("@SYS133612", _custAccountNum, CustTable::find(tmpTrans.AccountNum).name());
+            ledgerJournalTable.insert();
+        }
+        journalId = ledgerJournalTable.JournalNum;
+    
+        return ledgerJournalTable;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustTransOpen</Name>
+				<Source><![CDATA[
+    public CustTransOpen getCustTransOpen(HMClaimTable  _hmClaimTable)
+    {
+        CustTransOpen  custTransOpen;
+        HMPatientChargeEntryTable hmPatientChargeEntryTable;
+        CustInvoiceJour custInvoiceJour;
+        CustTrans custtrans;
+    
+        select * from hmPatientChargeEntryTable
+            where hmPatientChargeEntryTable.RecId == _hmClaimTable.HMPatientChargeEntryTable
+            join custInvoiceJour
+                where custInvoiceJour.SalesId == hmPatientChargeEntryTable.SalesTable
+            join custTrans where custtrans.Invoice == custInvoiceJour.InvoiceId
+            &&  custtrans.AccountNum == custInvoiceJour.InvoiceAccount
+            &&  custtrans.transDate == custInvoiceJour.InvoiceDate
+            &&  custtrans.Voucher == custInvoiceJour.LedgerVoucher
+            join custTransOpen where custTransOpen.RefRecId == custtrans.RecId;
+    
+        return custTransOpen;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initFromCustTransOpen</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Initializes the temporary table with records from the <c>CustTransOpen</c> form data source.
+    /// </summary>
+    /// <param name="fds">
+    ///    A <c>CustTransOpen</c> form data source.
+    /// </param>
+    /// <param name="_custTransOpen">
+    ///    The <c>CustTransOpen</c> record.
+    /// </param>
+    /// <remarks>
+    ///    This method will find all the open transactions from the form data source. When the open
+    ///    transaction is not already marked for settlement it will be inserted into the temporary table.
+    /// </remarks>
+    protected void initFromCustTransOpen(FormDataSource fds, CustTransOpen _custTransOpen = custTransOpenGlobal)
+    {
+        CustTrans custTrans;
+        container custTransOpenCompany;
+    
+        // set prefix for any warning messages
+        setPrefix("@SYS134944");
+        setPrefix("@SYS134946");
+    
+    
+        custTransOpenCompany = [_custTransOpen.company()];
+    
+        select firstonly crossCompany:custTransOpenCompany custTrans
+            where custTrans.RecId == _custTransOpen.RefRecId;
+    
+        Debug::assert(_custTransOpen.RecId != 0);
+    
+        // check if the transaction is marked, will keep processing when marked transaction is found,
+        // just skip the marked transaction
+        if (this.isTransOpenMarked(_custTransOpen, custTrans.Voucher, true) == false)
+        {
+            // transaction not marked, add to temp table
+            this.populateTempTable(custTrans, _custTransOpen);
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+        //Zain
+        str reason;
+        str reasonComment;
+        super();
+        writeOffDate = DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone());
+        reason = CustParameters::find().CollectionsWriteOffReasonTable;
+        reasonComment = ReasonTable::find(reason).Description;
+        dataSourceCompany = curext();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>postJournal</Name>
+				<Source><![CDATA[
+    public void postJournal()
+    {
+        LedgerJournalCheckPost jourPost;
+        LedgerJournalTable jourTable;
+    
+        try
+        {
+            if(JournalId)
+            {
+                jourTable = LedgerJournalTable::find(journalId);
+                jourPost = LedgerJournalCheckPost::newLedgerJournalTable(
+                jourTable,
+                NoYes::Yes);
+    
+                jourPost.run();
+            }
+            else
+            {
+                error("Journal not created");
+            }
+        }
+        catch
+        {
+            error("Error while posting journal");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Constructs an instance of the <c>CustWriteOff</c> class.
+    /// </summary>
+    /// <returns>
+    ///    An instance of the <c>CustWriteOff</c> class.
+    /// </returns>
+    public static HMCustWriteOff construct()
+    {
+        HMCustWriteOff custWriteOff;
+    
+        custWriteOff = new HMCustWriteOff();
+    
+        return custWriteOff;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        HMCustWriteOff  hmCustWriteOff;
+        Args localArgs = new Args();
+    
+        if (!_args || !_args.record())
+        {
+            throw error(Error::wrongUseOfFunction(funcName()));
+        }
+    
+        hmCustWriteOff = HMCustWriteOff::construct();
+    
+        if (_args.dataset() == tableNum(HMClaimTable))
+        {
+            _args.record(hmCustWriteOff.getCustTransOpen(_args.record()));
+        }
+    
+        setPrefix("@SYS135698");
+    
+        if (hmCustWriteOff.preProcessing(_args) == false)
+        {
+            return;
+        }
+    
+        if (hmCustWriteOff.prompt())
+        {
+            hmCustWriteOff.run();
+            if (_args.caller() && formHasMethod(_args.caller(), identifierStr(setTouched)))
+            {
+                _args.caller().setTouched();
+            }
+            hmCustWriteOff.postJournal();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

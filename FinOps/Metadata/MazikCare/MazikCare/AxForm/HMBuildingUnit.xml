@@ -1,0 +1,1681 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMBuildingUnit</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMBuildingUnit extends FormRun
+{
+    #define.LOCATION('Location')
+    #define.HOSPITAL('Hospital')
+
+    int64                   ParentID;
+    int64                   categoryTypeRecId;
+    ImageRes                imageRes;
+    recid                   lastSelected;
+    TreeItemIdx             lastSelectedIdx;
+    boolean                 isNewRecord;
+    boolean                 createFromAsset;
+
+    TreeItemIdx             searchEditIdx;
+    RecId                   searchEditRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        if(element.args().menuItemName() == menuitemDisplayStr(HMBuildingUnitSearchEdit))
+        {
+            searchEditRecId = element.args().record().RecId;
+        }
+    
+        super();
+        //Initialize splitter
+        this.ParentCall();
+        isNewRecord = false;
+        createFromAsset = false;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertChildData</Name>
+				<Source><![CDATA[
+    private void insertChildData(RecId  _buildingUnitId, HMFixedAssetTmp _hmFixedAssetTmp)
+    {
+        HMBuildingUnit      hmBuildingUnitChild;
+        AssetTable          AssetTable;
+    
+        while select RecId from HMBuildingUnitChild
+            where HMBuildingUnitChild.HMBuildingUnit == _buildingUnitId
+        {
+            if (HMBuildingUnit::hasChildren(HMBuildingUnitChild.RecId))
+            {
+               this.insertChildData(HMBuildingUnitChild.RecId, _hmFixedAssetTmp);
+    
+                while select RecId, AssetId, Name, HMBuildingUnit from AssetTable
+                    where AssetTable.HMBuildingUnit == HMBuildingUnitChild.RecId
+                {
+                    _hmFixedAssetTmp.AssetId    = AssetTable.AssetId;
+                    _hmFixedAssetTmp.Name       = AssetTable.Name;
+                    _hmFixedAssetTmp.AssetRecId = AssetTable.RecId;
+                    _hmFixedAssetTmp.Location   = HMBuildingUnit::find(HMBuildingUnitChild.RecId).Description;
+                    _hmFixedAssetTmp.insert();
+                }
+            }
+            else
+            {
+                while select RecId, AssetId, Name, HMBuildingUnit from AssetTable
+                    where AssetTable.HMBuildingUnit == HMBuildingUnitChild.RecId
+                {
+                    _hmFixedAssetTmp.AssetId    = AssetTable.AssetId;
+                    _hmFixedAssetTmp.Name       = AssetTable.Name;
+                    _hmFixedAssetTmp.AssetRecId = AssetTable.RecId;
+                    _hmFixedAssetTmp.Location   = HMBuildingUnit::find(HMBuildingUnitChild.RecId).Description;
+                    _hmFixedAssetTmp.insert();
+    
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertTmpData</Name>
+				<Source><![CDATA[
+    public void insertTmpData(RecId  _buildingUnitId)
+    {
+        AssetTable          AssetTable;
+        HMFixedAssetTmp     HMFixedAssetTmpLocal;
+    
+        if (HMBuildingUnit::hasChildren(_buildingUnitId))
+        {
+            this.insertChildData(_buildingUnitId, HMFixedAssetTmpLocal);
+            while select RecId, AssetId, Name, HMBuildingUnit from AssetTable
+                where AssetTable.HMBuildingUnit == _buildingUnitId
+            {
+                HMFixedAssetTmpLocal.AssetId    = AssetTable.AssetId;
+                HMFixedAssetTmpLocal.Name       = AssetTable.Name;
+                HMFixedAssetTmpLocal.AssetRecId = AssetTable.RecId;
+                HMFixedAssetTmpLocal.Location   = HMBuildingUnit::find(_buildingUnitId).Description;
+                HMFixedAssetTmpLocal.insert();
+            }
+        }
+        else
+        {
+            while select RecId, AssetId, Name, HMBuildingUnit from AssetTable
+                where AssetTable.HMBuildingUnit == _buildingUnitId
+            {
+                HMFixedAssetTmpLocal.AssetId    = AssetTable.AssetId;
+                HMFixedAssetTmpLocal.Name       = AssetTable.Name;
+                HMFixedAssetTmpLocal.AssetRecId = AssetTable.RecId;
+                HMFixedAssetTmpLocal.Location   = HMBuildingUnit::find(_buildingUnitId).Description;
+                HMFixedAssetTmpLocal.insert();
+            }
+        }
+    
+        HMFixedAssetTmp.setTmpData(HMFixedAssetTmpLocal);
+        HMFixedAssetTmp_ds.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parentCall</Name>
+				<Source><![CDATA[
+    public void parentCall()
+    {
+        TreeItemIdx                     parentItemIdx;
+    
+        Tree.deleteAll();
+        parentItemIdx = SysFormTreeControl::addTreeItem(Tree, CompanyInfo::findRecId(CompanyInfo::current()).Name(), FormTreeAdd::Root, 0, imageRes, 1);
+        this.treeFill(parentItemIdx, 0);
+        Tree.expand(parentItemIdx);
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refresh</Name>
+				<Source><![CDATA[
+    public void refresh(RecId  _buildingunitRecId)
+    {
+        createFromAsset = true;
+        lastSelected = _buildingunitRecId;
+        this.parentCall();
+        tree.select(lastSelectedIdx);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshFixedAssetsGrid</Name>
+				<Source><![CDATA[
+    public void refreshFixedAssetsGrid()
+    {
+        element.insertTmpData(tree.getItem(tree.getSelection()).data());
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        super();
+    
+        if(element.args().menuItemName() == menuitemDisplayStr(HMBuildingUnitSearchEdit))
+        {
+            Tree.select(searchEditIdx);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setParentID</Name>
+				<Source><![CDATA[
+    private void setParentID(int64 _parentID)
+    {
+        ParentID                        = _parentID;
+        HMBuildingUnit.HMBuildingUnit   = ParentID;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>treeFill</Name>
+				<Source><![CDATA[
+    private void treeFill(TreeItemIdx _RecId,int64 _RecIdx)
+    {
+        TreeItemIdx                     parentItemIdx;
+        boolean                         hasChild;
+        HMBuildingUnit                  hmBuildingUnitlocalForChildCheck;
+        HMBuildingUnit                  hmBuildingUnitlocalForTree;
+        hasChild = false;
+    
+        while select * from hmBuildingUnitlocalForTree
+            where hmBuildingUnitlocalForTree.HMBuildingUnit == _RecIdx
+        {
+            while select * from hmBuildingUnitlocalForChildCheck
+                where hmBuildingUnitlocalForChildCheck.HMBuildingUnit == hmBuildingUnitlocalForTree.RecId
+            {
+                hasChild = true;
+            }
+    
+            if(hasChild)
+            {
+                parentItemIdx = SysFormTreeControl::addTreeItem(Tree,hmBuildingUnitlocalForTree.Description,
+                                                                    _RecId,hmBuildingUnitlocalForTree.RecId,imageRes,1);
+                if(lastSelected == hmBuildingUnitlocalForTree.RecId)
+                    {
+                        lastSelectedIdx = parentItemIdx;
+                    }
+                if(searchEditRecId == hmBuildingUnitlocalForTree.RecId)
+                {
+                    searchEditIdx = parentItemIdx;
+                }
+                this.treeFill(parentItemIdx,hmBuildingUnitlocalForTree.RecId);
+                hasChild = false;
+            }
+            else
+            {
+                parentItemIdx = SysFormTreeControl::addTreeItem(Tree,hmBuildingUnitlocalForTree.Description,
+                                                                    _RecId,hmBuildingUnitlocalForTree.RecId,imageRes,0);
+                if(lastSelected == hmBuildingUnitlocalForTree.RecId)
+                    {
+                        lastSelectedIdx = parentItemIdx;
+                    }
+                if(searchEditRecId == hmBuildingUnitlocalForTree.RecId)
+                {
+                    searchEditIdx = parentItemIdx;
+                }
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDesign</Name>
+				<Source><![CDATA[
+    public void updateDesign()
+    {
+    
+        if (HMBuildingUnitType::find(HMBuildingUnitCategory::find(categoryTypeRecId).HMBuildingUnitType).Indicators == HMBuildingUnitTypeIndicator::Others
+                || HMBuildingUnitType::find(HMBuildingUnitCategory::find(categoryTypeRecId).HMBuildingUnitType).Indicators == HMBuildingUnitTypeIndicator::Building)
+        {
+            GroupValidity.enabled(false);
+            GroupPlanning.enabled(false);
+            GroupBlocking.enabled(false);
+        }
+        else
+        {
+            GroupValidity.enabled(true);
+            GroupPlanning.enabled(true);
+            GroupBlocking.enabled(true);
+        }
+    
+        if (HMBuildingUnitType::find(HMBuildingUnitCategory::find(categoryTypeRecId).HMBuildingUnitType).Indicators == HMBuildingUnitTypeIndicator::BedLocation)
+        {
+            BedType.enabled(true);
+            HMBedClass.enabled(true);
+            HMBuildingUnit_Census.enabled(true);
+        }
+        else
+        {
+            HMBedClass.enabled(false);
+            BedType.enabled(false);
+            HMBuildingUnit_Census.enabled(false);
+        }
+    
+        if (HMBuildingUnit.IsBlocked == NoYes::Yes)
+        {
+            HMBuildingUnit_HMBlockingReasonCode.enabled(true);
+        }
+        else
+        {
+             HMBuildingUnit_HMBlockingReasonCode.enabled(false);
+        }
+    
+        if (HMBuildingUnit.IsGender == NoYes::Yes)
+        {
+            HMBuildingUnit_Gender.enabled(true);
+        }
+        else
+        {
+                HMBuildingUnit.Gender = HcmPersonGender::None;
+             HMBuildingUnit_Gender.enabled(false);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>HMBuildingUnit</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+            if(element.args().menuItemName() == menuitemDisplayStr(HMBuildingUnitSearchEdit))
+            {
+                this.queryBuildDataSource().clearDynalinks();
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                if (HMBuildingUnitType::find(HMBuildingUnitCategory::find(HMBuildingUnit.HMBuildingUnitCategory).HMBuildingUnitType).Indicators == HMBuildingUnitTypeIndicator::BedLocation)
+                {
+                    BedType.enabled(true);
+                    HMBedClass.enabled(true);
+                    HMBuildingUnit_Census.enabled(true);
+                }
+                else
+                {
+                    HMBedClass.enabled(false);
+                    BedType.enabled(false);
+                    HMBuildingUnit_Census.enabled(false);
+                }
+        
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>create</Name>
+						<Source><![CDATA[
+        public void create(boolean _append = false)
+        {
+            super(_append);
+            HMBuildingUnit.ToDate = 31\12\2154;
+            HMFixedAssetTmp.clear();
+            isNewRecord = true;
+        
+            HMBuildingUnitDesc.enabled(true);
+            HMBuildingUnitDesc.text("");
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>validateWrite</Name>
+						<Source><![CDATA[
+        public boolean validateWrite()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if(HMBuildingUnit.ToDate < HMBuildingUnit.FromDate)
+                {
+                    ret = false;
+                    Box::info('From date cannot be lesser than To Date');
+                }
+                if(HMBuildingUnit.HMBuildingUnit == 0)
+                {
+        
+                    if (HMBuildingUnitType::find(HMBuildingUnitCategory::find(HMBuildingUnit.HMBuildingUnitCategory).HMBuildingUnitType).Indicators != HMBuildingUnitTypeIndicator::Others
+                            && HMBuildingUnitType::find(HMBuildingUnitCategory::find(HMBuildingUnit.HMBuildingUnitCategory).HMBuildingUnitType).Indicators != HMBuildingUnitTypeIndicator::Building)
+                    {
+                        warning('Building unit of category ' + HMBuildingUnitCategory::find(HMBuildingUnit.HMBuildingUnitCategory).Description + ' must be filled in');
+                    }
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>delete</Name>
+						<Source><![CDATA[
+        public void delete()
+        {
+            AssetTable          AssetTableLocal;
+            HMFixedAssetTmp     HMFixedAssetTmpLocal    = null;
+            RecId               buildingUnitRecId       = HMBuildingUnit.RecId;
+            boolean             hasAsset                = false;
+        
+            super();
+            element.ParentCall();
+        
+            if (buildingUnitRecId) // if not a new record
+            {
+                //  deletes the association of fixed assset with BU
+                ttsBegin;
+                while select forUpdate AssetTableLocal
+                    where AssetTableLocal.HMBuildingUnit == buildingUnitRecId
+                {
+                    AssetTableLocal.HMBuildingUnit = 0;
+                    AssetTableLocal.update();
+                    hasAsset = true;
+                }
+                ttsCommit;
+                HMFixedAssetTmp.setTmpData(HMFixedAssetTmpLocal);
+                HMFixedAssetTmp_ds.executeQuery();
+                if (hasAsset)
+                {
+                    info("@MAZ7671");
+                }
+            }
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>write</Name>
+						<Source><![CDATA[
+        public void write()
+        {
+            if(HMBuildingUnitDesc.valueStr() == "")
+            {
+                HMBuildingUnit.HMBuildingUnit = 0;
+            }
+            else
+            {
+                HMBuildingUnit.HMBuildingUnit = ParentID;
+            }
+        
+            if (HMBuildingUnitType::find(HMBuildingUnitCategory::find(HMBuildingUnit.HMBuildingUnitCategory).HMBuildingUnitType).Indicators == HMBuildingUnitTypeIndicator::RoomWithBedSupport)
+            {
+                if(HMBuildingUnit.orig().IsGender != HMBuildingUnit.IsGender)
+                {
+                    if(!HMBuildingUnit.orig().IsGender)
+                    {
+                        HMBuildingUnit::updateGenderOccupancy(HMBuildingUnit.RecId,HMBuildingUnit.IsGender, HMBuildingUnit.Gender,false);
+                    }
+                    else
+                    {
+                        if(Box::yesNo("@MAZ8221",DialogButton::Yes,"@SYS4784") == DialogButton::Yes)
+                        {
+                            HMBuildingUnit::updateGenderOccupancy(HMBuildingUnit.RecId,HMBuildingUnit.IsGender, HMBuildingUnit.Gender,true);
+                        }
+                    }
+                }
+                else if(HMBuildingUnit.orig().IsGender == HMBuildingUnit.IsGender && HMBuildingUnit.IsGender)
+                {
+                    if(HMBuildingUnit.orig().Gender != HMBuildingUnit.Gender)
+                    {
+                        if(Box::yesNo("@MAZ8221",DialogButton::Yes,"@SYS4784") == DialogButton::Yes)
+                        {
+                            HMBuildingUnit::updateGenderOccupancy(HMBuildingUnit.RecId,HMBuildingUnit.IsGender, HMBuildingUnit.Gender,true);
+                        }
+                    }
+                }
+        
+                if(HMBuildingUnit.orig().HMTreatmentClassification != HMBuildingUnit.HMTreatmentClassification)
+                {
+                    if(!HMBuildingUnit.orig().HMTreatmentClassification)
+                    {
+                        HMBuildingUnit::updateTreatmentClassification(HMBuildingUnit.RecId,HMBuildingUnit.HMTreatmentClassification,false);
+                    }
+                    else
+                    {
+                        if(Box::yesNo("@MAZ8222",DialogButton::Yes,"@SYS4784") == DialogButton::Yes)
+                        {
+                            HMBuildingUnit::updateTreatmentClassification(HMBuildingUnit.RecId,HMBuildingUnit.HMTreatmentClassification,true);
+                        }
+                    }
+                }
+            }
+        
+            super();
+            //ParentID=0;
+             lastSelected = HMBuildingUnit.RecId;
+        
+            element.ParentCall();
+            tree.select(lastSelectedIdx);
+        
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>NewBU</Name>
+				<Type>CommandButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            super();
+            HMBuildingUnitDesc.enabled(true);
+            HMBuildingUnitDesc.text("");
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Tree</Name>
+				<Type>Tree</Type>
+				<Methods>
+					<Method>
+						<Name>selectionChanged</Name>
+						<Source><![CDATA[
+        public void selectionChanged(FormTreeItem _OldItem, FormTreeItem _NewItem, FormTreeSelect _how)
+        {
+            HMBuildingUnit      hmBuildingUnitLocal;
+            str                 unitdec;
+            FormTreeItem selectedTreeItem = tree.getItem(tree.getSelection());
+            super(_OldItem, _NewItem, _how);
+        
+            if(selectedTreeItem)
+            {
+                select * from hmBuildingUnitLocal
+                    where hmBuildingUnitLocal.RecId == selectedTreeItem.data();
+            }
+            //breakpoint;
+            HMFixedAssetTmp.clear();
+        
+            if (createFromAsset) // added by yasir - to display BU created from asset
+            {
+                HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).clearRanges();
+                HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).addRange(fieldnum(HMBuildingUnit,recId)).value(int642str(hmBuildingUnitLocal.RecId));
+                HMBuildingUnit_ds.executeQuery();
+                ParentID = HMBuildingUnit.HMBuildingUnit;
+                HMBuildingUnitDesc.text(HMBuildingUnit::find(ParentID).Description);
+                element.insertTmpData(hmBuildingUnitLocal.RecId);
+                createFromAsset = false;
+            }
+            else
+            {
+                if(tree.getRoot() == tree.getSelection())
+                {
+                    HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).clearRanges();
+                    HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).addRange(fieldnum(HMBuildingUnit,recId)).value('0');
+                    HMBuildingUnit_ds.executeQuery();
+                    HMBuildingUnitDesc.enabled(false);
+                    HMBuildingUnitDesc.text("");
+                    lastSelectedIdx = selectedTreeItem.idx();
+                }
+                else
+                {
+                    if (tree.getRoot() != lastSelectedIdx)
+                    {
+                       // if(selectedTreeItem.idx() != lastSelectedIdx) // 14Feb2013 remove this check by yasir - record selection problem resolved.
+                        {
+                            if(HMBuildingUnit_ds.validateWrite())
+                            {
+                                HMBuildingUnitDesc.enabled(true);
+        
+                                HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).clearRanges();
+                                HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).addRange(fieldnum(HMBuildingUnit,recId)).value(int642str(hmBuildingUnitLocal.RecId));
+                                //HMBuildingUnit_ds.findRecord(hmBuildingUnitLocal);
+                                HMBuildingUnit_ds.executeQuery();
+        
+                                categoryTypeRecId = HMBuildingUnit.HMBuildingUnitCategory;
+                                unitdec = HMBuildingUnit::find(HMBuildingUnit.HMBuildingUnit).Description;
+                                ParentID = HMBuildingUnit.HMBuildingUnit;
+                                HMBuildingUnitDesc.text(HMBuildingUnit::find(ParentID).Description);
+                                HMBuildingUnit_ds.reread();
+                                HMBuildingUnit_ds.refresh();
+                                HMBuildingUnit_ds.executeQuery();
+                                HMBuildingUnit_Code.update();
+                                HMBuildingUnit_Description.update();
+                                HMBuildingUnit_ShortName.update();
+                                HMBuildingCategoryType.update();
+        
+                                HMBuildingUnitDesc.update();
+                                HMBuildingUnit_FromDate.update();
+                                HMBuildingUnit_ToDate.update();
+                                HMBuildingUnit_IsGender.update();
+                                HMBuildingUnit_Gender.update();
+                                HMBuildingUnit_MaximumCapacity.update();
+                                HMBuildingUnit_IsBlocked.update();
+                                HMBuildingUnit_HMBlockingReasonCode.update();
+        
+                                element.updateDesign();
+                                element.insertTmpData(hmBuildingUnitLocal.RecId);
+                            }
+                            else
+                            {
+                                tree.select(lastSelectedIdx);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).clearRanges();
+                        HMBuildingUnit_q.dataSourceTable(tableNum(HMBuildingUnit)).addRange(fieldnum(HMBuildingUnit,recId)).value(int642str(hmBuildingUnitLocal.RecId));
+                        //HMBuildingUnit_ds.findRecord(hmBuildingUnitLocal);
+                        HMBuildingUnit_ds.executeQuery();
+        
+                        categoryTypeRecId = HMBuildingUnit.HMBuildingUnitCategory;
+                        unitdec = HMBuildingUnit::find(HMBuildingUnit.HMBuildingUnit).Description;
+                        ParentID = HMBuildingUnit.HMBuildingUnit;
+                        HMBuildingUnitDesc.text(HMBuildingUnit::find(ParentID).Description);
+                        HMBuildingUnit_ds.executeQuery();
+                        lastSelectedIdx = selectedTreeItem.idx();
+                        if (!isNewRecord)
+                        {
+                            element.insertTmpData(hmBuildingUnitLocal.RecId);
+                        }
+                    }
+                }
+            }
+            //ParentID = HMBuildingUnit.HMBuildingUnit;
+            //HMBuildingUnitDesc.text(HMBuildingUnit::find(ParentID).Description);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMBuildingCategoryType</Name>
+				<Type>ReferenceGroup</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                categoryTypeRecId = HMBuildingUnit.HMBuildingUnitCategory;
+                element.updateDesign();
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMBuildingUnitDesc</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args args = new Args();
+            FormRun itemLookUp;
+        
+            args.name(formstr(HMBuildingUnitLookup));
+            args.caller(element);
+        
+            args.parm(HMBuildingCategoryType.valueStr());
+            categoryTypeRecId = str2int64(HMBuildingCategoryType.valueStr());
+            //args.record(HMBuildingUnit);
+            itemLookUp = ClassFactory.formRunClass(args);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMBuildingUnit_IsBlocked</Name>
+				<Type>CheckBox</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                element.updateDesign();
+                HMBuildingUnit.HMBlockingReasonCode = 0;
+            }
+        
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMBuildingUnit_IsGender</Name>
+				<Type>CheckBox</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            if (ret)
+            {
+                element.updateDesign();
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AddAsset</Name>
+				<Type>DropDialogButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            RecId id = tree.getItem(tree.getSelection()).data();
+            this.parameters(int642str(id));
+            super();
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>RemoveAsset</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            AssetTable  AssetTableLocal;
+            super();
+        
+            ttsBegin;
+            select forUpdate AssetTableLocal
+                where AssetTableLocal.RecId == HMFixedAssetTmp.AssetRecId;
+        
+            AssetTableLocal.HMBuildingUnit = 0;
+            AssetTableLocal.update();
+            ttsCommit;
+        
+            element.insertTmpData(tree.getItem(tree.getSelection()).data());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>HMBuildingUnit</Name>
+			<Table>HMBuildingUnit</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>Census</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Code</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Description</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DimensionDefault</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FromDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Gender</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBedClass</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBedType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBlockingReasonCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBuildingUnit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMBuildingUnitCategory</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>HMTreatmentClassification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsBlocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsGender</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MaximumCapacity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShortName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ToDate</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>HMFixedAssetTmp</Name>
+			<Table>HMFixedAssetTmp</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AssetId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssetRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>createdDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Location</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>modifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<InsertAtEnd>No</InsertAtEnd>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Caption xmlns="">@MAZ2523</Caption>
+		<ColumnSpace xmlns="">0</ColumnSpace>
+		<ColumnSpaceMode xmlns="">Fixed</ColumnSpaceMode>
+		<Style xmlns="">SimpleList</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormActionPaneControl">
+				<Name>ActionPane</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<Type>ActionPane</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneTabControl">
+						<Name>ActionPaneTab</Name>
+						<ElementPosition>1431655764</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>ActionPaneTab</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>RecordBasics</Name>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>ButtonGroup</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuButtonControl">
+										<Name>MenuButton</Name>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<HelpText>@SYS116015</HelpText>
+										<Type>MenuButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormCommandButtonControl">
+												<Name>NewBU</Name>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>CommandButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Command>New</Command>
+												<Primary>Yes</Primary>
+												<Text>@SYS112171</Text>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormMenuFunctionButtonControl">
+												<Name>NewFixedAsset</Name>
+												<ElementPosition>1610612733</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<HelpText>@MAZ7654</HelpText>
+												<Type>MenuFunctionButton</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<DataSource>HMBuildingUnit</DataSource>
+												<MenuItemName>HMNewFixedAssets</MenuItemName>
+												<Text>@MAZ7652</Text>
+											</AxFormControl>
+										</Controls>
+										<NormalImage>New</NormalImage>
+										<Text>@SYS77405</Text>
+									</AxFormControl>
+								</Controls>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+							</AxFormControl>
+						</Controls>
+						<AlignChild>No</AlignChild>
+						<AlignChildren>No</AlignChildren>
+						<ArrangeMethod>Vertical</ArrangeMethod>
+						<Caption>@SYS114913</Caption>
+					</AxFormControl>
+				</Controls>
+				<AlignChild>No</AlignChild>
+				<AlignChildren>No</AlignChildren>
+				<ArrangeMethod>Vertical</ArrangeMethod>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Group2</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>TreeContainer</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>858993458</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<Width>300</Width>
+						<WidthMode>Manual</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormTreeControl">
+								<Name>Tree</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1431655764</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>SizeToAvailable</HeightMode>
+								<Type>Tree</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+							</AxFormControl>
+						</Controls>
+						<RightMargin>0</RightMargin>
+						<RightMarginMode>Fixed</RightMarginMode>
+						<FrameType>None</FrameType>
+						<Style>BorderlessGridContainer</Style>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>VSplitter</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1288490187</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls />
+						<FramePosition>Inside</FramePosition>
+						<Style>SplitterVerticalContainer</Style>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>DetailsContainer</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<ElementPosition>1717986916</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>SizeToAvailable</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>SizeToAvailable</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>GroupDetails</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Pattern>FieldsFieldGroups</Pattern>
+								<PatternVersion>1.1</PatternVersion>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>SizeToAvailable</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMBuildingUnit_Code</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>858993458</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Code</DataField>
+										<DataSource>HMBuildingUnit</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMBuildingUnit_Description</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>Description</DataField>
+										<DataSource>HMBuildingUnit</DataSource>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormStringControl">
+										<Name>HMBuildingUnit_ShortName</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1717986916</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HelpText>@MAZ1901</HelpText>
+										<Type>String</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<FormControlExtension
+											i:nil="true" />
+										<DataField>ShortName</DataField>
+										<DataSource>HMBuildingUnit</DataSource>
+										<Label>@SYS190530</Label>
+									</AxFormControl>
+								</Controls>
+								<ColumnsMode>Fill</ColumnsMode>
+								<FrameType>None</FrameType>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormTabControl">
+								<Name>DetailsTab</Name>
+								<AlignControl>No</AlignControl>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<Type>Tab</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormTabPageControl">
+										<Name>General</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1073741822</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>TabPage</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Gen</Name>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>HMBuildingCategoryType</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>536870910</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ1896</HelpText>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<DataSource>HMBuildingUnit</DataSource>
+														<Label>@SYS69410</Label>
+														<ReferenceField>HMBuildingUnitCategory</ReferenceField>
+														<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMBuildingUnitDesc</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>805306365</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ1897</HelpText>
+														<NeededPermission>Manual</NeededPermission>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS14719</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>HMBuildingUnit_IsBlocked</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1073741820</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>IsBlocked</DataField>
+														<DataSource>HMBuildingUnit</DataSource>
+														<Label>@SYS103795</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>HMBuildingUnit_HMBlockingReasonCode</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1342177275</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ1895</HelpText>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<DataSource>HMBuildingUnit</DataSource>
+														<Label>@MAZ1969</Label>
+														<ReferenceField>HMBlockingReasonCode</ReferenceField>
+														<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>GroupBlocking</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1610612730</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<Visible>No</Visible>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<Style>BorderlessGridContainer</Style>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>BedType</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1879048185</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<DataSource>HMBuildingUnit</DataSource>
+														<ReferenceField>HMBedType</ReferenceField>
+														<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormReferenceGroupControl">
+														<Name>HMBedClass</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>2013265915</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ReferenceGroup</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls />
+														<DataSource>HMBuildingUnit</DataSource>
+														<ReferenceField>HMBedClass</ReferenceField>
+														<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+													</AxFormControl>
+												</Controls>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group1</Name>
+												<ElementPosition>1610612733</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>GroupValidity</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormDateControl">
+																<Name>HMBuildingUnit_FromDate</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1073741822</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>Date</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>SizeToAvailable</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>FromDate</DataField>
+																<DataSource>HMBuildingUnit</DataSource>
+																<Label>@SYS24050</Label>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormDateControl">
+																<Name>HMBuildingUnit_ToDate</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1610612733</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ1576</HelpText>
+																<Type>Date</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>SizeToAvailable</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>ToDate</DataField>
+																<DataSource>HMBuildingUnit</DataSource>
+																<Label>@SYS35904</Label>
+															</AxFormControl>
+														</Controls>
+														<Caption>@SYS35164</Caption>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormGroupControl">
+														<Name>GroupPlanning</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1610612734</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Group</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>SizeToAvailable</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>HMBuildingUnit_IsGender</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>858993458</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<LeftMode>LeftEdge</LeftMode>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>IsGender</DataField>
+																<DataSource>HMBuildingUnit</DataSource>
+																<ShowLabel>No</ShowLabel>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormComboBoxControl">
+																<Name>HMBuildingUnit_Gender</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1288490187</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ1649</HelpText>
+																<Type>ComboBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>Gender</DataField>
+																<DataSource>HMBuildingUnit</DataSource>
+																<Label>@MAZ1902</Label>
+																<Items />
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormIntegerControl">
+																<Name>HMBuildingUnit_MaximumCapacity</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>1717986916</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<HelpText>@MAZ1521</HelpText>
+																<Type>Integer</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>MaximumCapacity</DataField>
+																<DataSource>HMBuildingUnit</DataSource>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormReferenceGroupControl">
+																<Name>HMBuildingUnit_HMTreatmentClassification</Name>
+																<ElementPosition>1932735281</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>ReferenceGroup</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Controls />
+																<DataSource>HMBuildingUnit</DataSource>
+																<ReferenceField>HMTreatmentClassification</ReferenceField>
+																<ReplacementFieldGroup>Description</ReplacementFieldGroup>
+															</AxFormControl>
+															<AxFormControl xmlns=""
+																i:type="AxFormCheckBoxControl">
+																<Name>HMBuildingUnit_Census</Name>
+																<AutoDeclaration>Yes</AutoDeclaration>
+																<ElementPosition>2040109463</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>CheckBox</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<DataField>Census</DataField>
+																<DataSource>HMBuildingUnit</DataSource>
+															</AxFormControl>
+														</Controls>
+														<Caption>@SYS80254</Caption>
+													</AxFormControl>
+												</Controls>
+												<Columns>2</Columns>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+										<BackgroundColor>WindowBackground</BackgroundColor>
+										<Caption>@SYS35893</Caption>
+										<Scrollbars>Auto</Scrollbars>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormTabPageControl">
+										<Name>FixedAssets</Name>
+										<ElementPosition>1610612733</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Pattern>ToolbarList</Pattern>
+										<PatternVersion>1.2</PatternVersion>
+										<Type>TabPage</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormActionPaneControl">
+												<Name>ActionPane2</Name>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>ActionPane</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormActionPaneTabControl">
+														<Name>ActionPaneTab2</Name>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ActionPaneTab</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Controls>
+															<AxFormControl xmlns=""
+																i:type="AxFormButtonGroupControl">
+																<Name>ButtonGroup1</Name>
+																<ElementPosition>1431655764</ElementPosition>
+																<FilterExpression>%1</FilterExpression>
+																<HeightMode>Auto</HeightMode>
+																<Type>ButtonGroup</Type>
+																<VerticalSpacing>-1</VerticalSpacing>
+																<WidthMode>Auto</WidthMode>
+																<FormControlExtension
+																	i:nil="true" />
+																<Controls>
+																	<AxFormControl xmlns=""
+																		i:type="AxFormDropDialogButtonControl">
+																		<Name>AddAsset</Name>
+																		<ElementPosition>1073741822</ElementPosition>
+																		<FilterExpression>%1</FilterExpression>
+																		<HeightMode>Auto</HeightMode>
+																		<HelpText>@MAZ7651</HelpText>
+																		<Type>DropDialogButton</Type>
+																		<VerticalSpacing>-1</VerticalSpacing>
+																		<WidthMode>Auto</WidthMode>
+																		<FormControlExtension
+																			i:nil="true" />
+																		<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+																		<MenuItemName>HMAddFixedAssets</MenuItemName>
+																		<NormalImage>New</NormalImage>
+																		<Text>@SYS2318</Text>
+																	</AxFormControl>
+																	<AxFormControl xmlns=""
+																		i:type="AxFormButtonControl">
+																		<Name>RemoveAsset</Name>
+																		<ElementPosition>1610612733</ElementPosition>
+																		<FilterExpression>%1</FilterExpression>
+																		<HeightMode>Auto</HeightMode>
+																		<HelpText>@MAZ7653</HelpText>
+																		<Type>Button</Type>
+																		<VerticalSpacing>-1</VerticalSpacing>
+																		<WidthMode>Auto</WidthMode>
+																		<FormControlExtension
+																			i:nil="true" />
+																		<ButtonDisplay>TextWithImageLeft</ButtonDisplay>
+																		<NeedsRecord>Yes</NeedsRecord>
+																		<NormalImage>Delete</NormalImage>
+																		<Text>@SYS135131</Text>
+																	</AxFormControl>
+																</Controls>
+																<ArrangeMethod>Vertical</ArrangeMethod>
+																<DataSource>HMFixedAssetTmp</DataSource>
+															</AxFormControl>
+														</Controls>
+														<AlignChild>No</AlignChild>
+														<AlignChildren>No</AlignChildren>
+														<ArrangeMethod>Vertical</ArrangeMethod>
+													</AxFormControl>
+												</Controls>
+												<AlignChild>No</AlignChild>
+												<AlignChildren>No</AlignChildren>
+												<ArrangeMethod>Vertical</ArrangeMethod>
+												<Style>Strip</Style>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGridControl">
+												<Name>Grid</Name>
+												<ElementPosition>1610612733</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<Type>Grid</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>AssetTable_AssetId</Name>
+														<ElementPosition>858993458</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>AssetId</DataField>
+														<DataSource>HMFixedAssetTmp</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>AssetTable_Name</Name>
+														<ElementPosition>1288490187</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>Name</DataField>
+														<DataSource>HMFixedAssetTmp</DataSource>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>HMFixedAssetTmp_Location</Name>
+														<ElementPosition>1717986916</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<DataField>Location</DataField>
+														<DataSource>HMFixedAssetTmp</DataSource>
+													</AxFormControl>
+												</Controls>
+												<DataSource>HMFixedAssetTmp</DataSource>
+												<ShowRowLabels>No</ShowRowLabels>
+											</AxFormControl>
+										</Controls>
+										<Caption>@SYS115803</Caption>
+										<Scrollbars>Auto</Scrollbars>
+									</AxFormControl>
+								</Controls>
+								<AlignChild>No</AlignChild>
+								<ArrangeMethod>Vertical</ArrangeMethod>
+								<BackgroundColor>WindowBackground</BackgroundColor>
+								<Style>FastTabs</Style>
+							</AxFormControl>
+						</Controls>
+						<RightMargin>5</RightMargin>
+						<RightMarginMode>Fixed</RightMarginMode>
+						<TopMargin>5</TopMargin>
+						<TopMarginMode>Fixed</TopMarginMode>
+						<FrameType>None</FrameType>
+					</AxFormControl>
+				</Controls>
+				<Columns>3</Columns>
+				<Columnspace>0</Columnspace>
+				<ColumnspaceMode>Fixed</ColumnspaceMode>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>FormGroupControl1</Name>
+				<Pattern>FieldsFieldGroups</Pattern>
+				<PatternVersion>1.1</PatternVersion>
+				<Type>Group</Type>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls />
+				<ColumnsMode>Fill</ColumnsMode>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

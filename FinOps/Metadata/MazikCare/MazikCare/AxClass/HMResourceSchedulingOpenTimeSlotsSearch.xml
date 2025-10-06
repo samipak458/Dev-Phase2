@@ -1,0 +1,1833 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMResourceSchedulingOpenTimeSlotsSearch</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMResourceSchedulingOpenTimeSlotsSearch
+{
+    HMResourceSchedulingWeekPlan                    hmResourceSchedulingWeekPlan;
+    HMResourceSchedulingWeekPlanToCalender          hmResourceSchedulingWeekPlanToCalender;
+    HMResourceSchedulingPlanningObject              hmResourceSchedulingPlanningObject;
+    HMResourceSchedulingDayPlan                     hmResourceSchedulingDayPlan;
+    HMResourceSchedulingWeekDayPlan                 hmResourceSchedulingWeekDayPlan;
+    HMResourceSchedulingDayWeekDayPlanView          HMResourceSchedulingDayWeekDayPlanView;
+    HMResourceSchedulingOpenTimeSlotsTmp            hmResourceSchedulingOpenTimeSlotsTmpMain;
+
+    boolean                                         firstSlotFound;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addAdditonalSlots</Name>
+				<Source><![CDATA[
+    private void addAdditonalSlots(date _date, boolean _isScheduleTypeAll, recid _scheduleTypeRecId, boolean _checkTime,
+                                timeofday _fromTime = 0, timeofday _toTime = 0, RecId _clientAccount = 0, boolean _searchFirstAvailable = false)
+    {
+        Integer         numberOfSlots;
+        HMResourceSchedulingHelper objClass=new HMResourceSchedulingHelper();
+        timeOfDay   fromTime, endTime;
+        int j, duration;
+        HMAppointmentReserveSlot        hmAppointmentReserveSlot, hmAppointmentReserveSlotValidate;
+        boolean     timeFlag = true;
+        HMResourceSchedulingTypeCode        hmResourceSchedulingTypeCode;
+        Query                       qry = new Query();
+        QueryRun                    qryRun;
+        QueryBuildDataSource        qbds;
+        boolean validSlot = true;
+    
+        qry = new Query();
+    
+        qbds = qry.addDataSource(tableNum(HMAppointmentReserveSlot));
+    
+        qbds.addRange(fieldNum(HMAppointmentReserveSlot, HMResourceMaster)).value(SysQuery::value(hmResourceSchedulingPlanningObject.HMResourceMaster));
+        qbds.addRange(fieldNum(HMAppointmentReserveSlot, Date)).value(SysQuery::value(_date));
+        qbds.addRange(fieldNum(HMAppointmentReserveSlot, SlotReserveBlock)).value(SysQuery::value(HMAppointmentSlotReserveBlock::Added));
+        qbds.addSortField(fieldNum(HMAppointmentReserveSlot,createdDateTime),SortOrder::Descending);
+        if(!_isScheduleTypeAll)
+        {
+            qbds.addRange(fieldNum(HMAppointmentReserveSlot, HMResourceSchedulingTypeCode)).value(SysQuery::value(_scheduleTypeRecId));
+        }
+    
+        qryRun = new QueryRun(qry);
+    
+        while(qryRun.next())
+        {
+            hmAppointmentReserveSlot = qryRun.get(tableNum(HMAppointmentReserveSlot));
+    
+            numberOfSlots = int642int(objClass.getInitialTimeSlots(hmAppointmentReserveSlot.StartTime,hmAppointmentReserveSlot.EndTime, hmAppointmentReserveSlot.HMResourceSchedulingTypeCode, hmResourceSchedulingPlanningObject.HMResourceMaster));
+    
+            hmResourceSchedulingTypeCode = HMResourceSchedulingTypeCode::find(hmAppointmentReserveSlot.HMResourceSchedulingTypeCode);
+    
+            duration = HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingPlanningObject.HMResourceMaster, hmAppointmentReserveSlot.HMResourceSchedulingTypeCode);
+    
+            fromTime = hmAppointmentReserveSlot.StartTime;
+    
+            for (j = 1; j <= numberOfSlots; j++)
+            {
+                validSlot = true;
+                hmResourceSchedulingOpenTimeSlotsTmpMain.clear();
+    
+                if(_checkTime)
+                {
+                    if(!(fromTime >= _fromTime && (this.calculateFromTime(hmResourceSchedulingTypeCode,_date,fromTime) <= _toTime)))
+                    {
+                        validSlot = false;
+                    }
+                }
+    
+                if(validSlot && !this.checkAppointmentExistDateTime(_date, fromTime,hmAppointmentReserveSlot.HMResourceSchedulingTypeCode) ==  false)
+                {
+                    validSlot = false;
+                }
+    
+                endTime = HMResourceSchedulingHelper::calculateApptEndTime(hmAppointmentReserveSlot.HMResourceSchedulingTypeCode, hmResourceSchedulingPlanningObject.HMResourceMaster, _date, hmAppointmentReserveSlot.StartTime);
+    
+                if(validSlot)
+                {
+                    select RecId,createdDateTime from hmAppointmentReserveSlotValidate
+                        order by hmAppointmentReserveSlotValidate.createdDateTime desc
+                            where hmAppointmentReserveSlotValidate.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                            && hmAppointmentReserveSlotValidate.Date == _date
+                            && hmAppointmentReserveSlotValidate.SlotReserveBlock == HMAppointmentSlotReserveBlock::Removed
+                            && (hmAppointmentReserveSlotValidate.StartTime <= fromTime
+                            && hmAppointmentReserveSlotValidate.EndTime >= fromTime
+                            && hmAppointmentReserveSlotValidate.StartTime <= endTime
+                            && hmAppointmentReserveSlotValidate.EndTime >= endTime);
+    
+                    if(hmAppointmentReserveSlotValidate.RecId && hmAppointmentReserveSlotValidate.createdDateTime >= hmAppointmentReserveSlot.createdDateTime)
+                    {
+                        validSlot = false;
+                    }
+                }
+    
+                if(validSlot)
+                {
+                    select @Client, RecId from hmAppointmentReserveSlotValidate
+                        where hmAppointmentReserveSlotValidate.HMResourceMaster == hmResourceSchedulingPlanningObject.HMResourceMaster
+                        && hmAppointmentReserveSlotValidate.Date == _date
+                        && hmAppointmentReserveSlotValidate.SlotReserveBlock == HMAppointmentSlotReserveBlock::Reserve
+                        && (hmAppointmentReserveSlotValidate.StartTime <= fromTime
+                        && hmAppointmentReserveSlotValidate.EndTime >= fromTime
+                        && hmAppointmentReserveSlotValidate.StartTime <= endTime
+                        && hmAppointmentReserveSlotValidate.EndTime >= endTime);
+    
+                    if(hmAppointmentReserveSlotValidate.RecId )
+                    {
+                        if(_clientAccount)
+                        {
+                            if(_clientAccount == hmAppointmentReserveSlotValidate.Client)
+                            {
+                                hmResourceSchedulingOpenTimeSlotsTmpMain.Client = hmAppointmentReserveSlotValidate.Client;
+                            }
+                            else
+                            {
+                                validSlot = false;
+                            }
+                        }
+                        else
+                        {
+                            hmResourceSchedulingOpenTimeSlotsTmpMain.Client = hmAppointmentReserveSlotValidate.Client;
+                        }
+                    }
+                    else
+                    {
+                        hmResourceSchedulingOpenTimeSlotsTmpMain.Client = 0;
+                    }
+                }
+    
+                if(validSlot && _date == DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmResourceSchedulingOpenTimeSlotsTmpMain.Client == 0 && fromTime < DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))
+                {
+                    validSlot = false;
+                }
+    
+                if(validSlot)
+                {
+                    if(_searchFirstAvailable)
+                    {
+                        firstSlotFound = true;
+    
+                        return;
+                    }
+    
+                    this.updateSlotReserveBlock(_date, fromTime, endTime,hmResourceSchedulingOpenTimeSlotsTmpMain);
+    
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.Date = _date;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.Time = fromTime;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.SlotEndTime = endTime;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.DayEndTime = endTime;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.Duration = duration;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.DayName = dayOfWk(_date);
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceMaster = hmResourceSchedulingPlanningObject.HMResourceMaster;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingTypeCode = hmAppointmentReserveSlot.HMResourceSchedulingTypeCode;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.IsOverBooked = NoYes::No;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.ArrivalTime = hmAppointmentReserveSlot.ArrivalTime == -1 ? fromTime : hmAppointmentReserveSlot.ArrivalTime;
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.insert();
+                    hmResourceSchedulingOpenTimeSlotsTmpMain.clear();
+                }
+    
+                fromTime = endTime;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateFromTime</Name>
+				<Source><![CDATA[
+    private timeOfDay calculateFromTime(HMResourceSchedulingTypeCode HMResourceSchedulingTypeCode, date currentDate,  timeOfDay fromTime)
+    {
+        return HMResourceSchedulingHelper::calculateApptEndTime(HMResourceSchedulingTypeCode.RecId, hmResourceSchedulingPlanningObject.HMResourceMaster, currentDate, fromTime);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calenderWeekExist</Name>
+				<Source><![CDATA[
+    private boolean calenderWeekExist(int _weekNo, int _yearNo)
+    {
+        select REcId from hmResourceSchedulingWeekPlan
+            join hmResourceSchedulingWeekPlanToCalender
+            where hmResourceSchedulingWeekPlan.HMResourceSchedulingPlanningObject==hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekPlanToCalender.HMResourceSchedulingWeekPlan
+            && hmResourceSchedulingWeekPlanToCalender.WeekNo == _weekNo
+            && hmResourceSchedulingWeekPlanToCalender.YearNo == _yearNo;
+    
+        if(hmResourceSchedulingWeekPlanToCalender.RecId != 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calenderWeekExistPatientChart</Name>
+				<Source><![CDATA[
+    private boolean calenderWeekExistPatientChart(int _weekNo, int _yearNo)
+    {
+        select * from hmResourceSchedulingWeekPlan
+            join hmResourceSchedulingWeekPlanToCalender
+            where hmResourceSchedulingWeekPlan.HMResourceSchedulingPlanningObject==hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingWeekPlan.RecId == hmResourceSchedulingWeekPlanToCalender.HMResourceSchedulingWeekPlan
+            && hmResourceSchedulingWeekPlanToCalender.WeekNo == _weekNo
+            && hmResourceSchedulingWeekPlanToCalender.YearNo == _yearNo;
+    
+        if(hmResourceSchedulingWeekPlanToCalender.RecId != 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAppointmentExist_OLD</Name>
+				<Source><![CDATA[
+    private boolean checkAppointmentExist_OLD(date _date, timeOfDay _fromTime,RecId _scheduleType)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        select count(recId) from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.AppointmentDate==_date
+            && hmResourceSchedulingAppointment.AppointmentTime==_fromTime
+            && hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode == _scheduleType
+            && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Examined
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+        if(hmResourceSchedulingAppointment.RecId > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAppointmentExistDateTime</Name>
+				<Source><![CDATA[
+    private boolean checkAppointmentExistDateTime(date _date, timeOfDay _fromTime,RecId _scheduleType)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+        TransDateTime apptStartDateTime, apptEndDateTime, slotStartDateTime, slotEndDateTime;
+        boolean ret = false;
+    
+        slotStartDateTime = DateTimeUtil::newDateTime(_date, _fromTime);
+        slotEndDateTime = HMResourceSchedulingHelper::calculateApptDateEndTime(_scheduleType, hmResourceSchedulingPlanningObject.HMResourceMaster, _date, _fromTime);
+    
+        while select AppointmentDate,AppointmentEndDate,AppointmentTime,AppointmentEndTime,AppointmentStatus from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            //&& hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode == _scheduleType
+            && hmResourceSchedulingAppointment.AppointmentDate == _date
+            && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Tentative
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+        {
+            apptStartDateTime = DateTimeUtil::newDateTime(hmResourceSchedulingAppointment.AppointmentDate,hmResourceSchedulingAppointment.AppointmentTime);
+            apptEndDateTime = DateTimeUtil::newDateTime(hmResourceSchedulingAppointment.AppointmentEndDate,hmResourceSchedulingAppointment.AppointmentEndTime);
+    
+            if(apptStartDateTime == slotStartDateTime)
+            {
+                ret = true;
+                break;
+            }
+    
+            if((apptStartDateTime > slotStartDateTime && apptStartDateTime < slotEndDateTime)
+                ||(apptEndDateTime > slotStartDateTime && apptEndDateTime < slotEndDateTime)
+                || (slotStartDateTime > apptStartDateTime && slotStartDateTime < apptEndDateTime)
+                ||(slotEndDateTime > apptStartDateTime && slotEndDateTime < apptEndDateTime))
+            {
+                ret = true;
+                break;
+            }
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAppointmentExistFullSlots</Name>
+				<Source><![CDATA[
+    private boolean checkAppointmentExistFullSlots(date _date, timeOfDay _fromTime, timeOfDay _toTime,RecId _scheduleType)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        //select count(recId) from hmResourceSchedulingAppointment
+            //where hmResourceSchedulingAppointment.AppointmentDate==_date
+            //&& hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            //&& hmResourceSchedulingAppointment.Appointment _fromTime
+            //&& hmResourceSchedulingAppointment.AppointmentTime==_fromTime
+            //&& hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode == _scheduleType
+            //&& (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            //|| hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            //|| hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Examined
+            //|| hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+        if(hmResourceSchedulingAppointment.RecId > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAppointmentExistToday</Name>
+				<Source><![CDATA[
+    private int checkAppointmentExistToday(date _date,recId _scheduleId)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        select count(recId) from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.AppointmentDate==_date
+            && hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode == _scheduleId
+            && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Examined
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+        //if(hmResourceSchedulingAppointment.RecId > 0)
+        //{
+            //return true;
+        //}
+        //else
+        //{
+            //return false;
+        //}
+        return  int642int(hmResourceSchedulingAppointment.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkAppointmentExistTodayfind</Name>
+				<Source><![CDATA[
+    private int checkAppointmentExistTodayfind(date _date, timeOfDay _fromTime,recId _scheduleId)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        select count(recId) from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.AppointmentDate==_date
+            && hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode == _scheduleId
+            && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Examined
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+        //if(hmResourceSchedulingAppointment.RecId > 0)
+        //{
+            //return true;
+        //}
+        //else
+        //{
+            //return false;
+        //}
+        return  int642int(hmResourceSchedulingAppointment.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkOverBooked</Name>
+				<Source><![CDATA[
+    public boolean checkOverBooked(List _date,HMTime _time,RecId _HMResourcePlanningObject)
+    {
+        HMResourceSchedulingAppointment hmResourceSchedulingAppointment ;
+        ListEnumerator                  listEnum;
+        boolean                         ret;
+    
+        listEnum = _date.getEnumerator();
+    
+    
+        while(listEnum.moveNext())
+        {
+            select count(recId) from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.AppointmentDate == listEnum.current()
+            && hmResourceSchedulingAppointment.AppointmentTime  == _time
+            && hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == _HMResourcePlanningObject;
+    
+            if(hmResourceSchedulingAppointment.RecId > 0)
+            {
+                ret = true;
+                return  ret;
+            }
+            else
+            {
+                ret = false;
+            }
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPublicHoliday</Name>
+				<Source><![CDATA[
+    public boolean checkPublicHoliday(date _date)
+    {
+        HMResourceSchedulingPublicHoliday           hmResourceSchedulingPublicHoliday;
+        int day = dayOfMth(_date);
+        int month = mthOfYr(_date);
+    
+        select count(recId) from hmResourceSchedulingPublicHoliday
+            where month==hmResourceSchedulingPublicHoliday.Month
+            && (day >= hmResourceSchedulingPublicHoliday.FromDay && day <= hmResourceSchedulingPublicHoliday.ToDay);
+    
+        if(hmResourceSchedulingPublicHoliday.RecId > 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dayPlanExist</Name>
+				<Source><![CDATA[
+    private boolean dayPlanExist(int _day)
+    {
+    
+        //select RecId from hmResourceSchedulingDayPlan
+            //exists join hmResourceSchedulingWeekDayPlan
+            //where hmResourceSchedulingWeekDayPlan.HMResourceSchedulingWeekPlan==hmResourceSchedulingWeekPlan.RecId
+            //&& hmResourceSchedulingDayPlan.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            //&& hmResourceSchedulingWeekDayPlan.HMResourceSchedulingDayPlan == hmResourceSchedulingDayPlan.RecId
+            //&& hmResourceSchedulingWeekDayPlan.Days == _day;
+    
+        select RecId,DayPlanRecId from HMResourceSchedulingDayWeekDayPlanView
+        where HMResourceSchedulingDayWeekDayPlanView.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+        && HMResourceSchedulingDayWeekDayPlanView.HMResourceSchedulingWeekPlan == hmResourceSchedulingWeekPlan.RecId
+        && HMResourceSchedulingDayWeekDayPlanView.Days == _day;
+        if(HMResourceSchedulingDayWeekDayPlanView.DayPlanRecId != 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dayPlanExistPatientChart</Name>
+				<Source><![CDATA[
+    private boolean dayPlanExistPatientChart(int _day)
+    {
+        hmResourceSchedulingDayPlan hmResourceSchedulingDayPlanLocal;
+        hmResourceSchedulingWeekDayPlan hmResourceSchedulingWeekDayPlanLocal;
+    
+        select * from hmResourceSchedulingDayPlanLocal
+            join hmResourceSchedulingWeekDayPlanLocal
+            where hmResourceSchedulingWeekDayPlanLocal.HMResourceSchedulingWeekPlan==hmResourceSchedulingWeekPlan.RecId
+            && hmResourceSchedulingDayPlanLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingWeekDayPlanLocal.HMResourceSchedulingDayPlan == hmResourceSchedulingDayPlanLocal.RecId
+            && hmResourceSchedulingWeekDayPlanLocal.Days == _day;
+    
+    
+        if(hmResourceSchedulingDayPlan.RecId != 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentCount</Name>
+				<Source><![CDATA[
+    private int getAppointmentCount(date _date, recid _dayPlanItemRecId, boolean _overBooked)
+    {
+        HMResourceSchedulingDayPlanItem             hmResourceSchedulingDayPlanItemLocal;
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointmentLocal;
+    
+        hmResourceSchedulingDayPlanItemLocal = HMResourceSchedulingDayPlanItem::find(_dayPlanItemRecId);
+    
+        select count(RecId) from hmResourceSchedulingAppointmentLocal
+            where hmResourceSchedulingAppointmentLocal.IsOverBooked == _overBooked
+            && hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && (hmResourceSchedulingAppointmentLocal.AppointmentTime >= hmResourceSchedulingDayPlanItemLocal.StartTime && hmResourceSchedulingAppointmentLocal.AppointmentEndTime <= hmResourceSchedulingDayPlanItemLocal.EndTime)
+            && (hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            || hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+            || hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            || hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Examined
+            || hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+            && hmResourceSchedulingAppointmentLocal.AppointmentDate == _date;
+    
+        return int642int(hmResourceSchedulingAppointmentLocal.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAppointmentExisting</Name>
+				<Source><![CDATA[
+    private RecId getAppointmentExisting(date _date)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        select count(recId) from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.AppointmentDate==_date
+            && hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Examined
+            || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+        if(hmResourceSchedulingAppointment.RecId > 0)
+        {
+            return hmResourceSchedulingAppointment.RecId;
+        }
+        else
+        {
+            return hmResourceSchedulingAppointment.RecId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCalenderWeeks</Name>
+				<Source><![CDATA[
+    //returns an array of calender weeks. the first index i.e 1 is the number of calendar weeks there in the array +1
+    // the firstvalue in container will tell the week number and second value is the year
+    
+    private Array getCalenderWeeks(Date _fromDate,Date _toDate)
+    {
+        Array calenderWeeks=new Array(Types::Container);
+        container con;
+        int i=2;
+        date currentDate;
+    
+        currentDate = _fromDate;
+        if(dayOfWk(currentDate) == 7)
+        {
+            con = [weekOfYear(currentDate)-1, year(currentDate)];
+            calenderWeeks.value(i, con);
+            currentDate += 1;
+        }
+        else
+        {
+            con = [weekOfYear(currentDate), year(currentDate)];
+            calenderWeeks.value(i, con);
+            currentDate += (8-dayOfWk(currentDate));
+        }
+    
+        while(currentDate <= _toDate)
+        {
+            i++;
+            con = [weekOfYear(currentDate), year(currentDate)];
+            calenderWeeks.value(i, con);
+            currentDate += 7;
+        }
+        con = [i];
+        calenderWeeks.value(1,con);
+    
+        return calenderWeeks;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getPlanningObjectDetail</Name>
+				<Source><![CDATA[
+    private void getPlanningObjectDetail(recId _planningObjectRecId)
+    {
+        hmResourceSchedulingPlanningObject = HMResourceSchedulingPlanningObject::find(_planningObjectRecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getStartEndDates</Name>
+				<Source><![CDATA[
+    //returns an array of start and end dates. the first index i.e 1 is the number of dates there in the array + 1
+    // the firstvalue in container is the start date and second value is the end date
+    
+    private Array getStartEndDates(Date _fromDate,Date _toDate)
+    {
+        Array startEndDates=new Array(Types::Container);
+        container con;
+        int i=2;
+        date currentDate;
+    
+        currentDate = _fromDate;
+        if(dayOfWk(currentDate) != 7 && (dateEndWk(currentDate) + 1) >= _toDate) // to check if from date and to date lie in a single week and from date is not sunday
+        {
+            con = [currentDate, _toDate];
+            startEndDates.value(i, con);
+    
+            con = [i];
+            startEndDates.value(1,con);
+        }
+        else
+        {
+            if(dayOfWk(currentDate) == 7)
+            {
+                con = [currentDate, currentDate];
+    
+                startEndDates.value(i, con);
+                currentDate += 1;
+            }
+            else
+            {
+                con = [currentDate, dateEndWk(currentDate) + 1];
+    
+                startEndDates.value(i, con);
+                currentDate += (8-dayOfWk(currentDate));
+            }
+    
+    
+            while(currentDate <= _toDate)
+            {
+                i++;
+    
+                if(dateEndWk(currentDate) +1 >= _toDate)
+                {
+                    con = [dateStartWk(currentDate), _toDate];
+                    startEndDates.value(i, con);
+    
+                    break;
+                }
+                else
+                {
+                    con = [dateStartWk(currentDate), dateEndWk(currentDate)+1];
+                    startEndDates.value(i, con);
+                    currentDate += 7;
+                }
+            }
+    
+            con = [i];
+            startEndDates.value(1,con);
+        }
+    
+        return startEndDates;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isHotspot</Name>
+				<Source><![CDATA[
+    private boolean isHotspot(boolean _isHotSpot, TransDate _date)
+    {
+        boolean retHotSpot;
+        HMResourceSchedulingAppointment hmResourceSchedulingAppointment;
+        TransDate   startDate, endDate;
+    
+        if(_isHotSpot)
+        {
+            switch(hmResourceSchedulingPlanningObject.HotSpotType)
+            {
+                case HmDaysWKMnth::None:
+                    retHotSpot = true;
+                    break;
+                case HmDaysWKMnth::Days:
+                    select count(RecId) from hmResourceSchedulingAppointment
+                        where hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                        && hmResourceSchedulingAppointment.AppointmentDate == _date
+                        && hmResourceSchedulingAppointment.IsHotspot == true
+                        && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+                        || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                        || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+                    if(hmResourceSchedulingAppointment.RecId < hmResourceSchedulingPlanningObject.HotSpotValue)
+                    {
+                        retHotSpot = true;
+                    }
+                    else
+                    {
+                        retHotSpot = false;
+                    }
+                    break;
+                case HmDaysWKMnth::Weeks:
+                    endDate = dateEndWk(_date);
+                    startDate = dateStartWk(_date);
+    
+                    select count(RecId) from hmResourceSchedulingAppointment
+                        where hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                        && hmResourceSchedulingAppointment.AppointmentDate >= startDate
+                        && hmResourceSchedulingAppointment.AppointmentDate <= endDate
+                        && hmResourceSchedulingAppointment.IsHotspot == true
+                        && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+                        || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                        || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+                    if(hmResourceSchedulingAppointment.RecId < hmResourceSchedulingPlanningObject.HotSpotValue)
+                    {
+                        retHotSpot = true;
+                    }
+                    else
+                    {
+                        retHotSpot = false;
+                    }
+                    break;
+                case HmDaysWKMnth::Months:
+                    endDate = dateEndMth(_date);
+                    startDate = dateStartMth(_date);
+    
+                    select count(RecId) from hmResourceSchedulingAppointment
+                        where hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                        && hmResourceSchedulingAppointment.AppointmentDate >= startDate
+                        && hmResourceSchedulingAppointment.AppointmentDate <= endDate
+                        && hmResourceSchedulingAppointment.IsHotspot == true
+                        && (hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+                        || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Confirmed
+                        || hmResourceSchedulingAppointment.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut);
+    
+                    if(hmResourceSchedulingAppointment.RecId < hmResourceSchedulingPlanningObject.HotSpotValue)
+                    {
+                        retHotSpot = true;
+                    }
+                    else
+                    {
+                        retHotSpot = false;
+                    }
+                    break;
+            }
+        }
+    
+        return retHotSpot;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isTimeSlotFull</Name>
+				<Source><![CDATA[
+    private boolean isTimeSlotFull(date _date, recid _dayPlanItemRecId)
+    {
+        HMResourceSchedulingDayPlanItem             hmResourceSchedulingDayPlanItemLocal;
+        //int j;
+        //timeOfDay fromTime;
+        boolean isSlotFull = false;
+    
+        hmResourceSchedulingDayPlanItemLocal = HMResourceSchedulingDayPlanItem::find(_dayPlanItemRecId);
+    
+    
+    
+        if(this.getAppointmentCount(_date, _dayPlanItemRecId, false) >=
+            real2int(System.Math::Ceiling((hmResourceSchedulingDayPlanItemLocal.NumberOfTimeSlots / 100) *  hmResourceSchedulingDayPlanItemLocal.PercentOfflineAppointment)))
+        {
+            isSlotFull = true;
+        }
+    
+        //fromTime = hmResourceSchedulingDayPlanItemLocal.StartTime;
+    
+        //for(j=1;j<=hmResourceSchedulingDayPlanItemLocal.OfflineAppointments;j++)
+        //{
+            //if(this.checkAppointmentExistDateTime(_date,fromTime,hmResourceSchedulingDayPlanItemLocal.HMResourceSchedulingTypeCode) >=
+            ///real2int(System.Math::Ceiling((hmResourceSchedulingDayPlanItemLocal.NumberOfTimeSlots / 100) *  hmResourceSchedulingDayPlanItemLocal.PercentOfflineAppointment)))
+            //{
+                //isSlotFull = true;
+           //     break;
+            //}
+    
+            //fromTime = DateTimeUtil::time(DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(_date, fromTime), _duration));
+        //}
+    
+        return isSlotFull;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>numberOfAppointment</Name>
+				<Source><![CDATA[
+    private int numberOfAppointment(date _date, timeOfDay _fromTime)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        select count(recId) from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.AppointmentDate==_date
+            && hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingAppointment.AppointmentTime==_fromTime
+            && hmResourceSchedulingAppointment.AppointmentStatus==HMResourceSchedulingAppointmentStatus::Open;
+    
+        return int642int(hmResourceSchedulingAppointment.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>numberofInpatientAppointments</Name>
+				<Source><![CDATA[
+    private int numberofInpatientAppointments(date _date,recid _scheduleType)
+    {
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointment;
+    
+        select count(recId) from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.AppointmentDate==_date
+            && hmResourceSchedulingAppointment.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && hmResourceSchedulingAppointment.HMResourceSchedulingTypeCode == _scheduleType
+            && (hmResourceSchedulingAppointment.AppointmentStatus==HMResourceSchedulingAppointmentStatus::Open
+            || hmResourceSchedulingAppointment.AppointmentStatus==HMResourceSchedulingAppointmentStatus::Closed);
+    
+        return int642int(hmResourceSchedulingAppointment.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>overbookingInTimeSlotToday_OLD</Name>
+				<Source><![CDATA[
+    private int overbookingInTimeSlotToday_OLD(date _date, recid _dayPlanItemRecId)
+    {
+        HMResourceSchedulingDayPlanItem             hmResourceSchedulingDayPlanItemLocal;
+        HMResourceSchedulingAppointment             hmResourceSchedulingAppointmentLocal;
+    
+        hmResourceSchedulingDayPlanItemLocal = HMResourceSchedulingDayPlanItem::find(_dayPlanItemRecId);
+    
+        select count(RecId) from hmResourceSchedulingAppointmentLocal
+            where //hmResourceSchedulingAppointmentLocal.IsOverBooked == NoYes::Yes
+             hmResourceSchedulingAppointmentLocal.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+            && (hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Open
+            || hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedIn
+            || hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::Examined
+            || hmResourceSchedulingAppointmentLocal.AppointmentStatus == HMResourceSchedulingAppointmentStatus::CheckedOut)
+            && hmResourceSchedulingAppointmentLocal.AppointmentDate == _date;
+    
+        return int642int(hmResourceSchedulingAppointmentLocal.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchOpenTimeSlot</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingOpenTimeSlotsTmp searchOpenTimeSlot(recId _planningObjectRecId, Date _fromDate, Date _toDate,
+                                    boolean _isScheduleTypeAll, recid _scheduleTypeRecId,
+                                    boolean _isOverbookingAllowed, container _includExcludeDays, boolean _checkTime = false, timeofday _fromTime = 0,
+                                    timeofday _toTime = 0, HMIncludeExclude _includeExclude = HMIncludeExclude::Include, RecId _clientAccount = 0, boolean _searchFirstAvailable = false)
+    {
+        Array calenderWeeks=new Array(Types::Container);
+        Array startEndDates=new Array(Types::Container);
+        int i;
+        int j;
+        int countSlots;
+        int currentWeek;
+        int currentYear;
+        int totalCalenderWeeks;
+        date startDate;
+        date endDate;
+        date currentDate;
+        boolean flag=false;
+        HMResourceSchedulingDayPlanItem             hmResourceSchedulingDayPlanItem;
+        HMResourceSchedulingTypeCode                hmResourceSchedulingTypeCode;
+        int totalTimeSlots;
+       // int totalOverbookings;
+       // int numberOfAppointments;
+        timeOfDay fromTime, endTime;
+        int duration;
+        // add by daniyall aslam
+        int   availbaleTimeSlots;
+        HMAppointmentReserveSLot                    hmAppointmentReserveSlot;
+        boolean validSlot = true;
+        Query                       qry = new Query();
+        QueryRun                    qryRun;
+        QueryBuildDataSource        qbds;
+        hmResourceSchedulingOpenTimeSlotsTmpMain.clear();
+        this.getPlanningObjectDetail(_planningObjectRecId);
+    
+        if (hmResourceSchedulingPlanningObject.EndDate < _toDate)
+        {
+            _toDate = hmResourceSchedulingPlanningObject.EndDate;
+        }
+    
+        calenderWeeks = this.getCalenderWeeks(_fromDate, _toDate);
+        startEndDates = this.getStartEndDates(_fromDate, _toDate);
+        totalCalenderWeeks = conPeek(calenderWeeks.value(1), 1);
+        for(i=2;i<=totalCalenderWeeks;i++)
+        {
+            currentWeek = conPeek(calenderWeeks.value(i),1);
+            currentYear = conPeek(calenderWeeks.value(i),2);
+            if(this.calenderWeekExist(currentWeek, currentYear))
+            {
+                startDate = conPeek(startEndDates.value(i), 1);
+                endDate = conPeek(startEndDates.value(i), 2);
+                currentDate = startDate;
+                while(currentDate <= endDate)
+                {
+                    if(this.checkPublicHoliday(currentDate))
+                    {
+                        if(hmResourceSchedulingPlanningObject.ScheduleOnPublicHoliday == NoYes::Yes)
+                        {
+                            flag = true;
+                        }
+                        else
+                        {
+                            flag = false;
+                        }
+                    }
+                    else
+                    {
+                        flag = true;
+                    }
+    
+                    if(flag)
+                    {
+                        if(_includeExclude == HMIncludeExclude::Include)
+                        {
+                            if(conPeek(_includExcludeDays, dayOfWk(currentDate)))
+                            {
+                                flag = true;
+                            }
+                            else
+                            {
+                                flag = false;
+                            }
+                        }
+                        else if(_includeExclude == HMIncludeExclude::Exclude)
+                        {
+                            if(conPeek(_includExcludeDays, dayOfWk(currentDate)))
+                            {
+                                flag = false;
+                            }
+                            else
+                            {
+                                flag = true;
+                            }
+                        }
+                    }
+    
+                    if(flag)
+                    {
+                        if(this.dayPlanExist(dayOfWk(currentDate)))
+                        {
+                             flag = true;
+                        }
+                        else
+                        {
+                            flag = false;
+                        }
+                    }
+                    if(flag)
+                    {
+                        qry = new Query();
+    
+                        qbds = qry.addDataSource(tableNum(HMResourceSchedulingDayPlanItem));
+    
+                        qbds.addRange(fieldNum(HMResourceSchedulingDayPlanItem, HMResourceSchedulingDayPlan)).value(SysQuery::value(HMResourceSchedulingDayWeekDayPlanView.DayPlanRecId));
+    
+                        if(!_isScheduleTypeAll)
+                        {
+                            qbds.addRange(fieldNum(HMResourceSchedulingDayPlanItem, HMResourceSchedulingTypeCode)).value(SysQuery::value(_scheduleTypeRecId));
+                        }
+    
+                        qbds = qbds.addDataSource(tableNum(HMResourceSchedulingTypeCode));
+                        qbds.relations(true);
+    
+                        if(_isScheduleTypeAll)
+                        {
+                            qbds.addRange(fieldNum(HMResourceSchedulingTypeCode, CaseType)).value(SysQuery::value(HMCaseType::OutPatient));
+                            qbds.addRange(fieldNum(HMResourceSchedulingTypeCode, CaseType)).value(SysQuery::value(HMCaseType::Surgery));
+                            //qbds.addRange(fieldNum(HMResourceSchedulingTypeCode, IsBreak)).value(SysQuery::value(NoYes::No));
+                            qbds.addRange(fieldnum(HMResourceSchedulingTypeCode,AppointmentSubType)).value(SysQuery::value(HMAppointmentSubType::Pseudo));
+                            qbds.addRange(fieldnum(HMResourceSchedulingTypeCode,AppointmentSubType)).value(SysQuery::value(HMAppointmentSubType::Searchable));
+                        }
+    
+                        qryRun = new QueryRun(qry);
+    
+                        while(qryRun.next())
+                        {
+                            hmResourceSchedulingDayPlanItem = qryRun.get(tableNum(HMResourceSchedulingDayPlanItem));
+                            hmResourceSchedulingTypeCode = qryRun.get(tableNum(HMResourceSchedulingTypeCode));
+                            duration = HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingPlanningObject.HMResourceMaster, hmResourceSchedulingTypeCode.RecId);
+    
+                            countSlots = 1;
+    
+                            if(this.isTimeSlotFull(currentDate, hmResourceSchedulingDayPlanItem.RecId))
+                            {
+                                if(hmResourceSchedulingPlanningObject.OverbookAllowed == NoYes::Yes && _isOverbookingAllowed)
+                                {
+                                    availbaleTimeSlots  =  hmResourceSchedulingDayPlanItem.NumberOfTimeSlots;  //  3
+                                    totalTimeSlots   = hmResourceSchedulingDayPlanItem.NumberOfOverBookings;    //real2int(System.Math::Ceiling((availbaleTimeSlots / 100) *  hmResourceSchedulingDayPlanItem.PercentOfflineAppointment));
+    
+                                    // totalTimeSlots = totalTimeSlots - this.overbookingInTimeSlotToday(currentDate,hmResourceSchedulingDayPlanItem.RecId) ;
+                                    fromTime =  hmResourceSchedulingDayPlanItem.StartTime;
+    
+                                    for (j = 1; j <= totalTimeSlots; j++)
+                                    {
+                                        //if(this.checkAppointmentExist(currentDate, fromTime,hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode) ==  false)
+                                        //{
+                                            if (j > totalTimeSlots - this.getAppointmentCount(currentDate,hmResourceSchedulingDayPlanItem.RecId, true)
+                                            ||  j > hmResourceSchedulingDayPlanItem.NumberOfTimeSlots)
+                                            {
+                                                break;
+                                            }
+    
+                                            if(_searchFirstAvailable)
+                                            {
+                                                firstSlotFound = true;
+    
+                                                return hmResourceSchedulingOpenTimeSlotsTmpMain;
+                                            }
+    
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.Date = currentDate;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.Time = fromTime;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.SlotEndTime = endTime;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.DayEndTime = hmResourceSchedulingDayPlanItem.EndTime;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.Duration = duration;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.DayName = dayOfWk(currentDate);
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceMaster = hmResourceSchedulingPlanningObject.HMResourceMaster;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingTypeCode = hmResourceSchedulingTypeCode.RecId;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.IsOverBooked = NoYes::Yes;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.IsHotspot = this.isHotspot(hmResourceSchedulingDayPlanItem.IsHotspot, currentDate);
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.GenderPreference = hmResourceSchedulingDayPlanItem.GenderPreference;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.ArrivalTime = hmResourceSchedulingDayPlanItem.ArrivalTime == -1 ? fromTime : hmResourceSchedulingDayPlanItem.ArrivalTime;
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.insert();
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.clear();
+                                            countSlots++;
+    
+                                        //}
+                                        fromTime = this.calculateFromTime(hmResourceSchedulingTypeCode,currentDate,fromTime);
+    
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                //if (hmResourceSchedulingDayPlanItem.OfflineAppointments + hmResourceSchedulingDayPlanItem.OnlineAppointments == hmResourceSchedulingDayPlanItem.NumberOfTimeSlots )
+                                //{
+                                    totalTimeSlots = hmResourceSchedulingDayPlanItem.NumberOfTimeSlots;
+    
+                                    //availbaleTimeSlots  =  hmResourceSchedulingDayPlanItem.NumberOfTimeSlots;  //  3
+                                    //totalTimeSlots   = real2int(System.Math::Ceiling((availbaleTimeSlots / 100) *  hmResourceSchedulingDayPlanItem.PercentOfflineAppointment));
+                                //}
+                                //else
+                                //{
+                                    availbaleTimeSlots  =  hmResourceSchedulingDayPlanItem.NumberOfTimeSlots;  //  3
+                                    //totalTimeSlots   = real2int(System.Math::Ceiling((availbaleTimeSlots / 100) *  hmResourceSchedulingDayPlanItem.PercentOfflineAppointment));
+                                //}
+    
+                                //totalTimeSlots = totalTimeSlots - int642int(this.getAppointmentExisting(currentDate));
+                                fromTime = hmResourceSchedulingDayPlanItem.StartTime;
+    
+                                for(j=1;j<=totalTimeSlots;j++)
+                                {
+                                    validSlot = true;
+                                    endTime = this.calculateFromTime(hmResourceSchedulingTypeCode,currentDate,fromTime);
+                                    hmResourceSchedulingOpenTimeSlotsTmpMain.clear();
+    
+                                    if(_checkTime)
+                                    {
+                                        if(!(fromTime >= _fromTime && (endTime <= _toTime)))
+                                        {
+                                            validSlot = false;
+                                        }
+                                    }
+    
+                                    if(validSlot && !this.checkAppointmentExistDateTime(currentDate, fromTime,hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode) ==  false)
+                                    {
+                                        validSlot = false;
+                                    }
+    
+                                    if(validSlot)
+                                    {
+                                        select RecId from hmAppointmentReserveSlot
+                                            where hmAppointmentReserveSlot.HMResourceSchedulingPlanningObject == hmResourceSchedulingPlanningObject.RecId
+                                            && hmAppointmentReserveSlot.Date == currentDate
+                                            && hmAppointmentReserveSlot.SlotReserveBlock == HMAppointmentSlotReserveBlock::Removed
+                                            && (hmAppointmentReserveSlot.StartTime <= fromTime
+                                            && hmAppointmentReserveSlot.EndTime >= fromTime
+                                            && hmAppointmentReserveSlot.StartTime <= endTime
+                                            && hmAppointmentReserveSlot.EndTime >= endTime);
+    
+                                        if(hmAppointmentReserveSlot.RecId )
+                                        {
+                                            validSlot = false;
+                                        }
+                                    }
+    
+                                    if(validSlot)
+                                    {
+                                        select @Client, RecId from hmAppointmentReserveSlot
+                                            where hmAppointmentReserveSlot.HMResourceMaster == hmResourceSchedulingPlanningObject.HMResourceMaster
+                                            && hmAppointmentReserveSlot.Date == currentDate
+                                            && hmAppointmentReserveSlot.SlotReserveBlock == HMAppointmentSlotReserveBlock::Reserve
+                                            && (hmAppointmentReserveSlot.StartTime <= fromTime
+                                            && hmAppointmentReserveSlot.EndTime >= fromTime
+                                            && hmAppointmentReserveSlot.StartTime <= endTime
+                                            && hmAppointmentReserveSlot.EndTime >= endTime);
+    
+                                        if(hmAppointmentReserveSlot.RecId )
+                                        {
+                                            if(_clientAccount)
+                                            {
+                                                if(_clientAccount == hmAppointmentReserveSlot.Client)
+                                                {
+                                                    hmResourceSchedulingOpenTimeSlotsTmpMain.Client = hmAppointmentReserveSlot.Client;
+                                                }
+                                                else
+                                                {
+                                                    validSlot = false;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                hmResourceSchedulingOpenTimeSlotsTmpMain.Client = hmAppointmentReserveSlot.Client;
+                                            }
+    
+                                        }
+                                        else
+                                        {
+                                            hmResourceSchedulingOpenTimeSlotsTmpMain.Client = 0;
+                                        }
+    
+                                    }
+    
+                                    if(validSlot && currentDate == DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) && hmResourceSchedulingOpenTimeSlotsTmpMain.Client == 0 && fromTime < DateTimeUtil::getTimeNow(DateTimeUtil::getUserPreferredTimeZone()))
+                                    {
+                                        validSlot = false;
+                                    }
+    
+                                    if(validSlot)
+                                    {
+                                        if(_searchFirstAvailable)
+                                        {
+                                            firstSlotFound = true;
+    
+                                            return hmResourceSchedulingOpenTimeSlotsTmpMain;
+                                        }
+    
+                                        this.updateSlotReserveBlock(currentDate, fromTime, endTime,hmResourceSchedulingOpenTimeSlotsTmpMain);
+    
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.Date = currentDate;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.Time = fromTime;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.SlotEndTime = endTime;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.DayEndTime = hmResourceSchedulingDayPlanItem.EndTime;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.Duration = duration;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.DayName = dayOfWk(currentDate);
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceMaster = hmResourceSchedulingPlanningObject.HMResourceMaster;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.HMResourceSchedulingTypeCode = hmResourceSchedulingTypeCode.RecId;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.IsOverBooked = NoYes::No;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.IsHotspot = this.isHotspot(hmResourceSchedulingDayPlanItem.IsHotspot, currentDate);
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.GenderPreference = hmResourceSchedulingDayPlanItem.GenderPreference;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.ArrivalTime = hmResourceSchedulingDayPlanItem.ArrivalTime == -1 ? fromTime : hmResourceSchedulingDayPlanItem.ArrivalTime;
+                                        hmResourceSchedulingOpenTimeSlotsTmpMain.insert();
+    
+                                        countSlots++;
+                                    }
+    
+                                    fromTime = this.calculateFromTime(hmResourceSchedulingTypeCode,currentDate,fromTime);
+                                }
+    
+    
+                            }
+                        }
+                    }
+    
+                    this.addAdditonalSlots(currentDate, _isScheduleTypeAll, _scheduleTypeRecId, _checkTime, _fromTime, _toTime, _clientAccount, _searchFirstAvailable);
+    
+                    currentDate+=1;
+                }
+            }
+        }
+    
+        return hmResourceSchedulingOpenTimeSlotsTmpMain;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchOpenTimeSlotForInPatient</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingOpenTimeSlotsTmp searchOpenTimeSlotForInPatient(recId _planningObjectRecId, Date _fromDate, Date _toDate,
+                                    boolean _isScheduleTypeAll, recid _scheduleTypeRecId,
+                                    boolean _isOverbookingAllowed, container _excludedDays)
+    {
+        Array calenderWeeks=new Array(Types::Container);
+        Array startEndDates=new Array(Types::Container);
+        int i;
+       // int j;
+        int currentWeek;
+        int currentYear;
+        int totalCalenderWeeks;
+        date startDate;
+        date endDate;
+        date currentDate;
+        boolean flag=false;
+        HMResourceSchedulingDayPlanItem             hmResourceSchedulingDayPlanItem;
+        HMResourceSchedulingTypeCode                hmResourceSchedulingTypeCode;
+        int numberOfAppointments;
+        int duration;
+        TimeOfDay appointmentTime = str2time('12:00:00 pm');
+    
+    
+        HMResourceSchedulingOpenTimeSlotsTmp            hmResourceSchedulingOpenTimeSlotsTmp;
+    
+        this.getPlanningObjectDetail(_planningObjectRecId);
+        calenderWeeks = this.getCalenderWeeks(_fromDate, _toDate);
+        startEndDates = this.getStartEndDates(_fromDate, _toDate);
+        totalCalenderWeeks = conPeek(calenderWeeks.value(1), 1);
+        for(i=2;i<=totalCalenderWeeks;i++)
+        {
+            currentWeek = conPeek(calenderWeeks.value(i),1);
+            currentYear = conPeek(calenderWeeks.value(i),2);
+            if(this.calenderWeekExist(currentWeek, currentYear))
+            {
+                startDate = conPeek(startEndDates.value(i), 1);
+                endDate = conPeek(startEndDates.value(i), 2);
+                currentDate = startDate;
+                while(currentDate <= endDate)
+                {
+                    if(this.checkPublicHoliday(currentDate))
+                    {
+                        if(hmResourceSchedulingPlanningObject.ScheduleOnPublicHoliday == NoYes::Yes)
+                        {
+                            flag = true;
+                        }
+                        else
+                        {
+                            flag = false;
+                        }
+                    }
+                    else
+                    {
+                        flag = true;
+                    }
+    
+                    if(flag)
+                    {
+                        if(conPeek(_excludedDays, dayOfWk(currentDate)))
+                        {
+                            flag = false;
+                        }
+                        else
+                        {
+                            flag = true;
+                        }
+                    }
+    
+                    if(flag)
+                    {
+                        if(this.dayPlanExist(dayOfWk(currentDate)))
+                        {
+                             flag = true;
+                        }
+                        else
+                        {
+                            flag = false;
+                        }
+                    }
+                    if(flag)
+                    {
+                        if(_isScheduleTypeAll)
+                        {//enum changed
+                            while select * from hmResourceSchedulingDayPlanItem
+                                join * from hmResourceSchedulingTypeCode
+                                where hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode == hmResourceSchedulingTypeCode.RecId
+                                && hmResourceSchedulingDayPlanItem.HMResourceSchedulingDayPlan==hmResourceSchedulingDayPlan.RecId
+                                && hmResourceSchedulingTypeCode.CaseType == HMCaseType::InPatient
+                            {
+                                numberOfAppointments = this.numberofInpatientAppointments(currentDate,hmResourceSchedulingTypeCode.RecId);
+    
+                                if(numberOfAppointments < hmResourceSchedulingDayPlanItem.AdmissionQuota)
+                                {
+                                    duration = HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingTypeCode.RecId, hmResourceSchedulingPlanningObject.HMResourceMaster);
+    
+                                    hmResourceSchedulingOpenTimeSlotsTmp.Date = currentDate;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.Time = appointmentTime;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.Duration = duration;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.DayName = dayOfWk(currentDate);
+                                    hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode = hmResourceSchedulingTypeCode.RecId;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.insert();
+                                }
+                            }
+                        }
+                        else
+                        {
+                            while select * from hmResourceSchedulingDayPlanItem
+                                join * from hmResourceSchedulingTypeCode
+                                where hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode == hmResourceSchedulingTypeCode.RecId
+                                && hmResourceSchedulingDayPlanItem.HMResourceSchedulingDayPlan==hmResourceSchedulingDayPlan.RecId
+                                && hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode == _scheduleTypeRecId
+                            {
+                                numberOfAppointments = this.numberofInpatientAppointments(currentDate,hmResourceSchedulingTypeCode.RecId);
+    
+                                if(numberOfAppointments < hmResourceSchedulingDayPlanItem.AdmissionQuota)
+                                {
+                                    duration = HMResourceMasterHelper::getDurationInMinutes(hmResourceSchedulingTypeCode.RecId, hmResourceSchedulingPlanningObject.HMResourceMaster);
+    
+                                    hmResourceSchedulingOpenTimeSlotsTmp.Date = currentDate;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.Time = appointmentTime;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.Duration = duration;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.DayName = dayOfWk(currentDate);
+                                    hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode = hmResourceSchedulingTypeCode.RecId;
+                                    hmResourceSchedulingOpenTimeSlotsTmp.insert();
+                                }
+                            }
+                        }
+                    }
+    
+                    currentDate+=1;
+                }
+            }
+        }
+    
+        return hmResourceSchedulingOpenTimeSlotsTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchOpenTimeSlotMultiPO</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingOpenTimeSlotsTmp searchOpenTimeSlotMultiPO(Date _fromDate, Date _toDate, boolean _isScheduleTypeAll,
+                                    recid _scheduleTypeRecId, boolean _isOverbookingAllowed, container _excludedDays, RecId _planningObjectRecId,
+                                    RecId _resourceRecId, timeofday _fromTime, timeofday _toTime, RecId _locationRecId, RecId _aptitudeRecId,
+                                    RecId _specialityRecId, HMIncludeExclude _includeExclude, boolean _checkTime, ItemId _protocolId, RecId _clientAccount = 0,
+                                    RecId _resourceGroupRecId = 0, boolean _searchFirstAvailable = false)
+    {
+        Query                                   qry = new Query(queryStr(HMResourceSchedulingOpenTimeSlotSearch));
+        QueryBuildDataSource                    qbds, qbdsResourceChild,qbdsGroup,qbdsSpeciality;
+        QueryRun                                queryRun;
+        HMProtocolAttributeAptitude             hmProtocolAttributeAptitude;
+        HMSpecialityAptitudesAttributes         hmSpecialityAptitudesAttributes;
+        HMResourceMasterAptitudeAttribute       hmResourceMasterAptitudeAttribute;
+        HMComments                              queryBuildStr;
+        hmResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObjectLocal;
+        boolean                                 recordMatched, aptitudeExist;
+        int daysSearch = HMParameters::find().DefaultSearchPeriodForOpenSlots;
+        int openSlotsDays = HMParameters::find().OpenSlots;
+        int dateCounter = 0;
+        date    dateValueFirstAvailable;
+    
+        qbds = qry.dataSourceTable(tableNum(HMResourceSchedulingPlanningObject));
+    
+        qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,PlanningObjectStatus)).value(SysQuery::value(AllowanceStatus::Active));
+    
+       // qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,StartDate)).value(SysQuery::value('<'+date2StrUSR(today(),DateFlags::None)));
+       // qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,StartDate)).value(SysQuery::value('='+date2StrUSR(today(),DateFlags::None)));
+        qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,EndDate)).value(SysQuery::value('>'+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None)));
+        qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject,EndDate)).value(SysQuery::value('='+date2StrUSR(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),DateFlags::None)));
+    
+        qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, CaseType)).value(SysQuery::value(HMCaseType::OutPatient));
+        qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, CaseType)).value(SysQuery::value(HMCaseType::Surgery));
+    
+        if(_planningObjectRecId)
+        {
+            qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, RecId)).value(SysQuery::value(_planningObjectRecId));
+        }
+    
+        if(_resourceRecId)
+        {
+            qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, HMResourceMaster)).value(SysQuery::value(_resourceRecId));
+        }
+    
+        if(_locationRecId)
+        {
+            qbds.addRange(fieldNum(HMResourceSchedulingPlanningObject, HMOrganizationalUnit)).value(SysQuery::value(_locationRecId));
+        }
+    
+        if(_aptitudeRecId)
+        {
+            qbdsResourceChild = qry.dataSourceTable(tableNum(HMResourceMasterAptitudeAttribute));
+            qbdsResourceChild.enabled(true);
+    
+            qbdsResourceChild.addRange(fieldNum(HMResourceMasterAptitudeAttribute, HMResourceAptitudeAttribute)).value(SysQuery::value(_aptitudeRecId));
+        }
+    
+        if(_resourceGroupRecId)
+        {
+            qbdsGroup = qry.dataSourceTable(tableNum(HMResourceMaster));
+            qbdsGroup = qbdsGroup.addDataSource(tableNum(HMResourceGroupResourceMaster));
+            qbdsGroup.relations(true);
+            qbdsGroup.addRange(fieldNum(HMResourceGroupResourceMaster,HMResourceGroup)).value(SysQuery::value(_resourceGroupRecId));
+        }
+        if(_specialityRecId)
+        {
+            qbdsSpeciality = qry.dataSourceTable(tableNum(HMResourceMaster));
+            qbdsSpeciality = qbdsSpeciality.addDataSource(tableNum(HMResourceMasterSpeciality));
+            qbdsSpeciality.relations(true);
+            qbdsSpeciality.addRange(fieldNum(HMResourceMasterSpeciality, HMSpecialtyCode)).value(SysQuery::value(_specialityRecId));
+        }
+        //else if(_protocolId)
+        //{
+            //qbdsResourceChild = qry.dataSourceTable(tableNum(HMResourceMasterAptitudeAttribute));
+            //qbdsResourceChild.enabled(true);
+    //
+            //while select ResourceAptitudeAttribute from HMProtocolAttributeAptitude
+                //where HMProtocolAttributeAptitude.ItemId == _protocolId
+            //{
+                //if(!queryBuildStr)
+                //{
+                    //queryBuildStr = strFmt('((HMResourceAptitudeAttribute == %1)', HMProtocolAttributeAptitude.ResourceAptitudeAttribute);
+                //}
+                //else
+                //{
+                    //queryBuildStr += strFmt(' && (HMResourceAptitudeAttribute == %1)', HMProtocolAttributeAptitude.ResourceAptitudeAttribute);
+                //}
+    //
+    //
+            //}
+            //if(queryBuildStr)
+            //{
+                //queryBuildStr += ')';
+                //qbdsResourceChild.addRange(fieldNum(HMResourceMasterAptitudeAttribute, RecId)).value(queryBuildStr);
+            //}
+        //}
+    
+        queryRun = new QueryRun(qry);
+    
+        while(queryRun.next())
+        {
+            hmResourceSchedulingPlanningObjectLocal = queryRun.get(tableNum(HMResourceSchedulingPlanningObject));
+    
+            if(!_aptitudeRecId)
+            {
+                if(_protocolId)
+                {
+                    recordMatched = true;
+    
+                    while select ResourceAptitudeAttribute from hmProtocolAttributeAptitude
+                        where hmProtocolAttributeAptitude.ItemId == _protocolId
+                    {
+                        select count(RecId) from hmResourceMasterAptitudeAttribute
+                            where hmResourceMasterAptitudeAttribute.HMResourceAptitudeAttribute == hmProtocolAttributeAptitude.ResourceAptitudeAttribute
+                            && hmResourceMasterAptitudeAttribute.HMResourceMaster == hmResourceSchedulingPlanningObjectLocal.HMResourceMaster;
+    
+                        if(hmResourceMasterAptitudeAttribute.RecId == 0)
+                        {
+                            recordMatched = false;
+                            break;
+                        }
+                    }
+    
+                    if(!recordMatched)
+                    {
+                        continue;
+                    }
+                }
+            }
+    
+            if(_searchFirstAvailable)
+            {
+                dateValueFirstAvailable = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                firstSlotFound = false;
+                dateCounter = 0;
+    
+                while(!firstSlotFound && dateCounter <= daysSearch)
+                {
+                    dateValueFirstAvailable = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) + dateCounter;
+    
+                    this.searchOpenTimeSlot(hmResourceSchedulingPlanningObjectLocal.RecId,
+                        dateValueFirstAvailable, dateValueFirstAvailable, _isScheduleTypeAll, _scheduleTypeRecId, _isOverbookingAllowed, _excludedDays, _checkTime, _fromTime,
+                        _toTime, _includeExclude, _clientAccount, _searchFirstAvailable);
+    
+                    dateCounter++;
+                }
+    
+                if(firstSlotFound)
+                {
+                    this.searchOpenTimeSlot(hmResourceSchedulingPlanningObjectLocal.RecId,
+                        dateValueFirstAvailable, dateValueFirstAvailable + openSlotsDays, _isScheduleTypeAll, _scheduleTypeRecId, _isOverbookingAllowed, _excludedDays, _checkTime, _fromTime,
+                        _toTime, _includeExclude, _clientAccount);
+                }
+            }
+            else
+            {
+                this.searchOpenTimeSlot(hmResourceSchedulingPlanningObjectLocal.RecId,
+                        _fromDate, _toDate, _isScheduleTypeAll, _scheduleTypeRecId, _isOverbookingAllowed, _excludedDays, _checkTime, _fromTime,
+                        _toTime, _includeExclude, _clientAccount);
+            }
+    
+        }
+    
+        return hmResourceSchedulingOpenTimeSlotsTmpMain;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>searchOpenTimeSlotPatientChart</Name>
+				<Source><![CDATA[
+    public HMResourceSchedulingOpenTimeSlotsTmp searchOpenTimeSlotPatientChart (Date _fromDate
+    , Date _toDate,boolean isInHouse = false
+    , RecId  _patientid = 0
+    , RecId  _physicianId = 0
+    , RecId  _clinicId = 0
+    , RecId  _scheduleId = 0)
+    {
+        Array calenderWeeks=new Array(Types::Container);
+        Array startEndDates=new Array(Types::Container);
+        int i;
+        int j;
+        int countSlots;
+        int currentWeek;
+        int currentYear;
+        int totalCalenderWeeks;
+        date startDate;
+        date endDate;
+        HMPatient       hmPatient;
+        date currentDate;
+        boolean flag=false;
+        Query query;
+        hmResourceSchedulingPlanningObject hmResourceSchedulingPlanningObjectLocal;
+    
+    
+        QueryBuildDataSource qbdPlanning,qbdDayPlan,qbddayPlanItem,qbdSchedule,qbdClinic,qbdWorder,qbdEmployee;
+        HMResourceSchedulingDayPlanItem             hmResourceSchedulingDayPlanItem;
+        HMResourceSchedulingTypeCode                hmResourceSchedulingTypeCode;
+        HMClinicStaff                               hmClinicStaff;
+        HcmWorker                                   hcmWorker;
+        HcmEmployment                               hcmemploymeny;
+        HcmEmploymentType                           hcmEmploymentType;
+        QueryRun queryRun;
+        int totalTimeSlots;
+        NoYes   noWomenAsPatinet;
+        timeOfDay fromTime;
+        // add by daniyall aslam
+        int   availbaleTimeSlots,op = 1;
+    
+    
+        HMResourceSchedulingOpenTimeSlotsTmp            hmResourceSchedulingOpenTimeSlotsTmpLocal,TempBuff;
+        hmPatient = HMPatient::find(_patientid);
+        hcmEmploymentType = isInHouse ? hcmEmploymentType::Employee : hcmEmploymentType::Contractor;
+        noWomenAsPatinet = hmPatient.Gender == HcmPersonGender::Female ? NoYes::Yes : NoYes::No;
+        query = new Query();
+    
+        qbdPlanning =  query.addDataSource(tableNum(hmResourceSchedulingPlanningObject));
+        if (_clinicId > 0)
+        {
+            qbdPlanning.addRange(fieldNum(hmResourceSchedulingPlanningObject,HMOrganizationalUnit)).value(SysQuery::value(_clinicId));
+        }
+        //qbdDayPlan =  qbdPlanning.addDataSource(tableNum(HMResourceSchedulingDayPlan));
+        //qbdDayPlan.relations(true);
+        //qbdDayPlan.fetchMode(QueryFetchMode::One2One);
+    //
+        //qbddayPlanItem =  qbdDayPlan.addDataSource(tableNum(HMResourceSchedulingDayPlanItem));
+        //qbddayPlanItem.relations(true);
+    //
+    //
+        //qbdSchedule =  qbddayPlanItem.addDataSource(tableNum(HMResourceSchedulingTypeCode));
+        //qbdSchedule.relations(true);
+        //qbdSchedule.addRange(fieldNum(HMResourceSchedulingTypeCode,CaseType)).value(SysQuery::value(HMCaseType::OutPatient));
+        //qbdSchedule.addRange(fieldNum(HMResourceSchedulingTypeCode,CaseType)).value(SysQuery::value(HMCaseType::Surgery));
+        //if (_scheduleId > 0)
+        //{
+            //qbdSchedule.addRange(fieldNum(HMResourceSchedulingTypeCode,RecId)).value(SysQuery::value(_scheduleId));
+        //}
+    
+        qbdClinic =  qbdPlanning.addDataSource(tableNum(HMClinicStaff));
+        qbdClinic.relations(true);
+        //qbdClinic.fetchMode(QueryFetchMode::One2One);
+        if (_physicianId > 0)
+        {
+            qbdClinic.addRange(fieldNum(HMClinicStaff,RecId)).value(SysQuery::value(_physicianId));
+        }
+    
+        qbdWorder =  qbdClinic.addDataSource(tableNum(HcmWorker));
+        qbdWorder.relations(true);
+    
+        qbdEmployee =  qbdWorder.addDataSource(tableNum(HcmEmployment));
+        qbdEmployee.relations(true);
+        qbdEmployee.addRange(fieldNum(HcmEmployment,EmploymentType)).value(SysQuery::value(hcmEmploymentType));
+    
+        queryRun =  new QueryRun(query);
+        while (queryRun.next())
+        {
+            hmResourceSchedulingPlanningObjectLocal = queryRun.get(tableNum(hmResourceSchedulingPlanningObject));
+            //hmResourceSchedulingDayPlan    = queryRun.get(tableNum(hmResourceSchedulingDayPlan));
+            //HMResourceSchedulingDayPlanItem    = queryRun.get(tableNum(HMResourceSchedulingDayPlanItem));
+            //HMResourceSchedulingTypeCode    = queryRun.get(tableNum(HMResourceSchedulingTypeCode));
+            HMClinicStaff    = queryRun.get(tableNum(HMClinicStaff));
+    
+            if (hmClinicStaff.NoWomen)
+            {
+                if (noWomenAsPatinet)
+                continue;
+            }
+            if (hmClinicStaff.RAMQ)
+            {
+                if (!hmPatient.RAMQ)
+                continue;
+            }
+            if (hmClinicStaff.EvaluatPilots)
+            {
+                if (!hmPatient.Pilot)
+                continue;
+            }
+          TempBuff =  this.searchOpenTimeSlot(hmResourceSchedulingPlanningObjectLocal.RecId,_fromDate,_toDate,_scheduleId > 0 ? false:true,
+            _scheduleId,false,
+            [false,false,false,false,false,false,false]);
+            if (TempBuff)
+            {
+                 while select * from TempBuff
+                {
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.Date = TempBuff.Date;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.Time = TempBuff.Time;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.Duration = TempBuff.Duration;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.DayName = TempBuff.DayName;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingPlanningObject =TempBuff.HMResourceSchedulingPlanningObject;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.HMResourceSchedulingTypeCode = TempBuff.HMResourceSchedulingTypeCode;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.HMClinicStaff = HMClinicStaff.RecId;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.IsOverBooked = TempBuff.IsOverBooked;
+                    hmResourceSchedulingOpenTimeSlotsTmpLocal.insert();
+    
+                }
+            }
+            //countSlots = 1;
+            //calenderWeeks = this.getCalenderWeeks(_fromDate, _toDate);
+            //startEndDates = this.getStartEndDates(_fromDate, _toDate);
+            //totalCalenderWeeks = conPeek(calenderWeeks.value(1), 1);
+    //
+        //for(i=2;i<=totalCalenderWeeks;i++)
+        //{
+            //currentWeek = conPeek(calenderWeeks.value(i),1);
+            //currentYear = conPeek(calenderWeeks.value(i),2);
+    //
+    //
+            //if(this.calenderWeekExistPatientChart(currentWeek, currentYear))
+            //{
+                //startDate = conPeek(startEndDates.value(i), 1);
+                //endDate = conPeek(startEndDates.value(i), 2);
+                //currentDate = startDate;
+                //while(currentDate <= endDate)
+                //{
+                    //if(this.checkPublicHoliday(currentDate))
+                    //{
+                        //if(hmResourceSchedulingPlanningObject.ScheduleOnPublicHoliday == NoYes::Yes)
+                        //{
+                            //flag = true;
+                        //}
+                        //else
+                        //{
+                            //flag = false;
+                        //}
+                    //}
+                    //else
+                    //{
+                        //flag = true;
+                    //}
+                    //if(flag)
+                    //{
+                        //if(this.dayPlanExistPatientChart(dayOfWk(currentDate)))
+                        //{
+                             //flag = true;
+                        //}
+                        //else
+                        //{
+                            //flag = false;
+                        //}
+                    //}
+    //
+    //
+                    //if(flag)
+                    //{
+                                //countSlots = 1;
+                                //if(this.isTimeSlotFull(currentDate, hmResourceSchedulingDayPlanItem.RecId, hmResourceSchedulingTypeCode.Duration))
+                                //{
+                                    //if(hmResourceSchedulingPlanningObject.OverbookAllowed == NoYes::Yes && true)
+                                    //{
+                                        //availbaleTimeSlots  =  hmResourceSchedulingDayPlanItem.NumberOfTimeSlots;  //  3
+                                        //totalTimeSlots   = hmResourceSchedulingDayPlanItem.OfflineAppointments;    //real2int(System.Math::Ceiling((availbaleTimeSlots / 100) *  hmResourceSchedulingDayPlanItem.PercentOfflineAppointment));
+    //
+                                       //// totalTimeSlots = totalTimeSlots - this.overbookingInTimeSlotToday(currentDate,hmResourceSchedulingDayPlanItem.RecId) ;
+                                        //fromTime =  hmResourceSchedulingDayPlanItem.StartTime;
+    //
+                                        //for (j = 1; j <= totalTimeSlots; j++)
+                                        //{
+                                             //op++;
+                                            //if(this.checkAppointmentExist(currentDate, fromTime,hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode) ==  false)
+                                            //{
+    //
+                                                //if (j > totalTimeSlots - this.overbookingInTimeSlotToday(currentDate,hmResourceSchedulingDayPlanItem.RecId))
+                                                //{
+                                                    //break;
+                                                //}
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.Date = currentDate;
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.Time = fromTime;
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.Duration = hmResourceSchedulingTypeCode.Duration;
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.DayName = dayOfWk(currentDate);
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode = hmResourceSchedulingTypeCode.RecId;
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.HMClinicStaff = HMClinicStaff.RecId;
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.IsOverBooked = NoYes::Yes;
+                                            //hmResourceSchedulingOpenTimeSlotsTmp.insert();
+                                            //countSlots++;
+    //
+                                            //}
+                                            //fromTime = DateTimeUtil::time(DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(currentDate,fromTime),hmResourceSchedulingTypeCode.Duration));
+                                        //}
+                                    //}
+                                //}
+                                //else
+                                //{
+    //
+                                    //if (hmResourceSchedulingDayPlanItem.OfflineAppointments + hmResourceSchedulingDayPlanItem.OnlineAppointments == hmResourceSchedulingDayPlanItem.NumberOfTimeSlots )
+                                    //{
+                                            //totalTimeSlots = hmResourceSchedulingDayPlanItem.NumberOfTimeSlots;
+                                    //}
+                                    //else
+                                    //{
+                                            //availbaleTimeSlots  =  hmResourceSchedulingDayPlanItem.NumberOfTimeSlots;  //  3
+                                            //totalTimeSlots   = real2int(System.Math::Ceiling((availbaleTimeSlots / 100) *  hmResourceSchedulingDayPlanItem.PercentOfflineAppointment));
+                                    //}
+    //
+    //
+                                               //fromTime = hmResourceSchedulingDayPlanItem.StartTime;
+    //
+                                                //for(j=1;j<=totalTimeSlots;j++)
+                                                //{ op++;
+                                                    //if(this.checkAppointmentExist(currentDate, fromTime,hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode) ==  false)
+                                                    //{
+                                                       //// 5 < 1
+                                                        //if (countSlots  > totalTimeSlots - int642int(this.checkAppointmentExistToday(currentDate,hmResourceSchedulingDayPlanItem.HMResourceSchedulingTypeCode)) )
+                                                        //{
+                                                            //break;
+                                                        //}
+    //
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.Date = currentDate;
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.Time = fromTime;
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.Duration = hmResourceSchedulingTypeCode.Duration;
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.DayName = dayOfWk(currentDate);
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingPlanningObject = hmResourceSchedulingPlanningObject.RecId;
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.HMResourceSchedulingTypeCode = hmResourceSchedulingTypeCode.RecId;
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.IsOverBooked = NoYes::No;
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.HMClinicStaff = HMClinicStaff.RecId;
+                                                        //hmResourceSchedulingOpenTimeSlotsTmp.insert();
+                                                        //countSlots++;
+                                                    //}
+    //
+                                                    //fromTime = DateTimeUtil::time(DateTimeUtil::addMinutes(DateTimeUtil::newDateTime(currentDate,fromTime),hmResourceSchedulingTypeCode.Duration));
+                                                //}
+                                              //// end for loop
+                                //}
+                                //// end else
+                        //}
+                    //// is flag off
+    //
+    //
+    //
+    //
+    //
+    //
+                    //currentDate+=1;
+                //}
+    //
+            //}
+    //
+            //}
+        //}
+    }
+        return hmResourceSchedulingOpenTimeSlotsTmpLocal;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateSlotReserveBlock</Name>
+				<Source><![CDATA[
+    private void updateSlotReserveBlock(date _date, Timeofday _formTime, Timeofday _endTime, hmResourceSchedulingOpenTimeSlotsTmp _hmResourceSchedulingOpenTimeSlotsTmp)
+    {
+        HMAppointmentReserveSLot                    hmAppointmentReserveSlot;
+    
+        select RecId,SlotReserveBlock from hmAppointmentReserveSlot
+            where hmAppointmentReserveSlot.HMResourceMaster == hmResourceSchedulingPlanningObject.HMResourceMaster
+            && hmAppointmentReserveSlot.Date == _date
+            && (hmAppointmentReserveSlot.SlotReserveBlock == HMAppointmentSlotReserveBlock::Block
+            || hmAppointmentReserveSlot.SlotReserveBlock == HMAppointmentSlotReserveBlock::Close)
+            && (hmAppointmentReserveSlot.StartTime <= _formTime
+            && hmAppointmentReserveSlot.EndTime >= _formTime
+            && hmAppointmentReserveSlot.StartTime <= _endTime
+            && hmAppointmentReserveSlot.EndTime >= _endTime);
+        if(hmAppointmentReserveSlot.RecId != 0)
+        {
+            if(hmAppointmentReserveSlot.SlotReserveBlock == HMAppointmentSlotReserveBlock::Block)
+            {
+                _hmResourceSchedulingOpenTimeSlotsTmp.isBlocked = NoYes::Yes;
+            }
+            else if(hmAppointmentReserveSlot.SlotReserveBlock == HMAppointmentSlotReserveBlock::Close)
+            {
+                _hmResourceSchedulingOpenTimeSlotsTmp.isClosed = NoYes::Yes;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMSalesInvoiceConsolidatedDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMSalesInvoiceConsolidatedDataContract))
+]
+class HMSalesInvoiceConsolidatedDP extends SRSReportDataProviderBase
+{
+    HMSalesInvoiceConsolidatedTmp  hmSalesInvoiceConsolidatedTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMSalesInvoiceConsolidatedTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute("HMSalesInvoiceConsolidatedTmp")]
+    public HMSalesInvoiceConsolidatedTmp getHMSalesInvoiceConsolidatedTmp()
+    {
+        select * from hmSalesInvoiceConsolidatedTmp;
+        return hmSalesInvoiceConsolidatedTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        List                                    invoiceIds;
+        Query                                   query;
+        QueryRun                                queryRun;
+        ListEnumerator                          enumerator;
+        HMSalesInvoiceConsolidatedDataContract  dataContract;
+        CustInvoiceTrans                        custInvoiceTrans;
+        CustInvoiceJour                         custInvoiceJour;
+        CustTable                               custTableInvoice;
+        CompanyInfo                             companyInfo;
+        HMPatient                               hmPatient;
+        HMResourceSchedulingAppointmentSalesTbl hmResourceSchedulingAppointmentSalesTbl;
+        HMResourceSchedulingAppointment         hmResourceSchedulingAppointment;
+    
+        dataContract = this.parmDataContract();
+    
+        invoiceIds  = new List(Types::String);
+        query       = new Query();
+    
+        invoiceIds = strSplit(dataContract.parmInvoiceIds(), "|");
+        enumerator = invoiceIds.getEnumerator();
+        query.addDataSource(tableNum(CustInvoiceJour));
+        while (enumerator.moveNext())
+        {
+            query.dataSourceTable(tableNum(CustInvoiceJour)).addRange(fieldNum(CustInvoiceJour, InvoiceId)).value(enumerator.current());
+        }
+    
+        queryRun = new QueryRun(query);
+    
+        while (queryRun.next())
+        {
+            custInvoiceJour = queryRun.get(tableNum(CustInvoiceJour));
+    
+            select firstonly Party, AccountNum from custTableInvoice
+                where custTableInvoice.AccountNum == custInvoiceJour.InvoiceAccount;
+    
+            select RecId from hmResourceSchedulingAppointmentSalesTbl
+                where hmResourceSchedulingAppointmentSalesTbl.SalesTable == custInvoiceJour.SalesId
+                join AppointmentDate, HMResourceSchedulingPlanningObject from hmResourceSchedulingAppointment
+                    where hmResourceSchedulingAppointment.RecId == hmResourceSchedulingAppointmentSalesTbl.HMResourceSchedulingAppointment
+                join custTable from hmPatient
+                    where hmPatient.RecId == hmResourceSchedulingAppointment.HMPatient;
+    
+            companyInfo = companyInfo::find();
+    
+            hmSalesInvoiceConsolidatedTmp.BilledTo = custTableInvoice.email();
+            hmSalesInvoiceConsolidatedTmp.BillingDate = custInvoiceJour.InvoiceDate;
+            hmSalesInvoiceConsolidatedTmp.BirthDate = hmPatient.patientBirthDate();
+            hmSalesInvoiceConsolidatedTmp.ExaminationDate = hmResourceSchedulingAppointment.AppointmentDate;
+            hmSalesInvoiceConsolidatedTmp.ClientAccount = custTableInvoice.AccountNum;
+            hmSalesInvoiceConsolidatedTmp.InvoiceId = custInvoiceJour.InvoiceId;
+            hmSalesInvoiceConsolidatedTmp.PayableToName = companyInfo.Name;
+            hmSalesInvoiceConsolidatedTmp.PayableToAddress = companyInfo.primaryAddress();
+            hmSalesInvoiceConsolidatedTmp.PatientName = hmPatient.patientName();
+            hmSalesInvoiceConsolidatedTmp.OrderNum = custInvoiceJour.SalesId;
+            hmSalesInvoiceConsolidatedTmp.Branch = hmResourceSchedulingAppointment.showClinic();
+            hmSalesInvoiceConsolidatedTmp.HeadingLine = HeadingLine::Heading;
+    
+            hmSalesInvoiceConsolidatedTmp.insert();
+    
+            while select ItemId, LineAmount, LineAmountTax from custInvoiceTrans
+                where custInvoiceTrans.InvoiceId == custInvoiceJour.InvoiceId
+            {
+                hmSalesInvoiceConsolidatedTmp.clear();
+                hmSalesInvoiceConsolidatedTmp.ItemId = custInvoiceTrans.ItemId;
+                hmSalesInvoiceConsolidatedTmp.EcoResDescription = custInvoiceTrans.itemName();
+                hmSalesInvoiceConsolidatedTmp.Amount = custInvoiceTrans.lineAmountInclTax();
+                hmSalesInvoiceConsolidatedTmp.InvoiceId = custInvoiceJour.InvoiceId;
+                hmSalesInvoiceConsolidatedTmp.HeadingLine = HeadingLine::Line;
+                hmSalesInvoiceConsolidatedTmp.insert();
+            }
+    
+            hmSalesInvoiceConsolidatedTmp.clear();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

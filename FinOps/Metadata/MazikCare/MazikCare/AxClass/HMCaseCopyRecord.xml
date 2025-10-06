@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCaseCopyRecord</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCaseCopyRecord
+{
+    HMCaseNo                    caseNo;
+    HMNumberSequenceHandler     numberSeq;
+    HMCaseCopyRecord            hmCaseCopyRecord;
+    HMClaimTableSetup           hmClaimTableSetup;
+    HMDiagnosisDictionary       hmDiagnosisDictionary;
+    HMProcedureCodeMaster       hmProcedureCodeMaster;
+    Args args;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>copyCaseCCQualifier</Name>
+				<Source><![CDATA[
+    public void copyCaseCCQualifier(RecId _caseRecId, RecId _destRecId)
+    {
+        HMCaseCCQualifier1450     sourceCaseCCQualifier, destinationCaseCCQualifier;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceCaseCCQualifier
+                join hmClaimTableSetup
+                where sourceCaseCCQualifier.Case == _caseRecId
+                && sourceCaseCCQualifier.Code == hmClaimTableSetup.RecId
+            {
+                buf2Buf(sourceCaseCCQualifier, destinationCaseCCQualifier);
+                destinationCaseCCQualifier.Case = _destRecId;
+                if(destinationCaseCCQualifier.Case)
+                {
+                    destinationCaseCCQualifier.insert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCaseHeader</Name>
+				<Source><![CDATA[
+    public void copyCaseHeader(RecId _caseRecId, ARgs _args)
+    {
+        HMCase sourceCase,destinationCase;
+        FormRun formRun;
+        try
+        {
+            ttsBegin;
+    
+            sourceCase = HMCase::find(_caseRecId);
+    
+            buf2Buf(sourceCase,destinationCase);
+    
+            numberSeq = new HMNumberSequenceHandler();
+            caseNo = numberSeq.generateNumberSequence(HMOrganizationalUnit::getOperatingUnitRecid(sourceCase.Clinic), extendedtypenum(HMCaseNo));
+    
+            destinationCase.CaseNo = caseNo;
+            if(destinationCase.CaseNo)
+            {
+                if(_args)
+                {
+                    if(_args.caller())
+                    {
+                        formRun = _args.caller();
+                        if(formHasMethod(formRun,identifierstr(getCaseType)))
+                        {
+                            destinationCase.HMCaseType = _args.caller().getCaseType();
+                        }
+                        if(formHasMethod(formRun,identifierstr(getBillingTypeRecId)))
+                        {
+                            destinationCase.BillType = _args.caller().getBillingTypeRecId();
+                        }
+                    }
+                }
+                destinationCase.insert();
+                numberSeq.commitNewNumSeq();
+                destinationCase.CaseStatus = HMCaseStatus::Open;
+                destinationCase.update();
+            }
+            else
+            {
+                numberSeq.deleteNewNumSeq();
+                throw error("Case number cannot be empty");
+            }
+    
+            ttsCommit;
+    
+            this.copyCaseInsurance(_caseRecId, destinationCase.RecId);
+            this.copyClaimConditionCodes(_caseRecId, destinationCase.RecId);
+            this.copyCaseOccurrenceCode(_caseRecId, destinationCase.RecId);
+            this.copyCaseOccurenceSpanCode(_caseRecId, destinationCase.RecId);
+            this.copyCaseValueCode(_caseRecId, destinationCase.RecId);
+            this.copyCaseOtherDiagonosisCode(_caseRecId, destinationCase.RecId);
+            this.copyCaseOtherProcedureCode(_caseRecId, destinationCase.RecId);
+            this.copyCaseCCQualifier(_caseRecId, destinationCase.RecId);
+    
+            if(!HMChargeEntryClass::createChargeEntryTable(destinationCase.HMPatient,
+                                                                0,
+                                                                0,
+                                                                destinationCase.HMCaseType,
+                                                                destinationCase.RecId))
+            {
+                throw Exception::Error;
+            }
+    
+            info(strFmt('The current case is successfully copied with a new Case No: %1',destinationCase.CaseNo ));
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCaseInsurance</Name>
+				<Source><![CDATA[
+    public void copyCaseInsurance(RecId _caseRecId, RecId _destRecId)
+    {
+        HMCaseInsurance     sourceCaseInsurance, destinationCaseInsurance;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceCaseInsurance
+                where sourceCaseInsurance.HMCase == _caseRecId
+            {
+                buf2Buf(sourceCaseInsurance, destinationCaseInsurance);
+                destinationCaseInsurance.HMCase = _destRecId;
+                if(destinationCaseInsurance.HMCase)
+                {
+                    destinationCaseInsurance.doInsert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCaseOccurenceSpanCode</Name>
+				<Source><![CDATA[
+    public void copyCaseOccurenceSpanCode(RecId _caseRecId, RecId _destRecId)
+    {
+        HMCaseOccurrenceSpanCode1450   sourceCaseOccurrenceSpanCode, destinationCaseOccurrenceSpanCode;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceCaseOccurrenceSpanCode
+                join hmClaimTableSetup
+                where sourceCaseOccurrenceSpanCode.Case == _caseRecId
+                && sourceCaseOccurrenceSpanCode.Code == hmClaimTableSetup.RecId
+            {
+                buf2Buf(sourceCaseOccurrenceSpanCode, destinationCaseOccurrenceSpanCode);
+                destinationCaseOccurrenceSpanCode.Case = _destRecId;
+                if(destinationCaseOccurrenceSpanCode.Case)
+                {
+                    destinationCaseOccurrenceSpanCode.insert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCaseOccurrenceCode</Name>
+				<Source><![CDATA[
+    public void copyCaseOccurrenceCode(RecId _caseRecId, RecId _destRecId)
+    {
+        HMCaseOccurrenceCode1450       sourceCaseOccurrenceCode, destinationCaseOccurrenceCode;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceCaseOccurrenceCode
+                join hmClaimTableSetup
+                where sourceCaseOccurrenceCode.Case == _caseRecId
+                && sourceCaseOccurrenceCode.Code == hmClaimTableSetup.RecId
+            {
+                buf2Buf(sourceCaseOccurrenceCode, destinationCaseOccurrenceCode);
+                destinationCaseOccurrenceCode.Case = _destRecId;
+                if(destinationCaseOccurrenceCode.Case)
+                {
+                    destinationCaseOccurrenceCode.insert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCaseOtherDiagonosisCode</Name>
+				<Source><![CDATA[
+    public void copyCaseOtherDiagonosisCode(RecId _caseRecId, RecId _destRecId)
+    {
+        HMCaseOtherDiagnosisCode1450  sourceCaseOtherDiagonosisCode, destinationCaseOtherDiagonosisCode;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceCaseOtherDiagonosisCode
+                join hmDiagnosisDictionary
+                where sourceCaseOtherDiagonosisCode.Case == _caseRecId
+                &&sourceCaseOtherDiagonosisCode.Code == hmDiagnosisDictionary.RecId
+            {
+                buf2Buf(sourceCaseOtherDiagonosisCode, destinationCaseOtherDiagonosisCode);
+                destinationCaseOtherDiagonosisCode.Case = _destRecId;
+                if(destinationCaseOtherDiagonosisCode.Case)
+                {
+                    destinationCaseOtherDiagonosisCode.insert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCaseOtherProcedureCode</Name>
+				<Source><![CDATA[
+    public void copyCaseOtherProcedureCode(RecId _caseRecId, RecId _destRecId)
+    {
+        HMCaseOtherProcedureCode1450     sourceCaseOtherProcedureCode, destinationCaseOtherProcedureCode;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceCaseOtherProcedureCode
+                join hmProcedureCodeMaster
+                where sourceCaseOtherProcedureCode.Case == _caseRecId
+                && sourceCaseOtherProcedureCode.Code == hmProcedureCodeMaster.RecId
+            {
+                buf2Buf(sourceCaseOtherProcedureCode, destinationCaseOtherProcedureCode);
+                destinationCaseOtherProcedureCode.Case = _destRecId;
+                if(destinationCaseOtherProcedureCode.Case)
+                {
+                    destinationCaseOtherProcedureCode.insert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyCaseValueCode</Name>
+				<Source><![CDATA[
+    public void copyCaseValueCode(RecId _caseRecId, RecId _destRecId)
+    {
+        HMCaseValueCode1450             sourceCaseValueCode, destinationCaseValueCode;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceCaseValueCode
+                join hmClaimTableSetup
+                where sourceCaseValueCode.Case == _caseRecId
+                && sourceCaseValueCode.Code == hmClaimTableSetup.RecId
+            {
+                buf2Buf(sourceCaseValueCode, destinationCaseValueCode);
+                destinationCaseValueCode.Case = _destRecId;
+                if(destinationCaseValueCode.Case)
+                {
+                    destinationCaseValueCode.insert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyClaimConditionCodes</Name>
+				<Source><![CDATA[
+    public void copyClaimConditionCodes(RecId _caseRecId, RecId _destRecId)
+    {
+        HMClaimConditionCode1450      sourceClaimConditionCode, destinationClaimConditionCode;
+    
+        try
+        {
+            ttsBegin;
+    
+            while select * from sourceClaimConditionCode
+                join hmClaimTableSetup
+                where sourceClaimConditionCode.HMCase == _caseRecId
+                && sourceClaimConditionCode.Code == hmClaimTableSetup.RecId
+            {
+                buf2Buf(sourceClaimConditionCode, destinationClaimConditionCode);
+                destinationClaimConditionCode.HMCase = _destRecId;
+                if(destinationClaimConditionCode.HMCase)
+                {
+                    destinationClaimConditionCode.insert();
+                }
+                else
+                {
+                    throw Exception::Error;
+                }
+            }
+    
+            ttsCommit;
+        }
+        catch(exception::error)
+        {
+            error ("Process was aborted");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+       hmCaseCopyRecord           hm;
+       HMCase                     hmCase;
+    
+       hm = new hmCaseCopyRecord();
+    
+       hmCase = _args.record();
+    
+       hm.copyCaseHeader(hmCase.RecId, _args);
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

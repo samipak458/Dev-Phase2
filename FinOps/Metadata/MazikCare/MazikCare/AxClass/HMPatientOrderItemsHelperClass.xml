@@ -1,0 +1,445 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientOrderItemsHelperClass</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientOrderItemsHelperClass
+{
+    RecId                           patientEncounterRecId, patientRecId, organizationalUnitRecId;
+    HMPatientOrderTableTmp          hmPatientOrderTableTmp;
+    HMOrderType                     orderType;
+    HMAppointmentInventTmp          hmAppointmentInventTmp;
+    boolean                         isENNClinicStaff;
+    RecId                           EnnClinicStaffRecId;
+    RecId                           patientInsuranceId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkAppointmenttItemAlreadyExist</Name>
+				<Source><![CDATA[
+    public boolean checkAppointmenttItemAlreadyExist(ItemId _itemId,RecId _apptRecId)
+    {
+        HMResourceSchedulingAppointmentInvent apptInvent;
+    
+        select count(RecId) from apptInvent
+        where apptInvent.InventTable == _itemId
+        && apptInvent.HMResourceSchedulingAppointment == _apptRecId;
+    
+        if(apptInvent.RecId > 0)
+        {
+            return true;
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>copyOrderTableToAppointment</Name>
+				<Source><![CDATA[
+    private void copyOrderTableToAppointment()
+    {
+        ttsBegin;
+        delete_from hmAppointmentInventTmp;
+        ttsCommit;
+    
+    
+    
+        while select * from hmPatientOrderTableTmp
+        {
+            //hmPatientOrderTableTmp.RefRecId = hmAppointmentInventTmpLocal.RecId;
+            //hmPatientOrderTableTmp.Recordversion = hmAppointmentInventTmpLocal.recVersion;
+            if (patientInsuranceId == 0)
+            {
+                hmAppointmentInventTmp.PatientResponsibility    = HMPatientPaymentResponsibility::Patient;
+                //hmPatientOrderTableTmp.PatientResponsibility;
+            }
+            else
+            {
+                hmAppointmentInventTmp.PatientResponsibility    = HMPatientPaymentResponsibility::Client;
+            }
+            hmAppointmentInventTmp.ItemId                   = hmPatientOrderTableTmp.ItemId;
+            hmAppointmentInventTmp.ItemName                 = hmPatientOrderTableTmp.EcoResProductName;
+            hmAppointmentInventTmp.EcoResProduct            = hmPatientOrderTableTmp.EcoResProduct;
+            hmAppointmentInventTmp.EcoResProductName        = hmPatientOrderTableTmp.EcoResProductName;
+            hmAppointmentInventTmp.DefaultOrder             = hmPatientOrderTableTmp.IsPRN;
+            hmAppointmentInventTmp.RefRecId                 = hmPatientOrderTableTmp.RefRecId;
+            hmAppointmentInventTmp.HMServiceStatus          = hmPatientOrderTableTmp.HMServiceStatus;
+            hmAppointmentInventTmp.ServiceDeclinedReason    = hmPatientOrderTableTmp.ServiceDeclinedReason;
+            hmAppointmentInventTmp.ProtocolId               = hmPatientOrderTableTmp.ProtocolId;
+            hmAppointmentInventTmp.IsProtcol                = InventTable::find(hmPatientOrderTableTmp.ItemId).PmfProductType == PmfProductType::BOM ? NoYes::Yes : NoYes::No;
+            hmAppointmentInventTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createUpdateOrders</Name>
+				<Source><![CDATA[
+    public void createUpdateOrders()
+    {
+        HMPatientOrderClass         patientOrderClass = new HMPatientOrderClass();
+        boolean  ret;
+    
+        while select hmPatientOrderTableTmp
+        {
+            if(!hmPatientOrderTableTmp.RefRecId)// already present
+            {
+                switch(orderType)
+                    {
+                        case HMOrderType::OUService:
+                            ret = this.paramENNClinicStaff() ?
+                            patientOrderClass.createENNOUService(this.paramENNClinicStaffRecId(), hmPatientOrderTableTmp.ItemId)
+                            : patientOrderClass.createOUService(organizationalUnitRecId, hmPatientOrderTableTmp.ItemId,hmPatientOrderTableTmp.HMTreatmentClassification);
+                            break;
+    
+                        case HMOrderType::Appointment:
+                            patientOrderClass.createAppointmentOrder(hmPatientOrderTableTmp.ItemId,hmPatientOrderTableTmp.IsPRN);
+                    }
+            }
+        }
+        if(orderType == HMOrderType::Appointment)
+        {
+            this.parmHMAppointmentInventTmp(patientOrderClass.parmHMAppointmentInventTmp());
+            this.copyOrderTableToAppointment();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadAppointmentOrders</Name>
+				<Source><![CDATA[
+    private void loadAppointmentOrders(HMClientAccount _clientAccount = '')
+    {
+        HMAppointmentInventTmp          hmAppointmentInventTmpLocal;
+        HMClientProtocol                hmClientProtocolLocal;
+    
+        hmAppointmentInventTmpLocal = this.parmHMAppointmentInventTmp();
+    
+        while select * from hmAppointmentInventTmpLocal
+        {
+            hmPatientOrderTableTmp.RefRecId = hmAppointmentInventTmpLocal.RecId;
+            hmPatientOrderTableTmp.Recordversion = hmAppointmentInventTmpLocal.recVersion;
+    
+            hmPatientOrderTableTmp.ItemId = hmAppointmentInventTmpLocal.ItemId;
+            if(_clientAccount)
+            {
+                select * from hmClientProtocolLocal
+                where hmClientProtocolLocal.ClientAccount == _clientAccount
+                && hmClientProtocolLocal.ItemId == hmPatientOrderTableTmp.ItemId;
+            }
+            hmPatientOrderTableTmp.ProtocolId               = hmAppointmentInventTmpLocal.ProtocolId;
+            HMPatientOrderTableTmp.EcoResProductName        = hmClientProtocolLocal.itemAlias() != '' ? hmClientProtocolLocal.itemAlias() : hmPatientOrderTableTmp.itemname;
+            hmPatientOrderTableTmp.ItemName                 = hmAppointmentInventTmpLocal.ItemName;
+            hmPatientOrderTableTmp.EcoResProduct            = InventTable::find(hmAppointmentInventTmpLocal.ItemId).Product;
+            hmPatientOrderTableTmp.IsPRN                    = hmAppointmentInventTmpLocal.DefaultOrder;
+            hmPatientOrderTableTmp.RefRecId                 = hmAppointmentInventTmpLocal.RefRecId;
+            hmPatientOrderTableTmp.PatientResponsibility    = hmAppointmentInventTmpLocal.PatientResponsibility;
+            hmPatientOrderTableTmp.HMServiceStatus          = hmAppointmentInventTmpLocal.HMServiceStatus;
+            hmPatientOrderTableTmp.ServiceDeclinedReason    = hmAppointmentInventTmpLocal.ServiceDeclinedReason;
+            hmPatientOrderTableTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadOrdersFromCaller</Name>
+				<Source><![CDATA[
+    public void loadOrdersFromCaller(HMClientAccount _clientAccount = '')
+    {
+        switch (orderType)
+        {
+            case HMOrderType::OUService:
+                this.loadOUServices();
+                break;
+            case HMOrderType::Appointment:
+                this.loadAppointmentOrders(_clientAccount);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>loadOUServices</Name>
+				<Source><![CDATA[
+    private void loadOUServices()
+    {
+    
+    
+        /*while select * from hmOrganizationalUnitService
+            where hmOrganizationalUnitService.HMOrganizationalUnit == this.parmOrganizationalUnitRecId()
+        {
+            hmPatientOrderTableTmp.RefRecId             = hmOrganizationalUnitService.HMOrganizationalUnit;
+            hmPatientOrderTableTmp.Recordversion        = hmOrganizationalUnitService.recVersion;
+    
+            hmPatientOrderTableTmp.ItemId               = hmOrganizationalUnitService.InventTable;
+            hmPatientOrderTableTmp.EcoResProduct        = InventTable::find(hmOrganizationalUnitService.InventTable).Product;
+            hmPatientOrderTableTmp.EcoResProductName    = EcoResProduct::find(hmPatientOrderTableTmp.EcoResProduct).productName();
+            hmPatientOrderTableTmp.HMTreatmentClassification = hmOrganizationalUnitService.HMTreatmentClassification;
+            hmPatientOrderTableTmp.insert();
+        }*/
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paramENNClinicStaff</Name>
+				<Source><![CDATA[
+    public boolean paramENNClinicStaff(boolean _isENNClinicStaff = isENNClinicStaff)
+    {
+        isENNClinicStaff = _isENNClinicStaff;
+    
+        return isENNClinicStaff;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>paramENNClinicStaffRecId</Name>
+				<Source><![CDATA[
+    public RecId paramENNClinicStaffRecId(RecId _isENNClinicStaff = EnnClinicStaffRecId)
+    {
+        EnnClinicStaffRecId = _isENNClinicStaff;
+    
+        return EnnClinicStaffRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHMAppointmentInventTmp</Name>
+				<Source><![CDATA[
+    public HMAppointmentInventTmp parmHMAppointmentInventTmp(HMAppointmentInventTmp _hmAppointmentInventTmp = hmAppointmentInventTmp)
+    {
+        hmAppointmentInventTmp = _hmAppointmentInventTmp;
+    
+        return hmAppointmentInventTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHmPatientOrderTableTmp</Name>
+				<Source><![CDATA[
+    public HMPatientOrderTableTmp parmHmPatientOrderTableTmp(HMPatientOrderTableTmp _hmPatientOrderTableTmp = hmPatientOrderTableTmp)
+    {
+        hmPatientOrderTableTmp = _hmPatientOrderTableTmp;
+    
+        return hmPatientOrderTableTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmOrderType</Name>
+				<Source><![CDATA[
+    public HMOrderType parmOrderType(HMOrderType _orderType = orderType)
+    {
+        orderType = _orderType;
+    
+        return orderType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmOrganizationalUnitRecId</Name>
+				<Source><![CDATA[
+    public RecId parmOrganizationalUnitRecId(RecId _organizationalUnitRecId = organizationalUnitRecId)
+    {
+        organizationalUnitRecId = _organizationalUnitRecId;
+    
+        return organizationalUnitRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPatientEncounterRecId</Name>
+				<Source><![CDATA[
+    public RecId parmPatientEncounterRecId(RecId _patientEncounterRecId = patientEncounterRecId)
+    {
+        patientEncounterRecId = _patientEncounterRecId;
+    
+        return patientEncounterRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPatientInsuranceId</Name>
+				<Source><![CDATA[
+    public RefRecId parmPatientInsuranceId(RefRecId _patientInsuranceId = patientInsuranceId)
+    {
+        patientInsuranceId = _patientInsuranceId;
+    
+        return patientInsuranceId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmPatientRecId</Name>
+				<Source><![CDATA[
+    public RecId parmPatientRecId(RecId _patientRecId = patientRecId)
+    {
+        patientRecId = _patientRecId;
+    
+        return patientRecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateOrders</Name>
+				<Source><![CDATA[
+    public boolean validateOrders(HMPatientOrderTableTmp hmPatientOrderTableTmpLocal)
+    {
+        boolean                     validated = true;
+        HMPatientOrderClass         patientOrderClass = new HMPatientOrderClass();
+    
+        switch(orderType)
+        {
+            case HMOrderType::OUService:
+                    validated =this.paramENNClinicStaff()? this.validENNOUService(hmPatientOrderTableTmpLocal) :  this.validOUService(hmPatientOrderTableTmpLocal);
+                    break;
+        }
+    
+        return validated;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validatePhysiotherapyOrders</Name>
+				<Source><![CDATA[
+    private boolean validatePhysiotherapyOrders(boolean isPhysicianEmpty,HMPatientOrderTableTmp hmPatientOrderTableTmpLocal)
+    {
+        boolean ret = true;
+        if(isPhysicianEmpty)
+        {
+            warning("@MAZ7765");
+            ret = false;
+        }
+        if(hmPatientOrderTableTmpLocal.ExpectedTime == -1)
+        {
+            warning("@MAZ7823");
+            ret = false;
+        }
+        //if(hmPatientOrderTableTmpLocal.ExpectedDate == dateNull())
+        //{
+            //warning("@MAZ7824");
+            //ret = false;
+        //}
+        //if(hmPatientOrderTableTmpLocal.HMResourceSchedulingPlanningObject == 0)
+        //{
+            //warning("@MAZ7825");
+            //ret = false;
+    //
+        //}
+        //if(hmPatientOrderTableTmpLocal.ExpectedDate < today())
+        //{
+            //warning("@MAZ7826");
+            //ret = false;
+        //}
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateTherapies</Name>
+				<Source><![CDATA[
+    private boolean validateTherapies(boolean isDiagnosisEmpty, boolean isPhysicianEmpty,HMPatientOrderTableTmp hmPatientOrderTableTmpLocal)
+    {
+        boolean ret = true;
+        if(isPhysicianEmpty)
+        {
+            warning("@MAZ7765");
+            ret = false;
+        }
+        if(isDiagnosisEmpty)
+        {
+            warning("@MAZ11118");
+            ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validENNOUService</Name>
+				<Source><![CDATA[
+    private boolean validENNOUService(HMPatientOrderTableTmp hmPatientOrderTableTmpLocal)
+    {
+        HMClinicStaffOrderService        HMClinicStaffOrderService;
+    
+        select count(RecId) from HMClinicStaffOrderService
+        where HMClinicStaffOrderService.InventTable == hmPatientOrderTableTmpLocal.ItemId
+        && HMClinicStaffOrderService.HMClinicStaff == this.paramENNClinicStaffRecId();
+    
+        if(HMClinicStaffOrderService.RecId > 0)
+        {
+            warning(strFmt("@MAZ7758",hmPatientOrderTableTmpLocal.ItemId));
+            return false;
+        }
+    
+    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validOUService</Name>
+				<Source><![CDATA[
+    private boolean validOUService(HMPatientOrderTableTmp hmPatientOrderTableTmpLocal)
+    {
+        HMOrganizationalUnitService        hmOrganizationalUnitService;
+    
+        select count(RecId) from hmOrganizationalUnitService
+        where hmOrganizationalUnitService.InventTable == hmPatientOrderTableTmpLocal.ItemId
+        && hmOrganizationalUnitService.HMOrganizationalUnit == organizationalUnitRecId
+        && hmOrganizationalUnitService.HMTreatmentClassification == 0;
+        if(hmOrganizationalUnitService.RecId > 0)
+        {
+            warning(strFmt("@MAZ7758",hmPatientOrderTableTmpLocal.ItemId));
+            return false;
+        }
+        select count(RecId) from hmOrganizationalUnitService
+        where hmOrganizationalUnitService.InventTable == hmPatientOrderTableTmpLocal.ItemId
+        && hmOrganizationalUnitService.HMTreatmentClassification == hmPatientOrderTableTmpLocal.HMTreatmentClassification
+        && hmOrganizationalUnitService.HMOrganizationalUnit == organizationalUnitRecId;
+        if(hmOrganizationalUnitService.RecId > 0)
+        {
+            warning(strFmt("@MAZ7759",hmPatientOrderTableTmpLocal.ItemId,HMTreatmentClassification::find(hmPatientOrderTableTmpLocal.HMTreatmentClassification).Description));
+            return false;
+        }
+        if(hmPatientOrderTableTmpLocal.HMTreatmentClassification == 0)
+        {
+            select count(RecId) from hmOrganizationalUnitService
+            where hmOrganizationalUnitService.InventTable == hmPatientOrderTableTmpLocal.ItemId
+            && hmOrganizationalUnitService.HMOrganizationalUnit == organizationalUnitRecId
+            && hmOrganizationalUnitService.HMTreatmentClassification != 0 ;
+            if(hmOrganizationalUnitService.RecId > 0)
+            {
+                warning(strFmt("@MAZ7760",hmPatientOrderTableTmpLocal.ItemId,HMTreatmentClassification::find(hmPatientOrderTableTmpLocal.HMTreatmentClassification).Description));
+                return false;
+            }
+    
+        }
+    
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

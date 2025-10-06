@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMDischargeReportDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[SRSReportParameterAttribute(classStr(HMDischargeReportContract))]
+public class HMDischargeReportDP extends SRSReportDataProviderBase
+{
+    HMDischargeReportTmp   hmDischargeReportTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMDischargeReport</Name>
+				<Source><![CDATA[
+    [
+        SRSReportDataSetAttribute('HMDischargeReportTmp')
+    ]
+    public HMDischargeReportTmp getHMDischargeReport()
+    {
+        select hmDischargeReportTmp;
+        return hmDischargeReportTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMDischargeReportContract       dataContract;
+        HMCase                          hmCase;
+        HMPatient                       hmPatient;
+        HMClaimTableSetup               claimTableSetup;
+        StartDate                       startDate;
+        EndDate                         endDate;
+        StartDateTime                   startDateTime;
+        EndDateTime                     endDateTime;
+    
+        dataContract        = this.parmDataContract() as HMDischargeReportContract;
+    
+        startDate = dataContract.parmStartDate();
+        endDate = dataContract.parmEndDate();
+        startDateTime = DateTimeUtil::removeTimeZoneOffset(DateTimeUtil::newDateTime(startDate, 0), DateTimeUtil::getUserPreferredTimeZone()) ;
+        endDateTime = DateTimeUtil::removeTimeZoneOffset(DateTimeUtil::newDateTime(endDate, timeMax()), DateTimeUtil::getUserPreferredTimeZone()) ;//DateTimeUtil::newDateTime(endDate, timeMax());
+    
+    
+        while select * from hmCase
+            where hmCase.DischargeDate >= startDateTime
+               && hmCase.DischargeDate <= endDateTime
+        {
+            hmDischargeReportTmp.CompanyName = CompanyInfo::find().Name;
+            hmDischargeReportTmp.CompanyLogo = CompanyImage::findByRecord(CompanyInfo::findDataArea(curext())).Image;
+            hmDischargeReportTmp.Name = hmPatient::find(hmCase.HMPatient).patientName();
+            hmDischargeReportTmp.VisitNo = hmCase.CaseNo;
+            hmDischargeReportTmp.MRN = hmPatient::find(hmCase.HMPatient).getMRN();
+            if (hmCase.DischargeDate != utcDateTimeNull() && hmCase.AddmisionDate != utcDateTimeNull())
+                hmDischargeReportTmp.NoOfDays = (DateTimeUtil::date(hmCase.DischargeDate) - DateTimeUtil::date(hmCase.AddmisionDate));
+            else
+                hmDischargeReportTmp.NoOfDays = 0;
+            hmDischargeReportTmp.FinancialClass = hmCase.financialClass();
+            hmDischargeReportTmp.AppointmentDate = DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(hmCase.AddmisionDate, DateTimeUtil::getUserPreferredTimeZone()));
+            hmDischargeReportTmp.DischargeDate = DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(hmCase.DischargeDate, DateTimeUtil::getUserPreferredTimeZone()));
+            hmDischargeReportTmp.PatientStatus = strFmt("%1  - %2", HMClaimTableSetup::findByRecEnum(hmCase.HMPatientStatus, HMClaimEnumList::PatientStatus).Code, HMClaimTableSetup::findByRecEnum(hmCase.HMPatientStatus, HMClaimEnumList::PatientStatus).Description);
+            hmDischargeReportTmp.insert();
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientLabelDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMPatientLabelDataContract))
+]
+class HMPatientLabelDP extends SRSReportDataProviderBase
+{
+    HMPatientTmp  hmPatientTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getAllergies</Name>
+				<Source><![CDATA[
+    public str getAllergies(RecId _patientRecId)
+    {
+        str allergies;
+        boolean ret;
+        HMServiceAppHelper  appHelper = new HMServiceAppHelper();
+        container conValues, recContainer;
+        int recCount = 0, i =1;
+        int enumVal;
+        int64 recIdValue;
+        Map recMap;
+        HMToken     token = HMParameters::find().AuthorizationToken;
+    
+        try
+        {
+            ret = appHelper.callPostWebAPI('api/patientchart/getPatientAllergies', "{'patientRecId':'" + int642str(_patientRecId) +"','currentPage' :'1','IsActive':'true'}", "Authorization: "+token+"");
+    
+            if(ret)
+            {
+                conValues = appHelper.parmRecordsCon();
+    
+                if(conValues != conNull())
+                {
+                    recCount = conPeek(conValues, 3);
+    
+                    if(recCount > 0)
+                    {
+                        for(i = 1;i <=recCount; i++)
+                        {
+                            recContainer = conPeek(conValues, i+3);
+    
+                            recMap = Map::create(recContainer);
+                            recContainer = recMap.lookup('allergen');
+    
+                            recMap = Map::create(recContainer);
+    
+                            if(allergies == "")
+                            {
+                                allergies+= recMap.lookup('name');
+                            }
+                            else
+                            {
+                                allergies+= ", " + recMap.lookup('name');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            allergies = "";
+        }
+    
+        return allergies;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getHMPatientTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute("HMPatientTmp")]
+    public HMPatientTmp getHMPatientTmp()
+    {
+        select * from hmPatientTmp;
+        return hmPatientTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+        HMPatientLabelDataContract          dataContract;
+        HMResourceSchedulingAppointment     hmResourceSchedulingAppointment;
+        HMPatient                           hmPatient;
+        CustTable                           custTable;
+        DirPerson                           dirPerson;
+    
+        dataContract = this.parmDataContract();
+    
+        select AppointmentDate from hmResourceSchedulingAppointment
+            where hmResourceSchedulingAppointment.RecId == dataContract.parmAppointmentRecId()
+        join * from hmPatient where hmPatient.RecId == hmResourceSchedulingAppointment.HMPatient
+        join AccountNum, RecId from custTable where custTable.RecId == hmPatient.CustTable
+        join RecId, Name from dirPerson where dirPerson.RecId == custTable.Party;
+    
+    
+        if(hmResourceSchedulingAppointment)
+        {
+            hmPatientTmp.clear();
+            hmPatientTmp.VisitDate = hmResourceSchedulingAppointment.AppointmentDate;
+            hmPatientTmp.PatientMRN = custTable.AccountNum;
+            hmPatientTmp.PatientName = dirPerson.Name;
+    
+            if(dataContract.parmLabelType() == HMPatientLabelType::Wrist)
+            {
+                hmPatientTmp.Allergies = this.getAllergies(hmPatient.RecId);
+            }
+    
+            //todo ax7
+            //hmPatientTmp.ArabicName = dirPerson.getFullArabicName();
+            hmPatientTmp.Nationality = hmPatient.getCountryRegionShortname();
+            hmPatientTmp.Gender = enum2str(hmPatient.Gender);
+    
+            if(hmPatient.Gender == HcmPersonGender::Female)
+            {
+                hmPatientTmp.GenderSmall = 'F';
+            }
+            else if(hmPatient.Gender == HcmPersonGender::Male)
+            {
+                hmPatientTmp.GenderSmall = 'M';
+            }
+    
+            hmPatientTmp.PatientAge = hmPatient.patientAgeInYears();
+            hmPatientTmp.DateOfBirth = dirPerson.birthDate();
+            hmPatientTmp.CompanyLogo = FormLetter::companyLogo();
+    
+            hmPatientTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

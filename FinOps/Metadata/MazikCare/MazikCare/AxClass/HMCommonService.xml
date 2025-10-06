@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCommonService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMCommonService
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>checkItemInStock</Name>
+				<Source><![CDATA[
+    [AifCollectionTypeAttribute("return",Types::String)]
+    public List checkItemInStock(ItemId _itemId, recId _clinicRecId)
+    {
+        InventDimParm               inventDimParm;
+        InventDim                   inventDim;
+        InventOnhand                inventOnHand;
+        HMOrganizationalUnit        hmOrganizationalUnit;
+        InventLocation              InventLocation;
+        HMParameters                hmParameters;
+        DataAreaId                  pharmacyCompany;
+        List resultLIst = new LIst(Types::String);
+    
+        select InventLocation from hmOrganizationalUnit
+            where hmOrganizationalUnit.RecId == _clinicRecId
+            join InventSiteId from InventLocation where InventLocation.InventLocationId == hmOrganizationalUnit.InventLocation;
+    
+        inventDim.InventSiteId = InventLocation.InventSiteId;
+        inventDim.InventLocationId = hmOrganizationalUnit.InventLocation;
+    
+        inventDimParm.initFromInventDim(inventDim);
+    
+        inventOnHand = InventOnhand::newParameters(_itemId, inventDim, inventDimParm);
+    
+        if(inventOnHand != null)
+        {
+            resultLIst.addEnd("1" + "," + int2str(inventOnHand.availPhysical() > 0 ? 1: 0));
+        }
+    
+        hmParameters = hmParameters::find();
+    
+        pharmacyCompany = CompanyInfo::findRecId(hmParameters.CompanyInfo_Pharmacy).DataArea;
+    
+        if(pharmacyCompany)
+        {
+            changeCompany(pharmacyCompany)
+            {
+                inventDim.clear();
+                inventDimParm.clear();
+    
+                hmParameters = HMParameters::find();
+    
+                inventDim.InventSiteId = hmParameters.InventSiteId;
+                inventDim.InventLocationId = hmParameters.InventLocationId;
+    
+                inventDimParm.initFromInventDim(inventDim);
+    
+                inventOnHand = InventOnhand::newParameters(_itemId, inventDim, inventDimParm);
+    
+                if(inventOnHand != null)
+                {
+                    resultLIst.addEnd("2" + "," + int2str(inventOnHand.availPhysical() > 0 ? 1: 0));
+                }
+            }
+        }
+    
+        return resultLIst;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDocumentsBase64</Name>
+				<Source><![CDATA[
+    public str getDocumentsBase64(RecId docuRefRecId)
+    {
+        //DocuRef documentRef;
+        //Filename filename;
+
+        //documentRef = DocuRef::findRecId(docuRefRecId);
+
+        //if(documentRef.recid > 0)
+        //{
+        //    filename  = documentRef.completeFilename();
+        //    if(filename != '')
+        //    {
+        //        return HMCommonService::readFileToBase64(filename);
+        //    }
+        //}
+        return "";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendPatientSms</Name>
+				<Source><![CDATA[
+    public boolean sendPatientSms(RecId _patientRecId, str _sms)
+    {
+        Phone phone;
+        boolean ret = false;
+        HMPatient hmPatient = HMPatient::find(_patientRecId);
+    
+        phone = hmPatient.patientPrimaryPhone();
+    
+        if(phone)
+        {
+            ret = HMSmsGeneration::SendSms(phone, _sms);
+        }
+        else
+        {
+            ret = checkFailed("Patient primary phone number not found");
+        }
+    
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendResourceSms</Name>
+				<Source><![CDATA[
+    public boolean sendResourceSms(RecId _resourceRecId, str _sms)
+    {
+        Phone phone;
+        boolean ret = false;
+        HMResourceMaster hmResourceMaster = HMResourceMaster::find(_resourceRecId);
+    
+        phone = DirParty::primaryElectronicAddressLocator(hmResourceMaster.partyRefRecId(), LogisticsElectronicAddressMethodType::Phone);
+    
+        if(phone)
+        {
+            ret = HMSmsGeneration::SendSms(phone, _sms);
+        }
+        else
+        {
+            ret = checkFailed("Resource primary phone number not found");
+        }
+    
+        return ret;
+    }
+
+    /// <summary>
+    ///  internal use only.
+    /// </summary>
+    /// <param name="_filename">
+    /// A String value.
+    /// </param>
+    /// <param name="_base64">
+    /// A String value.
+    /// </param>
+    //public static str readFileToBase64(str _filename)
+    //{
+    //    #File
+    //    //#Aif
+
+    //    #define.ClrFileModeEnum                     ('System.IO.FileMode')
+    //    #define.ClrFileModeOpen                     ('Open')
+
+    //    #define.ClrFileAccessEnum                   ('System.IO.FileAccess')
+    //    #define.ClrFileAccessRead                   ('Read')
+
+    //    #define.ClrFileStream                       ('System.IO.FileStream')
+    //    #define.ClrMemoryStream                     ('System.IO.MemoryStream')
+    //    #define.ClrStreamReader                     ('System.IO.StreamReader')
+    //    #define.ClrStreamWriter                     ('System.IO.StreamWriter')
+    //    System.Byte[] byteArray;
+    //    System.IO.FileStream fileStream;
+    //    ClrObject fileMode;
+    //    ClrObject fileAccess;
+    //    System.Exception clrException;
+
+    //    int length;
+    //    str base64File;
+    //    ;
+
+    //    try
+    //    {
+    //        fileMode = CLRInterop::parseClrEnum(#ClrFileModeEnum, #ClrFileModeOpen);
+    //        fileAccess = CLRInterop::parseClrEnum(#ClrFileAccessEnum, #ClrFileAccessRead);
+
+    //        // Create file and write the bytes directly.
+    //        fileStream = new System.IO.FileStream(_filename, fileMode, fileAccess);
+    //        length = fileStream.get_Length();
+    //        byteArray = new System.Byte[length]();
+    //        fileStream.Read(byteArray, 0, length);
+    //        fileStream.Close();
+
+    //        // Convert base64 string to a byte array.
+    //        base64File = System.Convert::ToBase64String(byteArray);
+
+    //        return base64File;
+    //    }
+    //    catch(Exception::CLRError)
+    //    {
+    //        if (CLRInterop::isNull(fileStream) == false)
+    //        {
+    //            fileStream.Close();
+    //        }
+
+    //        clrException = CLRInterop::getLastException();
+    //        if (CLRInterop::isNull(clrException) == false)
+    //        {
+    //            error(clrException.get_Message());
+
+    //            clrException = clrException.get_InnerException();
+    //            if (CLRInterop::isNull(clrException) == false)
+    //            {
+    //                error(clrException.get_Message());
+    //            }
+    //        }
+
+    //        throw Exception::Error;
+    //    }
+    //}
+
+    /// <summary>
+    ///  internal use only.
+    /// </summary>
+    /// <param name="_filename">
+    /// A String value.
+    /// </param>
+    /// <param name="_base64">
+    /// A String value.
+    /// </param>
+    //public static void saveBase64ToFile(str _filename, str _base64)
+    //{
+    //    #File
+    //    #Aif
+
+    //    #define.ClrFileModeEnum                     ('System.IO.FileMode')
+    //    #define.ClrFileModeCreate                   ('Create')
+
+    //    #define.ClrFileAccessEnum                   ('System.IO.FileAccess')
+    //    #define.ClrFileAccessWrite                  ('Write')
+
+    //    #define.ClrFileStream                       ('System.IO.FileStream')
+    //    #define.ClrMemoryStream                     ('System.IO.MemoryStream')
+    //    #define.ClrStreamReader                     ('System.IO.StreamReader')
+    //    #define.ClrStreamWriter                     ('System.IO.StreamWriter')
+    //    ClrObject byteArray;
+    //    ClrObject fileStream;
+    //    ClrObject fileMode;
+    //    ClrObject fileAccess;
+    //    System.Exception clrException;
+
+    //    int length;
+    //    ;
+
+    //    try
+    //    {
+    //        fileMode = CLRInterop::parseClrEnum(#ClrFileModeEnum, #ClrFileModeCreate);
+    //        fileAccess = CLRInterop::parseClrEnum(#ClrFileAccessEnum, #ClrFileAccessWrite);
+
+    //        // Convert base64 string to a byte array.
+    //        byteArray = System.Convert::FromBase64String(_base64);
+    //        length = byteArray.get_Length();
+
+    //        // Create file and write the bytes directly.
+    //        fileStream = new CLRObject(#ClrFileStream, _filename, fileMode, fileAccess);
+    //        fileStream.Write(byteArray, 0, length);
+    //        fileStream.Close();
+    //    }
+
+    //    catch(Exception::CLRError)
+    //    {
+    //        if (CLRInterop::isNull(fileStream) == false)
+    //        {
+    //            fileStream.Close();
+    //        }
+
+    //        clrException = CLRInterop::getLastException();
+    //        if (CLRInterop::isNull(clrException) == false)
+    //        {
+    //            error(clrException.get_Message());
+
+    //            clrException = clrException.get_InnerException();
+    //            if (CLRInterop::isNull(clrException) == false)
+    //            {
+    //                error(clrException.get_Message());
+    //            }
+    //        }
+
+    //        throw Exception::Error;
+    //    }
+    //}
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

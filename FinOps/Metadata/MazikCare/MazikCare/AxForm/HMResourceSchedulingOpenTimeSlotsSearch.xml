@@ -1,0 +1,1832 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>HMResourceSchedulingOpenTimeSlotsSearch</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class HMResourceSchedulingOpenTimeSlotsSearch extends FormRun
+{
+    #define.EMPTY("")
+    #define.OrganizationUnit('OU')
+    #define.Resource('Resource')
+    #define.PlanningObject('PlanningObject')
+    #define.Search('Search')
+    #define.SearchPatient('SearchPatient')
+    str             planningObject, organizationUnit, buildingUnit, physician;
+    Object          formRunObject;
+    FormRun         formRun;
+    Args            args;
+    MenuFunction    menu;
+    recId           scheduleTypeRecId, specialityRecId, organizationalLocationRecId, aptitudeRecId, resourceRecId;
+    container                               excludeDays;
+    boolean                                 isAllScheduleType;
+    String20        parameter, parameterValue;
+    RecId           patientRecId;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillFromPastSearch</Name>
+				<Source><![CDATA[
+    private void fillFromPastSearch()
+    {
+        HMOpenTimeSlotsSearchParameters     searchParameters = new HMOpenTimeSlotsSearchParameters();
+        Object          formRunObjectLocal;
+        FormRun         formRunLocal;
+        container includeExcludeDays;
+    
+        formRunLocal = element.args().caller();
+    
+        if(formHasMethod(formRunLocal, identifierStr(parmHMOpenTimeSlotsSearchParameters)))
+        {
+            formRunObjectLocal = formRunLocal;
+            searchParameters = formRunObjectLocal.parmHMOpenTimeSlotsSearchParameters();
+    
+            if(searchParameters != null)
+            {
+                FromDate.dateValue(searchParameters.parmFromDate());
+                ToDate.dateValue(searchParameters.parmToDate());
+                SelectAllSecheduleType.value(searchParameters.parmAllScheduleType());
+                OverBookingCapacityAllowed.value(searchParameters.parmOverbookingSearch());
+    
+                scheduleTypeRecid = searchParameters.parmScheduleTypeRecId();
+                HMScheduleType.text(HMResourceSchedulingTypeCode::find(scheduleTypeRecid).Description);
+                element.updateDesign();
+    
+                includeExcludeDays = searchParameters.parmIncludeExcludeDays();
+    
+                Monday.value(conPeek(includeExcludeDays, 1));
+                Tuesday.value(conPeek(includeExcludeDays, 2));
+                Wednesday.value(conPeek(includeExcludeDays, 3));
+                Thursday.value(conPeek(includeExcludeDays, 4));
+                Friday.value(conPeek(includeExcludeDays, 5));
+                Saturday.value(conPeek(includeExcludeDays, 6));
+                Sunday.value(conPeek(includeExcludeDays, 7));
+    
+                resourceRecId = searchParameters.parmResourceRecId();
+                Resource.text(HMResourceMasterHelper::getResourceName(resourceRecId));
+    
+                aptitudeRecId = searchParameters.parmAptitudeRecId();
+                Aptitude.text(HMResourceAptitudeAttribute::find(aptitudeRecId).Description);
+    
+                patientRecId = searchParameters.parmPatientRecId();
+                FromTime.value(searchParameters.parmFromTime());
+                ToTime.value(searchParameters.parmToTime());
+    
+                organizationalLocationRecId = searchParameters.parmLocationRecId();
+                Location.text(HMOrganizationalUnit::find(organizationalLocationRecId).Description);
+                element.fillServiceTypeEnum();
+    
+                specialityRecId = searchParameters.parmSpecialityRecId();
+                Speciality.text(HMSpecialtyCode::find(specialityRecId).Description);
+    
+                IncludeExclude.selection(searchParameters.parmIncludeExclude());
+                TimeGroup.optionValue(searchParameters.parmTimeRangeIncluded());
+    
+                ClientAccount.text(searchParameters.parmClientAccount());
+                ClientName.text(CustTable::find(ClientAccount.text()).name());
+                Protocol.text(searchParameters.parmProtocolId());
+                Protocol.modified();
+    
+                ServiceType.selectText(enum2str(searchParameters.parmServiceType()));
+    
+                SearchFirstAvailable.value(searchParameters.parmSearchFirstAvailable());
+                SearchFirstAvailable.modified();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillServiceTypeEnum</Name>
+				<Source><![CDATA[
+    public void fillServiceTypeEnum()
+    {
+        HMOrganizationalUnit     hmOrganizationalUnit;
+    
+        //hmOrganizationalUnit = HMOrganizationalUnitHelper::findSubClinicsByClinic(organizationalLocationRecId);
+    
+        ServiceType.clear();
+    
+        ServiceType.add('');
+    
+        while(hmOrganizationalUnit)
+        {
+            ServiceType.add(enum2str(hmOrganizationalUnit.ServiceType));
+    
+            next hmOrganizationalUnit;
+        }
+    
+        if(ServiceType.items() == 1)
+        {
+             ServiceType.enumType(enumNum(HMMedisysServiceType));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getClientAccount</Name>
+				<Source><![CDATA[
+    public str getClientAccount()
+    {
+        return ClientAccount.text();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        ListEnumerator listEnumr = strSplit(element.args().parm(), ",").getEnumerator();
+    
+        if(listEnumr.moveNext())
+        {
+            parameter = listEnumr.current();
+        }
+        if(listEnumr.moveNext())
+        {
+            parameterValue = listEnumr.current();
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    public void run()
+    {
+        FromDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()));
+        ToDate.dateValue(DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) + HMParameters::find().DefaultSearchPeriodForOpenSlots);
+    
+        if (element.args().parmEnum() == HMSearchTimeSlotFormOpen::Search || parameter == #SearchPatient)
+        {
+            element.setPatientDefaultLocation(element.args().record().RecId);
+        }
+        else if(parameter == #Search)
+        {
+            if(parameterValue)
+            {
+                element.setPatientDefaultLocation(str2int64(parameterValue));
+            }
+            else
+            {
+                element.fillFromPastSearch();
+            }
+        }
+    
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setPatientDefaultLocation</Name>
+				<Source><![CDATA[
+    private void setPatientDefaultLocation(RecId _patientRecId)
+    {
+        HMPatient hmPatient = HMPatient::find(_patientRecId);
+    
+        patientRecId = hmPatient.RecId;
+    
+        //element.storeOrganizationalUnit(hmPatient.Clinic);
+    
+        //Location.text(HMOrganizationalUnit::find(hmPatient.Clinic).Description);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeAptitudeAttribute</Name>
+				<Source><![CDATA[
+    public void storeAptitudeAttribute(recId _recId)
+    {
+        aptitudeRecId = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeItem</Name>
+				<Source><![CDATA[
+    public void storeItem(ItemId _itemId)
+    {
+        Protocol.text(_itemId);
+        Protocol.modified();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeOrganizationalUnit</Name>
+				<Source><![CDATA[
+    public void storeOrganizationalUnit(recId _recId)
+    {
+        organizationalLocationRecId = _recId;
+    
+        element.fillServiceTypeEnum();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeResource</Name>
+				<Source><![CDATA[
+    public void storeResource(recId _recId)
+    {
+        resourceRecId = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeScheduleType</Name>
+				<Source><![CDATA[
+    public void storeScheduleType(recId _recId)
+    {
+        scheduleTypeRecId = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>storeSpeciality</Name>
+				<Source><![CDATA[
+    public void storeSpeciality(recId _recId)
+    {
+        specialityRecId = _recId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateDesign</Name>
+				<Source><![CDATA[
+    public void updateDesign()
+    {
+        if (SelectAllSecheduleType.checked())
+        {
+            // Empty the selected Schedule type RecId
+            scheduleTypeRecId = 0;
+            HMScheduleType.text(#EMPTY);
+    
+            HMScheduleType.allowEdit(false);
+        }
+        else
+        {
+            HMScheduleType.allowEdit(true);
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="" />
+		<DataControls xmlns="">
+			<Control>
+				<Name>SearchFirstAvailable</Name>
+				<Type>CheckBox</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+        
+            ret = super();
+        
+            DateGroupFields.allowEdit(!this.checked());
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>FromDate</Name>
+				<Type>Date</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            HMResourceSchedulingPlanningObject      hmResourceSchedulingPlanningObject;
+            boolean ret;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                ToDate.dateValue(this.dateValue());
+        
+                if(parameter == #PlanningObject)
+                {
+                    hmResourceSchedulingPlanningObject = HMResourceSchedulingPlanningObject::find(str2int64(parameterValue));
+                    ToDate.dateValue((this.dateValue()+hmResourceSchedulingPlanningObject.SearchInterval));
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Location</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal;
+            FormRun itemLookUp;
+        
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMMedisyClinicLookup));
+            argsLocal.caller(element);
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMOrganizationalUnit    hmOrganizationalUnitLocal;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if(this.valueStr() != "")
+                {
+                    hmOrganizationalUnitLocal = HMlookupClass::checkValidOrganizationalUnit(this.valueStr(), HMFileLocationType::Clinic);
+        
+                    if(hmOrganizationalUnitLocal.RecId)
+                    {
+                        element.storeOrganizationalUnit(hmOrganizationalUnitLocal.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",this.label()));
+                        this.text(HMOrganizationalUnit::find(organizationalLocationRecId).Description);
+                    }
+                }
+                else
+                {
+                    element.storeOrganizationalUnit(0);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ClientAccount</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMClientProtocol    hmClientProtocol;
+            CustTable custTable;
+        
+            ret = super();
+            if(ret)
+            {
+                if(Protocol.text() && this.text() != '')
+                {
+                    select RecId,ClientAccount from  hmClientProtocol
+                    where hmClientProtocol.ClientAccount == this.text()
+                    && hmClientProtocol.ItemId == Protocol.text();
+        
+                    if(hmClientProtocol.RecId==0)
+                    {
+                        warning(strFmt("@MAZ11395"));
+                        Protocol.text('');
+                        ProtocolName.text('');
+                    }
+                }
+                custTable = CustTable::find(this.text());
+                ClientName.text(custTable.name());
+                if(custTable.HMCustOnHold)
+                {
+                    warning("@MAZ12055");
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ClientProtocolNotes</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            Args argsLocal = new Args();
+            CustTable custTableLocal;
+        
+            if(!ClientAccount.text())
+            {
+                warning(strFmt("@SYS26332","@SYS14787"));
+                return;
+            }
+        
+            custTableLocal = CustTable::find(ClientAccount.text());
+        
+            argsLocal.record(custTableLocal);
+            argsLocal.caller(element);
+        
+            new MenuFunction(menuitemDisplayStr(HMNotes),MenuItemType::Display).run(argsLocal);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Protocol</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args        argsLocal;
+            FormRun     formRunLocal;
+            ;
+            //super();
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMExamCodeLookup));
+            argsLocal.caller(element);
+            argsLocal.parm('Protocol');
+            formRunLocal = classfactory.formRunClass(argsLocal);
+            formRunLocal.init();
+            this.performFormLookup(formRunLocal);
+        
+        
+            /*SysTableLookup sysTableLookup;
+            Query query;
+            QueryBuildDataSource queryBuildDataSource ;
+        
+            if(ClientAccount.text())
+            {
+                sysTableLookup = SysTableLookup::newParameters(tableNum(HMClientProtocol),this);
+                query = New Query();
+                queryBuildDataSource = query.addDataSource(tableNum(HMClientProtocol));
+                queryBuildDataSource.addDataSource(tableNum(InventTable)).relations(true);
+                query.dataSourceTable(tableNum(InventTable)).addDataSource(tableNum(BOMVersion)).relations(true);
+                query.dataSourceTable(tableNum(BOMVersion)).addRange(fieldNum(BomVersion,Active)).value(SysQuery::value(NoYes::Yes));
+                sysTableLookup.addLookupfield(fieldNum(HMClientProtocol, ItemId));
+                sysTableLookup.addLookupMethod(tableMethodStr(HMClientProtocol, itemAlias));
+                sysTableLookup.addSelectionField(fieldNum(HMClientProtocol, ItemId));
+                sysTableLookup.addSelectionField(fieldNum(HMClientProtocol, HMProtocolAlias));
+        
+                queryBuildDataSource.addRange(fieldNum(HMClientProtocol, ClientAccount)).value(ClientAccount.text());
+        
+                sysTableLookup.parmQuery(query);
+                sysTableLookup.performFormLookup();
+            }
+            else
+            {
+                sysTableLookup = SysTableLookup::newParameters(tableNum(InventTable),this);
+                query = New Query();
+                queryBuildDataSource = query.addDataSource(tableNum(InventTable));
+                queryBuildDataSource.addDataSource(tableNum(BOMVersion)).relations(true);
+                query.dataSourceTable(tableNum(BOMVersion)).addRange(fieldNum(BomVersion,Active)).value(SysQuery::value(NoYes::Yes));
+        
+                sysTableLookup.addLookupfield( fieldNum(InventTable,ItemId));
+                sysTableLookup.addLookupMethod( tableMethodStr(InventTable,itemDescriptionOrname));
+                sysTableLookup.addSelectionField( fieldNum(InventTable,Product));
+        
+                queryBuildDataSource.addRange(fieldNum(InventTable, PmfProductType)).value(SysQuery::value(PmfProductType::BOM));
+        
+                sysTableLookup.parmQuery(query);
+                sysTableLookup.performFormLookup();
+        
+            }*/
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMClientProtocol    hmClientProtocol;
+            InventTable         inventTAble;
+        
+            ret = super();
+            if(ret && this.text())
+            {
+                if(ClientAccount.text())
+                {
+                     select RecId,HMProtocolAlias from  hmClientProtocol
+                     where hmClientProtocol.ClientAccount == clientAccount.text()
+                     && hmClientProtocol.ItemId == this.text();
+        
+                    if(hmClientProtocol.RecId==0)
+                    {
+                        warning(strFmt("@SYS316757",this.label()));
+                        this.text('');
+                    }
+                    ProtocolName.text(hmClientProtocol.HMProtocolAlias);
+        
+                    ServiceType.selectText(enum2str(HMResourceSchedulingHelper::getProtocolServiceType(this.text())));
+                }
+                else
+                {
+                    select RecId,Product from inventTAble
+                    where inventTAble.ItemId == this.text()
+                    && inventTAble.PmfProductType == PmfProductType::BOM;
+        
+                    if(inventTAble.RecId==0)
+                    {
+                        warning(strFmt("@SYS316757",this.label()));
+                        this.text('');
+                    }
+                    ProtocolName.text(inventTAble.itemDescriptionOrName());
+        
+                    ServiceType.selectText(enum2str(HMResourceSchedulingHelper::getProtocolServiceType(this.text())));
+                }
+            }
+            else
+            {
+                ProtocolName.text('');
+                ServiceType.selectText('');
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>ProtocolNotes</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            Args argsLocal = new Args();
+            BOMVersion bomversion;
+            HMClientProtocol    hmClientProtocol;
+        
+            if(!Protocol.text())
+            {
+                warning(strFmt("@SYS26332","@MAZ10609"));
+                return;
+            }
+        
+            if(ClientAccount.text())
+            {
+                hmClientProtocol = hmClientProtocol::find(ClientAccount.text(), Protocol.text());
+                argsLocal.record(hmClientProtocol);
+            }
+            else
+            {
+                bomversion = HMResourceSchedulingHelper::getActiveBomversion(Protocol.text());
+                argsLocal.record(bomversion);
+            }
+        
+            argsLocal.parm('NoEditPlusInstructions');
+            argsLocal.caller(element);
+        
+            new MenuFunction(menuitemDisplayStr(HMNotes),MenuItemType::Display).run(argsLocal);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Resource</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal;
+            FormRun itemLookUp;
+        
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMResourceMasterLookup));
+            if(organizationalLocationRecId)
+            {
+                argsLocal.parm('FilterOnOU');
+                argsLocal.record(HMOrganizationalUnit::find(organizationalLocationRecId));
+            }
+            argsLocal.caller(element);
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            RecId resourceRecIdLocal;
+            ret = super();
+            if(ret)
+            {
+                if(this.valueStr() != "")
+                {
+                    if(this.text())
+                    {
+                        resourceRecIdLocal = HMResourceSchedulingHelper::getResourceRecId(this.text(),organizationalLocationRecId);
+                        if(!resourceRecIdLocal)
+                        {
+                            warning(strFmt("@SYS316757",this.label()));
+                            this.text(HMResourceMasterHelper::getResourceName(resourceRecId));
+                        }
+                        element.storeResource(resourceRecIdLocal);
+                    }
+                }
+                else
+                {
+                    element.storeResource(0);
+                }
+            }
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Speciality</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal;
+            FormRun itemLookUp;
+        
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMSpecialityLookup));
+            argsLocal.caller(element);
+        
+            if(!ServiceType.valueStr())
+            {
+                argsLocal.parmEnum(HMMedisysServiceType::None);
+            }
+            else
+            {
+                argsLocal.parmEnum(str2enum(HMMedisysServiceType::None, ServiceType.valueStr()));
+            }
+        
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMSpecialtyCode    hmSpecialityCodeLocal;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if(this.valueStr() != "")
+                {
+                    hmSpecialityCodeLocal = HMlookupClass::checkValidSpeciality(this.valueStr(), ServiceType.valueStr() == '' ? HMMedisysServiceType::None: str2enum(HMMedisysServiceType::None, ServiceType.valueStr()));
+        
+                    if(hmSpecialityCodeLocal.RecId)
+                    {
+                        element.storeSpeciality(hmSpecialityCodeLocal.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",this.label()));
+                        this.text(HMSpecialtyCode::find(specialityRecId).Description);
+                    }
+                }
+                else
+                {
+                    element.storeSpeciality(0);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Aptitude</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal;
+            FormRun itemLookUp;
+            HMOpenTimeSlotsSearchParameters     searchParameters = new HMOpenTimeSlotsSearchParameters();
+        
+            argsLocal = new Args();
+            argsLocal.name(formstr(HMResourceAttributeAptitudeLookup));
+            argsLocal.caller(element);
+        
+            searchParameters.parmSpecialityRecId(specialityRecId);
+            searchParameters.parmProtocolId(Protocol.text());
+        
+            argsLocal.parmObject(searchParameters);
+        
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMResourceAptitudeAttribute hmResourceAptitudeAttributeLocal;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if(this.valueStr() != "")
+                {
+                    hmResourceAptitudeAttributeLocal = HMlookupClass::checkValidAptitude(this.valueStr(), specialityRecId, Protocol.text());
+        
+                    if(hmResourceAptitudeAttributeLocal.RecId)
+                    {
+                        element.storeAptitudeAttribute(hmResourceAptitudeAttributeLocal.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",this.label()));
+                        this.text(HMResourceAptitudeAttribute::find(aptitudeRecId).Description);
+                    }
+                }
+                else
+                {
+                    element.storeAptitudeAttribute(0);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>HMScheduleType</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>jumpRef</Name>
+						<Source><![CDATA[
+        public void jumpRef()
+        {
+            super();
+        
+            new MenuFunction(MenuItemDisplayStr(HMResourceSchedulingTypeCode),MenuItemType::Display).run();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            Args argsLocal = new Args();
+            FormRun itemLookUp;
+        
+            argsLocal.name(formstr(HMScheduleTypeLookupSearching));
+            argsLocal.caller(element);
+        
+            if(!ServiceType.valueStr())
+            {
+                argsLocal.parmEnum(HMMedisysServiceType::None);
+            }
+            else
+            {
+                argsLocal.parmEnum(str2enum(HMMedisysServiceType::None, ServiceType.valueStr()));
+            }
+        
+            itemLookUp = ClassFactory.formRunClass(argsLocal);
+            itemLookUp.init();
+        
+            this.performFormLookup(itemLookUp);
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret;
+            HMResourceSchedulingTypeCode    hmResourceSchedulingTypeCodeLocal;
+        
+            ret = super();
+        
+            if(ret)
+            {
+                if(this.valueStr() != "")
+                {
+                    hmResourceSchedulingTypeCodeLocal = HMlookupClass::checkValidScheduleTypeSearchName(this.valueStr(), HMCaseType::OutPatient, true, 0, ServiceType.valueStr() == '' ? HMMedisysServiceType::None: str2enum(HMMedisysServiceType::None, ServiceType.valueStr()));
+        
+                    if(hmResourceSchedulingTypeCodeLocal.RecId)
+                    {
+                        element.storeScheduleType(hmResourceSchedulingTypeCodeLocal.RecId);
+                    }
+                    else
+                    {
+                        warning(strFmt("@SYS316757",this.label()));
+                        this.text(HMResourceSchedulingTypeCode::find(scheduleTypeRecId).Description);
+                    }
+                }
+                else
+                {
+                    element.storeScheduleType(0);
+                }
+            }
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>SelectAllSecheduleType</Name>
+				<Type>CheckBox</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            element.updateDesign();
+        
+            super();
+        
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Search</Name>
+				<Type>Button</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            //todo:  ax7 uncommnet after appointment celender
+            
+            boolean                                 ret = true;
+            HMResourceSchedulingOpenTimeSlotsTmp    hmResourceSchedulingOpenTimeSlotsTmp;
+            boolean check =false;
+            RecId   planningObjectRecId, resourceParmRecId;
+            List                            strList = new List(Types::String);
+            HMResourceSchedulingOpenTimeSlotsSearch hmResourceSchedulingOpenTimeSlotsSearch=new HMResourceSchedulingOpenTimeSlotsSearch();
+            HMOpenTimeSlotsSearchParameters     searchParameters = new HMOpenTimeSlotsSearchParameters();
+        
+            if (FromDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS24050"));
+                ret = false;
+            }
+        
+            if (ToDate.dateValue() == dateNull())
+            {
+                warning(strFmt("@SYS26332","@SYS36680"));
+                ret = false;
+            }
+            if (ret && FromDate.dateValue() < DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()))
+            {
+                warning("@MAZ3247");
+                ret = false;
+            }
+            if (ret && FromDate.dateValue() > ToDate.dateValue())
+            {
+                warning("@MAZ2029");
+                ret = false;
+            }
+        
+            if (ret && FromTime.value() > ToTime.value())
+            {
+                warning("@MAZ11191");
+                ret = false;
+            }
+        
+            if (HMScheduleType.text() == "" && (!SelectAllSecheduleType.checked()))
+            {
+                warning(strFmt("@SYS26332","@MAZ7340"));
+                ret = false;
+            }
+        
+            if (Location.text() == "" || !organizationalLocationRecId)
+            {
+                warning(strFmt("@SYS26332","@SYS14719"));
+                ret = false;
+            }
+        
+            if(!(ret))
+                return;
+        
+            super();
+        
+            if(SelectAllSecheduleType.checked())
+            {
+              isAllScheduleType=true;
+              scheduleTypeRecid=0;
+        
+            }
+            else
+            {
+                isAllScheduleType=false;
+            }
+        
+            excludeDays=[Monday.checked(),Tuesday.checked(),Wednesday.checked(),Thursday.checked(),Friday.checked(),Saturday.checked(),Sunday.checked()];
+        
+            if(FromDate.dateValue() &&  ToDate.dateValue())
+            {
+                switch(parameter)
+                {
+                    case  #OrganizationUnit:
+                        if(!organizationalLocationRecId)
+                        {
+                            organizationalLocationRecId = str2int64(parameterValue);
+                        }
+                        break;
+                    case  #Resource:
+                        if(resourceRecId)
+                        {
+                            resourceParmRecId = resourceRecId;
+                        }
+                        else
+                        {
+                            resourceParmRecId = str2int64(parameterValue);
+                        }
+                        break;
+                    case  #PlanningObject:
+                        planningObjectRecId = str2int64(parameterValue);
+                        break;
+                    case  #Search:
+                    case  #SearchPatient:
+                        resourceParmRecId = resourceRecId;
+                        break;
+                }
+        
+                hmResourceSchedulingOpenTimeSlotsTmp = hmResourceSchedulingOpenTimeSlotsSearch.searchOpenTimeSlotMultiPO(FromDate.dateValue(),ToDate.dateValue(),isAllScheduleType,
+                        scheduleTypeRecid,OverBookingCapacityAllowed.checked(),excludeDays, planningObjectRecId, resourceParmRecId,
+                        FromTime.value(), ToTime.value(), organizationalLocationRecId, aptitudeRecId, specialityRecId, IncludeExclude.selection(), TimeGroup.optionValue(),Protocol.text(), CustTable::find(ClientAccount.text()).RecId, 0,SearchFirstAvailable.checked());
+        
+                searchParameters.parmFromDate(FromDate.dateValue());
+                searchParameters.parmToDate(ToDate.dateValue());
+                searchParameters.parmAllScheduleType(isAllScheduleType);
+                searchParameters.parmScheduleTypeRecId(scheduleTypeRecid);
+                searchParameters.parmOverbookingSearch(OverBookingCapacityAllowed.checked());
+                searchParameters.parmIncludeExcludeDays(excludeDays);
+                searchParameters.parmPlanningObjectRecId(planningObjectRecId);
+                searchParameters.parmResourceRecId(resourceParmRecId);
+                searchParameters.parmAptitudeRecId(aptitudeRecId);
+                searchParameters.parmPatientRecId(patientRecId);
+                searchParameters.parmFromTime(FromTime.value());
+                searchParameters.parmToTime(ToTime.value());
+                searchParameters.parmLocationRecId(organizationalLocationRecId);
+                searchParameters.parmSpecialityRecId(specialityRecId);
+                searchParameters.parmIncludeExclude(IncludeExclude.selection());
+                searchParameters.parmTimeRangeIncluded(TimeGroup.optionValue());
+                searchParameters.parmProtocolId(Protocol.text());
+                searchParameters.parmServiceType(ServiceType.valueStr() ? str2enum(HMMedisysServiceType::None, ServiceType.valueStr()) : HMMedisysServiceType::None);
+                searchParameters.parmClientAccount(ClientAccount.text());
+                searchParameters.parmSearchFirstAvailable(SearchFirstAvailable.checked());
+            }
+            else
+            {
+                return;
+            }
+        
+            if(parameter == #Search)
+            {
+                formRun = element.args().caller();
+        
+                formRunObject = formRun;
+                formRunObject.setTimeSlotsData(hmResourceSchedulingOpenTimeSlotsTmp);
+                formRunObject.updateCalendarDate(FromDate.dateValue());
+                formRunObject.parmHMOpenTimeSlotsSearchParameters(searchParameters);
+            }
+            else if(element.args().parmEnum() == HMSearchTimeSlotFormOpen::Detail)
+            {
+                formRun = element.args().caller();
+        
+                formRunObject = formRun;
+                formRunObject.setTimeSlotsData(hmResourceSchedulingOpenTimeSlotsTmp);
+                //formRunObject.saveParameter(element.args().record().RecId,FromDate.dateValue(),ToDate.dateValue(),isAllScheduleType,scheduleTypeRecid,OverBookingCapacityAllowed.checked(),excludeDays);
+        
+            }
+            else if (element.args().parmEnum() == HMSearchTimeSlotFormOpen::Search || parameter == #SearchPatient)
+            {
+                args = new Args();
+                args.caller(element);
+                args.record(element.args().record());
+                args.parm('FormSearch');
+        
+                menu = new MenuFunction(menuitemDisplayStr(HMPlanningObjectDetail),MenuItemType::Display);
+        
+                formRun = menu.create(args);
+        
+                formRunObject = formRun;
+                //formRunObject.saveParameter(element.args().record().RecId,FromDate.dateValue(),ToDate.dateValue(),isAllScheduleType,scheduleTypeRecid,OverBookingCapacityAllowed.checked(),excludeDays);
+                formRun.run();
+                formRunObject.setTimeSlotsData(hmResourceSchedulingOpenTimeSlotsTmp);
+                formRunObject.parmHMOpenTimeSlotsSearchParameters(searchParameters);
+            }
+            else if (element.args().parmEnum() == HMSearchTimeSlotFormOpen::PatientDetail)
+            {
+                formRun = element.args().caller();
+        
+                formRunObject = formRun;
+                formRunObject.setTimeSlotsData(hmResourceSchedulingOpenTimeSlotsTmp);
+                formRunObject.saveParameter(element.args().record().RecId,FromDate.dateValue(),ToDate.dateValue(),isAllScheduleType,scheduleTypeRecid,OverBookingCapacityAllowed.checked(),excludeDays);
+            }
+        
+            element.close();
+            
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources />
+	<Design>
+		<Caption xmlns="">@MAZ11135</Caption>
+		<DialogSize xmlns="">Medium</DialogSize>
+		<Pattern xmlns="">Dialog</Pattern>
+		<PatternVersion xmlns="">1.2</PatternVersion>
+		<Scrollbars xmlns="">No</Scrollbars>
+		<SetCompany xmlns="">No</SetCompany>
+		<Style xmlns="">Dialog</Style>
+		<WindowResize xmlns="">Fixed</WindowResize>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>General</Name>
+				<ElementPosition>715827882</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<HeightMode>SizeToAvailable</HeightMode>
+				<Type>Group</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>MainGroup</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Type>Group</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>LeftGroup</Name>
+								<ElementPosition>1073741822</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>DateGroup</Name>
+										<ElementPosition>858993458</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormCheckBoxControl">
+												<Name>SearchFirstAvailable</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>CheckBox</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>Search by open slot availability</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>DateGroupFields</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1610612733</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>FromDate</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Date</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ExtendedDataType>TransDate</ExtendedDataType>
+														<Label>@SYS24050</Label>
+														<Mandatory>Yes</Mandatory>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormDateControl">
+														<Name>ToDate</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>Date</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ExtendedDataType>TransDate</ExtendedDataType>
+														<Label>@SYS36680</Label>
+														<Mandatory>Yes</Mandatory>
+													</AxFormControl>
+												</Controls>
+												<Columns>2</Columns>
+											</AxFormControl>
+										</Controls>
+										<BottomMargin>10</BottomMargin>
+										<BottomMarginMode>Fixed</BottomMarginMode>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>TimeGroup</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormTimeControl">
+												<Name>FromTime</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Time</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS38489</Label>
+												<TimeSeconds>No</TimeSeconds>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormTimeControl">
+												<Name>ToTime</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1610612733</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Time</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS38490</Label>
+												<TimeSeconds>No</TimeSeconds>
+											</AxFormControl>
+										</Controls>
+										<Columns>2</Columns>
+										<Caption>@MAZ11146</Caption>
+										<FrameOptionButton>Check</FrameOptionButton>
+										<OptionValue>0</OptionValue>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>FilterGroup</Name>
+										<ElementPosition>1717986916</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Location</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>349960296</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS14719</Label>
+												<Mandatory>Yes</Mandatory>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>ClientGroup</Name>
+												<ElementPosition>583267160</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ClientAccount</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ExtendedDataType>HMClientAccount</ExtendedDataType>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ClientName</Name>
+														<AllowEdit>No</AllowEdit>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ10881</HelpText>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@MAZ10881</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonControl">
+														<Name>ClientProtocolNotes</Name>
+														<ElementPosition>1879048189</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ12181</HelpText>
+														<Skip>Yes</Skip>
+														<Type>Button</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>ImageOnly</ButtonDisplay>
+														<NormalImage>Edit</NormalImage>
+													</AxFormControl>
+												</Controls>
+												<Columns>3</Columns>
+												<Columnspace>2</Columnspace>
+												<ColumnspaceMode>Fixed</ColumnspaceMode>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group_</Name>
+												<ElementPosition>816574024</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>Protocol</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ11393</HelpText>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@MAZ10609</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStringControl">
+														<Name>ProtocolName</Name>
+														<AllowEdit>No</AllowEdit>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>String</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@MAZ10869</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormButtonControl">
+														<Name>ProtocolNotes</Name>
+														<ElementPosition>1879048189</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<HelpText>@MAZ12182</HelpText>
+														<Skip>Yes</Skip>
+														<Type>Button</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<ButtonDisplay>ImageOnly</ButtonDisplay>
+														<NormalImage>Edit</NormalImage>
+													</AxFormControl>
+												</Controls>
+												<Columns>3</Columns>
+												<Columnspace>2</Columnspace>
+												<ColumnspaceMode>Fixed</ColumnspaceMode>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Resource</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1049880888</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS89158</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormComboBoxControl">
+												<Name>ServiceType</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1291141397</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>ComboBox</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@SYS81754</Label>
+												<Items />
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Speciality</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1532401906</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ1706</Label>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>Aptitude</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1839942776</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ11138</Label>
+											</AxFormControl>
+										</Controls>
+										<TopMargin>4</TopMargin>
+										<TopMarginMode>Fixed</TopMarginMode>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormGroupControl">
+								<Name>RightGroup</Name>
+								<ElementPosition>1610612733</ElementPosition>
+								<FilterExpression>%1</FilterExpression>
+								<HeightMode>Auto</HeightMode>
+								<Type>Group</Type>
+								<VerticalSpacing>-1</VerticalSpacing>
+								<WidthMode>Auto</WidthMode>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormCheckBoxControl">
+										<Name>OverBookingCapacityAllowed</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>858993458</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>CheckBox</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Label>@MAZ2040</Label>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>ScheduleType</Name>
+										<ElementPosition>1288490187</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormStringControl">
+												<Name>HMScheduleType</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>String</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ7340</Label>
+												<Mandatory>Yes</Mandatory>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormCheckBoxControl">
+												<Name>SelectAllSecheduleType</Name>
+												<AutoDeclaration>Yes</AutoDeclaration>
+												<ElementPosition>1610612734</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>CheckBox</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<Visible>No</Visible>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Label>@MAZ11136</Label>
+											</AxFormControl>
+										</Controls>
+										<Caption>@MAZ7340</Caption>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormGroupControl">
+										<Name>IncludeDays</Name>
+										<ElementPosition>1717986916</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>Group</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<Controls>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group4</Name>
+												<ElementPosition>1073741822</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormComboBoxControl">
+														<Name>IncludeExclude</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1073741822</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>ComboBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<EnumType>HMIncludeExclude</EnumType>
+														<ShowLabel>No</ShowLabel>
+														<Items />
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormStaticTextControl">
+														<Name>StaticText</Name>
+														<ElementPosition>1610612733</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>StaticText</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Text>@MAZ11145</Text>
+													</AxFormControl>
+												</Controls>
+												<AlignChild>No</AlignChild>
+												<Columns>2</Columns>
+											</AxFormControl>
+											<AxFormControl xmlns=""
+												i:type="AxFormGroupControl">
+												<Name>Group5</Name>
+												<ElementPosition>1610612733</ElementPosition>
+												<FilterExpression>%1</FilterExpression>
+												<HeightMode>Auto</HeightMode>
+												<Type>Group</Type>
+												<VerticalSpacing>-1</VerticalSpacing>
+												<WidthMode>Auto</WidthMode>
+												<FormControlExtension
+													i:nil="true" />
+												<Controls>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Monday</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>477218588</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS5217</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Tuesday</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>715827882</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS6713</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Wednesday</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>954437176</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS6482</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Thursday</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1193046470</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS6714</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Friday</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1431655764</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS7072</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Saturday</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1670265058</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS13051</Label>
+													</AxFormControl>
+													<AxFormControl xmlns=""
+														i:type="AxFormCheckBoxControl">
+														<Name>Sunday</Name>
+														<AutoDeclaration>Yes</AutoDeclaration>
+														<ElementPosition>1908874352</ElementPosition>
+														<FilterExpression>%1</FilterExpression>
+														<HeightMode>Auto</HeightMode>
+														<Type>CheckBox</Type>
+														<VerticalSpacing>-1</VerticalSpacing>
+														<WidthMode>Auto</WidthMode>
+														<FormControlExtension
+															i:nil="true" />
+														<Label>@SYS13053</Label>
+													</AxFormControl>
+												</Controls>
+												<Columns>2</Columns>
+											</AxFormControl>
+										</Controls>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+						</Controls>
+						<Columns>2</Columns>
+					</AxFormControl>
+				</Controls>
+				<FrameType>None</FrameType>
+				<Style>DialogContent</Style>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormButtonGroupControl">
+				<Name>ButtonGroup1</Name>
+				<ElementPosition>1431655764</ElementPosition>
+				<FilterExpression>%1</FilterExpression>
+				<LeftMode>AutoRight</LeftMode>
+				<Type>ButtonGroup</Type>
+				<VerticalSpacing>-1</VerticalSpacing>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormButtonControl">
+						<Name>Search</Name>
+						<ElementPosition>1073741822</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<HelpText>@MAZ2017</HelpText>
+						<Skip>Yes</Skip>
+						<Type>Button</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Text>@SYS60181</Text>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormCommandButtonControl">
+						<Name>CommandButton</Name>
+						<ElementPosition>1610612733</ElementPosition>
+						<FilterExpression>%1</FilterExpression>
+						<HeightMode>Auto</HeightMode>
+						<Skip>Yes</Skip>
+						<Type>CommandButton</Type>
+						<VerticalSpacing>-1</VerticalSpacing>
+						<WidthMode>Auto</WidthMode>
+						<FormControlExtension
+							i:nil="true" />
+						<Command>Cancel</Command>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalRight</ArrangeMethod>
+				<Style>DialogCommitContainer</Style>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>

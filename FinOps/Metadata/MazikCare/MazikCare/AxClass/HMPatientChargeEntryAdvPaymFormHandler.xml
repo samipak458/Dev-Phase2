@@ -1,0 +1,752 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPatientChargeEntryAdvPaymFormHandler</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMPatientChargeEntryAdvPaymFormHandler
+{
+    HMCase hmCase;
+    real deductibleAmount;
+    boolean     isCalledFromPharmacy;
+    RecId       appointmentRecid;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>alternativeDruglookup</Name>
+				<Source><![CDATA[
+    public void alternativeDruglookup(FormStringControl _control)
+    {
+        SysTableLookup sysTablelookup;
+        Query query = new Query(queryStr(HMClinicStaffLookup));
+    
+        query.dataSourceTable(tableNum(HMClinicStaffRole)).addRange(fieldNum(HMClinicStaffRole, Role)).value(enum2str(HMStaffMemberType::Physician));
+    
+        sysTablelookup = SysTableLookup::newParameters(tableNum(HcmWorker),_control);
+        sysTablelookup.addLookupfield(fieldNum(HcmWorker,PersonnelNumber));
+        sysTablelookup.addLookupMethod(tableMethodStr(HcmWorker, Name));
+    
+    
+        sysTablelookup.parmQuery(query);
+        sysTablelookup.performFormLookup();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkPharmacyMedicationOnHand</Name>
+				<Source><![CDATA[
+    public boolean checkPharmacyMedicationOnHand(InventBatchId _inventBatchId, ItemId _itemId, Qty _dispensedQty)
+    {
+        InventDim           inventDim;
+        InventDimParm       inventDimParm;
+        Itemid              itemid;
+        RecId               pharmacyCompanyRecId;
+        HMParameters        hmParameters = HMParameters::find();
+        hmParameters        pharmacyParameters;
+        InventOnHand        inventOnHand;
+        str                 pharmacyCompany;
+        try
+        {
+            pharmacyCompany = hmParameters::getPharmacyDataArea();
+            if(!pharmacyCompany)
+            {
+                warning("@MAZ13625");
+                return false;
+            }
+            changeCompany(pharmacyCompany)
+            {
+                // take a sample item for testing
+                itemid = _itemId;
+                pharmacyParameters = hmParameters::find();
+    
+                inventDim.InventLocationId = pharmacyParameters.InventLocationId;
+                inventDim.inventSiteId = pharmacyParameters.InventSiteId;
+                inventDim.wMSLocationId = pharmacyParameters.WMSLocationId;
+                inventDim.inventBatchId = _inventBatchId;
+                inventDimParm.initFromInventDim(inventDim);
+    
+                inventOnHand = InventOnHand::newParameters(itemid, inventDim, inventDimParm);
+                if(inventOnHand.availPhysical() >= _dispensedQty)
+                {
+                    return true;
+                }
+                else
+                {
+                    return checkFailed(strFmt("@MAZ13626",itemid, inventOnHand.availPhysical()));
+                }
+            }
+        }
+        catch
+        {
+            return checkFailed("@MAZ13627");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createAndPostMovementJournal_pharmacy</Name>
+				<Source><![CDATA[
+    public void createAndPostMovementJournal_pharmacy(HMPharmacyItemDispense hmPharmacyItemDispense, Set _setCaseTrans)
+    {    
+        RecId                   pharmacyCompanyRecId;
+        HMParameters            hmParameters = HMParameters::find();
+        HMParameters            pharmacyParamters;
+        HMBillParameters        hmbill;
+        str                     pharmacyCompany;
+        //Zain  -- Deprecated in AX7
+        //AxInventJournalTable    AxinventJournalTable;
+        //AxInventJournalTrans    AxinventJournalTrans;
+        InventJournalTable              inventJournalTable;
+        InventJournalTrans              inventJournalTrans;
+        InventJournalNameId             inventJournalName;
+        //Zain
+        //InventJournalNameId     inventJournalName;
+        //AxInventDim             axinventDim;
+        InventDim               inventDim;
+        JournalCheckPost        journalCheckPost;
+        pharmacyCompanyRecId = HMParameters.CompanyInfo_Pharmacy;
+		
+
+        hmbill				= HMBillParameters::find();
+        inventJournalName	= hmbill.InventJournalName_MovementPharmacy;
+        
+		if(!pharmacyCompanyRecId)
+        {
+            warning("@MAZ13625");
+            return;
+        }
+
+        pharmacyCompany = hmParameters::getPharmacyDataArea();
+
+        changeCompany(pharmacyCompany)
+        {
+            pharmacyParamters = HMParameters::find();
+			    
+            if ( !inventJournalName)
+            {
+                throw warning("@MAZ13572");
+            }
+
+            InventJournalName inventJournalNameBuffer = InventJournalName::find(inventJournalName);
+			
+			inventJournalTable.clear();
+            inventJournalTable.initFromInventJournalName(inventJournalNameBuffer);
+            inventJournalTable.JournalType = InventJournalType::Movement;
+            inventJournalTable.insert();
+           
+            while select forUpdate hmPharmacyItemDispense
+            {
+                if(_setCaseTrans.in(hmPharmacyItemDispense.HMCaseTrans))
+                {
+                    inventJournalTrans.clear();
+                    inventJournalTrans.initFromInventJournalTable(inventJournalTable);
+
+                    inventJournalTrans.TransDate		= DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+                    inventJournalTrans.LedgerDimension	= inventJournalTable.LedgerDimension;       
+                    inventJournalTrans.ItemId			= hmPharmacyItemDispense.ItemId;
+                    inventJournalTrans.Qty				= -hmPharmacyItemDispense.Qty;
+                    inventDim.inventBatchId				= hmPharmacyItemDispense.InventBatchId;
+                    inventDim.InventSiteId				= inventJournalNameBuffer.inventSiteId;
+                    inventDim.InventLocationId			= inventJournalNameBuffer.InventLocationId;
+                    inventDim.wMSLocationId				= inventJournalNameBuffer.WMSLocationId;
+    
+                    inventJournalTrans.InventDimId = inventDim::findOrCreate(inventDim).inventDimId;
+                    inventJournalTrans.insert();
+                    //Zain
+                    hmPharmacyItemDispense.delete();
+                }
+            }
+            //The below code posts the journal
+            journalCheckPost = InventJournalCheckPost::newPostJournal(inventJournalTable);//AxinventJournalTable.inventJournalTable());
+            journalCheckPost.run();
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dispenseMedication</Name>
+				<Source><![CDATA[
+    public void dispenseMedication(Map _serviceMap, HMPharmacyItemDispense _pharmacyItemDispense)
+    {
+        HMcaseTrans hmCaseTrans;
+        HmcaseService hmCaseService = new HMCaseService();
+        MapEnumerator mapEnumerator;
+        boolean hasRecord = false;
+        Set                 setCasetrans = new Set(Types::Int64);
+        try
+        {
+            mapEnumerator = _serviceMap.getEnumerator();
+            ttsBegin;
+            while(MapEnumerator.moveNext())
+            {
+    
+                select RecId,Qty from _pharmacyItemDispense
+                where _pharmacyItemDispense.HMCaseTrans == mapEnumerator.currentKey();
+                if(_pharmacyItemDispense)
+                {
+                    hasRecord = true;
+                    select forUpdate hmCaseTrans
+                    where hmCaseTrans.RecId == mapEnumerator.currentKey();
+                    if(_pharmacyItemDispense.Qty != hmCaseTrans.Qty)
+                    {
+                        throw warning (strFmt("@MAZ13589",hmCaseTrans.ItemId));
+                    }
+                    if(hmCaseTrans.BillingStatus == HMBillStatus::NotPaid)
+                    {
+                        warning("@MAZ13551");
+                        ttsAbort;
+                        return;
+                    }
+                    hmCaseTrans.HMServiceStatus = HMServiceStatus::Complete;
+                    hmCaseTrans.update();
+                    if(hmCaseTrans.ParentCaseTransId == 0)
+                    {
+                        hmCaseService.createChargeEntryLine(hmCaseTrans.RecId);
+                        if(hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Client)
+                        {
+                            hmCaseService.createAccrueRevenueJournal(hmCaseTrans);
+                        }
+                        setCasetrans.add(hmCaseTrans.RecId);
+                    }
+                }
+            }
+            if(hasRecord)
+            {
+                this.createAndPostMovementJournal_pharmacy(_pharmacyItemDispense,setCasetrans);
+            }
+            ttsCommit;
+        }
+        catch
+        {
+            error("@MAZ13552");
+        }
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCaseAmount</Name>
+				<Source><![CDATA[
+    public AmountMST getCaseAmount()
+    {
+        HMCaseTrans hmCaseTrans;
+        HMResourceSchedulingAppointment appt;
+        if(hmCase.HMCaseType == HMCaseType::OutPatient)
+        {
+            if(isCalledFromPharmacy)
+            {
+                select sum(CashAmount) from hmCaseTrans
+                join appt where appt.RecId == hmcaseTRans.HMResourceSchedulingAppointment
+                && hmCaseTrans.HMCase == hmCase.RecId
+                && hmCaseTrans.Urgency == HMUrgency::Routine
+                && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded
+                && (appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::NoShow
+                && appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::Cancelled);
+    
+            }
+            else
+            {
+                select sum(CashAmount) from hmCaseTrans
+                join appt where appt.RecId == hmcaseTRans.HMResourceSchedulingAppointment
+                && hmCaseTrans.HMCase == hmCase.RecId
+                && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded
+                && (appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::NoShow
+                && appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::Cancelled)
+                ;
+            }
+            return hmCaseTrans.CashAmount;
+        }
+        if(isCalledFromPharmacy)
+        {
+            select sum(CashAmount) from hmCaseTrans
+            where hmCaseTrans.HMCase == hmCase.RecId
+            && hmCaseTrans.Urgency == HMUrgency::Routine
+            && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded;
+        }
+        else
+        {
+            select sum(CashAmount) from hmCaseTrans
+            where hmCaseTrans.HMCase == hmCase.RecId
+            && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded;
+        }
+        return hmCaseTrans.CashAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getInsuraceGroupDetailsByAppointment</Name>
+				<Source><![CDATA[
+    public container getInsuraceGroupDetailsByAppointment(RecId _apptRecId)
+    {
+        HMResourceSchedulingAppointment appt;
+        HMPatientInsurance              hmPatientInsurance;
+        HMInsuranceCarrier              hmInsuranceCarrier;
+        HMInsuranceContractClassOrPlans HMInsuranceContractClassOrPlans;
+    
+        select * from appt
+        where appt.RecId == _apptRecId
+        join HMInsuranceContractClassOrPlans,EndDate from hmPatientInsurance where hmPatientInsurance.RecId == appt.HMPatientInsurance
+        join Name from hmInsuranceCarrier where hmInsuranceCarrier.Code == hmPatientInsurance.InsuranceCarrier
+        join HMContractClassNetwork from HMInsuranceContractClassOrPlans where HMInsuranceContractClassOrPlans.RecId == hmPatientInsurance.HMInsuranceContractClassOrPlans;
+    
+        return [hmInsuranceCarrier.Name, HMInsuranceContractClassOrPlans.HMContractClassNetwork, hmPatientInsurance.EndDate];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getTotalDeductible</Name>
+				<Source><![CDATA[
+    public AmountMST getTotalDeductible()
+    {
+        return deductibleAmount;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getVisitCaseAmount</Name>
+				<Source><![CDATA[
+    public AmountMST getVisitCaseAmount()
+    {
+        HMCaseTrans hmCaseTrans;
+        HMResourceSchedulingAppointment appt;
+        if(hmCase.HMCaseType == HMCaseType::OutPatient)
+        {
+            if(isCalledFromPharmacy)
+            {
+                select sum(CashAmount),sum(DeductibleActual) from hmCaseTrans
+                //Zain
+                //join appt where appt.RecId == hmcaseTRans.HMResourceSchedulingAppointment
+                //&& appt.RecId == appointmentRecid
+                where hmCaseTrans.HMCase == hmCase.RecId
+                && hmCaseTrans.Urgency == HMUrgency::Routine
+                && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded;
+                //&& (appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::NoShow
+                //&& appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::Cancelled);
+                //Zain
+    
+            }
+            else
+            {
+                select sum(CashAmount),sum(DeductibleActual) from hmCaseTrans
+                //Zain
+                //join appt where appt.RecId == hmcaseTRans.HMResourceSchedulingAppointment
+                //&& appt.RecId == appointmentRecid
+                where hmCaseTrans.HMCase == hmCase.RecId
+                && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded
+                //&& (appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::NoShow
+                //&& appt.AppointmentStatus != HMResourceSchedulingAppointmentStatus::Cancelled)
+                //Zain
+                ;
+            }
+            return hmCaseTrans.CashAmount + hmCaseTrans.DeductibleActual;
+        }
+        if(isCalledFromPharmacy)
+        {
+            select sum(CashAmount),sum(DeductibleActual) from hmCaseTrans
+            where hmCaseTrans.HMCase == hmCase.RecId
+            && hmCaseTrans.Urgency == HMUrgency::Routine
+            && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded;
+        }
+        else
+        {
+            select sum(CashAmount),sum(DeductibleActual) from hmCaseTrans
+            where hmCaseTrans.HMCase == hmCase.RecId
+            && hmCaseTrans.AlternatDrugStatus != HMAlternatDrugStatus::AlternateAdded;
+        }
+        return hmCaseTrans.CashAmount+ hmCaseTrans.DeductibleActual;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>markCaseTransPaid</Name>
+				<Source><![CDATA[
+    public void markCaseTransPaid(hmCaseTrans _hmCaseTrans)
+    {
+        HMCaseTrans hmcaseTransPckgDetails;
+    
+        HMCaseService hmCaseService = new HMCaseService();
+        hmcase = hmCase::find(_hmCaseTrans.HMcase);
+        if(_hmCaseTrans)
+        {
+            ttsBegin;
+            _hmCaseTrans = hmCAseTrans::find(_hmCaseTrans.RecId);
+            _hmCaseTrans.selectForUpdate(true);
+            _hmCaseTrans.BillingStatus = HMBillStatus::Paid;
+            if(_hmCaseTrans.HMServiceStatus == HMServiceStatus::Ordered)
+            {
+                _hmCaseTrans.HMServiceStatus = HMServiceStatus::Paid;
+            }
+            _hmCaseTrans.DeductibleCollectionDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            _hmCaseTrans.update();
+            if(InventTable::find(_hmCaseTrans.ItemId).PmfProductType == PmfProductType::BOM)
+            {
+                while select forupdate hmcaseTransPckgDetails
+                    where hmcaseTransPckgDetails.ParentCaseTransId == _hmCaseTrans.RecId
+                {
+                    hmcaseTransPckgDetails.BillingStatus = HMBillStatus::Paid;
+                    hmcaseTransPckgDetails.HMServiceStatus = HMServiceStatus::Paid;
+                    hmcaseTransPckgDetails.update();
+                }
+            }
+            ttsCommit;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAppointmentRecid</Name>
+				<Source><![CDATA[
+    public RecId parmAppointmentRecid(RecId _appointmentRecid = appointmentRecid)
+    {
+        appointmentRecid = _appointmentRecid;
+    
+        return appointmentRecid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHmCase</Name>
+				<Source><![CDATA[
+    public hmCase parmHmCase(hmCase _hmCase = hmCase)
+    {
+        hmCase = _hmCase;
+    
+        return hmCase;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmIsCalledFromPharmacy</Name>
+				<Source><![CDATA[
+    public boolean parmIsCalledFromPharmacy(boolean _isCalledFromPharmacy = isCalledFromPharmacy)
+    {
+        isCalledFromPharmacy = _isCalledFromPharmacy;
+    
+        return isCalledFromPharmacy;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>resetActualDeductibe</Name>
+				<Source><![CDATA[
+    public void resetActualDeductibe(FormDataSource _fds)
+    {
+        HMCaseTrans hmCaseTrans;
+        hmCaseTrans = _fds.getFirst();
+        ttsBegin;
+        while(hmCaseTrans)
+        {
+            if(hmCaseTrans.HMServiceStatus == HMServiceStatus::Ordered)
+            {
+                hmCaseTrans.selectForUpdate(true);
+                hmCaseTrans.DeductibleActual = 0;
+                hmCaseTrans.update();
+            }
+            hmCaseTrans = _fds.getNext();
+        }
+        ttsCommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateActualDeductible</Name>
+				<Source><![CDATA[
+    public void updateActualDeductible(Map _performedServicesMap, FormDataSource _fdsCaseTrans, RecId _apptRecId, RecId _caseRecId, boolean _updateInsuranceAmount = false)
+    {
+        int                                     serviceDays;
+        MapEnumerator                           mapEnumerator;
+        HMPatientInsurance                      hmPatientInsurance;
+        HMInsuranceCarrier                      hmInsuranceCarrier;
+        HMInsuranceContractClassOrPlans         HMInsuranceContractClassOrPlans;
+        HMResourceSchedulingAppointment         appt;
+        //Zain
+        HMCaseInsurance                         hmCaseInsurance;
+        //Zain
+        real                                    deductionLimitLeft;
+        HMCaseTrans                             hmCaseTrans;
+        date                                    fromDate,toDate;
+    
+        RecId                                   caseTransRecId;
+        HMInsuranceContractClassDeductible      HMInsuranceContractClassDeductible;
+    
+        mapEnumerator = _performedServicesMap.getEnumerator();
+    
+        appt = HMResourceSchedulingAppointment::find(_apptRecId);
+        deductibleAmount = 0;
+        hmcase = hmCase::find(_caseRecId);
+        if(appt)
+        {
+            serviceDays = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) - appt.AppointmentDate;
+        }
+        else
+        {
+            serviceDays = 0;
+        }
+        if(serviceDays < 0)
+        {
+            fromDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) - serviceDays;
+            toDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+        }
+        else
+        {
+            fromDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone());
+            toDate = DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()) + serviceDays;
+        }
+    
+    
+        //select HMDeductibleValidityDays from HMInsuranceCarrier
+        // join hmPatientInsurance where hmInsuranceCarrier.Code == hmPatientInsurance.InsuranceCarrier
+        //    join hmCaseInsurance where hmCaseInsurance.
+        //&& hmPatientInsurance.recid == hmcase.HMPatientInsurance;
+
+        select HMDeductibleValidityDays from hmInsuranceCarrier
+            join hmPatientInsurance where hmInsuranceCarrier.Code == hmPatientInsurance.InsuranceCarrier
+            join hmCaseInsurance where hmPatientInsurance.RecId == hmCaseInsurance.HMPatientInsurance
+            && hmCaseInsurance.HMCase == hmCase.RecId;
+    
+        select * from HMPatientInsurance
+            where hmPatientInsurance.RecId == hmCaseInsurance.HMPatientInsurance
+        //join * from  where hmcase.HMPatientInsurance == HMPatientInsurance.RecId
+        join * from HMInsuranceContractClassOrPlans 
+        where HMInsuranceContractClassOrPlans.RecId == HMPatientInsurance.HMInsuranceContractClassOrPlans
+        && HMInsuranceContractClassOrPlans.HMContractClassStatus == HMContractClassStatus::Active;
+    
+    
+    
+    
+        //Zain
+        //if(hmCase.HMCaseType == HMCaseType::OutPatient)
+        //{
+        deductionLimitLeft = HMInsuranceContractClassOrPlans.HMMaxOutPatientDeductibleLimit;
+        //}
+        //Zain
+        if (hmCase.HMCaseType == HMCaseType::Emergency)
+        {
+            deductionLimitLeft = HMInsuranceContractClassOrPlans.HMMaxEmergencyDeductibleLimit;
+        }
+    
+        if((serviceDays < hmInsuranceCarrier.HMDeductibleValidityDays || serviceDays < 1))
+        {
+            select sum(DeductibleActual) from hmCaseTrans
+                where hmCaseTrans.HMCase == _caseRecId
+                && hmCaseTrans.DeductibleCollectionDate >= fromDate
+                && hmCaseTrans.DeductibleCollectionDate <= toDate;
+    
+                deductionLimitLeft -= decRound(hmCaseTrans.DeductibleActual,2);
+        }
+    
+    
+    
+        ttsBegin;
+        hmCaseTrans = _fdsCaseTrans.getFirst();
+        while(hmCaseTrans)
+        {
+            hmCaseTrans.selectForUpdate(true);
+    
+            if(_performedServicesMap.exists(hmCaseTrans.RecId))
+            {
+                if(hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Patient)
+                {
+                    //Zain
+                    //hmCaseTrans.CashAmount = decRound(hmCaseTrans.TotalAmount - hmCaseTrans.DiscountAmount,2);
+                    //Here the discount is already deducted from total amount so, we don't need to deduct discount here again.
+                    hmCaseTrans.CashAmount = hmCaseTrans.TotalAmount;
+                    //Zain
+                    hmCaseTrans.InsuranceAmount = 0;
+                    if(HMCaseTrans.CashAmount < 0)
+                    {
+                        HMCaseTrans.CashAmount = 0;
+                    }
+                }
+    
+                if(hmCaseTrans.BillingStatus == HMBillStatus::NotPaid && hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Client)
+                {
+                    if(deductionLimitLeft >= 0)
+                    {
+                        if(deductionLimitLeft >= 0)
+                        {
+                            if(deductionLimitLeft >= hmCaseTrans.Deductible)
+                            {
+                                hmCaseTrans.DeductibleActual = hmCaseTrans.Deductible;
+                                hmCaseTrans.DeductibleActual = decRound(hmCaseTrans.DeductibleActual,2);
+                                deductionLimitLeft -= hmCaseTrans.DeductibleActual;
+                                deductionLimitLeft = decRound(deductionLimitLeft,2);
+                            }
+                            else
+                            {
+                                deductionLimitLeft = decRound(deductionLimitLeft,2);
+                                hmCaseTrans.DeductibleActual = deductionLimitLeft;
+                                deductionLimitLeft = 0;
+                            }
+    
+                        }
+                        deductibleAmount += decRound(hmCaseTrans.DeductibleActual,2);
+                    }
+                    else
+                    {
+                        hmCaseTrans.DeductibleActual = 0;
+                    }
+                    if(_updateInsuranceAmount || HMCaseTrans.CashAmount == 0)
+                    {
+                        //Zain
+                        //hmCaseTrans.InsuranceAmount = decRound(HMCaseTrans.TotalAmount - HMCaseTrans.DeductibleActual - HMCaseTrans.DiscountAmount - HMCaseTrans.CashAmount,2);
+                        //Here the discount is already deducted from total amount so, we don't need to deduct discount here again.
+                        hmCaseTrans.InsuranceAmount = decRound(HMCaseTrans.TotalAmount- HMCaseTrans.DeductibleActual - HMCaseTrans.CashAmount, 2);
+                        //Zain
+                    }
+                    //Zain
+                    //HMCaseTrans.CashAmount = decRound(HMCaseTrans.TotalAmount - HMCaseTrans.DeductibleActual - HMCaseTrans.InsuranceAmount - HMCaseTrans.DiscountAmount,2) ;
+                    //Here the discount is already deducted from total amount so, we don't need to deduct discount here again.
+                    HMCaseTrans.CashAmount = decRound(HMCaseTrans.TotalAmount - HMCaseTrans.DeductibleActual - HMCaseTrans.InsuranceAmount, 2);
+                    //Zain
+                    if(HMCaseTrans.CashAmount < 0)
+                    {
+                        HMCaseTrans.CashAmount = 0;
+                    }
+                }
+            }
+            else
+            {
+                if(hmCaseTrans.BillingStatus == HMBillStatus::NotPaid)
+                {
+                    hmCaseTrans.DeductibleActual = 0;
+                }
+            }
+    
+            if(hmCaseTrans.PatientResponsibility == HMPatientPaymentResponsibility::Patient)
+            {
+                //Zain
+                //hmCaseTrans.CashAmount = decRound(hmCaseTrans.TotalAmount - hmCaseTrans.DiscountAmount,2);
+                //Here the discount is already deducted from total amount so, we don't need to deduct discount here again.
+                hmCaseTrans.CashAmount = hmCaseTrans.TotalAmount;
+                //Zain
+                hmCaseTrans.InsuranceAmount = 0;
+                if(HMCaseTrans.CashAmount < 0)
+                {
+                    HMCaseTrans.CashAmount = 0;
+                }
+            }
+    
+            hmCaseTrans.update();
+            hmCaseTrans = _fdsCaseTrans.getNext();
+    
+        }
+        ttsCommit;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePharmacyDrug</Name>
+				<Source><![CDATA[
+    public void updatePharmacyDrug(RecId _alternatePrimaryCaseTransId, HMAlternatDrugStatus _alternateDrugStatus = HMAlternatDrugStatus::None)
+    {
+        HMCaseTrans hmCaseTrans;
+        ttsBegin;
+        select forUpdate HMCaseTrans
+        where HMCaseTrans.AlternatePrimaryCaseTransId == _alternatePrimaryCaseTransId;
+    
+        if(hmCaseTrans)
+        {
+            hmCaseTrans.AlternatePrimaryCaseTransId = 0;
+            hmCaseTrans.AlternatDrugStatus = _alternateDrugStatus;
+            hmCaseTrans.update();
+        }
+        ttsCommit;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updatePharmacyInventBatchId</Name>
+				<Source><![CDATA[
+    public boolean updatePharmacyInventBatchId(HMPharmacyItemDispense _pharmacyItemDispense)
+    {
+        HMCaseTrans hmCaseTransLocal;
+        if(_pharmacyItemDispense.HMCaseTrans)
+        {
+            hmCaseTransLocal = HMCaseTrans::find(_pharmacyItemDispense.hmcaseTrans);
+            if(hmCaseTransLocal.PharmacyBatchId != _pharmacyItemDispense.InventBatchId)
+            {
+                ttsBegin;
+                hmCaseTransLocal.selectForUpdate(true);
+                hmCaseTransLocal.PharmacyBatchId = _pharmacyItemDispense.InventBatchId;
+                hmCaseTransLocal.update();
+                ttsCommit;
+                return true;
+            }
+        }
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isItemExistInPharmacyCompany</Name>
+				<Source><![CDATA[
+    public static boolean isItemExistInPharmacyCompany(ItemId _itemId, DataAreaId _dataAreaId)
+    {
+        InventTable inventTable;
+    
+        select crossCompany RecId from inventTable
+        where inventTable.ItemId == _itemId
+        && inventTable.dataAreaId == _dataAreaId;
+    
+        return inventTable ? true : false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args _args)
+    {
+        Map serviceMap;
+        FormRun formRun;
+        HMPatientChargeEntryAdvPaymFormHandler objClass = new HMPatientChargeEntryAdvPaymFormHandler();
+        if(_args.menuItemName() == menuitemActionStr(HMPatientChargeEntryMedicationDispense))
+        {
+            formRun = _args.caller();
+            if(formHasMethod(formRun,identifierStr(getPerformedServiceMap)))
+            {
+                serviceMap = _args.caller().getPerformedServiceMap();
+            }
+            if(serviceMap)
+            {
+                if(formHasMethod(formRun,identifierStr(getPharmacyItemDispenseTable)))
+                {
+                    objClass.dispenseMedication(serviceMap,_args.caller().getPharmacyItemDispenseTable());
+                }
+                else
+                {
+                    warning("Pharmacy dispense items records buffer not found");
+                }
+    
+            }
+    
+    
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

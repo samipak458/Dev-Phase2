@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMCasePaymentSettlmentTmp</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMCasePaymentSettlmentTmp extends common
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>fillDataByCustAndCase</Name>
+				<Source><![CDATA[
+    private void fillDataByCustAndCase(HMCase _hmcase, CustTable _custTable, HMCaseInsurance _hmCaseInsurance)
+    {
+    
+        HMCaseTransDetail           HMCaseTransDetail;
+        HMCaseTrans                 hmCaseTrans;
+        CustTransOpen               custTransOpen;
+        CustTrans                   custTrans,custTransPayment;
+        CustSettlement              custSettlement;
+    
+        this.Name = _custTable.name();
+    
+        select firstonly AmountCur,Voucher,RecId from custTrans
+        where custTrans.TransType == LedgerTransType::Cust
+        && custTrans.Invoice != ''
+        && custTrans.AmountCur > 0
+        && custTrans.OrderAccount == _custTable.AccountNum
+        && custTrans.HMCase == _hmcase.RecId;
+    
+        this.BilledAmount = custTrans.AmountCur;
+    
+        select sum(SettleAmountMST), TransDate from custSettlement
+        order by custSettlement.TransDate desc
+        group by custSettlement.TransDate
+        join AmountCur from custTransPayment
+        where custSettlement.OffsetTransVoucher == custTransPayment.Voucher
+        && custSettlement.TransRecId == custTrans.RecId
+        && custTransPayment.TransType == LedgerTransType::Payment;
+    
+        this.AmountSettled = custSettlement.SettleAmountMST;
+        this.LastPaymentDate = custSettlement.TransDate;
+    
+        select firstonly AmountCur,Voucher,RecId from custTrans
+        where custTrans.TransType == LedgerTransType::WriteOff
+        && custTrans.OrderAccount == _custTable.AccountNum
+        && custTrans.HMCase == _hmcase.RecId;
+    
+        this.WriteOffAmount = abs(custTrans.AmountCur);
+    
+        select sum(Value) from HMCaseTransDetail
+        group by RefRecId, RefTableId
+        join hmCaseTrans
+        where HMCaseTransDetail.HMCaseTrans == hmCaseTrans.RecId
+        && HMCaseTrans.HMCase == _hmcase.RecId
+        && HMCaseTransDetail.TransactionType == HMCaseTransDetailTransactionType::ApprovedAmount
+        && HMCaseTransDetail.RefRecId == _custTable.RecId
+        && HMCaseTransDetail.RefTableId == tableNum(CustTable);
+    
+        this.ApprovedAmount = HMCaseTransDetail.Value;
+    
+        if(_custTable.CustType == CustType::Patient)
+        {
+            select firstonly AmountCur,Voucher,RecId from custTrans
+            join AmountMST from custtransOpen
+            where custTrans.TransType == LedgerTransType::Payment
+            && custTrans.OrderAccount == _custTable.AccountNum
+            && custTrans.HMCase == _hmcase.RecId
+            && custTransOpen.AccountNum == custTrans.AccountNum
+            && custTransOpen.RefRecId == custTrans.RecId;
+    
+            this.PrePaymentAmount = abs(custTransOpen.AmountMST);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>fillData</Name>
+				<Source><![CDATA[
+    public static HMCasePaymentSettlmentTmp fillData(HMCase _hmcase)
+    {
+        HMCasePaymentSettlmentTmp   record;
+        HMCaseInsurance             hmCaseInsurance;
+        CustTable                   custTable;
+        AccountNum                  accountNum,invoiceAccount;
+        int counter = 0;
+        //get insurance & gurantor info
+        while select * from hmCaseInsurance
+            order by Priority
+            where hmCaseInsurance.HMCase == _hmcase.RecId
+        {
+            counter++;
+            record.clear();
+            record.Priority = counter;
+            accountNum = hmCaseInsurance.InsuranceCarrier;
+            custTable = CustTable::find(accountNum);
+            invoiceAccount = custTable.InvoiceAccount;
+            record.fillDataByCustAndCase(_hmcase,custTable,hmCaseInsurance);
+            record.insert();
+        }
+        counter++;
+        record.clear();
+        record.Priority = counter;
+        accountNum = HMPatient::find(_hmcase.HMPatient).patientChartNum();
+        custTable = CustTable::find(accountNum);
+        invoiceAccount = custTable.InvoiceAccount;
+        record.fillDataByCustAndCase(_hmcase,custTable,hmCaseInsurance);
+        record.insert();
+    
+    
+        return record;
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getBalances</Name>
+				<Source><![CDATA[
+    public static container getBalances(HMCasePaymentSettlmentTmp _record)
+    {
+        real beginningBalance;
+        real settledAmount;
+        real currentBalance;
+        container conResult;
+    
+        select BilledAmount from _record
+        where _record.Priority == 1;
+        beginningBalance = _record.BilledAmount;
+    
+        select sum(AmountSettled), sum(WriteOffAmount) from _record;
+        settledAmount = _record.AmountSettled + _record.WriteOffAmount;
+    
+        currentBalance = beginningBalance - settledAmount;
+    
+        conResult = [beginningBalance,settledAmount,currentBalance];
+    
+        return conResult;
+    
+    
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+	<Label>@MAZ:HMCasePaymentSettlmentTmp</Label>
+	<TitleField1>Priority</TitleField1>
+	<TitleField2>Name</TitleField2>
+	<TableType>InMemory</TableType>
+	<DeleteActions />
+	<FieldGroups>
+		<AxTableFieldGroup>
+			<Name>AutoReport</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoLookup</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoIdentification</Name>
+			<AutoPopulate>Yes</AutoPopulate>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoSummary</Name>
+			<Fields />
+		</AxTableFieldGroup>
+		<AxTableFieldGroup>
+			<Name>AutoBrowse</Name>
+			<Fields />
+		</AxTableFieldGroup>
+	</FieldGroups>
+	<Fields>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>AmountSettled</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>Amount settled</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>ApprovedAmount</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>Approved amount</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>BilledAmount</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>Billed amount</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldDate">
+			<Name>LastPaymentDate</Name>
+			<ExtendedDataType>TransDate</ExtendedDataType>
+			<HelpText>Last payment date</HelpText>
+			<Label>Last payment date</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>Name</Name>
+			<ExtendedDataType>DirPartyName</ExtendedDataType>
+			<Mandatory>Yes</Mandatory>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldString">
+			<Name>PaymentNotes</Name>
+			<ExtendedDataType>PaymNote</ExtendedDataType>
+			<Label>Remarks</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>PrePaymentAmount</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>Paid amount</Label>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldInt">
+			<Name>Priority</Name>
+			<AllowEditOnCreate>No</AllowEditOnCreate>
+			<ExtendedDataType>HMInsurancePolicyPriority</ExtendedDataType>
+		</AxTableField>
+		<AxTableField xmlns=""
+			i:type="AxTableFieldReal">
+			<Name>WriteOffAmount</Name>
+			<ExtendedDataType>AmountMST</ExtendedDataType>
+			<Label>Write-off amount</Label>
+		</AxTableField>
+	</Fields>
+	<FullTextIndexes />
+	<Indexes />
+	<Mappings />
+	<Relations />
+	<StateMachines />
+</AxTable>

@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMGSSDP</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+[
+SRSReportParameterAttribute(classstr(HMGSSContract))
+]
+class HMGSSDP extends SRSReportDataProviderBase
+{
+    HMGSSReportTmp      GSSTmp;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getHMHMPGSReportTmp</Name>
+				<Source><![CDATA[
+    [SRSReportDataSetAttribute('HMPGSReportTmp')]
+    public HMGSSReportTmp getHMHMPGSReportTmp()
+    {
+        select * from GSSTmp;
+        return GSSTmp;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>itemDescription</Name>
+				<Source><![CDATA[
+    private EcoResDescription itemDescription(ItemId _itemId)
+    {
+        EcoResDescription description;
+        HMInventTable hmInventTable;
+        InventTable inventTable;
+    
+        select DIN from hmInventTable
+            join * from inventTable
+                where hmInventTable.InventTable == _itemId
+                && inventTable.ItemId == _itemId;
+    
+        description = inventTable.itemDescriptionOrName();
+    
+    
+    
+        return description;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processReport</Name>
+				<Source><![CDATA[
+    public void processReport()
+    {
+      //  HMInsuranceCarrier              carrier;
+        HMCaseTrans                     caseTrans;
+        HMCaseTransDetail               caseTransDetail;
+        HMPatientChargeEntryLine        chargeEntryLine;
+        HMClaimVersion                  claimVersion;
+        HMClaimTable                    claim,              countClaim;
+        HMClaimTableDetails             claimDetails,       countClaimDetails;
+        HMPatientChargeEntryTable       chargeEntryTable,   countChargeEntryTable;
+        //HMResourceSchedulingAppointment appointment,        countAppointment;
+        HMCase                          hmCase,             countCase;
+        HMPatientInsurance              patientInsurance,   countPatientInsurance;
+        HMInsuranceContractClassOrPlans plan,               countPlan;
+        HMInsuranceContract             insuranceContract,  countContract;
+        HMInsuranceCarrierBatchDetails  batchDetails;
+        HMCaseInsurance                 caseInsurance;
+    
+        int             claimCounter;
+        HMGSSContract   dataContract;
+        dataContract    = this.parmDataContract() as HMGSSContract;
+        batchDetails    = HMInsuranceCarrierBatchDetails::findbByBatchNumber(dataContract.parmBatchNumber());
+    
+      //  carrier         = HMInsuranceCarrier::findByPartyName(dataContract.parmInsuranceCarrier());
+        while select claim
+        group by insuranceContract.HMContractName, insuranceContract.HMContractNumber, hmCase.HMCaseType//, caseTransDetail.TransactionType
+            join claimDetails
+            where claim.RecId == claimDetails.HMClaimTable
+            && claimDetails.BatchNumber == dataContract.parmBatchNumber()
+       //     && claimDetails.VisitDate   >= dataContract.parmFromDate()
+       //     && claimDetails.VisitDate   <= dataContract.parmToDate()
+                join chargeEntryTable
+                where claim.HMPatientChargeEntryTable == chargeENtryTable.RecId
+                    /*join appointment
+                    where appointment.RecId == chargeENtryTable.HMResourceSchedulingAppointment
+                        join patientInsurance
+                        where appointment.HMPatientInsurance == patientInsurance.RecId
+                            join plan
+                            where plan.RecId == patientInsurance.HMInsuranceContractClassOrPlans
+                                join InsuranceContract
+                                where plan.HMInsuranceContract  == InsuranceContract.RecId*/
+    
+                                    join hmcase
+                                    order by hmCase.HMCaseType, claim.HMPatient
+                                    where hmcase.RecId == chargeENtryTable.HMCase
+                                    //&& hmCase.hmCaseType == HMCaseType::Emergency
+                                    join caseInsurance 
+                                        where caseInsurance.Hmcase == hmCase.RecId
+                                        && caseInsurance.IsActive == noyes::Yes
+                                        join patientInsurance
+                                            where caseInsurance.HMPatientInsurance == patientInsurance.RecId
+                                                join plan
+                                                where plan.RecId == patientInsurance.HMInsuranceContractClassOrPlans
+                                                    join InsuranceContract
+                                                    where plan.HMInsuranceContract  == InsuranceContract.RecId
+    
+                                        join chargeEntryLine
+                                        where chargeEntryLine.HMPatientChargeEntryTable         == chargeENtryTable.RecId
+                                            && chargeEntryLine.HMInsuranceCarrierBatchDetails   == HMInsuranceCarrierBatchDetails::findbByBatchNumber(dataContract.parmBatchNumber()).RecId
+                                            join sum(TotalAmount), sum(discount), sum(DiscountAmount), sum(DeductibleActual), sum(CashAmount) from caseTrans
+                                            //join TotalAmount, discount, DiscountAmount, DeductibleActual, CashAmount from caseTrans
+                                            where caseTrans.RecId == chargeEntryLine.HMCaseTrans
+                                            && caseTrans.BillingStatus != HMBillStatus::NotPaid
+                                            && caseTrans.BillingStatus != HMBillStatus::Reveresed
+                                                join claimVersion
+                                                where claimVersion.HMClaimTable == claim.RecId
+                                                && claimVersion.Status == HMClaimStatus::Submitted
+                                                    outer join CaseTransDetail
+                                                    where CaseTransDetail.HMCaseTrans == caseTrans.RecId
+                                                        && !caseTransDetail.Reversed
+                                                        && (caseTransDetail.TransactionType == 2||caseTransDetail.TransactionType==1)
+        {
+            select count(RecId) from countClaim
+                join countChargeEntryTable
+                where countClaim.HMPatientChargeEntryTable == countChargeEntryTable.RecId
+                    //join countAppointment
+                    //where countAppointment.RecId == countChargeEntryTable.HMResourceSchedulingAppointment
+                    join countCase
+                    where countCase.RecId == countChargeEntryTable.HMCase
+                    && countCase.HMCaseType == hmCase.HMCaseType
+                        join countPatientInsurance
+                        where countPatientInsurance.RecId == countcase.HMPatientInsurance
+                            join countPlan
+                            where countPatientInsurance.HMInsuranceContractClassOrPlans == countPlan.RecId
+                                join countContract
+                                where countContract.RecId == countPlan.HMInsuranceContract
+                                    && countContract.HMContractNumber == insuranceContract.HMContractNumber
+                                    join countClaimDetails
+                                    where countClaimDetails.BatchNumber == dataContract.parmBatchNumber() &&
+                                    countClaimDetails.HMClaimTable == countClaim.RecId
+                                            join claimVersion
+                                                where claimVersion.HMClaimTable == countClaim.RecId
+                                                && claimVersion.Status == HMClaimStatus::Submitted;
+    
+                GSSTmp.clear();
+                GSSTmp.CaseType                 = enum2str(hmCase.hmCaseType);
+    
+                GSSTmp.FromDateBatch    = batchDetails.FromDate;
+                GSSTmp.ToDateBatch      = batchDetails.ToDate;
+       //         GSSTmp.CarrierCodeName  = carrier.code + " - " + carrier.Name;
+                GSSTmp.ContractId       = insuranceContract.HMContractNumber;
+                GSSTmp.ContractName     = insuranceContract.HMContractName;
+                //GSSTmp.MRN              = //patient.patientChartNum();
+                //GSSTmp.PatientName      = //patient.patientName();
+                GSSTmp.NumberOfClaims   = countClaim.RecId;
+             /*   GSSTmp.FromDate         = date2str(dataContract.parmFromDate()  , 123, 2, 4, 2, 4, 4);
+                GSSTmp.ToDate           = date2str(dataContract.parmToDate()    , 123, 2, 4, 2, 4, 4);*/
+    
+            // change by amir nazim 11/25/2016 for wrong insurance amount
+                GSSTmp.InsuranceAmount  = caseTrans.TotalAmount - caseTrans.DiscountAmount - caseTrans.DeductibleActual - caseTrans.CashAmount;
+                //caseTrans.InsuranceAmount;
+            // change by amir nazim 11/25/2016 for wrong insurance amount
+    
+                GSSTmp.GrossAmount      = caseTrans.TotalAmount;
+                GSSTmp.DiscountAmount   = caseTrans.DiscountAmount;
+                GSSTmp.NetAmount        = caseTrans.TotalAmount - GSSTmp.DiscountAmount;
+                GSSTmp.DeductibleAmount = caseTrans.DeductibleActual + caseTrans.CashAmount;
+    
+                GSSTmp.insert();
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

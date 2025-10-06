@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMZeroClaimQualificationCriteria</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used to check the criteria for the qualified claims of $0 denied claims
+/// </summary>
+class HMZeroClaimQualificationCriteria
+{
+    const str denial = 'DENIAL';
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMZeroClaimQualificationCriteria construct()
+    {
+        return new HMZeroClaimQualificationCriteria();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isClaimQualifiedForCriteria</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method is used to check the criteria for the qualified claims of $0 denied claims
+    /// </summary>
+    /// <param name="_claimTable"><c>HMClaimTable</c> record</param>
+    /// <param name="_daysSinceDenialPosting"><c>HMDaysSinceDenialPosting</c> value</param>
+    /// <param name="_postedCodes"><c>HMLastPostingCodes</c> value</param>
+    /// <returns>Returns true if critera mathces else false</returns>
+    public boolean isClaimQualifiedForCriteria(HMClaimTable _claimTable, HMDaysSinceDenialPosting _daysSinceDenialPosting, HMLastPostingCodes _postedCodes)
+    {
+        date                     todayDate;
+        Integer                  daysSinceDenialPostings;
+        TransDate                lastActionAndNoteCreatedDate;
+        HMClaimPaymentPosting    hmClaimPaymentPosting;
+        TransDate                postedDate;
+        Query                    query;
+        QueryRun                 queryRun;
+        QueryBuildDataSource     qbds;
+        
+
+        todayDate                    = DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(DateTimeUtil::utcNow(),DateTimeUtil::getCompanyTimeZone()));
+        lastActionAndNoteCreatedDate = dateNull();
+
+        select firstonly DatePosted from hmClaimPaymentPosting
+            order by DatePosted desc
+            where hmClaimPaymentPosting.ClaimID == _claimTable.ClaimID;
+
+        postedDate = hmClaimPaymentPosting.DatePosted;
+
+        if (postedDate != dateNull())
+        {
+            hmClaimPaymentPosting.clear();
+
+            query = new Query();
+            qbds  = query.addDataSource(tablenum(HMClaimPaymentPosting));
+
+            qbds.addRange(fieldnum(HMClaimPaymentPosting, ClaimID)).value(_claimTable.ClaimID);
+            qbds.addRange(fieldnum(HMClaimPaymentPosting, DatePosted)).value(SysQuery::value(postedDate));
+            qbds.addRange(fieldnum(HMClaimPaymentPosting, Type)).value(denial);
+            qbds.addRange(fieldnum(HMClaimPaymentPosting, Code_Cheque)).value(SysQuery::valueLike(_postedCodes));
+            qbds.firstOnly(true);
+
+            queryRun = new QueryRun(query);
+
+            if (SysQuery::countTotal(queryRun) > 0)
+            {
+                daysSinceDenialPostings = todayDate - postedDate;
+
+                if (daysSinceDenialPostings <= _daysSinceDenialPosting)
+                {
+                    lastActionAndNoteCreatedDate    = DateTimeUtil::date(DateTimeUtil::applyTimeZoneOffset(_claimTable.HMClaimLatestNoteDate_Internal, DateTimeUtil::getCompanyTimeZone()));
+                
+                    if (lastActionAndNoteCreatedDate == dateNull() || lastActionAndNoteCreatedDate < postedDate)
+                    {
+                        return true;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

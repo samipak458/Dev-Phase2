@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAESCryptography</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMAESCryptography
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>decryptFile</Name>
+				<Source><![CDATA[
+    public boolean decryptFile(str _inputPath, str _outputPath, str _password,str _header)
+    {
+        System.Security.Cryptography.RijndaelManaged aesObj = new System.Security.Cryptography.RijndaelManaged();
+        System.Security.Cryptography.CryptoStream cryptoStream;
+    
+        System.IO.FileStream    inputFile;
+        System.IO.FileStream    outputFile;
+        System.IO.BinaryWriter  outputBytes;
+    
+        System.Byte[] bytesRead;
+        int bytesLength;
+    
+        try
+        {
+            if(!WinAPI::fileExists(_inputPath,false))
+            {
+                throw error("@MAZ4997");
+            }
+    
+            if(WinAPI::fileLocked(_inputPath))
+            {
+                throw error("@MAZ5009");
+            }
+    
+            //set aes properties
+            aesObj.set_Key(this.getKey(_password));
+            aesObj.set_BlockSize(128);
+            aesObj.set_IV(this.getIV(_password));
+           //aesObj.set_Padding(System.Security.Cryptography.PaddingMode::None);
+    
+            //set input stream
+            inputFile = System.IO.File::OpenRead(_inputPath);
+    
+            cryptoStream = new System.Security.Cryptography.CryptoStream(inputFile,aesObj.CreateDecryptor(),System.Security.Cryptography.CryptoStreamMode::Read);
+            inputFile.Seek(11,System.IO.SeekOrigin::Current);
+    
+            //creating output file
+            outputFile = System.IO.File::Create(_outputPath);
+            outputBytes = new System.IO.BinaryWriter(outputFile);
+    
+            //decrypting
+            bytesLength = 1000;
+            bytesRead = new System.Byte[bytesLength]();
+            do
+            {
+                bytesLength = cryptoStream.Read(bytesRead, 0, bytesRead.get_Length());
+                outputBytes.Write(bytesRead, 0, bytesLength);
+    
+            } while (bytesLength > 0);
+    
+            // Final
+            cryptoStream.Close();
+            outputBytes.Close();
+    
+            return true;
+        }
+        catch
+        {
+            try
+            {
+                if(outputBytes != null)
+                {
+                    outputBytes.Close();
+                }
+    
+                if(cryptoStream != null)
+                {
+                    cryptoStream.Close();
+                }
+            }
+            catch
+            {
+                error("@MAZ5010");
+                return false;
+            }
+    
+            error("@MAZ5010");
+    
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>encryptFile</Name>
+				<Source><![CDATA[
+    public boolean encryptFile(str _inputPath, str _outputPath, str _password,str _header)
+    {
+        System.Security.Cryptography.RijndaelManaged aesObj = new System.Security.Cryptography.RijndaelManaged();
+        System.Security.Cryptography.CryptoStream cryptoStream;
+        System.IO.StreamWriter streamWriter;
+    
+        System.IO.FileStream    inputFile;
+        System.IO.FileStream    outputFile;
+        System.IO.BinaryReader  inputBytes;
+    
+        System.Byte[] bytesRead;
+        int bytesLength;
+    
+        System.Text.Encoding asciiEncoding;
+        System.Byte[] headerBytes;
+    
+        try
+        {
+            if(!WinAPI::fileExists(_inputPath,false))
+            {
+                throw error("@MAZ4997");
+            }
+    
+            if(WinAPI::fileLocked(_inputPath))
+            {
+                throw error("@MAZ5009");
+            }
+    
+            //set aes properties
+            aesObj.set_Key(this.getKey(_password));
+            aesObj.set_BlockSize(128);
+            aesObj.set_IV(this.getIV(_password));
+            //aesObj.set_Padding(System.Security.Cryptography.PaddingMode::None);
+    
+            //set input and output stream
+            inputFile = System.IO.File::OpenRead(_inputPath);
+            inputBytes = new System.IO.BinaryReader(inputFile);
+    
+            outputFile = System.IO.File::Create(_outputPath);
+    
+            //create header
+            asciiEncoding = System.Text.Encoding::get_ASCII();
+            headerBytes = asciiEncoding.GetBytes('<'+_header+'>');
+            streamWriter = new System.IO.StreamWriter(outputFile);
+            streamWriter.WriteLine('<'+_header+'>');
+            streamWriter.Close();
+    
+            //creating encryption stream
+            outputFile = System.IO.File::OpenWrite(_outputPath);
+            cryptoStream = new System.Security.Cryptography.CryptoStream(outputFile,aesObj.CreateEncryptor(),System.Security.Cryptography.CryptoStreamMode::Write);
+    
+            //encrypting
+            outputfile.Seek(11,System.IO.SeekOrigin::Current);
+    
+            bytesRead = inputBytes.ReadBytes(1000);
+            bytesLength = bytesRead.get_Length();
+    
+            while (bytesLength > 0)
+            {
+                cryptoStream.Write(bytesRead, 0, bytesRead.get_Length());
+                bytesRead = inputBytes.ReadBytes(1000);
+                bytesLength = bytesRead.get_Length();
+            }
+    
+            // Final
+            cryptoStream.FlushFinalBlock();
+            cryptoStream.Close();
+            inputBytes.Close();
+    
+            return true;
+        }
+        catch
+        {
+            try
+            {
+                if(streamWriter != null)
+                {
+                    streamWriter.Close();
+                }
+    
+                if(inputBytes != null)
+                {
+                    inputBytes.Close();
+                }
+    
+                if(cryptoStream != null)
+                {
+                    cryptoStream.Close();
+                }
+            }
+            catch
+            {
+                error("@MAZ5011");
+                return false;
+            }
+    
+            error("@MAZ5011");
+    
+            return false;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getIV</Name>
+				<Source><![CDATA[
+    private System.Byte[] getIV(str _password)
+    {
+        System.Security.Cryptography.Rfc2898DeriveBytes rfc;
+        System.Text.Encoding asciiEncoding;
+    
+        try
+        {
+            asciiEncoding = System.Text.Encoding::get_ASCII();
+            rfc = new System.Security.Cryptography.Rfc2898DeriveBytes(_password,asciiEncoding.GetBytes(_password));
+    
+            return rfc.GetBytes(16);
+        }
+        catch
+        {
+            error("@MAZ5012");
+    
+            return null;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getKey</Name>
+				<Source><![CDATA[
+    private System.Byte[] getKey(str _password)
+    {
+        System.Security.Cryptography.Rfc2898DeriveBytes rfc;
+        System.Text.Encoding asciiEncoding;
+    
+        try
+        {
+            asciiEncoding = System.Text.Encoding::get_ASCII();
+            rfc = new System.Security.Cryptography.Rfc2898DeriveBytes(_password,asciiEncoding.GetBytes(_password));
+    
+            return rfc.GetBytes(32);
+        }
+        catch
+        {
+            error("@MAZ5013");
+    
+            return null;
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMAssignPriorityToZeroClaimMainMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// This class is used as the main batch job class for assignment of priority batch job for $0 denied claims
+/// </summary>
+class HMAssignPriorityToZeroClaimMainMultiThreadBatchJob extends RunBaseBatch implements BatchRetryable
+{
+    QueryRun                 gQueryRun;
+    BatchHeader              batchHeader;
+    HMNumberOfThreads        numberOfThreads;
+    HMClaimJobType           jobType, jobTypeDataPrep;
+    RecId                    hmClaimBatchJobLogsHeader, hmClaimBatchJobLogsHeaderDataPrep;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        numberOfThreads
+    #endmacro
+    #LOCALMACRO.HMClaimBatchJobLogsHeader
+        hmClaimBatchJobLogsHeader
+    #ENDMACRO
+        #LOCALMACRO.HMClaimBatchJobLogsHeaderDataPrep
+        hmClaimBatchJobLogsHeaderDataPrep
+    #ENDMACRO
+    #LOCALMACRO.JobType
+        jobType
+    #ENDMACRO
+    #localmacro.JobTypeDataPrep
+        jobTypeDataPrep
+    #endmacro
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMAssignPriorityToZeroClaimMainMultiThreadBatchJob construct()
+    {
+        return new HMAssignPriorityToZeroClaimMainMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Description of the task
+    /// </summary>
+    /// <returns>Return description of the task</returns>
+    static ClassDescription description()
+    {
+        return "@Optum:AssignPriorityToZeroClaimsMultipleThreadBatchJobs";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// This method initiated the task for assignment of priority batch job for $0 denied claims
+    /// </summary>
+    public void run()
+    {
+        HMDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob;
+        HMAssignPriorityToZeroClaimsMultiThreadBatchJob           hmAssignPriorityToZeroClaimsMultiThreadBatchJob;
+        HMUpdateZeroClaimBatchJobLogsHeaderCount                  hmUpdateZeroClaimBatchJobLogsHeaderCount;
+        int                                                       recordsToProcess, perThreadRecordsRound, additionalRecordsRound;
+        HMOneDecimal                                              additionalRecords;
+        real                                                      perThreadRecords, diffPerThread;
+        RecId                                                     batchJobId;
+        HMClaimPrioritizationCalculatedFields                     hmClaimPrioritizationCalculatedFields;
+
+        try
+        {
+            ttsbegin;
+
+            delete_from hmClaimPrioritizationCalculatedFields
+                where hmClaimPrioritizationCalculatedFields.CreatedDateTime <= DateTimeUtil::addDays(DateTimeUtil::utcNow(), -2);
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable",'HMClaimPrioritizationCalculatedFields'));
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable",'HMClaimPrioritizationCalculatedFields'));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+        try
+        {
+            
+            if(this.isInBatch())
+            {
+                numberOfThreads = numberOfThreads == 0 ? 1 : numberOfThreads < 0 ? numberOfThreads * -1 : numberOfThreads;
+
+                recordsToProcess = SysQuery::countLoops(gQueryRun);
+                
+                Info(strFmt("@MAZ:NoOfRecordsPicked", recordsToProcess));
+
+                if(recordsToProcess <= numberOfThreads)
+                {
+                    numberOfThreads = 1;
+                    Info("@MAZ:RecordsLesserThanNumberOfThreads");
+                }
+
+                perThreadRecords        = recordsToProcess / numberOfThreads;
+                perThreadRecordsRound   = perThreadRecords;
+                diffPerThread           = perThreadRecords - perThreadRecordsRound;
+                additionalRecords       = diffPerThread * numberOfThreads;
+                additionalRecords       = roundUp(additionalRecords, 1);
+                additionalRecordsRound  = additionalRecords;
+
+                if(perThreadRecordsRound + additionalRecordsRound > 0)
+                {
+                    if(!batchHeader)
+                    {
+                        batchJobId = this.parmCurrentBatch().BatchJobId;
+
+                        batchHeader = BatchHeader::construct(batchJobId);
+
+                        batchHeader.parmRetriesOnFailure(5);
+                    }
+
+                    hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob = HMDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob::construct();
+                    hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob.parmQueryRun(gQueryRun);
+                    hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob.parmPerThreadRecordsRound(perThreadRecordsRound);
+                    hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob.parmAdditionalRecords(additionalRecordsRound);
+                    hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob.parmTaskDescription("@Optum:DataPreparationForZeroClaimPriority");
+
+                    hmClaimBatchJobLogsHeaderDataPrep = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::PriorityZeroBalanceDataPrep
+                                                                                            , batchJobId
+                                                                                            , recordsToProcess
+                                                                                            , numberOfThreads);
+
+                    hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeaderDataPrep);
+
+                    hmAssignPriorityToZeroClaimsMultiThreadBatchJob = HMAssignPriorityToZeroClaimsMultiThreadBatchJob::construct();
+                    hmAssignPriorityToZeroClaimsMultiThreadBatchJob.parmNumberOfThreads(numberOfThreads);
+                    hmAssignPriorityToZeroClaimsMultiThreadBatchJob.parmTaskDescription("@Optum:AssignmentOfPriorityOnZeroClaim");
+                    hmAssignPriorityToZeroClaimsMultiThreadBatchJob.parmHMClaimBatchJobLogsHeaderDataPrep(hmClaimBatchJobLogsHeaderDataPrep);
+
+                    hmClaimBatchJobLogsHeader = HMClaimBatchJobLogsHeader::insertData(HMClaimJobType::PriorityZeroBalance
+                                                                                    , batchJobId
+                                                                                    , recordsToProcess
+                                                                                    , numberOfThreads);
+
+                    hmAssignPriorityToZeroClaimsMultiThreadBatchJob.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeader);
+
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount = HMUpdateZeroClaimBatchJobLogsHeaderCount::construct();
+
+                    jobType         = HMClaimJobType::PriorityZeroBalance;
+                    jobTypeDataPrep = HMClaimJobType::PriorityZeroBalanceDataPrep;
+
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmJobType(jobType);
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmJobTypeDataPrep(jobTypeDataPrep);
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmHMClaimBatchJobLogsHeaderDataPrep(hmClaimBatchJobLogsHeaderDataPrep);
+                    hmUpdateZeroClaimBatchJobLogsHeaderCount.parmHMClaimBatchJobLogsHeader(hmClaimBatchJobLogsHeader);
+
+                    batchHeader.addRuntimeTask(hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmAssignPriorityToZeroClaimsMultiThreadBatchJob, this.parmCurrentBatch().RecId);
+                    batchHeader.addRuntimeTask(hmUpdateZeroClaimBatchJobLogsHeaderCount, this.parmCurrentBatch().RecId);
+
+                    batchHeader.addDependency(hmAssignPriorityToZeroClaimsMultiThreadBatchJob, hmDataPrepForAssignPriorityToZeroClaimMultiThreadBatchJob);
+                    batchHeader.addDependency(hmUpdateZeroClaimBatchJobLogsHeaderCount, hmAssignPriorityToZeroClaimsMultiThreadBatchJob);
+                }
+                else
+                {
+                    Info("@MAZ:NoRecordsFoundForProcessing");
+                }
+
+            }
+
+            if(batchHeader)
+            {
+                // save the batchheader with added tasks
+                batchHeader.save();
+            }
+
+        }
+        catch
+        {
+            throw error(strFmt("@MAZ:BatchJobInitiationFailed",xSession::xppCallStack()));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canGoBatch</Name>
+				<Source><![CDATA[
+    //Needs to be set to true so class can be ran in a batch
+    boolean canGoBatch()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    //Stores parameters of the batch
+    public container pack()
+    {
+        container pack = conNull();
+
+        if (gQueryRun)
+        {
+            pack = gQueryRun.pack();
+        }
+
+        return [#CurrentVersion] + [pack] + [#CurrentList] + [#HMClaimBatchJobLogsHeader] + [#HMClaimBatchJobLogsHeaderDataPrep] + [#JobType] + [#JobTypeDataPrep];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    //Returns the stored object for the batch to use
+    public boolean unpack(container packedClass)
+    {
+        boolean     ret         = false;
+        int         version     = RunBase::getVersion(packedClass);
+        container   packedQuery = conNull();
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, packedQuery, #CurrentList, #HMClaimBatchJobLogsHeader, #HMClaimBatchJobLogsHeaderDataPrep, #JobType, #JobTypeDataPrep] = packedClass;
+                this.initQueryRun();
+                ret         = true;
+                break;
+
+            default:
+                ret = false;
+        }
+        return ret;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Describes whether the class is designed for execution in a new session.
+    /// </summary>
+    /// <returns>
+    /// false.
+    /// </returns>
+    protected boolean canRunInNewSession()
+    {
+        return false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>queryRun</Name>
+				<Source><![CDATA[
+    public QueryRun queryRun()
+    {
+        return gQueryRun;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initQueryRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Defined the batch job query
+    /// </summary>
+     public void initQueryRun()
+    {
+        Query   query;
+        
+        query = new Query (queryStr(HMAssignPriorityToZeroClaimsQuery));
+
+        gQueryRun = new QueryRun(query);
+        gQueryRun.saveUserSetup(true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>initParmDefault</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Intialize the Query run to the parameter
+    /// </summary>
+    public void initParmDefault()
+    {
+        this.initQueryRun();
+
+        super();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNumberOfThreads</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the numberOfThreads value
+    /// </summary>
+    /// <param name="_numberOfThreads"><c>HMNumberOfThreads</c> value</param>
+    public void parmNumberOfThreads(HMNumberOfThreads _numberOfThreads)
+    {
+        numberOfThreads = _numberOfThreads;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmQueryRun</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Sets the gQueryRun object
+    /// </summary>
+    /// <param name="_qr"><c>QueryRun</c> object</param>
+    public void parmQueryRun(QueryRun _qr)
+    {
+        gQueryRun = _qr;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRetryable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Specifies if the batch task is retryable for transient exceptions or not.
+    /// </summary>
+    /// <returns>
+    /// If true is returned, the batch task is retryable, otherwise it is not.
+    /// </returns>
+    [Wrappable(true), Replaceable(true)]
+    public boolean isRetryable()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

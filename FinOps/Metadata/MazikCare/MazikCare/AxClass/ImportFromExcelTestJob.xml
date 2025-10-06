@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>ImportFromExcelTestJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using System.IO;
+using OfficeOpenXml;
+using OfficeOpenXml.ExcelPackage;
+using OfficeOpenXml.ExcelRange;
+
+class ImportFromExcelTestJob
+{        
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>insertIntoDB</Name>
+				<Source><![CDATA[
+    public void insertIntoDB(str templateFieldName, str displayName)
+    {
+        HMClaimTemplate             hmClaimTemplate;
+        HMClaimTemplateField        hmClaimTemplateField;
+        HMClaimTemplateFieldMapping hmClaimTemplateFieldMapping;
+
+        select RecId from hmClaimTemplate;
+
+        ttsbegin;
+        select hmClaimTemplateField;
+        hmClaimTemplateField.HMClaimTemplate = hmClaimTemplate.RecId;
+        hmClaimTemplateField.FieldName = templateFieldName;
+        hmClaimTemplateField.insert();
+        ttscommit;
+
+        ttsbegin;
+        select forupdate hmClaimTemplateFieldMapping where hmClaimTemplateFieldMapping.DisplayName == displayName;
+        
+        if(hmClaimTemplateFieldMapping.RecId != 0)
+        {
+            hmClaimTemplateFieldMapping.HMClaimTemplateField = hmClaimTemplateField.RecId;
+            hmClaimTemplateFieldMapping.update();
+        } 
+        ttscommit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDataForClaimTable</Name>
+				<Source><![CDATA[
+    public void setDataForClaimTable(OfficeOpenXml.ExcelRange range, int rowCount, HMClaimEnumList type)
+    {
+        int rowEnumerator;
+        str code, description;
+
+        HMClaimTableSetup hmClaimTableSetup;
+
+        for(rowEnumerator = 2; rowEnumerator <= rowCount; rowEnumerator++)
+        {
+            code = range.get_Item(rowEnumerator, 1).value;
+            description = range.get_Item(rowEnumerator, 2).value;
+
+            hmClaimTableSetup = HMClaimTableSetup::findByCode(code);
+
+            if(!hmClaimTableSetup)
+            {
+                ttsbegin;
+                select hmClaimTableSetup;
+                hmClaimTableSetup.Code            = code;
+                hmClaimTableSetup.Description     = description;
+                hmClaimTableSetup.HMClaimEnumList = type;
+                hmClaimTableSetup.insert();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setDataForChargeCodes</Name>
+				<Source><![CDATA[
+    public void setDataForChargeCodes(OfficeOpenXml.ExcelRange range, int rowCount, HMProcCodeSearchType type)
+    {
+        int rowEnumerator;
+        str code, description;
+
+        HMProcedureCodeMaster hmProcedureCodeMaster;
+
+        for(rowEnumerator = 2; rowEnumerator <= rowCount; rowEnumerator++)
+        {
+            code = range.get_Item(rowEnumerator, 1).value;
+            description = range.get_Item(rowEnumerator, 2).value;
+
+            hmProcedureCodeMaster = HMProcedureCodeMaster::findbyCode(code);
+
+            if(!hmProcedureCodeMaster)
+            {
+                ttsbegin;
+                select hmProcedureCodeMaster;
+                hmProcedureCodeMaster.Code        = code;
+                hmProcedureCodeMaster.Description = description;
+                hmProcedureCodeMaster.Type        = type;
+                hmProcedureCodeMaster.insert();
+                ttscommit;
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Runs the class with the specified arguments.
+    /// </summary>
+    /// <param name = "_args">The specified arguments.</param>
+    public static void main(Args _args)
+    {
+        Dialog                 dialog = new Dialog("Import data setup values from Excel");
+        DialogGroup            dlgUploadGroup;
+        FileUploadBuild        fileUploadBuild;
+        System.IO.Stream       stream;
+        FormBuildControl       formBuildControl;
+        ExcelSpreadsheetName   sheeet;
+        ImportFromExcelTestJob classObject = new ImportFromExcelTestJob();
+
+ 
+        dlgUploadGroup   = dialog.addGroup("@SYS54759");
+        formBuildControl = dialog.formBuildDesign().control(dlgUploadGroup.name());
+        fileUploadBuild  = formBuildControl.addControlEx(classstr(FileUpload), 'Upload');
+        
+        fileUploadBuild.style(FileUploadStyle::Standard);
+        fileUploadBuild.fileTypesAccepted('.xlsx');
+ 
+        if (dialog.run() && dialog.closedOk())
+        {
+            FileUpload                       fileUploadControl = dialog.formRun().control(dialog.formRun().controlId('Upload'));
+            FileUploadTemporaryStorageResult fileUploadResult  = fileUploadControl.getFileUploadResult();
+ 
+            if (fileUploadResult != null && fileUploadResult.getUploadStatus())
+            {
+                stream = fileUploadResult.openResult();
+                using (ExcelPackage Package = new ExcelPackage(stream))
+                {
+                    int            rowCount, worksheetEnumerator;
+                    str            worksheetName;
+                    ExcelWorksheet worksheet;
+                    
+                    Package.Load(stream);
+                    
+                    for(worksheetEnumerator = 1; worksheetEnumerator <= Package.get_Workbook().get_Worksheets().Count; worksheetEnumerator++)
+                    {
+                        worksheet                      = Package.get_Workbook().get_Worksheets().get_Item(worksheetEnumerator);
+                        OfficeOpenXml.ExcelRange range = worksheet.Cells;
+                        rowCount                       = worksheet.Dimension.End.Row - worksheet.Dimension.Start.Row + 1;
+ 
+                        switch(worksheet.ToString())
+                        {
+                            case "Discharge Status":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::DischargeStatus);
+                                break;
+                            case "Condition Codes":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::ConditionCodes);
+                                break;
+                            case "Occurrence Codes":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::OccurenceCode);
+                                break;
+                            case "Value Codes":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::ValueCodes);
+                                break;
+                            case "Bill Type":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::BillType);
+                                break;
+                            case "Revenue Code":
+                                classObject.setDataForChargeCodes(range, rowCount, HMProcCodeSearchType::Revenue);
+                                break;
+                            case "Type Of Addmission":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::TypeOfAdmission);
+                                break;
+                            case "Occurence Span Code":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::OccurrenceSpanCode);
+                                break;
+                            case "CC Qualifier Codes":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::CodeCode);
+                                break;
+                            case "Assignment Of Benefit":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::AssignmentOfBenefit);
+                                break;
+                            case "Release Of Information":
+                                classObject.setDataForClaimTable(range, rowCount, HMClaimEnumList::ReleaseOfInformationCerficationIndicator);
+                                break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                error("File not uploaded.");
+            }
+ 
+        }
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>SalesLineHM_Extension</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public static class SalesLineHM_Extension
+{
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>HMCreateAlternativeItem</Name>
+				<Source><![CDATA[
+    //todo: ax7 method created as unable to apply pre/post handler
+    public static boolean HMCreateAlternativeItem(SalesLine _this, HMInventAlternativeItem  _hmInventAlternativeItem,
+                                                  inventDim _inventDim, SalesLine _newlyCreatedSalesLine)
+    {
+    
+        SalesAlternativeItem    salesAlternativeItem;
+        SalesQty                salesQty;
+        InventDim               toInventdim;
+        InventTable             inventTable;
+        ReturnExpectedRetQty    returnExpectedRetQty;
+        AmountCur               origAmount;
+        EcoResProductDimGroupSetup  dimSetup;
+        ItemId                  origItem;
+        InventDimId             origInventDimId;
+        MCROrderEventTable      mcrOrderEventTable;
+        inventTable =    inventTable::find(_hmInventAlternativeItem.AltItemId);
+        dimSetup       = EcoResProductDimGroupSetup::newInventTable(inventTable);
+    
+        dimSetup.copyProductDimensions(_inventDim, toInventdim);
+    
+    
+    
+    
+        toInventdim.ConfigId      = _hmInventAlternativeItem.AltConfigId;
+        toInventdim.InventSizeId  = _hmInventAlternativeItem.AltInventSizeId;
+        toInventdim.InventColorId = _hmInventAlternativeItem.AltInventColorId;
+        toInventdim.InventStyleId = _hmInventAlternativeItem.AltInventStyleId;
+    
+        salesAlternativeItem = SalesAlternativeItem::newAlternativeItem(_this);
+        salesAlternativeItem.parmInventDim(_inventDim);
+        //TODO: code conflicts
+        //salesAlternativeItem.parmAlternativeItemId(_hmInventAlternativeItem.AltItemId);
+        //salesAlternativeItem.parmhmInventAlternateItem( _hmInventAlternativeItem);
+        //salesAlternativeItem.parmToInventDim(toInventdim);
+    
+        //if (salesAlternativeItem)//salesAlternativeItem.HMexistAlternativeItem())
+        //{
+    
+    
+            //_this.isAlternativeItem(true);
+            salesQty                    = _this.SalesQty;
+            origAmount                  = _this.SalesPrice;
+            origItem                    = _this.ItemId;
+            origInventDimId             = _this.InventDimId;
+            returnExpectedRetQty        = _this.ExpectedRetQty;
+    
+            _this.data(_newlyCreatedSalesLine);
+            _this.setAlternativeItem(salesAlternativeItem);
+    
+            _this.SalesQty         = salesQty;
+            _this.ExpectedRetQty   = returnExpectedRetQty;
+    
+            SalesLine::modifySalesQty(_this,_inventDim);
+    
+            // Insert alternate item event
+            mcrOrderEventTable.insertAlternateItemUsed(_this, MCROrderEventType::AlternateItemUsed,
+                                                        origItem, origInventDimId, origAmount);
+            return true;
+    
+        //}
+        //else
+        //{
+        //    return false;
+        //}
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isAlternativeItem</Name>
+				<Source><![CDATA[
+    public static boolean isAlternativeItem(boolean isAlternativeitem = false)
+    {
+        return isAlternativeitem;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>protocolDescription</Name>
+				<Source><![CDATA[
+    //Mazik
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display EcoResProductName protocolDescription(SalesLine _this)
+    {
+        SalesTable          salesTableLocal;
+        CustTable           custTable;
+        HMClientProtocol    hmClientProtocol;
+    
+        if(_this.ProtocolId == '')
+        {
+            return '';
+        }
+    
+        select InvoiceAccount from salesTableLocal
+        join CustType from custTable
+        where salesTableLocal.SalesId == _this.SalesId
+        && salesTableLocal.InvoiceAccount == custTable.AccountNum;
+    
+        if(custTable && custTable.CustType == CustType::Client)
+        {
+            select * from hmClientProtocol
+            where hmClientProtocol.ClientAccount == custTable.AccountNum
+            && hmClientProtocol.ItemId == _this.ProtocolId;
+            if(hmClientProtocol)
+            {
+                return hmClientProtocol.itemAlias();
+            }
+        }
+        return InventTable::find(_this.ProtocolId).itemDescriptionOrName();
+    
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>taxAmount</Name>
+				<Source><![CDATA[
+    //</Mazik>
+    //<Mazik>
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display AmountMst taxAmount(SalesLine _this)
+    {
+        return Tax::calcTaxAmount(_this.TaxGroup, _this.TaxItemGroup, DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()), _this.CurrencyCode, _this.LineAmount, TaxModuleType::Sales);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>totalAmount</Name>
+				<Source><![CDATA[
+    //</Mazik>
+    //<Mazik>
+    [SysClientCacheDataMethodAttribute(true)]
+    public static display AmountCur totalAmount(SalesLine _this)
+    {
+        return _this.calcLineAmountInclTax_RU();
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

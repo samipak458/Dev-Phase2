@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMPricesAndDiscounts</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+public class HMPricesAndDiscounts
+{
+    InventBatchId   inventBatchId;
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>getPrice</Name>
+				<Source><![CDATA[
+    public static AmountMST getPrice(HMCase _hmCase, HMCaseTrans _hmCaseTrans, HMPatientChargeEntryLine _hmPatientChargeEntryLine, InventDim _inventDim)
+    {
+        AmountMST                       price;
+        boolean                         isValid = true;
+        HMParameters                    parameters;
+        HMItemCptPcsCodes               pcsCodes;
+        HMProcedureCodeMaster           procedureCode;
+        container                       priceContainer;
+        InventDim                       inventDimLocal;
+        HMPatientChargeEntryLine        hmPatientChargeEntryLine = _hmPatientChargeEntryLine;//HMPatientChargeEntryLine::findByCaseTrans(_hmCaseTrans.RecId);
+        HMCase                          hmCaseBuffer          = HMCase::find(_hmCase.RecId);
+        InventDim                       inventDimBuffer       = InventDim::find(_inventDim.inventDimId);
+        InventTable                     inventTableBuffer     = InventTable::find(_hmCaseTrans.ItemId);
+        HMCaseInsurance                 hmCaseInsuranceBuffer = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance              hmPatientInsuranceLocal = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract             hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode(hmPatientInsuranceLocal.InsuranceCarrier).RecId).RecId);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::find(hmPatientInsuranceLocal.HMInsuranceContractClassOrPlans, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork              insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        CustTable                       custTable = CustTable::findRecId(HMPatient::find(HMCase::findByCase(_hmCase.CaseNo).HMPatient).CustTable);
+        container                       priceAgreementContainer;
+        container                       discContainer;
+        HMPriceDisc                     priceDisc;
+        DiscAmountMST                   discAmount;
+        DiscPct                         discPct;
+
+        parameters = HMParameters::find();
+
+        if (parameters.isAllowChargeCodeEditing)
+        {
+            select RecId from pcsCodes
+                where pcsCodes.ItemId == _hmCaseTrans.ItemId
+                join procedureCode
+                    where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                    && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+
+            if (pcsCodes.RecId)
+            {
+                isValid = true;
+            }
+            else
+            {
+                isValid = false;
+            }
+        }
+        else
+        {
+            isValid = true;
+        }
+
+        if (isValid)
+        {
+            if(!hmCaseInsuranceBuffer) //self-pay
+            {
+                priceDisc = new HMPriceDisc(ModuleInventPurchSales::Sales, inventTableBuffer.ItemId,
+                    inventDimBuffer,
+                    _hmCaseTrans.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    custTable.AccountNum,
+                    CustTable::find(custTable.AccountNum).Currency);
+
+                if (priceDisc.findPrice(custTable.PriceGroup, 0, 0, 0, hmCaseBuffer.HMCaseType))
+                    price = priceDisc.price();
+                else if (priceDisc.findItemPrice())
+                    price = priceDisc.price();
+            }
+            else // insurance pay
+            {
+                priceAgreementContainer = HMPriceDisc::findItemPriceAgreement(ModuleInventPurchSales::Sales,
+                                                                              inventTableBuffer.ItemId,
+                                                                              inventDimBuffer,//inventDimBuffer,
+                                                                              _hmCaseTrans.salesUnitId(),
+                                                                              DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                              (_hmCaseTrans.Qty == 0) ? 1 : _hmCaseTrans.Qty,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(_hmCase.RecId).InsuranceCarrier).AccountNum,//CustTable::findRecId(HMInsuranceCarrier::findByCode(HMPatientInsurance::getPrimaryInsurance(hmPatientInsurance.HMPatient)).CustTable).AccountNum,
+                                                                              CustTable::find(custTable.AccountNum).Currency,
+                                                                              '', // --PriceGroup is not required here.
+                                                                              hmInsuranceContract.RecId,
+                                                                              contractClassOrPlans.RecId,
+                                                                              insuranceNetworkBuffer.RecId,
+                                                                              hmCaseBuffer.HMCaseType,
+                                                                              hmPatientChargeEntryLine.RevenueCode,
+                                                                              hmPatientChargeEntryLine.CPTCodes,
+                                                                              hmPatientChargeEntryLine.Modifier1,
+                                                                              hmPatientChargeEntryLine.Modifier2,
+                                                                              hmPatientChargeEntryLine.Modifier3,
+                                                                              hmPatientChargeEntryLine.Modifier4);
+                                                                              
+                                                  
+                price = conPeek(priceAgreementContainer, 1);
+
+                if(price == 0)
+                {
+                    price = InventTable::find(_hmCaseTrans.itemId).salesPcsPrice();
+                }
+            }
+        }
+
+        return price;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getDiscount</Name>
+				<Source><![CDATA[
+    public static container getDiscount(HMCase _hmCase, HMCaseTrans _hmCaseTrans, HMPatientChargeEntryLine _hmPatientChargeEntryLine, InventDim _inventDim)
+    {
+        DiscAmountMST                   discValue;
+        DiscPct                         discPct;
+        boolean                         isValid = true;
+        HMParameters                    parameters;
+        HMItemCptPcsCodes               pcsCodes;
+        HMProcedureCodeMaster           procedureCode;
+        InventDim                       inventDimLocal;
+        HMPatientChargeEntryLine        hmPatientChargeEntryLine = _hmPatientChargeEntryLine;
+        HMCase                          hmCaseBuffer          = HMCase::find(_hmCase.RecId);
+        InventDim                       inventDimBuffer       = InventDim::find(_inventDim.inventDimId);
+        InventTable                     inventTableBuffer     = InventTable::find(_hmCaseTrans.ItemId);
+        HMCaseInsurance                 hmCaseInsuranceBuffer = HMCaseInsurance::findByCase(hmCaseBuffer.RecId);
+        HMPatientInsurance              hmPatientInsuranceLocal = HMPatientInsurance::find(hmCaseInsuranceBuffer.HMPatientInsurance);
+        HMInsuranceContract             hmInsuranceContract = HMInsuranceContract::findByCarrierCombo(HMInsuranceContractCarrierCombination::findByInsCarrier(HMInsuranceCarrier::findByCode	(hmPatientInsuranceLocal.InsuranceCarrier).RecId).RecId);
+        HMInsuranceContractClassOrPlans contractClassOrPlans = HMInsuranceContractClassOrPlans::find(hmPatientInsuranceLocal.HMInsuranceContractClassOrPlans, false, ConcurrencyModel::Auto);
+        HMInsuranceNetwork              insuranceNetworkBuffer = HMInsuranceNetwork::find(contractClassOrPlans.HMContractClassNetwork);
+        CustTable                       custTable = CustTable::findRecId(HMPatient::find(HMCase::findByCase(_hmCase.CaseNo).HMPatient).CustTable);
+        HMPriceDisc                     priceDisc;
+        container                       lineDiscAgreementContainer;
+        container                       discountContainer;
+
+        parameters = HMParameters::find();
+
+        if (parameters.isAllowChargeCodeEditing)
+        {
+            select RecId from pcsCodes
+                where pcsCodes.ItemId == _hmCaseTrans.ItemId
+                join procedureCode
+                    where procedureCode.RecId == pcsCodes.HMProcedureCodeMaster
+                    && procedureCode.Type == HMProcCodeSearchType::CPT_HCPS;
+
+            if (pcsCodes.RecId)
+            {
+                isValid = true;
+            }
+            else
+            {
+                isValid = false;
+            }
+        }
+        else
+        {
+            isValid = true;
+        }
+
+        if (isValid)
+        {
+            if (!hmCaseInsuranceBuffer)// self pay discount
+            {
+                priceDisc = new HMPriceDisc(ModuleInventPurchSales::Sales, inventTableBuffer.ItemId,
+                    inventDimBuffer,
+                    _hmCaseTrans.salesUnitId(),
+                    DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                    1,
+                    custTable.AccountNum,
+                    CustTable::find(custTable.AccountNum).Currency);
+
+                if (priceDisc.findLineDisc(inventTableBuffer.ItemId, custTable.LineDisc, 0, 0, 0, hmCaseBuffer.HMCaseType))
+                {
+                    discValue = priceDisc.lineDiscAmount();
+                    discPct = pricedisc.lineDiscPct();
+
+                    discountContainer = [discValue, discPct];
+                }
+                else
+                    discountContainer = [0, 0];
+            }
+            else // insurance pay discount
+            {
+                lineDiscAgreementContainer = HMPriceDisc::findItemLineDiscAgreement(ModuleInventPurchSales::Sales,
+                                                                              inventTableBuffer.ItemId,
+                                                                              inventDimBuffer,//inventDimBuffer,
+                                                                              _hmCaseTrans.salesUnitId(),
+                                                                              DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone()),
+                                                                              (_hmCaseTrans.Qty == 0) ? 1 : _hmCaseTrans.Qty,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(_hmCase.RecId).InsuranceCarrier).AccountNum,
+                                                                              CustTable::find(custTable.AccountNum).Currency,
+                                                                              CustTable::find(HMCaseInsurance::findByCase(_hmCase.RecId).InsuranceCarrier).AccountNum, //LineDiscGroup
+                                                                              inventTableBuffer.ItemId,
+                                                                              hmInsuranceContract.RecId,
+                                                                              contractClassOrPlans.RecId,
+                                                                              insuranceNetworkBuffer.RecId,
+                                                                              hmCaseBuffer.HMCaseType,
+                                                                              hmPatientChargeEntryLine.RevenueCode,
+                                                                              hmPatientChargeEntryLine.CPTCodes,
+                                                                              hmPatientChargeEntryLine.Modifier1,
+                                                                              hmPatientChargeEntryLine.Modifier2,
+                                                                              hmPatientChargeEntryLine.Modifier3,
+                                                                              hmPatientChargeEntryLine.Modifier4,
+                                                                              0,
+                                                                              '',
+                                                                              NoYes::Yes);
+
+                discValue = conPeek(lineDiscAgreementContainer, 1);
+                discPct = conPeek(lineDiscAgreementContainer, 2);
+                discountContainer = [discValue, discPct];
+            }
+        }
+
+
+
+        return discountContainer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmBatchId</Name>
+				<Source><![CDATA[
+    public InventBatchId parmBatchId(InventBatchId _inventBatchId = inventBatchId)
+    {
+       inventBatchId = _inventBatchId;
+
+        return inventBatchId;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

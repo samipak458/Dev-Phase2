@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMClaimAgeCalculateBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMClaimAgeCalculateBusinessLogic
+{
+    int     taskNumber;
+    RecId   hmClaimBatchJobLogsHeaders, hmClaimBatchJobLogsHeaderDataPrep;
+
+    #OCCRetryCount
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMClaimAgeCalculateBusinessLogic construct()
+    {
+        return new HMClaimAgeCalculateBusinessLogic();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>3
+    public void processInit(int _taskNumber = 0, RecId _hmClaimBatchJobLogsHeader = 0, RecId _hmClaimBatchJobLogsHeaderDataPrep = 0)
+    {
+        try
+        {
+            taskNumber                          = _taskNumber;
+            hmClaimBatchJobLogsHeaders          = _hmClaimBatchJobLogsHeader;
+            hmClaimBatchJobLogsHeaderDataPrep   = _hmClaimBatchJobLogsHeaderDataPrep;
+
+            this.updateAgeOnClaims();
+        }
+        catch
+        {
+            throw;
+        }
+        finally
+        {
+            this.deleteDataFromHMClaimQualifiedForAgeCalculate();
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateAgeOnClaims</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name = "_claimId"></param>
+    /// <returns></returns>
+    public void updateAgeOnClaims()
+    {
+        HMClaimTable                    hmClaimTable;
+        HMClaimProcessingStatus         hmClaimProcessingStatus;
+        HMClaimQualifiedForAgeCalculate hmClaimQualifiedForAgeCalculate;
+        boolean                         exceptionOccured = false;
+        str                             logMsg = "";
+
+        try
+        {
+            ttsbegin;
+
+            update_recordset hmClaimTable
+            setting
+                MzkClaimAgingDays = hmClaimQualifiedForAgeCalculate.ClaimAgingDays
+            join hmClaimQualifiedForAgeCalculate
+                where hmClaimQualifiedForAgeCalculate.ClaimID == hmClaimTable.ClaimID
+                    && hmClaimQualifiedForAgeCalculate.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimQualifiedForAgeCalculate.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;  
+
+            ttscommit;
+
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+                logMsg = strFmt("@MAZ:UpdateAgeOnClaimsFailedAgainstTask", taskNumber);
+
+                throw error(logMsg);
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                exceptionOccured = true;
+                logMsg = strFmt("@MAZ:UpdateAgeOnClaimsFailedAgainstTask", taskNumber);
+
+                throw error(logMsg);
+            }
+            else
+            {
+                retry;
+            }
+        }
+        finally
+        {
+            hmClaimProcessingStatus = exceptionOccured == false ? HMClaimProcessingStatus::Successful : HMClaimProcessingStatus::Failed;
+
+            this.insertDataIntoClaimBatchLogsTable(hmClaimProcessingStatus, logMsg);
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteDataFromHMClaimQualifiedForAgeCalculate</Name>
+				<Source><![CDATA[
+    public void deleteDataFromHMClaimQualifiedForAgeCalculate()
+    {
+        HMClaimQualifiedForAgeCalculate hmClaimQualifiedForAgeCalculate;
+        
+        try
+        {
+            ttsbegin;
+
+            delete_from hmClaimQualifiedForAgeCalculate
+                where hmClaimQualifiedForAgeCalculate.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimQualifiedForAgeCalculate.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", "HMClaimQualifiedForAgeCalculate"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToDeleteDataFromTmpTable", "HMClaimQualifiedForAgeCalculate"));
+            }
+            else
+            {
+                retry;
+            }
+        }
+
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertDataIntoClaimBatchLogsTable</Name>
+				<Source><![CDATA[
+    public void insertDataIntoClaimBatchLogsTable(HMClaimProcessingStatus _hmClaimProcessingStatus, str _logMsg)
+    {
+        HMClaimBatchJobsLogs            hmClaimBatchJobsLogs;
+        HMClaimQualifiedForAgeCalculate hmClaimQualifiedForAgeCalculate;
+
+        try
+        {
+            ttsbegin;
+               
+            insert_recordset hmClaimBatchJobsLogs (ClaimID
+                , JobType
+                , OldValue
+                , NewValue
+                , BatchThreadNumbers
+                , HMClaimBatchJobLogsHeader
+                , ClaimProcessingStatus
+                , ErrorLog)
+            select ClaimID
+                , JobType
+                , OldClaimAgingDaysStr
+                , ClaimAgingDaysStr
+                , taskNumber
+                , hmClaimBatchJobLogsHeaders
+                , _hmClaimProcessingStatus
+                , _logMsg
+            from hmClaimQualifiedForAgeCalculate
+                where hmClaimQualifiedForAgeCalculate.TaskNumberForDataPreparation == taskNumber
+                    && hmClaimQualifiedForAgeCalculate.HMClaimBatchJobLogsHeader == hmClaimBatchJobLogsHeaderDataPrep;
+
+            ttscommit;
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+        catch
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                throw error(strFmt("@MAZ:FailedToInsertDataOnTable", "@MAZ:ClaimBatchLogs"));
+            }
+            else
+            {
+                retry;
+            }
+
+        }
+
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

@@ -1,0 +1,173 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_dev_la_optum_outbound_wellsky_sendemail_name": {
+            "defaultValue": "dev-la-optum-outbound-wellsky-sendemail",
+            "type": "String"
+        },
+        "connections_azuremonitorlogs_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/azuremonitorlogs",
+            "type": "String"
+        },
+        "connections_office365_externalid": {
+            "defaultValue": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/resourceGroups/rg-dev-ORxMSDynamicsRCM/providers/Microsoft.Web/connections/office365",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_dev_la_optum_outbound_wellsky_sendemail_name')]",
+            "location": "centralus",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "EmailTo": {
+                            "defaultValue": "ryan_campbell@optum.com",
+                            "type": "String"
+                        },
+                        "RecurrenceFrequency": {
+                            "defaultValue": "Minute",
+                            "type": "String"
+                        },
+                        "RecurrenceInterval": {
+                            "defaultValue": "15",
+                            "type": "String"
+                        },
+                        "RecurrenceTimeZone": {
+                            "defaultValue": "GMT Standard Time",
+                            "type": "String"
+                        },
+                        "diagnosticSettingResouceGroupName": {
+                            "defaultValue": "rg-dev-ORxMSDynamicsRCM",
+                            "type": "String"
+                        },
+                        "diagnosticSettingSubscription": {
+                            "defaultValue": "b4f24c37-de92-4f78-809d-d521ce05ea7f",
+                            "type": "String"
+                        },
+                        "logAnalyticWorkspaceName": {
+                            "defaultValue": "Optum-integration-loganalytics-workspace",
+                            "type": "String"
+                        },
+                        "logicAppNameValue": {
+                            "defaultValue": "dev-la-optum-outbound-wellsky",
+                            "type": "String"
+                        },
+                        "logsBeforeTime": {
+                            "defaultValue": "15m",
+                            "type": "String"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "@parameters('RecurrenceFrequency')",
+                                "interval": "@parameters('RecurrenceInterval')",
+                                "timeZone": "@parameters('RecurrenceTimeZone')"
+                            },
+                            "evaluatedRecurrence": {
+                                "frequency": "Minute",
+                                "interval": "15",
+                                "timeZone": "GMT Standard Time"
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "Condition": {
+                            "actions": {
+                                "Send_an_email_on_wellsky_outbound_failure": {
+                                    "runAfter": {},
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": {
+                                            "Body": "<p>@{base64ToString(body('Run_query_and_visualize_results')?['body'])}</p>",
+                                            "Importance": "Normal",
+                                            "Subject": "@{concat('Monitoring logs of well sky outbound_',utcNow('yyyy-MM-dd_hh_mm'))}",
+                                            "To": "@parameters('EmailTo')"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['office365']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/v2/Mail"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Run_query_and_visualize_results": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "not": {
+                                            "contains": [
+                                                "@base64ToString(body('Run_query_and_visualize_results')?['body'])",
+                                                "The query yielded no dataTable"
+                                            ]
+                                        }
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Run_query_and_visualize_results": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": "AzureDiagnostics\n| where ResourceProvider  == \"MICROSOFT.LOGIC\"  \n| where Category == \"WorkflowRuntime\" \n| where status_s == \"Failed\" \n| where OperationName has \"workflowActionCompleted\" or OperationName has \"workflowTriggerCompleted\" \n| where code_s != \"TrackedPropertiesEvaluationFailed\"\n| where resource_workflowName_s == \"@{parameters('logicAppNameValue')}\"\n| where endTime_t >= ago(@{parameters('logsBeforeTime')})\n| extend ResourceName = coalesce(resource_actionName_s, resource_triggerName_s) \n| extend ResourceCategory = substring(OperationName, 34, strlen(OperationName) - 43) \n| project ResourceCategory, ResourceName, ResourceGroup, StartTime = startTime_t, EndTime = endTime_t,\n            ErrorCode = code_s, LogicAppName = resource_workflowName_s, RunStatus = trackedProperties_RunStatus_s   \n| order by StartTime",
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuremonitorlogs']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/visualizeQuery",
+                                "queries": {
+                                    "resourcegroups": "@parameters('diagnosticSettingResouceGroupName')",
+                                    "resourcename": "@parameters('logAnalyticWorkspaceName')",
+                                    "resourcetype": "Log Analytics Workspace",
+                                    "subscriptions": "@parameters('diagnosticSettingSubscription')",
+                                    "timerange": "Set in query",
+                                    "visType": "Html Table"
+                                }
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuremonitorlogs": {
+                                "connectionId": "[parameters('connections_azuremonitorlogs_externalid')]",
+                                "connectionName": "azuremonitorlogs",
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/azuremonitorlogs"
+                            },
+                            "office365": {
+                                "connectionId": "[parameters('connections_office365_externalid')]",
+                                "connectionName": "office365",
+                                "id": "/subscriptions/b4f24c37-de92-4f78-809d-d521ce05ea7f/providers/Microsoft.Web/locations/centralus/managedApis/office365"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

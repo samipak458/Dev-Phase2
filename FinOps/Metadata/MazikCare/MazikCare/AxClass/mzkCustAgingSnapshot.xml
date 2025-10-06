@@ -1,0 +1,1730 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>mzkCustAgingSnapshot</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+using Microsoft.Dynamics.AccountsReceivable.Instrumentation;
+/// <summary>
+///    The <c>mzkCustAgingSnapshot</c> class calculates and stores the customer aging and collections
+///    information.
+/// </summary>
+/// <remarks>
+///    The customer aging information is calculated and stored as a specific date so that it may not be
+///    current. If it does not have to store customer aging information or real-time aging balances are
+///    required, use the <c>CustVendBalanceList</c> class.
+/// </remarks>
+class mzkCustAgingSnapshot extends RunBaseBatch implements BatchRetryable
+{
+    // Class fields
+    CustVendReportName agingPeriodDef;
+    CustCollectionsPoolId customerPool;
+    DateTransactionDuedate agedBy;
+    CustAgingDateType agingDateType;
+    CustAgingDate agingDate;
+    container sourceCompanies;
+    List agingLineNumList;
+    boolean showResults;
+    boolean updateCollectionsStatus = true;
+    boolean hasJobBeenSplit;
+    boolean ageCustomersWithNoOpenTransactions = true;
+    CustAccount fromCustomer, toCustomer;
+    private NoYes isCustAgingPerfFeatureEnabled;
+    private NoYes manualUpdate;
+
+    const int MinimumCustomerBundleSize = 120;
+
+    // This list defines which fields will be persisted and
+    // restored by way of the system's SysLastValue functionality.
+    #DEFINE.SysLastValuesCurrentVersion(100)
+    #LOCALMACRO.SysLastValuesList
+        agingPeriodDef,
+        customerPool,
+        agedBy,
+        agingDateType,
+        agingDate
+    #ENDMACRO
+
+    // This list defines how the object is serialized and unserialized
+    // as it is sent across the wire. This list should also contain all
+    // nonobject types that are defined on this class declaration.
+    #DEFINE.CurrentVersion(2)
+    #LOCALMACRO.CurrentList
+        agingPeriodDef,
+        customerPool,
+        agedBy,
+        agingDateType,
+        agingDate,
+        sourceCompanies,
+        showResults,
+        hasJobBeenSplit,
+        fromCustomer,
+        toCustomer,
+        updateCollectionsStatus
+    #ENDMACRO
+
+    #DEFINE.CurrentListV1(1)
+    #LOCALMACRO.CurrentList_v1
+        agingPeriodDef,
+        customerPool,
+        agedBy,
+        agingDateType,
+        agingDate,
+        sourceCompanies,
+        showResults,
+        hasJobBeenSplit,
+        fromCustomer,
+        toCustomer
+    #ENDMACRO
+
+    #DEFINE.CurrentVersion(3)
+    #LOCALMACRO.CurrentList
+        agingPeriodDef,
+        customerPool,
+        agedBy,
+        agingDateType,
+        agingDate,
+        sourceCompanies,
+        showResults,
+        hasJobBeenSplit,
+        fromCustomer,
+        toCustomer,
+        updateCollectionsStatus,
+        ageCustomersWithNoOpenTransactions
+    #ENDMACRO
+
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>addSourceCompany</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Includes a company in the calculation of snapshots.
+    /// </summary>
+    /// <param name="_companyId">
+    /// A company identifier.
+    /// </param>
+    public void addSourceCompany(CompanyId _companyId)
+    {
+        if (confind(sourceCompanies, _companyId) == 0)
+        {
+            sourceCompanies += _companyId;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateSnapshot</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the customer aging and collections information about the aging period definition and the
+    /// provided customer.
+    /// </summary>
+    /// <param name="_primaryCustTable">
+    /// The <c>CustTable</c> table record of the primary customer to process.
+    /// </param>
+    /// <remarks>
+    /// The primary customer will never be a cross-company customer.
+    /// </remarks>
+    protected void calculateSnapshot(CustTable _primaryCustTable)
+    {
+        #OCCRetryCount
+
+        try
+        {
+            // The scope of the transaction must include all customers processed as part
+            // of the primary customer. This ensures an all or nothing approach.
+
+            if (!isCustAgingPerfFeatureEnabled)
+            {
+                this.deleteSnapshot(_primaryCustTable.AccountNum);
+            }
+
+            // Store generic information about this snapshot run that does not need
+            // any cross-company handling.
+            mzkCustAging custAging;
+            custAging.CustTable = _primaryCustTable.AccountNum;
+            custAging.StatRepInterval = agingPeriodDef;
+            custAging.AgedBy = agedBy;
+            custAging.AgingDate = this.getActualAgingDate();
+            custAging.insert();
+
+            // Snapshots are calculated for all cross-company customers related to the primary customer
+            // via _primaryCustTable.Party. The primary customer is retrieved from the company where
+            // the aging snapshot originated based on the customer pool query. Note that the pool
+            // query will not be executed cross-company. Any cross-company queries are only applied
+            // here now that the customers that are part of this pool have been retrieved.
+
+            // We could perform a cross company select to find all customers with a single 'while select'
+            // statement; however, that does not handle cases where a customer is being shared across a virtual
+            // company. As a result, it is necessary to loop over all companies selected to determine if
+            // transactions do exist for that shared customer in each company. It is the only way to consider
+            // them all, and it works for any case since the party is the same across companies or in the case
+            // of shared customers in a virtual company.
+
+            int sourceCompanyCount = conLen(sourceCompanies);
+            for (int i = 1; i <= sourceCompanyCount; i++)
+            {
+                CompanyId customerCompany = conPeek(sourceCompanies, i);
+                var customerCompanyContext = [customerCompany];
+
+                CustTable crossCompanyCustTable;
+                select crossCompany:customerCompanyContext crossCompanyCustTable
+                    where crossCompanyCustTable.Party == _primaryCustTable.Party;
+
+                // Customers may not exist for the given party in every company selected, so ensure they
+                // exist before calculating any aging information.
+                if (crossCompanyCustTable)
+                {
+                    var custAgingLegalEntity = this.calculateSnapshotHeader(customerCompany, custAging.RecId, crossCompanyCustTable);
+                    var balanceList = this.calculateSnapshotLines(customerCompany, crossCompanyCustTable);
+
+                    ttsbegin;
+                    this.saveSnapshot(custAging, custAgingLegalEntity, balanceList, customerCompany, crossCompanyCustTable);
+                    ttscommit;
+
+                    balanceList.releaseTempTables();
+                }
+            }
+        }
+        catch (Exception::Deadlock)
+        {
+            if (xSession::currentRetryCount() >= #RetryNum)
+            {
+                this.deleteSnapshot(_primaryCustTable.AccountNum);
+                throw Exception::Deadlock;
+            }
+            else
+            {
+                retry;
+            }
+        }
+        catch (Exception::UpdateConflict)
+        {
+            if (appl.ttsLevel() == 0)
+            {
+                if (xSession::currentRetryCount() >= #RetryNum)
+                {
+                    this.deleteSnapshot(_primaryCustTable.AccountNum);
+                    throw Exception::UpdateConflictNotRecovered;
+                }
+                else
+                {
+                    retry;
+                }
+            }
+            else
+            {
+                this.deleteSnapshot(_primaryCustTable.AccountNum);
+                throw Exception::UpdateConflict;
+            }
+        }
+        catch
+        {
+            this.deleteSnapshot(_primaryCustTable.AccountNum);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateSnapshotHeader</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the aging snapshot header information.
+    /// </summary>
+    /// <param name="_company">
+    /// The company of the <c>CustTable</c> record.
+    /// </param>
+    /// <param name="_custAgingRecId">
+    /// The foreign key reference to the <c>mzkCustAging</c> table record.
+    /// </param>
+    /// <param name="_crossCompanyCustTable">
+    /// The customer used to calculate the snapshot, which could be a cross-company customer.
+    /// </param>
+    /// <returns>
+    /// A <c>mzkCustAgingLegalEntity</c> table record populated with the appropriate aging information.
+    /// </returns>
+    protected mzkCustAgingLegalEntity calculateSnapshotHeader(selectableDataArea _company, RefRecId _custAgingRecId, CustTable _crossCompanyCustTable)
+    {
+        // Convert all amounts to the accounting currency of the Ledger that is initiating the snapshot. As a result,
+        // do not include this call within the changecompany scope.
+        var currencyExchHelper = CurrencyExchangeHelper::newLedger(Ledger::primaryLedger(CompanyInfo::findDataArea(curext()).RecId));
+
+        AmountMST calculateMstAmount(AmountMST _amount)
+        {
+            return currencyExchHelper.calculateTransactionToAccounting(Ledger::accountingCurrency(), _amount, true);
+        }
+        // Convert all amounts to the reporting currency of the Ledger that is initiating the snapshot.
+        AmountMSTSecondary calculateMstSecondaryAmount(AmountMSTSecondary _amount)
+        {
+            return currencyExchHelper.calculateTransactionCurrencyToReportingCurrency(Ledger::reportingCurrency(), _amount, true);
+        }
+
+        mzkCustAging custAgingLocal;
+        select firstonly AgingDate from custAgingLocal
+            where custAgingLocal.RecId == _custAgingRecId;
+
+        CustAgingDate localAgingDate = custAgingLocal.AgingDate;
+
+        mzkCustAgingLegalEntity custAgingLegalEntity;
+        custAgingLegalEntity.CustAging = _custAgingRecId;
+        custAgingLegalEntity.SourceLegalEntity = CompanyInfo::current(_company);
+
+        changecompany(_company)
+        {
+            var creditLimit = CustCreditLimit::construct(_crossCompanyCustTable);
+
+            custAgingLegalEntity.AmountDueMst = calculateMstAmount(creditLimit.balanceInvoiced());
+            custAgingLegalEntity.AmountDueMstSecondary = calculateMstSecondaryAmount(creditLimit.balanceInvoicedReporting());
+            custAgingLegalEntity.PackingSlipBalanceMst = calculateMstAmount(creditLimit.balanceDelivered());
+
+            // Since balanceNotInvoiced() returns the total ordered + total delivered it is necessary to subtract the
+            // total delivered in order to get just the amount ordered
+            custAgingLegalEntity.OpenOrderBalanceMst = calculateMstAmount(creditLimit.balanceNotInvoiced()) - custAgingLegalEntity.PackingSlipBalanceMst;
+
+            // The credit limit functionality requries an amount (new sales total / invoice) to be included
+            // before any remaining credit will be calculated. This is immediately added back to the credit
+            // available which results in a net zero effect.
+            if (creditLimit.shouldCheckCreditAvailable())
+            {
+                AmountMST dummyInvoiceAmt = 1;
+                creditLimit.addAmountMST(dummyInvoiceAmt);
+                custAgingLegalEntity.CreditRemainingMst = creditLimit.calcCreditAvailable() + dummyInvoiceAmt;
+                custAgingLegalEntity.CreditRemainingMst = calculateMstAmount(custAgingLegalEntity.CreditRemainingMst);
+            }
+            custAgingLegalEntity.CreditLimitMst = calculateMstAmount(_crossCompanyCustTable.CreditMax);
+
+            var disputeResults = CustDispute::getDisputeStatisticsForCustomer(_crossCompanyCustTable.AccountNum);
+            custAgingLegalEntity.DisputedTransactionCount = conpeek(disputeResults, 1);
+            custAgingLegalEntity.DisputedTransactionBalanceMst = calculateMstAmount(conpeek(disputeResults, 2));
+
+            custAgingLegalEntity.NumOpenInvoices = this.getNumberOfOpenInvoices(_crossCompanyCustTable.AccountNum, localAgingDate);
+
+            this.setLastPaymentData(_crossCompanyCustTable, custAgingLegalEntity, localAgingDate);
+
+            custAgingLegalEntity.MSTCurrency = Ledger::accountingCurrency();
+            custAgingLegalEntity.MSTSecondaryCurrency = Ledger::reportingCurrency();
+        }
+
+        return custAgingLegalEntity;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setLastPaymentData</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates and sets the last payment date and last payment value for the given customer account.
+    /// </summary>
+    /// <param name = "_crossCompanyCustTable">The <c>CustTable</c> record to base the selection of payment data.</param>
+    /// <param name = "_custAgingLegalEntity">The current <c>mzkCustAgingLegalEntity</c> record to populate payment data.</param>
+    /// <param name = "_agingDate">The date for which the aging snapshot is being executed.</param>
+    protected void setLastPaymentData(CustTable _crossCompanyCustTable, mzkCustAgingLegalEntity _custAgingLegalEntity, CustAgingDate _agingDate)
+    {
+        CustTrans custTrans;
+
+        select firstonly custTrans
+            order by TransDate desc, Voucher desc
+            where custTrans.AccountNum  == _crossCompanyCustTable.AccountNum
+                && custTrans.Invoice == ''
+                && custTrans.AmountCur < 0
+                && custTrans.TransDate <= _agingDate;
+
+        _custAgingLegalEntity.LastPaymentDate = custTrans.TransDate;
+        _custAgingLegalEntity.LastPaymentAmount = -custTrans.AmountMST;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getNumberOfOpenInvoices</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Retrieves the number of open invoices for a given customer at the time of the execution of the aging snapshot.
+    /// </summary>
+    /// <param name = "_custAccount">The customer account that is being processed.</param>
+    /// <param name = "_agingDate">The date for which the aging snapshot is being executed.</param>
+    /// <returns>The number of open invoices for the given customer.</returns>
+    protected int getNumberOfOpenInvoices(CustAccount _custAccount, CustAgingDate _agingDate)
+    {
+        CustInvoiceJour custInvoiceJour;
+        CustTrans custTrans;
+        CustTransOpen custTransOpen;
+
+        select count(RecId)
+            from custInvoiceJour
+                where custInvoiceJour.InvoiceAccount == _custAccount
+                    && CustInvoiceJour.InvoiceDate <= _agingDate
+            exists join custTrans
+                where custTrans.Invoice == custInvoiceJour.InvoiceId
+                    && custTrans.AccountNum == custInvoiceJour.InvoiceAccount
+                    && custTrans.TransDate == custInvoiceJour.InvoiceDate
+                    && custTrans.Voucher == custInvoiceJour.LedgerVoucher
+            join custTransOpen
+                where custTransOpen.AccountNum == custTrans.AccountNum
+                    && custTransOpen.RefRecId == custTrans.RecId;
+
+        return int642int(custInvoiceJour.RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>calculateSnapshotLines</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Calculates the aging snapshot line information.
+    /// </summary>
+    /// <param name="_company">
+    /// The company of the <c>CustTable</c> record.
+    /// </param>
+    /// <param name="_crossCompanyCustTable">
+    /// The customer used to calculate the snapshot, which could be a cross-company customer.
+    /// </param>
+    /// <returns>
+    /// An instance of the <c>CustVendBalanceList</c> class that contains the
+    /// aging snapshot line information.
+    /// </returns>
+    protected CustVendBalanceList calculateSnapshotLines(selectableDataArea _company, CustTable _crossCompanyCustTable)
+    {
+        // Keep this call out of the changeCompany statement block since the aging
+        // period definition from the current company should be used to determine
+        // aging periods.
+        var balanceList = CustVendBalanceList::construct(
+            SysModule::Cust,
+            agedBy,
+            0,
+            dateMax(),
+            this.getActualAgingDate(),
+            NoYes::No,
+            DayMonth::Day,
+            ForwardBackwardPrinting::Backward,
+            agingPeriodDef,
+            NoYes::Yes,
+            NoYes::No,
+            null,
+            NoYes::No,
+            NoYes::No,
+            NoYes::No,
+            updateCollectionsStatus);
+
+        changecompany(_company)
+        {
+            balanceList.calculateDetails(_crossCompanyCustTable);
+        }
+        return balanceList;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>caption</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Retrieves the caption of the dialog box.
+    /// </summary>
+    /// <returns>
+    ///    The caption of the dialog box.
+    /// </returns>
+    public ClassDescription caption()
+    {
+        return "@SYS132576";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>checkCloseDialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Determines whether processing can continue after the user-defined information has been provided.
+    /// </summary>
+    /// <param name="_calledFrom">
+    ///    The object that called this method.
+    /// </param>
+    /// <returns>
+    ///    true if the dialog box can continue with processing; otherwise, false.
+    /// </returns>
+    /// <remarks>
+    ///    The dialog box requires an aging period defintion. It also requires an aging date when the
+    ///    <c>AgingDateType</c> enumeration value is set to <c>SelectedDate</c>.
+    /// </remarks>
+    public boolean checkCloseDialog(Object _calledFrom = null)
+    {
+        super(_calledFrom);
+
+        return this.validateParms(false, true);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>clearSourceCompanies</Name>
+				<Source><![CDATA[
+    public void clearSourceCompanies()
+    {
+        sourceCompanies = connull();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createSubJobs</Name>
+				<Source><![CDATA[
+    private void createSubJobs(BatchHeader _batchHeader)
+    {
+        var custAgingSnapshot = mzkCustAgingSnapshot::construct();
+
+        custAgingSnapshot.unpack(this.pack());
+        custAgingSnapshot.parmHasJobBeenSplit(true);
+
+        batchInfo = custAgingSnapshot.batchInfo();
+        batchInfo.parmCaption(strFmt('%1 : %2', fromCustomer, toCustomer));
+        _batchHeader.addRuntimeTask(custAgingSnapshot, this.parmCurrentBatch().RecId);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteSnapshot</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Deletes the aging snapshot that exists for the aging period definition and provided customer.
+    /// </summary>
+    /// <param name="_custAccount">
+    ///    The customer used to determine which aging snapshot to delete.
+    /// </param>
+    protected void deleteSnapshot(CustAccount _custAccount)
+    {
+        mzkCustAging custAging;
+
+        delete_from custAging
+            where custAging.CustTable == _custAccount &&
+                custAging.StatRepInterval == agingPeriodDef;
+
+        // The cascading delete from the mzkCustAging table to mzkCustAgingLine table will
+        // automatically remove the appropriate detail records.
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteSnapshotForAgingPeriodDefinition</Name>
+				<Source><![CDATA[
+    private void deleteSnapshotForAgingPeriodDefinition()
+    {
+        this.deleteCustAgingLineForAgingPeriodDefinition();
+        this.deleteCustAgingLegalEntityForAgingPeriodDefinition();
+        this.deleteCustAgingForAgingPeriodDefinition();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteCustAgingLineForAgingPeriodDefinition</Name>
+				<Source><![CDATA[
+    private void deleteCustAgingLineForAgingPeriodDefinition()
+    {
+        mzkCustAging custAging;
+        mzkCustAgingLegalEntity custAgingLegalEntity;
+        mzkCustAgingLine custAgingLine;
+
+        this.skipValidationsForCustAging(custAging);
+        this.skipValidationsForCustAgingLegalEntity(custAgingLegalEntity);
+
+        delete_from custAgingLine
+            exists join custAgingLegalEntity
+                where custAgingLegalEntity.RecId == custAgingLine.CustAgingLegalEntity
+            exists join custAging
+                where custAging.RecId == custAgingLegalEntity.CustAging
+                    && custAging.StatRepInterval == agingPeriodDef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteCustAgingLegalEntityForAgingPeriodDefinition</Name>
+				<Source><![CDATA[
+    private void deleteCustAgingLegalEntityForAgingPeriodDefinition()
+    {
+        mzkCustAging custAging;
+        mzkCustAgingLegalEntity custAgingLegalEntity;
+
+        this.skipValidationsForCustAging(custAging);
+        this.skipValidationsForCustAgingLegalEntity(custAgingLegalEntity);
+
+        delete_from custAgingLegalEntity
+            exists join custAging
+                where custAging.RecId == custAgingLegalEntity.CustAging
+                    && custAging.StatRepInterval == agingPeriodDef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>deleteCustAgingForAgingPeriodDefinition</Name>
+				<Source><![CDATA[
+    private void deleteCustAgingForAgingPeriodDefinition()
+    {
+        mzkCustAging custAging;
+        this.skipValidationsForCustAging(custAging);
+
+        delete_from custAging
+            where custAging.StatRepInterval == agingPeriodDef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>skipValidationsForCustAging</Name>
+				<Source><![CDATA[
+    private void skipValidationsForCustAging(mzkCustAging _custAging)
+    {
+        _custAging.skipDeleteActions(NoYes::Yes);
+        _custAging.skipBusinessEvents(NoYes::Yes);
+        _custAging.skipDataMethods(NoYes::Yes);
+        _custAging.skipEvents(NoYes::Yes);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>skipValidationsForCustAgingLegalEntity</Name>
+				<Source><![CDATA[
+    private void skipValidationsForCustAgingLegalEntity(mzkCustAgingLegalEntity _custAgingLegalEntity)
+    {
+        _custAgingLegalEntity.skipDeleteActions(NoYes::Yes);
+        _custAgingLegalEntity.skipBusinessEvents(NoYes::Yes);
+        _custAgingLegalEntity.skipDataMethods(NoYes::Yes);
+        _custAgingLegalEntity.skipEvents(NoYes::Yes);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>dialog</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Provides the dialog box to display for this instance of the <c>RunBaseBatch</c> class.
+    /// </summary>
+    /// <param name="_dialog">
+    ///    A reference to the instance of the dialog box to display.
+    /// </param>
+    /// <returns>
+    ///    An instance of the dialog box to display.
+    /// </returns>
+    /// <remarks>
+    ///    This was overridden because the standard dialog box does not support specialized logic for enabling
+    ///    and disabling fields. The <c>mzkCustAgingSnapshot</c> form serves as the dialog box for this
+    ///    <c>RunBaseBatch</c> class.
+    /// </remarks>
+    public Object dialog(DialogRunbase _dialog = null)
+    {
+        return Dialog::newFormnameRunbase(formstr(mzkCustAgingSnapshot), this);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getActualAgingDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Retrieves the aging date used to calculate aging snapshots.
+    /// </summary>
+    /// <returns>
+    ///    The aging date used to calculate aging snapshots.
+    /// </returns>
+    /// <remarks>
+    ///    If the <c>AgingDateType</c> value is set to <c>CustAgingDateType::CurrentDate</c>, the
+    ///    <c>AgingDate</c> value will be overridden with the current date. If the <c>AgingDateType</c> value
+    ///    is set to a <c>CustAgingDateType::SelectedDate</c>, the value of the <c>AgingDate</c> value will be
+    ///    returned.
+    /// </remarks>
+    protected date getActualAgingDate()
+    {
+        return agingDateType == CustAgingDateType::CurrentDate ? DateTimeUtil::getSystemDate(DateTimeUtil::getUserPreferredTimeZone()) : agingDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getCustomerPoolQuery</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Retrieves the customer query that determines which customers should be included in the aging
+    ///    snapshot.
+    /// </summary>
+    /// <returns>
+    ///    An instance of a user-defined <c>Query</c> class retrieved from the <c>CustCollectionsPool</c>
+    ///    table.
+    /// </returns>
+    /// <remarks>
+    ///    The customer pool is used instead of storing the query directly because the pool can be changed at
+    ///    any time. This allows the aging snapshot to always use the most recent pool in order to get the
+    ///    correct list of customers for processing.
+    /// </remarks>
+    protected Query getCustomerPoolQuery()
+    {
+        Query query;
+        QueryBuildDataSource currentDs;
+
+        if (fromCustomer != '')
+        {
+            if (customerPool && toCustomer && (fromCustomer != toCustomer))
+            {
+                // Validation has already been performed on the pool at this point, so assume it is valid.
+                CustCollectionsPool collectionPool;
+
+                select QueryPacked from collectionPool where collectionPool.Name == customerPool;
+                query = new Query(collectionPool.QueryPacked);
+
+                currentDs = SysQuery::findOrCreateDataSource(Query, tableNum(CustTable), 0);
+
+                str newQueryRange = SysQuery::range(fromCustomer, toCustomer);
+
+                if (currentDS.findRange(fieldnum(CustTable, AccountNum)))
+                {
+                    QueryBuildDataSource newCustTableDataSource = currentDs.addDataSource(tablenum(CustTable), 'CustTable2');
+                    newCustTableDataSource.relations(false);
+                    newCustTableDataSource.joinMode(JoinMode::ExistsJoin);
+                    newCustTableDataSource.addLink(fieldNum(CustTable, RecId), fieldNum(CustTable, RecId), currentDs.name());
+                    newCustTableDataSource.addRange(fieldnum(CustTable, AccountNum)).value(newQueryRange);
+                }
+                else
+                {
+                    currentDs.addRange(fieldnum(CustTable, AccountNum)).value(newQueryRange);
+                }
+            }
+            else
+            {
+                // Run it for a bundle of customers
+                query = new Query();
+                currentDs = query.addDataSource(tablenum(CustTable), tablestr(CustTable));
+                currentDs.addRange(fieldnum(CustTable, AccountNum)).value(SysQuery::range(fromCustomer, toCustomer));
+            }
+        }
+        else if (customerPool)
+        {
+            CustCollectionsPool collectionPool;
+
+            // Validation has already been performed on the pool at this point, so assume it is valid.
+            select firstonly QueryPacked from collectionPool where collectionPool.Name == customerPool;
+            query = new Query(collectionPool.QueryPacked);
+        }
+        else
+        {
+            // No pool defined so include all customers
+            query = new Query();
+            query.addDataSource(tablenum(CustTable), tablestr(CustTable));
+        }
+
+        return query;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getLast</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Loads the last used value.
+    /// </summary>
+    public void getLast()
+    {
+        // Do not make the call to super because the #CurrentList and #SysLastValues
+        // lists are different, requiring that we have specialized logic for the
+        // SysLastValues implementation.
+        // super();
+
+        // The following fields must be maintained to mimic the functionality of the overriden
+        // method.
+        getLastCalled = true;
+        inGetSaveLast = true;
+
+        // Restore the pertinent values from the SysLastValue table.
+        var packedValues = xSysLastValue::getValue(
+            this.lastValueDataAreaId(),
+            this.lastValueUserId(),
+            this.lastValueType(),
+            this.lastValueElementName(),
+            this.lastValueDesignName());
+
+        this.unpackSysLastValues(packedValues);
+
+        // This is a RunBaseBatch derivative class. Manually restore the user's
+        // settings on the batch tab because super() is not being called.
+        xSysLastValue::getLast(this.batchInfo());
+
+        // The following fields must be maintained to mimic the functionality of the overriden
+        // method.
+        inGetSaveLast = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>new</Name>
+				<Source><![CDATA[
+    protected void new()
+    {
+        super();
+
+        showResults = false;
+        hasJobBeenSplit = false;
+        fromCustomer = '';
+        toCustomer = '';
+        agingDateType = CustAgingDateType::CurrentDate;
+        agingDate = dateNull();
+        agedBy = DateTransactionDuedate::DueDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return [#CurrentVersion, #CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>packSysLastValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Packs the object for the <c>SysLastValue</c> framework to support persisting user input.
+    /// </summary>
+    /// <returns>
+    ///    A container that stores the list of values that are specified by the <c>SysLastValuesList</c> macro.
+    /// </returns>
+    /// <remarks>
+    ///    This method brings support for inheritance to the <c>SysLastValue</c> implementation on this class.
+    ///    Derivative classes should override this method and provide their own implementation with a pack
+    ///    list.
+    /// </remarks>
+    public container packSysLastValues()
+    {
+        return [#SysLastValuesCurrentVersion, #SysLastValuesList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAgedBy</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets or sets the <c>AgedBy</c> value.
+    /// </summary>
+    /// <param name="_agedBy">
+    ///    The value to set.
+    /// </param>
+    /// <returns>
+    ///    The <c>AgedBy</c> value.
+    /// </returns>
+    /// <remarks>
+    ///    Transactions are aged based on the number of days overdue from the transaction date, due date, or
+    ///    document date. The <c>AgedBy</c> value specifies which transaction date should be considered when
+    ///    aging the open transaction amounts.
+    /// </remarks>
+    public DateTransactionDuedate parmAgedBy(DateTransactionDuedate _agedBy = agedBy)
+    {
+        agedBy = _agedBy;
+        return agedBy;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAgingDate</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets or sets the <c>AgingDate</c> value.
+    /// </summary>
+    /// <param name="_agingDate">
+    ///    The value to set.
+    /// </param>
+    /// <returns>
+    ///    The <c>AgingDate</c> value.
+    /// </returns>
+    /// <remarks>
+    ///    The <c>AgingDate</c> value is combined with the aging period definition to determine where the
+    ///    aging periods begin and end. It represents the starting date of the aging period definition and
+    ///    also the cutoff date because no open transactions after this date will be considered. The
+    ///    <c>AgingDate</c> value will be overridden with the current date at calculation time if the
+    ///    <c>AgingDateType</c> value is set to <c>CustAgingDateType::CurrentDate</c>.The default value upon
+    ///    construction is the current date.
+    /// </remarks>
+    public CustAgingDate parmAgingDate(CustAgingDate _agingDate = agingDate)
+    {
+        agingDate = _agingDate;
+        return agingDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAgingDateType</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets or sets the <c>AgingDateType</c> value.
+    /// </summary>
+    /// <param name="_agingDateType">
+    ///    The value to set.
+    /// </param>
+    /// <returns>
+    ///    The <c>AgingDateType</c> value.
+    /// </returns>
+    /// <remarks>
+    ///    If the <c>AgingDateType</c> value is set to <c>CustAgingDateType::CurrentDate</c>, the
+    ///    <c>AgingDate</c> value will be overridden with the current date at calculation time.
+    /// </remarks>
+    public CustAgingDateType parmAgingDateType(CustAgingDateType _agingDateType = agingDateType)
+    {
+        agingDateType = _agingDateType;
+        return agingDateType;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAgingPeriodDef</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets or sets the <c>AgingPeriodDef</c> value.
+    /// </summary>
+    /// <param name="_agingPeriodDef">
+    ///    The value to set.
+    /// </param>
+    /// <returns>
+    ///    The <c>AgingPeriodDef</c> value.
+    /// </returns>
+    /// <remarks>
+    ///    The <c>AgingPeriodDef</c> value specifies the aging period definition to use when calculating the
+    ///    aging snapshot.
+    /// </remarks>
+    public CustVendReportName parmAgingPeriodDef(CustVendReportName _agingPeriodDef = agingPeriodDef)
+    {
+        agingPeriodDef = _agingPeriodDef;
+        return agingPeriodDef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCustAccount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets or sets the <c>CustAccount</c> value.
+    /// </summary>
+    /// <param name="_custAccount">
+    ///    The value to set.
+    /// </param>
+    /// <returns>
+    ///    The <c>CustAccount</c> value.
+    /// </returns>
+    /// <remarks>
+    ///    When the <c>CustAccount</c> value is set, the <c>CustomerPool</c> value is ignored when calculating
+    ///    aging snapshots and is run for the single customer specified by this property.
+    /// </remarks>
+    public CustAccount parmCustAccount(CustAccount _custAccount = fromCustomer)
+    {
+        fromCustomer = _custAccount;
+        toCustomer = _custAccount;
+        return fromCustomer;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCustomerPool</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets or sets the <c>CustomerPool</c> value.
+    /// </summary>
+    /// <param name="_customerPool">
+    ///    The value to set.
+    /// </param>
+    /// <returns>
+    ///    The <c>CustomerPool</c> value.
+    /// </returns>
+    /// <remarks>
+    ///    The <c>CustomerPool</c> value specifies the customer pool query to use when calculating the aging
+    ///    snapshot. The query defined by the customer pool determines which customers should be aged as part
+    ///    of this process.
+    /// </remarks>
+    public CustCollectionsPoolId parmCustomerPool(CustCollectionsPoolId _customerPool = customerPool)
+    {
+        customerPool = _customerPool;
+        return customerPool;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmHasJobBeenSplit</Name>
+				<Source><![CDATA[
+    private boolean parmHasJobBeenSplit(boolean _hasJobBeenSplit = hasJobBeenSplit)
+    {
+        hasJobBeenSplit = _hasJobBeenSplit;
+        return hasJobBeenSplit;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmShowResults</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Gets or sets the <c>ShowResults</c> value.
+    /// </summary>
+    /// <param name="_showResults">
+    ///    The value to set.
+    /// </param>
+    /// <returns>
+    ///    The <c>ShowResults</c> value.
+    /// </returns>
+    /// <remarks>
+    ///    If the <c>ShowResults</c> value is true, the results of the aging snapshot process will be
+    ///    displayed on an Infolog that indicates which customers were processed.The default value upon
+    ///    construction is false.
+    /// </remarks>
+    public boolean parmShowResults(boolean _showResults = showResults)
+    {
+        showResults = _showResults;
+        return showResults;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmUpdateCollectionsStatus</Name>
+				<Source><![CDATA[
+    public boolean parmUpdateCollectionsStatus(boolean _updateCollectionsStatus = updateCollectionsStatus)
+    {
+        updateCollectionsStatus = _updateCollectionsStatus;
+        return updateCollectionsStatus;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmAgeCustomersWithNoOpenTransactions</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets or sets the <c>includeZeroBalanceCustomers</c> value.
+    /// </summary>
+    /// <param name = "_includeZeroBalanceCustomers">Whether aging should be calculated on zero balance customers.</param>
+    /// <returns>The <c>includeZeroBalanceCustomers</c> value.</returns>
+    public boolean parmAgeCustomersWithNoOpenTransactions(boolean _ageCustomersWithNoOpenTransactions = ageCustomersWithNoOpenTransactions)
+    {
+        ageCustomersWithNoOpenTransactions = _ageCustomersWithNoOpenTransactions;
+        return ageCustomersWithNoOpenTransactions;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmManualUpdate</Name>
+				<Source><![CDATA[
+    internal NoYes parmManualUpdate(NoYes _manualUpdate = manualUpdate)
+    {
+        manualUpdate = _manualUpdate;
+        return manualUpdate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isCustAgingPerfFeatureEnabled</Name>
+				<Source><![CDATA[
+    private NoYes isCustAgingPerfFeatureEnabled()
+    {
+        return !this.parmCustomerPool() && !this.parmManualUpdate(); //&& FeatureStateProvider::isFeatureEnabled(CustAgingPerformanceEnhancementFeature::instance()); -obselete
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>process</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Drives the aging snapshot process that includes deleting, calculating, and storing aging snapshots
+    ///    for the specified aging period definition and customers.
+    /// </summary>
+    /// <returns>
+    ///    A string that contains the aging snapshot process.
+    /// </returns>
+    protected str process()
+    {
+        str summaryMessage;
+
+        this.validateParms(true);
+        AccountsReceivableEventSource eventSource = AccountsReceivableEventSource::Log;
+        isCustAgingPerfFeatureEnabled = this.isCustAgingPerfFeatureEnabled();
+
+        if (isCustAgingPerfFeatureEnabled && !hasJobBeenSplit)
+        {
+            this.deleteSnapshotForAgingPeriodDefinition();
+        }
+
+        // This indicates that the batch is running the first time. In that case we need to break up the job to
+        // smaller jobs to allow for parallel processing across multiple threads.
+        if (!hasJobBeenSplit && this.isInBatch())
+        {
+            if (customerPool)
+            {
+                eventSource.EventWriteAgingSnapshotDetails('CollectionPool', 1, 'Boolean - Is collection pool set');
+            }
+            
+            if (ageCustomersWithNoOpenTransactions)
+            {
+                eventSource.EventWriteAgingSnapshotDetails('ZeroBalances', ageCustomersWithNoOpenTransactions, 'Boolean - are customers with zero balances included');
+            }
+
+            var batchHeader = BatchHeader::getCurrentBatchHeader();
+
+            if (batchHeader == null)
+            {
+                batchHeader = BatchHeader::construct();
+            }
+            
+            str lastCustomer;
+            var i = 0;
+            QueryRun queryRun = new QueryRun(this.getCustomerPoolQuery());
+            
+            QueryBuildDataSource custDs = SysQuery::findOrCreateDataSource(queryRun.query(), tableNum(CustTable), 0);
+            custDs.addSortField(fieldNum(CustTable, AccountNum));
+            
+            CustParameters custParameters = CustParameters::find();
+
+            int numberOfBatches = custParameters.CustAgingSnapshotBatchLimit == 0 ? 2 : custParameters.CustAgingSnapshotBatchLimit;
+            int totalCount = queryRun.query().dataSourceCount() > 1 ? SysQuery::countLoops(queryRun) : SysQuery::countTotal(queryRun);
+            int bundleSize = real2int(roundUp((totalCount / numberOfBatches), 1.0));
+            bundleSize = bundleSize < MinimumCustomerBundleSize ? MinimumCustomerBundleSize : bundleSize;
+
+            while (queryRun.next())
+            {
+                CustTable custTable = queryRun.get(tablenum(CustTable), 1);
+
+                if (custTable)
+                {
+                    i++;
+
+                    if (i == 1)
+                    {
+                        fromCustomer = custTable.AccountNum;
+                    }
+                    else if (i >= bundleSize)
+                    {
+                        toCustomer = custTable.AccountNum;
+
+                        this.createSubJobs(batchHeader);
+                        i = 0;
+                    }
+
+                    lastCustomer = custTable.AccountNum;
+                }
+            }
+
+            // The last bundle is smaller than bundleSize
+            if (i > 0)
+            {
+                toCustomer = lastCustomer;
+
+                this.createSubJobs(batchHeader);
+            }
+
+            batchHeader.save();
+            Batch childTasks, parentTask;
+
+            while select RecId from childTasks
+                exists join parentTask
+                where parentTask.RecId == this.parmCurrentBatch().RecId
+                    && childTasks.BatchJobId == parentTask.BatchJobId
+                    && childTasks.RecId != this.parmCurrentBatch().RecId
+            {
+                eventSource.EventWriteAgingSnapshotBundleCreated(this.parmCurrentBatch().RecId, childTasks.RecId);
+            }
+        }
+        else
+        {
+            // Since this information never changes per customer, read it once for later use.
+            // This is eventually used by the saveSnapshot method and only needs to be done when
+            // we are actually processing the snapshot.
+
+            agingLineNumList = new List(Types::real);
+            StatRepIntervalLine agingPeriod;
+
+            while select LineNum from agingPeriod
+                where agingPeriod.Name == agingPeriodDef
+            {
+                agingLineNumList.addEnd(agingPeriod.LineNum);
+            }
+
+            boolean shouldUpdateResult = true;
+            // Update aging information for all customers in the selected pool
+            QueryRun queryRun = new QueryRun(this.getCustomerPoolQuery());
+
+            while (queryRun.next())
+            {
+                if (queryRun.changed(tablenum(CustTable), 1))
+                {
+                    CustTable custTable = queryRun.get(tablenum(CustTable), 1);
+                    if (custTable)
+                    {
+                        var customerHasTransactions = this.existOpenTransactionsForCustomer(custTable.Party);
+
+                        // If aging performance enhancement feature is enabled, we've already deleted the snapshot,
+                        // and will insert all zero balance customers after the loop.
+                        if (!customerHasTransactions && isCustAgingPerfFeatureEnabled)
+                        {
+                            continue;
+                        }
+
+                        if (!ageCustomersWithNoOpenTransactions && !customerHasTransactions)
+                        {
+                            this.deleteSnapshot(custTable.AccountNum);
+                        }
+                        else
+                        {
+                            this.calculateSnapshot(custTable);
+                        }
+
+                        if (shouldUpdateResult)
+                        {
+                            if (strlen(summaryMessage) == 0)
+                            {
+                                // The aging snapshot has been created for customer %1 %2.
+                                summaryMessage = strfmt("@SYS132603", custTable.AccountNum, custTable.name());
+                            }
+                            else
+                            {
+                                // The aging snapshot has been created for the selected customers.
+                                summaryMessage = "@SYS138728";
+                                shouldUpdateResult = false;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (isCustAgingPerfFeatureEnabled && ageCustomersWithNoOpenTransactions)
+            {
+                this.insertCustomersWithNoOpenTransactions();
+            }
+
+            if (strlen(summaryMessage) == 0)
+            {
+                // No customers meet the criteria for the aging snapshot.
+                summaryMessage = "@SYS132602";
+            }
+        }
+
+        return summaryMessage;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Drives the aging snapshot process for the provided aging period definition and customers.
+    /// </summary>
+    public void run()
+    {
+        var snapshotResult = this.process();
+
+        if (this.parmShowResults())
+        {
+            info(snapshotResult);
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCustomersWithNoOpenTransactions</Name>
+				<Source><![CDATA[
+    private void insertCustomersWithNoOpenTransactions()
+    {
+        if (!this.isInBatch())
+        {
+            this.setFromCustomerAgingPerformanceAsync();
+            this.setToCustomerAgingPerformanceAsync();
+        }
+
+        this.insertCustAgingWithNoOpenTransactions();
+        this.insertCustAgingLegalEntityWithNoOpenTransactions();
+        this.insertCustAgingLineWithNoOpenTransactions();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setFromCustomerAgingPerformanceAsync</Name>
+				<Source><![CDATA[
+    private void setFromCustomerAgingPerformanceAsync()
+    {
+        CustTable custTable;
+
+        select firstonly AccountNum from custTable
+            order by AccountNum;
+
+        fromCustomer = custTable.AccountNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setToCustomerAgingPerformanceAsync</Name>
+				<Source><![CDATA[
+    private void setToCustomerAgingPerformanceAsync()
+    {
+        CustTable custTable;
+
+        select firstonly AccountNum from custTable
+            order by AccountNum desc;
+
+        toCustomer = custTable.AccountNum;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCustAgingWithNoOpenTransactions</Name>
+				<Source><![CDATA[
+    private void insertCustAgingWithNoOpenTransactions()
+    {
+        mzkCustAging custAging;
+        CustTable custTable;
+        mzkCustAging custAgingLocal;
+
+        var agingDateLocal = this.getActualAgingDate();
+
+        insert_recordset custAging ( AgedBy, AgingDate, CustTable, StatRepInterval )
+        select agedBy, agingDateLocal, AccountNum, agingPeriodDef from custTable
+            where custTable.AccountNum >= fromCustomer
+                && custTable.AccountNum <= toCustomer
+            notexists join custAgingLocal
+                where custAgingLocal.CustTable == custTable.AccountNum
+                    && custAgingLocal.StatRepInterval == agingPeriodDef;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCustAgingLegalEntityWithNoOpenTransactions</Name>
+				<Source><![CDATA[
+    private void insertCustAgingLegalEntityWithNoOpenTransactions()
+    {
+        mzkCustAging custAging;
+        mzkCustAgingLegalEntity custAgingLegalEntity;
+        CustTable custTable;
+        mzkCustAgingLegalEntity custAgingLegalEntityLocal;
+
+        var currentCompany = CompanyInfo::current(curExt());
+        var accountingCurrency = Ledger::accountingCurrency();
+        var reportingCurrency = Ledger::reportingCurrency();
+
+        insert_recordset custAgingLegalEntity ( CustAging, SourceLegalEntity, MSTCurrency, MSTSecondaryCurrency )
+        select RecId, currentCompany, accountingCurrency, reportingCurrency from custAging
+            where custAging.StatRepInterval == agingPeriodDef
+            exists join custTable
+                where custTable.AccountNum == custAging.CustTable
+                    && custTable.AccountNum >= fromCustomer
+                    && custTable.AccountNum <= toCustomer
+            notexists join custAgingLegalEntityLocal
+                where custAgingLegalEntityLocal.CustAging == custAging.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>insertCustAgingLineWithNoOpenTransactions</Name>
+				<Source><![CDATA[
+    private void insertCustAgingLineWithNoOpenTransactions()
+    {
+        mzkCustAging custAging;
+        mzkCustAgingLegalEntity custAgingLegalEntity;
+        mzkCustAgingLine custAgingLine;
+        mzkCustAgingLine custAgingLineLocal;
+        CustTable custTable;
+        var position = agingLineNumList.elements();
+        var enumerator = agingLineNumList.getEnumerator();
+        
+        while (enumerator.moveNext())
+        {
+            var statRepLineNum = enumerator.current();
+
+            insert_recordset custAgingLine ( CustAgingLegalEntity, Position, StatRepIntervalLineName, StatRepIntervalLineNum )
+            select RecId, position, agingPeriodDef, statRepLineNum from custAgingLegalEntity
+                exists join custAging
+                    where custAging.RecId == custAgingLegalEntity.CustAging
+                        && custAging.StatRepInterval == agingPeriodDef
+                exists join custTable
+                    where custTable.AccountNum == custAging.CustTable
+                        && custTable.AccountNum >= fromCustomer
+                        && custTable.AccountNum <= toCustomer
+                notexists join custAgingLineLocal
+                    where custAgingLineLocal.CustAgingLegalEntity == custAgingLegalEntity.RecId
+                        && custAgingLineLocal.StatRepIntervalLineName == custAging.StatRepInterval
+                        && custAgingLineLocal.StatRepIntervalLineNum == statRepLineNum;
+            position--;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveLast</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Saves the last value.
+    /// </summary>
+    public void saveLast()
+    {
+        // Do not make the call to super because the #CurrentList and #SysLastValues
+        // lists are different, requiring that we have specialized logic for the
+        // SysLastValues implementation.
+        //super();
+
+        // The following fields must be maintained to mimic the functionality of the overriden
+        // method.
+        inGetSaveLast = true;
+
+        // Persist the pertinent values to the SysLastValue table.
+        xSysLastValue::putValue(
+            this.packSysLastValues(),
+            this.lastValueDataAreaId(),
+            this.lastValueUserId(),
+            this.lastValueType(),
+            this.lastValueElementName(),
+            this.lastValueDesignName());
+
+        // This is a RunBaseBatch derivative class. Manually save the user's
+        // settings on the batch tab because super() is not being called.
+        xSysLastValue::saveLast(this.batchInfo());
+
+        // The following fields must be maintained to mimic the functionality of the overriden
+        // method.
+        inGetSaveLast = false;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>saveSnapshot</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Saves the aging snapshot.
+    /// </summary>
+    /// <param name="_custAging">
+    ///    The <c>mzkCustAging</c> record to save.
+    /// </param>
+    /// <param name="_custAgingLegalEntity">
+    ///    The <c>mzkCustAgingLegalEntity</c> record to save.
+    /// </param>
+    /// <param name="_balanceList">
+    ///    An instance of the <c>CustVendBalanceList</c> class that contains the necessary information to save
+    ///    the records in the <c>mzkCustAgingLine</c> table.
+    /// </param>
+    /// <param name="_sourceCompany">
+    ///    The source company of the aging information.
+    /// </param>
+    /// <param name="_crossCompanyCustTable">
+    ///  A <c>CustTable</c> table buffer of the customer the aging the aging will be saved for.
+    /// </param>
+    protected void saveSnapshot(mzkCustAging _custAging, mzkCustAgingLegalEntity _custAgingLegalEntity, CustVendBalanceList _balanceList, CompanyId _sourceCompany, CustTable _crossCompanyCustTable)
+    {
+        Array columnToAgingPeriodArray = new Array(Types::Real);
+        Array columnToAgingPeriodReportingArray = new Array(Types::Real);
+
+        for (var agingPeriod = 1; agingPeriod <= CustVendBalanceList::numOfBalanceAge() - 1; agingPeriod++)
+        {
+            columnToAgingPeriodArray.value(agingPeriod, 0.0);
+            columnToAgingPeriodReportingArray.value(agingPeriod, 0.0);
+        }
+
+        _custAgingLegalEntity.insert();
+
+        // Convert all amounts to the accounting currency of the Ledger that is initiating the snapshot.
+        var currencyExchHelper = CurrencyExchangeHelper::newLedger(Ledger::current());
+        var originalCompanyCurrency = Ledger::accountingCurrency(CompanyInfo::current(_custAging.DataAreaId));
+        var sourceCompanyCurrency = Ledger::accountingCurrency(CompanyInfo::current(_sourceCompany));
+        var originalCompanyReportingCurrency = Ledger::reportingCurrency(CompanyInfo::current(_custAging.DataAreaId));
+        var sourceCompanyReportingCurrency = Ledger::reportingCurrency(CompanyInfo::current(_sourceCompany));
+        
+        var agedBalancesMST = _balanceList.getSpecificSourceCurrency(_crossCompanyCustTable.AccountNum, originalCompanyCurrency, false);
+        var agedSourceBalances = _balanceList.getSpecificSourceCurrency(_crossCompanyCustTable.AccountNum, originalCompanyCurrency, true);
+        
+        var agedBalancesMSTSecondary = _balanceList.getBalancesReportingCurrency(_crossCompanyCustTable.AccountNum, originalCompanyReportingCurrency, true);
+        var agedSourceBalancesReporting = _balanceList.getBalancesReportingCurrency(_crossCompanyCustTable.AccountNum, originalCompanyReportingCurrency, false);
+        
+        var recordInsertList = new RecordInsertList(tablenum(mzkCustAgingLine));
+
+        var enumerator = agingLineNumList.getEnumerator();
+        while (enumerator.moveNext())
+        {
+            mzkCustAgingLine custAgingLine;
+            custAgingLine.CustAgingLegalEntity = _custAgingLegalEntity.RecId;
+            custAgingLine.StatRepIntervalLineName = agingPeriodDef;
+            custAgingLine.StatRepIntervalLineNum = enumerator.current();
+            custAgingLine.Position = _balanceList.getPositionByLineNum(custAgingLine.StatRepIntervalLineNum);
+            custAgingLine.OpenBalanceMst = 
+                currencyExchHelper.calculateTransactionToAccounting(sourceCompanyCurrency, conpeek(agedBalancesMST, custAgingLine.Position), true)
+                + conpeek(agedSourceBalances, custAgingLine.Position);
+
+            if (custAgingLine.OpenBalanceMst != 0 && _custAging.FirstNonzeroBalancePeriod < custAgingLine.Position)
+            {
+                _custAging.FirstNonzeroBalancePeriod = custAgingLine.Position;
+            }
+            custAgingLine.OpenBalanceMstSecondary = 
+                currencyExchHelper.calculateTransactionCurrencyToReportingCurrency(sourceCompanyReportingCurrency, conpeek(agedBalancesMSTSecondary, custAgingLine.Position), true)
+                + conpeek(agedSourceBalancesReporting, custAgingLine.Position);
+
+            columnToAgingPeriodArray.value(custAgingLine.Position, custAgingLine.OpenBalanceMst);
+            columnToAgingPeriodReportingArray.value(custAgingLine.Position, custAgingLine.OpenBalanceMstSecondary);
+            recordInsertList.add(custAgingLine);
+        }
+
+        recordInsertList.insertDatabase();
+
+        this.populateAgingPeriodFieldsForSnapShot(_custAging, columnToAgingPeriodArray, columnToAgingPeriodReportingArray);
+        
+        _custAging.update();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>populateAgingPeriodFieldsForSnapShot</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Populates the aging period fields on the <c>mzkCustAging</c> table buffer.
+    /// </summary>
+    /// <param name = "_custAging">The <c>mzkCustAging</c> table buffer to populate.</param>
+    /// <param name = "_columnToAgingPeriodArray">The array storing values for aging period values.</param>
+    /// <param name = "_columnToAgingPeriodReportingArray">The array storing values for the reporting currency period values.</param>
+    [Wrappable(true)]
+    protected final void populateAgingPeriodFieldsForSnapShot(mzkCustAging _custAging,
+        Array _columnToAgingPeriodArray,
+        Array _columnToAgingPeriodReportingArray)
+    {
+        // To improve the performance of rendering collection list page, mzkCustAging table is denormalized by adding
+        // the maximum number of aging periods.
+        _custAging.AgingPeriod1 += _columnToAgingPeriodArray.value(1);
+        _custAging.AgingPeriod2 += _columnToAgingPeriodArray.value(2);
+        _custAging.AgingPeriod3 += _columnToAgingPeriodArray.value(3);
+        _custAging.AgingPeriod4 += _columnToAgingPeriodArray.value(4);
+        _custAging.AgingPeriod5 += _columnToAgingPeriodArray.value(5);
+        _custAging.AgingPeriod6 += _columnToAgingPeriodArray.value(6);
+
+        _custAging.AgingPeriod1ReportingCurrency += _columnToAgingPeriodReportingArray.value(1);
+        _custAging.AgingPeriod2ReportingCurrency += _columnToAgingPeriodReportingArray.value(2);
+        _custAging.AgingPeriod3ReportingCurrency += _columnToAgingPeriodReportingArray.value(3);
+        _custAging.AgingPeriod4ReportingCurrency += _columnToAgingPeriodReportingArray.value(4);
+        _custAging.AgingPeriod5ReportingCurrency += _columnToAgingPeriodReportingArray.value(5);
+        _custAging.AgingPeriod6ReportingCurrency += _columnToAgingPeriodReportingArray.value(6);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    public boolean unpack(container packedClass)
+    {
+        Version version = RunBase::getVersion(packedClass);
+
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version,#CurrentList] = packedClass;
+                break;
+
+            case #CurrentListV1:
+                [version, #CurrentList_v1] = packedClass;
+                break;
+
+            default:
+                return false;
+        }
+
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpackSysLastValues</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Unpacks the object for the <c>SysLastValue</c> framework to support user input.
+    /// </summary>
+    /// <param name="_packedValues">
+    ///    A packed instance of the <c>LedgerJournalSave</c> object.
+    /// </param>
+    /// <remarks>
+    ///    This method brings support for inheritance to the <c>SysLastValue</c> implementation on this class.
+    ///    Derivative classes should override this method and provide their own implementation with an unpack
+    ///    list.
+    /// </remarks>
+    public void unpackSysLastValues(container _packedValues)
+    {
+        Version version = RunBase::getVersion(_packedValues);
+
+        switch (version)
+        {
+            case #SysLastValuesCurrentVersion:
+                [version, #SysLastValuesList] = _packedValues;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validateParms</Name>
+				<Source><![CDATA[
+    protected boolean validateParms(boolean _throwError, boolean _showMessages = true)
+    {
+        boolean isValid = true;
+
+        void handleError(str _errorMessage)
+        {
+            if (_throwError)
+            {
+                throw error(_errorMessage);
+            }
+            else if (_showMessages)
+            {
+                isValid = checkFailed(_errorMessage);
+            }
+            else
+            {
+                isValid = false;
+            }
+        }
+
+        if (!agingPeriodDef)
+        {
+            // The aging period definition must be selected before processing an aging snapshot.
+            handleError("@SYS132608");
+        }
+
+        isValid = isValid && CustVendBalanceList::validateAgingPeriodDefinition(agingPeriodDef, _throwError, _showMessages);
+
+        isValid = isValid && CustCollectionsPool::validatePoolForAgingSnapshot(customerPool, _throwError, _showMessages);
+
+        if (agingDateType == CustAgingDateType::SelectedDate && agingDate == dateNull())
+        {
+            // The aging date must be selected before processing an aging snapshot.
+            handleError("@SYS132601");
+        }
+
+        if (conlen(sourceCompanies) == 0)
+        {
+            // At least one company account range must be selected
+            handleError("@SYS310300");
+        }
+
+        return isValid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    ///    Constructs an instance of the <c>mzkCustAgingSnapshot</c> class.
+    /// </summary>
+    /// <returns>
+    ///    An instance of the <c>mzkCustAgingSnapshot</c> class.
+    /// </returns>
+    public static mzkCustAgingSnapshot construct()
+    {
+        mzkCustAgingSnapshot agingSnapshot = new mzkCustAgingSnapshot();
+
+        return agingSnapshot;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>main</Name>
+				<Source><![CDATA[
+    public static void main(Args args)
+    {
+        mzkCustAgingSnapshot agingSnapshot = mzkCustAgingSnapshot::construct();
+
+        agingSnapshot.parmShowResults(true);
+
+        if (agingSnapshot.prompt())
+        {
+            using (SysErrorMessageHelpScope scope = SysErrorMessageHelpScope::newErrorContext(args))
+            {
+                agingSnapshot.runOperation();
+            }
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>canRunInNewSession</Name>
+				<Source><![CDATA[
+    protected boolean canRunInNewSession()
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>existOpenTransactionsForCustomer</Name>
+				<Source><![CDATA[
+    private boolean existOpenTransactionsForCustomer(DirPartyRecId _party)
+    {
+        CustTransOpen custTransOpen;
+        CustTable custTable;
+
+       select firstonly crosscompany:sourceCompanies RecId from custTable
+            where custTable.Party == _party
+            exists join custTransOpen
+                where custTransOpen.AccountNum == custTable.AccountNum;
+
+       return custTable.RecId;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>isRetryable</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Specifies if the batch task is retryable for transient exceptions or not.
+    /// </summary>
+    /// <returns>
+    /// If true is returned, the batch task is retryable, otherwise it is not.
+    /// </returns>
+    [Hookable(false)]
+    public boolean isRetryable() 
+    {
+        return true;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

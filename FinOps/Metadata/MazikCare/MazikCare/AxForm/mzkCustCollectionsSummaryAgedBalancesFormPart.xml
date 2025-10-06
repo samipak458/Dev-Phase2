@@ -1,0 +1,3834 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
+	<Name>mzkCustCollectionsSummaryAgedBalancesFormPart</Name>
+	<SourceCode>
+		<Methods xmlns="">
+			<Method>
+				<Name>classDeclaration</Name>
+				<Source><![CDATA[
+[Form]
+public class mzkCustCollectionsSummaryAgedBalancesFormPart extends FormRun implements SysIFilterEventHandler, CustCollectionsIWorkspaceFormPart
+{
+    Array agingIndicators;
+    CustVendReportName selectedCustAging;
+    CustCollectionsIListPageHelper listPageHelper;
+    SelectableDataArea currentCompany;
+    CustAccount custAccountFilter;
+    LedgerCurrencySelection currencySelected;
+
+    CustCollectionsICollectionManagerWorkspace caller;
+    FormRun callerForm;
+}
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCaller</Name>
+				<Source><![CDATA[
+    public CustCollectionsICollectionManagerWorkspace parmCaller(CustCollectionsICollectionManagerWorkspace _caller = caller)
+    {
+        caller = _caller;
+        return caller;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>onFilterChanged</Name>
+				<Source><![CDATA[
+    public void onFilterChanged()
+    {
+        element.updateCurrentPoolFilters(mzkCustCollectionsWorkspaceHelper::updateFormPartFiltersFromCallerWorkspace(element.parmCaller(), element as CustCollectionsIWorkspaceFormPart));
+
+        custTable_DS.executeQuery();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCustAccountFilter</Name>
+				<Source><![CDATA[
+    public CustAccount parmCustAccountFilter(CustAccount _custAccountFilter = custAccountFilter)
+    {
+        custAccountFilter = _custAccountFilter;
+        return custAccountFilter;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCompany</Name>
+				<Source><![CDATA[
+    public SelectableDataArea parmCompany(SelectableDataArea _company = currentCompany)
+    {
+        currentCompany = _company;
+        return currentCompany;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmSelectedAgingPeriodDef</Name>
+				<Source><![CDATA[
+    public CustVendReportName parmSelectedAgingPeriodDef(CustVendReportName _seletedCustAging = selectedCustAging)
+    {
+        selectedCustAging = _seletedCustAging;
+        return selectedCustAging;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmCallerForm</Name>
+				<Source><![CDATA[
+    public FormRun parmCallerForm(FormRun _callerForm = callerForm)
+    {
+        callerForm = _callerForm;
+
+        return callerForm;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>init</Name>
+				<Source><![CDATA[
+    public void init()
+    {
+        super();
+        
+        if (!element.args() || !element.args().caller() || !(element.args().caller() is CustCollectionsICollectionManagerWorkspace))
+        {
+            throw error("@AccountsReceivable:ErrorExpectedCallerArgs");
+        }
+
+        if (element.args().caller().name() == formStr(mzkClaimManagerWorkspace))
+        {
+            //Setting the caller form to retrieve the currency type selected; either accounting or reporting from workspace form.
+            element.parmCallerForm(element.args().caller());            
+        }
+
+        element.parmCaller(element.args().caller() as CustCollectionsICollectionManagerWorkspace);
+
+        agingIndicators = new Array(Types::Enum);
+
+        listPageHelper = CustCollectionsCrossCompanyListPageHelper::construct(poolFilter);
+
+        element.updateCurrentPoolFilters(mzkCustCollectionsWorkspaceHelper::updateFormPartFiltersFromCallerWorkspace(element.parmCaller(), element));
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateCurrentPoolFilters</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the pool filter based on the selected company and defaults the values
+    /// </summary>
+    /// <param name = "_default">If the values should be defaulted</param>
+    public void updateCurrentPoolFilters(boolean _default)
+    {
+        if (_default)
+        {
+            listPageHelper.updateCompany(element.parmCompany());
+            listPageHelper.loadPools();
+        
+            poolFilter.text(listPageHelper.getInitialFilterValue(''));
+
+            listPageHelper.checkForAging();
+
+            element.parmSelectedAgingPeriodDef(listPageHelper.getDefaultAgingPeriod());
+        }
+
+        agingPeriodFilter.text(element.parmSelectedAgingPeriodDef());
+        agingPeriodFilter.enabled(element.parmSelectedAgingPeriodDef() != '');
+        
+        poolFilter.enabled(listPageHelper.getCurrentAgent().RecId != 0);
+
+        if (element.parmCallerForm())
+        {
+            currencySelected = element.parmCallerForm().parmCurrencySelection();
+        }
+
+        if (currencySelected == LedgerCurrencySelection::Accounting)
+        {
+            CustAging_AmountDueMst.visible(true);
+            CustAging_AmountDueMstSecondary.visible(false);
+            CustAgingLine1_OpenBalanceMst.visible(true);
+            CustAgingLine2_OpenBalanceMst.visible(true);
+            CustAgingLine3_OpenBalanceMst.visible(true);
+            CustAgingLine4_OpenBalanceMst.visible(true);
+            CustAgingLine5_OpenBalanceMst.visible(true);
+            CustAgingLine6_OpenBalanceMst.visible(true);
+            CustAging1_OpenBalanceMSTSecondary.visible(false);
+            CustAging2_OpenBalanceMSTSecondary.visible(false);
+            CustAging3_OpenBalanceMSTSecondary.visible(false);
+            CustAging4_OpenBalanceMSTSecondary.visible(false);
+            CustAging5_OpenBalanceMSTSecondary.visible(false);
+            CustAging6_OpenBalanceMSTSecondary.visible(false);
+        }
+        else
+        {
+            CustAging_AmountDueMst.visible(false);
+            CustAging_AmountDueMstSecondary.visible(true);
+            CustAgingLine1_OpenBalanceMst.visible(false);
+            CustAgingLine2_OpenBalanceMst.visible(false);
+            CustAgingLine3_OpenBalanceMst.visible(false);
+            CustAgingLine4_OpenBalanceMst.visible(false);
+            CustAgingLine5_OpenBalanceMst.visible(false);
+            CustAgingLine6_OpenBalanceMst.visible(false);
+            CustAging1_OpenBalanceMSTSecondary.visible(true);
+            CustAging2_OpenBalanceMSTSecondary.visible(true);
+            CustAging3_OpenBalanceMSTSecondary.visible(true);
+            CustAging4_OpenBalanceMSTSecondary.visible(true);
+            CustAging5_OpenBalanceMSTSecondary.visible(true);
+            CustAging6_OpenBalanceMSTSecondary.visible(true);           
+        }
+        
+        mzkCustCollectionsWorkspaceHelper::togglePoolFilterForCustomerFilter(element, listPageHelper, poolFilter);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getAgingBucketColumnsForGrid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds a list of the columns in Grid that are aging buckets.
+    /// </summary>
+    /// <returns><c>Array</c> of controls that represent the aging bucket columns.</returns>
+    protected Array getAgingBucketColumnsForGrid()
+    {
+        Array columns = new Array(Types::Class);
+
+        columns.value(1, custAgingLine1_OpenBalanceMst);
+        columns.value(2, custAgingLine2_OpenBalanceMst);
+        columns.value(3, custAgingLine3_OpenBalanceMst);
+        columns.value(4, custAgingLine4_OpenBalanceMst);
+        columns.value(5, custAgingLine5_OpenBalanceMst);
+        columns.value(6, custAgingLine6_OpenBalanceMst);
+
+        return columns;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getReportingCurrencyAgingBucketColumnsForGrid</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Builds a list of the columns in Grid that are reporting currency aging buckets.
+    /// </summary>
+    /// <returns><c>Array</c> of controls that represent the reporting currency aging bucket columns.</returns>
+    protected Array getReportingCurrencyAgingBucketColumnsForGrid()
+    {
+        Array reportingColumns = new Array(Types::Class);
+
+        reportingColumns.value(1, custAging1_OpenBalanceMstSecondary);
+        reportingColumns.value(2, custAging2_OpenBalanceMstSecondary);
+        reportingColumns.value(3, custAging3_OpenBalanceMstSecondary);
+        reportingColumns.value(4, custAging4_OpenBalanceMstSecondary);
+        reportingColumns.value(5, custAging5_OpenBalanceMstSecondary);
+        reportingColumns.value(6, custAging6_OpenBalanceMstSecondary);
+
+        return reportingColumns;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setGridColumnLabels</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Changes the text in the aging period balance columns or hides them as necessary.
+    /// </summary>
+    /// <remarks>
+    /// This method hides columns that are not necessary. The user could
+    /// display them by adding them back in and those columns would have the previous text
+    /// in them. The values under them would all be zero.
+    /// </remarks>
+    public void setGridColumnLabels()
+    {
+        StatRepIntervalLine intervalLines;
+        Array columns = this.getAgingBucketColumnsForGrid();
+        Array reportingColumns = this.getReportingCurrencyAgingBucketColumnsForGrid();
+        int lineNumber = 1;
+
+        if(listPageHelper.checkAgingPeriodValid(element.parmSelectedAgingPeriodDef()))
+        {
+            while select crosscompany Heading from intervalLines
+                order by intervalLines.LineNum desc
+                where intervalLines.Name == element.parmSelectedAgingPeriodDef() &&
+                      intervalLines.DataAreaId == element.parmCompany()
+            {
+                if (strLen(intervalLines.Heading) > 0)
+                {
+                    columns.value(lineNumber).showLabel(true);
+                    columns.value(lineNumber).label(intervalLines.Heading);
+
+                    reportingColumns.value(lineNumber).showLabel(true);
+                    reportingColumns.value(lineNumber).label(intervalLines.Heading);
+                }
+                else
+                {
+                    columns.value(lineNumber).showLabel(false);
+                    reportingColumns.value(lineNumber).showLabel(false);
+                }              
+
+                if (currencySelected == LedgerCurrencySelection::Accounting)
+                {
+                    columns.value(lineNumber).visible(true);
+                }
+                else
+                {
+                    reportingColumns.value(lineNumber).visible(true);
+                }
+
+                lineNumber++;
+            }
+        }
+
+        Counter numberOfAgedBuckets = CustVendBalanceList::numOfBalanceAge();
+        while (lineNumber < numberOfAgedBuckets)
+        {
+            columns.value(lineNumber).visible(false);
+            reportingColumns.value(lineNumber).visible(false);
+
+            lineNumber++;
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>setTouched</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Updates the <c>smmActivities</c> table buffer.
+    /// </summary>
+    public void setTouched()
+    {
+        CustTable_DS.setTouched();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>sendEmailToContactWithStatement</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Collects the information to email a statement to a customer whent when the 'Email statement to contact' drop down is opened
+    /// </summary>
+    /// <param name = "_agedBy">Transaction due date</param>
+    /// <param name = "_agingDate">Date aged on</param>
+    /// <param name = "_includeSettled">Include settled trans actions</param>
+    /// <param name = "_settledTransStartDate">Start date for the settled transactions</param>
+    public void sendEmailToContactWithStatement(DateTransactionDuedate _agedBy, CustAgingDate _agingDate, boolean _includeSettled, TransDate _settledTransStartDate)
+    {
+        mzkCustCollectionsWorkspaceHelper::changeCompanyContext(element.parmCompany());
+
+        ContactPerson contactPersonCollections = custTable.getCollectionsContactPerson();
+        mzkCustCollectionsWorkspaceHelper::sendEmailWithAttachment(
+                this,
+                element.getContactEmail(contactPersonCollections),
+                CustCollectionsEmailType::ContactWithStatement,
+                menuitemActionStr(CustCollectionsEmailContactStatement),
+                custTable,
+                [element.parmCompany()],
+                contactPersonCollections.personName(),
+                element.parmSelectedAgingPeriodDef(),
+                _agedBy,
+                _agingDate,
+                _includeSettled,
+                _settledTransStartDate);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getContactEmail</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Gets the contact person email
+    /// </summary>
+    /// <param name = "_contact">The <c>ContactPerson</c> record</param>
+    /// <returns></returns>
+    public Email getContactEmail(ContactPerson _contact)
+    {
+        return mzkCustCollectionsWorkspaceHelper::getContactLocator(_contact, LogisticsElectronicAddressMethodType::Email);
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+		<DataSources xmlns="">
+			<DataSource>
+				<Name>CustTable</Name>
+				<Methods>
+					<Method>
+						<Name>init</Name>
+						<Source><![CDATA[
+        public void init()
+        {
+            super();
+
+            custTable_ds.cacheAddMethod('showAgingIndicator');
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>showAgingIndicator</Name>
+						<Source><![CDATA[
+        public display container showAgingIndicator(CustTable _custTable)
+        {
+            ImageReference imgRef = ImageReference::constructForSymbol('');
+
+            int periodCount = agingIndicators.lastIndex();
+
+            CustAgingLinePosition nonZeroBalanceAgingPeriod = mzkCustCollectionsWorkspaceHelper::getFirstNonZeroBalanceAgingPeriod(_custTable, element.parmSelectedAgingPeriodDef(), element.parmCompany());
+
+            if (nonZeroBalanceAgingPeriod && nonZeroBalanceAgingPeriod <= periodCount)
+            {
+                // Set the icon appropriately
+                imgRef = ImageReference::constructForSymbol(StatRepIntervalLine::getResourceIdForAgingIndicator(agingIndicators.value(nonZeroBalanceAgingPeriod)),
+                    enum2str(agingIndicators.value(nonZeroBalanceAgingPeriod)));
+            }
+
+            return imgRef.pack();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>executeQuery</Name>
+						<Source><![CDATA[
+        public void executeQuery()
+        {
+            agingIndicators = mzkCustCollectionsWorkspaceHelper::populateAgingIndicators(element.parmSelectedAgingPeriodDef(), element.parmCompany());
+            
+            boolean poolSelected = strLen(poolFilter.valueStr()) != 0;
+            if (poolSelected)
+            {
+                this.query(mzkCustCollectionsWorkspaceHelper::addOriginalPoolQuery(listPageHelper,
+                    element.parmSelectedAgingPeriodDef(),
+                    mzkcustAging1_DS.name(),
+                    mzkcustAgingLegalEntity1_DS.name(),
+                    dirPartyTableContact_DS.name(),
+                    dirPartyTable_DS.name()));
+            }
+            else
+            {
+                Query q = CustCollectionsPool::defaultQuery(CustPoolType::Collection);
+
+                q.allowCrossCompany(listPageHelper.isCrossCompany());
+
+                mzkCustCollectionsWorkspaceHelper::buildCustAgingQuery(q,
+                    element.parmSelectedAgingPeriodDef(),
+                    mzkcustAging1_DS.name(),
+                    mzkcustAgingLegalEntity1_DS.name(),
+                    dirPartyTableContact_DS.name(),
+                    dirPartyTable_DS.name());
+
+                this.query(q);
+            }
+
+            mzkCustCollectionsWorkspaceHelper::applyCustAccountFilter(listPageHelper, this, fieldNum(CustTable, AccountNum), element.parmCompany(), poolSelected, element.parmCustAccountFilter());
+
+            mzkCustCollectionsWorkspaceHelper::addCallerCompanyFilter(this, element.parmCompany());
+
+            this.query().dataSourceTable(tableNum(CustTable)).addRange(fieldNum(CustTable, custType)).value(SysQuery::value(CustType::Insurance));
+
+            super();
+
+            element.setGridColumnLabels();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>setTouched</Name>
+						<Source><![CDATA[
+        public void setTouched()
+        {
+            this.executeQuery();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>active</Name>
+						<Source><![CDATA[
+        public int active()
+        {
+            int ret = super();
+
+            eMailStatementAction.enabled(custTable.RecId);
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+				<Fields />
+			</DataSource>
+		</DataSources>
+		<DataControls xmlns="">
+			<Control>
+				<Name>PoolFilter</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            listPageHelper.createPoolLookup();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret = super();
+
+            if (ret && strLen(this.text()) && !listPageHelper.checkPoolExists(this.text()))
+            {
+                ret = checkFailed("@AccountsReceivable:CustCollectionsPoolDoesNotExistsError");
+            }
+
+            if (ret)
+            {
+                element.setTouched();
+                agingGrid.setFocus();
+            }
+
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>AgingPeriodFilter</Name>
+				<Type>String</Type>
+				<Methods>
+					<Method>
+						<Name>lookup</Name>
+						<Source><![CDATA[
+        public void lookup()
+        {
+            SysTableLookup lookup = SysTableLookup::newParameters(tableNum(StatRepInterval), this, true);
+    
+            lookup.addLookupfield(fieldNum(StatRepInterval, Name), true);
+            lookup.addLookupfield(fieldNum(StatRepInterval, Description));
+    
+            str statRepIntervalFilter;
+    
+            StatRepInterval statRep;
+            while select crosscompany statRep
+                where statRep.DataAreaId == element.parmCompany()
+            {
+                if (StatRepIntervalLine::countLinesInCompany(statRep.Name, element.parmCompany()) <= (CustVendBalanceList::numOfBalanceAge() - 1))
+                {
+                    if (statRepIntervalFilter == '')
+                    {
+                        statRepIntervalFilter = queryValue(statRep.Name);
+                    }
+                    else
+                    {
+                        statRepIntervalFilter = strFmt('%1,%2', statRepIntervalFilter, queryValue(statRep.Name));
+                    }
+                }
+            }
+    
+            Query q = new Query();
+            q.allowCrossCompany(true);
+            QueryBuildDataSource statRepDS = q.addDataSource(tableNum(StatRepInterval));
+            q.addCompanyRange(element.parmCompany());
+            statRepDS.addRange(fieldNum(StatRepInterval, Name)).value(strFmt('=%1', statRepIntervalFilter));
+            
+            lookup.parmQuery(q);
+            lookup.performFormLookup();
+        }
+
+]]></Source>
+					</Method>
+					<Method>
+						<Name>modified</Name>
+						<Source><![CDATA[
+        public boolean modified()
+        {
+            boolean ret = super();
+        
+            element.parmSelectedAgingPeriodDef(this.valueStr());
+
+            element.setTouched();
+            agingGrid.setFocus();
+        
+            return ret;
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>CustAgingSnapshotCustTable</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            changecompany(element.parmCompany())
+            {
+                super();
+            }
+
+            custTable_ds.research(true);
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>EMailStatementAction</Name>
+				<Type>DropDialogButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        public void clicked()
+        {
+            changecompany(element.parmCompany())
+            {
+                super();
+            }
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+			<Control>
+				<Name>Collections</Name>
+				<Type>MenuFunctionButton</Type>
+				<Methods>
+					<Method>
+						<Name>clicked</Name>
+						<Source><![CDATA[
+        void clicked()
+        {
+            Args args = new Args(element);
+            args.parmObject(CustCollectionsForm::construct(custTable, poolFilter.text(), selectedCustAging));
+
+            mzkCustCollectionsWorkspaceHelper::runMenuForCompany(args, this.menufunction(), element.parmCompany());
+        }
+
+]]></Source>
+					</Method>
+				</Methods>
+			</Control>
+		</DataControls>
+		<Members xmlns="" />
+	</SourceCode>
+	<DataSources>
+		<AxFormDataSource xmlns="">
+			<Name>CustTable</Name>
+			<Table>CustTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AccountStatement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Affiliated_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgencyLocationCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AuthorityOffice_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCentralBankPurposeText</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BankCustPaymIdTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthCountyCode_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthDate_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BirthPlace_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Blocked</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CashDiscBaseDays</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CCMNum_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ClearingPeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CNAE_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CNPJCPFNum_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommercialRegister</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommercialRegisterInsetNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommercialRegisterSection</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CommissionGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyChainId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyIdSiret</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyNAFCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CompanyType_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ConsDay_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardAddressVerification</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardAddressVerificationLevel</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardAddressVerificationVoid</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditCardCVC</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditMax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreditRating</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Curp_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Currency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustClassificationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExcludeCollectionFee</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustExcludeInterestCharges</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustFinalUser_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustItemGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustTradingPartnerCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustWhtContributionType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustWriteOffRefRecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DAXIntegrationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDimension</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultDirectDebitMandate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DefaultInventStatusId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DestinationCodeId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvReason</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DlvTerm</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EinvoiceEANNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EInvoiceRegister_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EndDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EnterpriseCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EnterpriseNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>EntryCertificateRequired_W</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExportSales_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ExpressBillOfLading</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FactoringAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FederalComments</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FedNonFedIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FineCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FiscalDocType_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForecastDMPInclude</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForeignerId_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForeignResident_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ForeignTaxRegistration_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FreightZone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GenerateIncomingFiscalDocument_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeAccountStatement</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeCollectionletter</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeFreeTextInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeInterestNote</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GiroTypeProjInvoice</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ICMSContributor_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IdentificationNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IENum_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InclTax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>INSSCEI_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IntBank_LV</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyAllowIndirectCreation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyAutoCreateOrders</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterCompanyDirectDelivery</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InterestCode_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileId_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventProfileType_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InventSiteId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoiceAddress</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InvoicePostingType_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IRS1099CIndicator</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IsResident_LV</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IssueOwnEntryCertificate_W</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>IssuerCountry_HU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LineOfBusinessId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LvPaymTransCodes</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MainContactWorker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MandatoryCreditLimit</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MandatoryVatDate_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MarkupGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRMergedParent</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRMergedRoot</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Memo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MultiLineDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NIT_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>numberSequenceGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OneTimeCustomer</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrderEntryDeadlineGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrgId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OurAccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackageDepositExcempt_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackedExtensions</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PackMaterialFeeLicenseNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Party</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartyCountry</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartyState</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PassportNo_HU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymDayId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymentReference_EE</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymIdType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymMode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSched</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymSpec</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PaymTermId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsCustRebateGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsFreightAccrued</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PdsRebateTMAGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PresenceType_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PriceGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RegNum_W</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ResidenceForeignCountryRegionId_IT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Rfc_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RFIDCaseTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RFIDItemTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RFIDPalletTagging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesCalendarId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesDistrictId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SalesPoolId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SegmentId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ServiceCodeOnDlvAddress_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierAccountCode</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierBlindShipment</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierFuelSurcharge</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ShipCarrierId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StateInscription_MX</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatisticsGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SubsegmentId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Suframa_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SuframaNumber_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SuframaPISCOFINS_BR</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SuppItemGroupId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxBorderNumber_FI</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGroup</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxGSTReliefGroupHeading_MY</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxLicenseNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxPeriodPaymentCode_PL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdCalculate_IN</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdCalculate_TH</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TaxWithholdGroup_TH</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UnitedVATInvoice_LT</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>UseCashDisc</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>usePurchRequest</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VATNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WebSalesOrderDisplay</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>mzkCustAging1</Name>
+			<Table>mzkCustAging</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AgedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingDate</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod1ReportingCurrency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod2ReportingCurrency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod3</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod3ReportingCurrency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod4</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod4ReportingCurrency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod5</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod5ReportingCurrency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod6</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AgingPeriod6ReportingCurrency</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustTable</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>FirstNonzeroBalancePeriod</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>StatRepInterval</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<CrossCompanyAutoQuery>Yes</CrossCompanyAutoQuery>
+			<JoinSource>CustTable</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<AllowCreate>No</AllowCreate>
+			<AllowDelete>No</AllowDelete>
+			<AllowEdit>No</AllowEdit>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>mzkCustAgingLegalEntity1</Name>
+			<Table>mzkCustAgingLegalEntityView</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CustAging</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfAmountDueMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfAmountDueMstSecondary</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfCreditLimitMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfCreditRemainingMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfDisputedTransactionBalanceMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfDisputedTransactionCount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfOpenOrderBalanceMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>SumOfPackingSlipBalanceMst</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustTable</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>DirPartyTable</Name>
+			<Table>DirPartyTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_EntityType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_FirstName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_FirstNameKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_GenerationalSuffix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_INN__RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_InstanceRelationTypeName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_LastName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_LastNameKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Memo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_MiddleName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_NameSequence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PartyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PersonNameKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PersonNameOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PhoneticName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Prefix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_ProfessionalSuffix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_RelationTypeName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Salutation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Type</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KnownAs</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LanguageId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NameAlias</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartyNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryAddressLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactEmail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactFax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactPhone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactTelex</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactURL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustTable</JoinSource>
+			<LinkType>InnerJoin</LinkType>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources>
+				<AxFormDataSourceDerived>
+					<Name>DirPartyTable_DirPerson</Name>
+					<Table>DirPerson</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>AnniversaryDay</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>AnniversaryMonth</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>AnniversaryYear</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>BirthDay</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>BirthMonth</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>BirthYear</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ChildrenNames</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>CommunicatorSignIn</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_AnniversaryDate</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_BirthDate</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_DirPerson_Shadow_DataAreaId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_SIPElectronicAddressType</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Gender</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Hobbies</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Initials</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>MaritalStatus</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>NameSequence</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Partition</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PersonalSuffix</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PersonalTitle</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticFirstName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticLastName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticMiddleName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ProfessionalSuffix</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ProfessionalTitle</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources />
+				</AxFormDataSourceDerived>
+				<AxFormDataSourceDerived>
+					<Name>DirPartyTable_DirOrganizationBase</Name>
+					<Table>DirOrganizationBase</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>DEL_DirOrgBase_Shadow_DataAreaId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_RelationTypeName_DirOrganizationBase</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DunsNumberRecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Partition</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources>
+						<AxFormDataSourceDerived>
+							<Name>DirPartyTable_OMInternalOrganization</Name>
+							<Table>OMInternalOrganization</Table>
+							<Fields>
+								<AxFormDataSourceField>
+									<DataField>DEL_RelationTypeName_OMInternalOrg</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>DEL_Shadow_DataAreaId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>OrganizationType</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>Partition</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>RecId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>TableId</DataField>
+								</AxFormDataSourceField>
+							</Fields>
+							<ReferencedDataSources />
+							<DerivedDataSources>
+								<AxFormDataSourceDerived>
+									<Name>DirPartyTable_OMOperatingUnit</Name>
+									<Table>OMOperatingUnit</Table>
+									<Fields>
+										<AxFormDataSourceField>
+											<DataField>DEL_OMOperatingUnit_Shadow_DataAreaId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>HcmWorker</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OMOperatingUnitNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OMOperatingUnitType</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Partition</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RecId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TableId</DataField>
+										</AxFormDataSourceField>
+									</Fields>
+									<ReferencedDataSources />
+									<DerivedDataSources />
+								</AxFormDataSourceDerived>
+								<AxFormDataSourceDerived>
+									<Name>DirPartyTable_OMTeam</Name>
+									<Table>OMTeam</Table>
+									<Fields>
+										<AxFormDataSourceField>
+											<DataField>DEL_OMTeam_Shadow_DataAreaId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Description</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IsActive</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Partition</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RecId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TableId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TeamAdministrator</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TeamMembershipCriterion</DataField>
+										</AxFormDataSourceField>
+									</Fields>
+									<ReferencedDataSources />
+									<DerivedDataSources />
+								</AxFormDataSourceDerived>
+								<AxFormDataSourceDerived>
+									<Name>DirPartyTable_CompanyInfo</Name>
+									<Table>CompanyInfo</Table>
+									<Fields>
+										<AxFormDataSourceField>
+											<DataField>Accountant_LT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>AccountingPersonnel_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>AccountOfficeRefNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ActivityCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>AddrFormat</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Bank</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BankAcctUsedFor1099</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BankCentralBankPurposeCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BankCentralBankPurposeText</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BranchId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BranchNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessActivity_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessActivityDesc_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessCommencedDate_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessInitialCapital_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessItem_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessNumber_CA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CertifiedTaxAccountant_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CNAE_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CombinedFedStateFiler</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CommercialRegister</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CommercialRegisterInsetNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CommercialRegisterSection</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyNAFCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyRegComFR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyRepresentative_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyType_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ConversionDate</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CoRegNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CUC_IT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Curp_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CustomsCustomerNumber_FI</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CustomsLicenseNumber_FI</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DashboardImageType</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DataArea</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DBA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AccountingBookType_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AccountingOrigin_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Address</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AddressBuilding_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AddressComplement_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AddressNumber_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AssessingOfficerNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Building_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CCMNum_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CellularPhone</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CircleNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_City</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CNPJCPFNum_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CodeOKDP_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CodeOKPO_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Commissionarate_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CompanyIdNAF</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CountryRegionId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_County</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CurrencyCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_DDOCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_DDORegNum_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Dimension_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Director_EE</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_DistrictName_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Division_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ECCNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Email</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_EnableNorway</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_EstablishmentType_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Estate_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_EuroCurrencyCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ExciseType_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_FallbackInventLocationId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_FallbackInventLocationId1_41</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Features_W</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_FiscalCalendar</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Flat_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_GBTIndustry_CN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_GBTOrgNum_CN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_GBTOrgType_CN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IECNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IENum_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IMNSCode_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IMNSName_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_INN_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_KPPU_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_LanguageId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_MinistryCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_MinistryName_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_MinistryType_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModifiedBy</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModifiedDate</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModifiedDateTime</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModTime</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModTime_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Name</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_OGRN_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_OKATO_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_OrganizationNum_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Pager</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PAOCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PAORegNum_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId1</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId2</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId3</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId4</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PermanentAccountNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PermanentAccountStatus_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Phone</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PhoneLocal</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Range_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_REntryDate</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SalesTaxRegistrationNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SecondaryCurrencyCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SettlementId_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SMS</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_State</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_StateCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_STCNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Street</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_StreetId_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TAN_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TeleFax</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Telex</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TIN_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TownId_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TradeName_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TributarySubstitutionRegistry_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TypeOfDeductor_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_URL</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_UseHolidayCalendar_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_UseSeveralAddressFormatTypes_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_WardNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ZipCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DVRid</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>EeEnablePersonalDataReadLog</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>EnterpriseCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>EnterpriseNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FICreditorID_DK</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FileNumber_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FiscalCode_IT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ForeignEntityIndicator</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FSS_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FSSAccount_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Giro</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>GiroContract</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>GiroContractAccount</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Head_LT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ImportVATNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ImportVATNumBranchId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IntrastatCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IsConsolidationCompany</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IsEliminationCompany</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IssuingSignature</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Key</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LastFilingIndicator</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalFormFR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalNature_IT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentative_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentativeCurp_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentativeName_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentativeRfc_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LocalizationCountryRegionCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>NameControl</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OrganizationLegalForm_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OrgId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PackMaterialFeeLicenseNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Partition</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction1</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction2</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction3</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction4</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymRoutingDNB</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymTraderNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PersonInCharge_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PFRegNum_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PlanningCompany</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintCorrInvoiceLabel_DE</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintCorrInvoiceLabelEffDate_DE</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintEnterpriseregister_NO</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintINNKPPInAddress_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RAlienCorpCountry</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RAlienCorpName</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RecId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RegNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Resident_W</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Rfc_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RFullName</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ShippingCalendarId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>SiaCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>SoftwareIdentificationCode_CA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>StateInscription_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>SubordinateCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TableId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Tax1099RegNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TaxAuthority_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TaxGSTHSTAccountId_CA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TaxRepresentative</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TCC</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TemplateFolder_W</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>UPSNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>validate1099OnEntry</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>VATNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>VATNumBranchId</DataField>
+										</AxFormDataSourceField>
+									</Fields>
+									<ReferencedDataSources />
+									<DerivedDataSources />
+								</AxFormDataSourceDerived>
+							</DerivedDataSources>
+						</AxFormDataSourceDerived>
+						<AxFormDataSourceDerived>
+							<Name>DirPartyTable_DirOrganization</Name>
+							<Table>DirOrganization</Table>
+							<Fields>
+								<AxFormDataSourceField>
+									<DataField>ABC</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>DEL_DirOrganization_Shadow_DataAreaId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>NumberOfEmployees</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>OrgNumber</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>Partition</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>RecId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>TableId</DataField>
+								</AxFormDataSourceField>
+							</Fields>
+							<ReferencedDataSources />
+							<DerivedDataSources />
+						</AxFormDataSourceDerived>
+					</DerivedDataSources>
+				</AxFormDataSourceDerived>
+			</DerivedDataSources>
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>CustCollectionsContact</Name>
+			<Table>CustCollectionsContact</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AccountNum</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustTable</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>ContactPerson</Name>
+			<Table>ContactPerson</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>AssistantName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>AssistantPhone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>BillingInformation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Character</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ComputerNetworkName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactForParty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ContactPersonParentId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CustAccount</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DAXIntegrationId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Decision</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Department</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DirectMail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuGreeting1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuGreeting2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuIntro1</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DocuIntro2</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Function</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>GovernmentIDNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Imported</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Inactive</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LastEditAxDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Loyalty</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MainResponsibleWorker</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>MCRIsDefaultContact</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Memo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Mileage</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OfficeLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OrganizationalIDNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>OutlookCategories</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Party</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PayeeDocument_RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Profession</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Sensitivity</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Spouse</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TimeAvailableFrom</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TimeAvailableTo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Title</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VendRole</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>VIP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>WebRequestAccess</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustCollectionsContact</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<DataSourceLinks />
+			<DerivedDataSources />
+		</AxFormDataSource>
+		<AxFormDataSource xmlns="">
+			<Name>DirPartyTableContact</Name>
+			<Table>DirPartyTable</Table>
+			<Fields>
+				<AxFormDataSourceField>
+					<DataField>CreatedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>CreatedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_dataAreaId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_EntityType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_FirstName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_FirstNameKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_GenerationalSuffix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_INN__RU</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_InstanceRelationTypeName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_LastName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_LastNameKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Memo</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_MiddleName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_NameSequence</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PartyId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PersonNameKana_JP</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PersonNameOrder</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_PhoneticName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Prefix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_ProfessionalSuffix</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_RelationTypeName</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Salutation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>DEL_Type</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>InstanceRelationType</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>KnownAs</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>LanguageId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedBy</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>ModifiedDateTime</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Name</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>NameAlias</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>Partition</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PartyNumber</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryAddressLocation</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactEmail</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactFax</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactPhone</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactTelex</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>PrimaryContactURL</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>RecId</DataField>
+				</AxFormDataSourceField>
+				<AxFormDataSourceField>
+					<DataField>TableId</DataField>
+				</AxFormDataSourceField>
+			</Fields>
+			<ReferencedDataSources />
+			<JoinSource>CustTable</JoinSource>
+			<LinkType>OuterJoin</LinkType>
+			<InsertIfEmpty>No</InsertIfEmpty>
+			<DataSourceLinks />
+			<DerivedDataSources>
+				<AxFormDataSourceDerived>
+					<Name>DirPartyTableContact_DirOrganizationBase</Name>
+					<Table>DirOrganizationBase</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>DEL_DirOrgBase_Shadow_DataAreaId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_RelationTypeName_DirOrganizationBase</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DunsNumberRecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Partition</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources>
+						<AxFormDataSourceDerived>
+							<Name>DirPartyTableContact_DirOrganization</Name>
+							<Table>DirOrganization</Table>
+							<Fields>
+								<AxFormDataSourceField>
+									<DataField>ABC</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>DEL_DirOrganization_Shadow_DataAreaId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>NumberOfEmployees</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>OrgNumber</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>Partition</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>RecId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>TableId</DataField>
+								</AxFormDataSourceField>
+							</Fields>
+							<ReferencedDataSources />
+							<DerivedDataSources />
+						</AxFormDataSourceDerived>
+						<AxFormDataSourceDerived>
+							<Name>DirPartyTableContact_OMInternalOrganization</Name>
+							<Table>OMInternalOrganization</Table>
+							<Fields>
+								<AxFormDataSourceField>
+									<DataField>DEL_RelationTypeName_OMInternalOrg</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>DEL_Shadow_DataAreaId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>OrganizationType</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>Partition</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>RecId</DataField>
+								</AxFormDataSourceField>
+								<AxFormDataSourceField>
+									<DataField>TableId</DataField>
+								</AxFormDataSourceField>
+							</Fields>
+							<ReferencedDataSources />
+							<DerivedDataSources>
+								<AxFormDataSourceDerived>
+									<Name>DirPartyTableContact_OMOperatingUnit</Name>
+									<Table>OMOperatingUnit</Table>
+									<Fields>
+										<AxFormDataSourceField>
+											<DataField>DEL_OMOperatingUnit_Shadow_DataAreaId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>HcmWorker</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OMOperatingUnitNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OMOperatingUnitType</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Partition</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RecId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TableId</DataField>
+										</AxFormDataSourceField>
+									</Fields>
+									<ReferencedDataSources />
+									<DerivedDataSources />
+								</AxFormDataSourceDerived>
+								<AxFormDataSourceDerived>
+									<Name>DirPartyTableContact_OMTeam</Name>
+									<Table>OMTeam</Table>
+									<Fields>
+										<AxFormDataSourceField>
+											<DataField>DEL_OMTeam_Shadow_DataAreaId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Description</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IsActive</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Partition</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RecId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TableId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TeamAdministrator</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TeamMembershipCriterion</DataField>
+										</AxFormDataSourceField>
+									</Fields>
+									<ReferencedDataSources />
+									<DerivedDataSources />
+								</AxFormDataSourceDerived>
+								<AxFormDataSourceDerived>
+									<Name>DirPartyTableContact_CompanyInfo</Name>
+									<Table>CompanyInfo</Table>
+									<Fields>
+										<AxFormDataSourceField>
+											<DataField>Accountant_LT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>AccountingPersonnel_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>AccountOfficeRefNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ActivityCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>AddrFormat</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Bank</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BankAcctUsedFor1099</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BankCentralBankPurposeCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BankCentralBankPurposeText</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BranchId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BranchNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessActivity_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessActivityDesc_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessCommencedDate_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessInitialCapital_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessItem_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>BusinessNumber_CA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CertifiedTaxAccountant_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CNAE_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CombinedFedStateFiler</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CommercialRegister</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CommercialRegisterInsetNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CommercialRegisterSection</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyNAFCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyRegComFR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyRepresentative_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CompanyType_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ConversionDate</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CoRegNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CUC_IT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Curp_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CustomsCustomerNumber_FI</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>CustomsLicenseNumber_FI</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DashboardImageType</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DataArea</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DBA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AccountingBookType_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AccountingOrigin_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Address</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AddressBuilding_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AddressComplement_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AddressNumber_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_AssessingOfficerNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Building_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CCMNum_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CellularPhone</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CircleNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_City</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CNPJCPFNum_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CodeOKDP_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CodeOKPO_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Commissionarate_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CompanyIdNAF</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CountryRegionId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_County</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_CurrencyCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_DDOCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_DDORegNum_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Dimension_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Director_EE</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_DistrictName_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Division_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ECCNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Email</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_EnableNorway</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_EstablishmentType_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Estate_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_EuroCurrencyCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ExciseType_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_FallbackInventLocationId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_FallbackInventLocationId1_41</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Features_W</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_FiscalCalendar</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Flat_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_GBTIndustry_CN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_GBTOrgNum_CN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_GBTOrgType_CN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IECNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IENum_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IMNSCode_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_IMNSName_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_INN_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_KPPU_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_LanguageId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_MinistryCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_MinistryName_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_MinistryType_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModifiedBy</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModifiedDate</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModifiedDateTime</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModTime</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ModTime_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Name</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_OGRN_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_OKATO_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_OrganizationNum_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Pager</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PAOCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PAORegNum_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId1</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId2</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId3</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PaymInstructionId4</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PermanentAccountNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PermanentAccountStatus_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Phone</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_PhoneLocal</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Range_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_REntryDate</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SalesTaxRegistrationNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SecondaryCurrencyCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SettlementId_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_SMS</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_State</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_StateCode_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_STCNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Street</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_StreetId_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TAN_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TeleFax</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_Telex</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TIN_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TownId_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TradeName_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TributarySubstitutionRegistry_BR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_TypeOfDeductor_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_URL</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_UseHolidayCalendar_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_UseSeveralAddressFormatTypes_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_WardNumber_IN</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DEL_ZipCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>DVRid</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>EeEnablePersonalDataReadLog</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>EnterpriseCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>EnterpriseNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FICreditorID_DK</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FileNumber_SA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FiscalCode_IT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ForeignEntityIndicator</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FSS_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>FSSAccount_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Giro</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>GiroContract</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>GiroContractAccount</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Head_LT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ImportVATNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ImportVATNumBranchId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IntrastatCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IsConsolidationCompany</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IsEliminationCompany</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>IssuingSignature</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Key</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LastFilingIndicator</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalFormFR</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalNature_IT</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentative_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentativeCurp_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentativeName_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LegalRepresentativeRfc_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>LocalizationCountryRegionCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>NameControl</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OrganizationLegalForm_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>OrgId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PackMaterialFeeLicenseNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Partition</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction1</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction2</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction3</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymInstruction4</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymRoutingDNB</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PaymTraderNumber</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PersonInCharge_JP</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PFRegNum_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PlanningCompany</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintCorrInvoiceLabel_DE</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintCorrInvoiceLabelEffDate_DE</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintEnterpriseregister_NO</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>PrintINNKPPInAddress_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RAlienCorpCountry</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RAlienCorpName</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RecId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RegNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Resident_W</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Rfc_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>RFullName</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>ShippingCalendarId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>SiaCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>SoftwareIdentificationCode_CA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>StateInscription_MX</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>SubordinateCode</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TableId</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>Tax1099RegNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TaxAuthority_RU</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TaxGSTHSTAccountId_CA</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TaxRepresentative</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TCC</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>TemplateFolder_W</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>UPSNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>validate1099OnEntry</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>VATNum</DataField>
+										</AxFormDataSourceField>
+										<AxFormDataSourceField>
+											<DataField>VATNumBranchId</DataField>
+										</AxFormDataSourceField>
+									</Fields>
+									<ReferencedDataSources />
+									<DerivedDataSources />
+								</AxFormDataSourceDerived>
+							</DerivedDataSources>
+						</AxFormDataSourceDerived>
+					</DerivedDataSources>
+				</AxFormDataSourceDerived>
+				<AxFormDataSourceDerived>
+					<Name>DirPartyTableContact_DirPerson</Name>
+					<Table>DirPerson</Table>
+					<Fields>
+						<AxFormDataSourceField>
+							<DataField>AnniversaryDay</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>AnniversaryMonth</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>AnniversaryYear</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>BirthDay</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>BirthMonth</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>BirthYear</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ChildrenNames</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>CommunicatorSignIn</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_AnniversaryDate</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_BirthDate</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_DirPerson_Shadow_DataAreaId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>DEL_SIPElectronicAddressType</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Gender</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Hobbies</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Initials</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>MaritalStatus</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>NameSequence</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>Partition</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PersonalSuffix</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PersonalTitle</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticFirstName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticLastName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>PhoneticMiddleName</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ProfessionalSuffix</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>ProfessionalTitle</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>RecId</DataField>
+						</AxFormDataSourceField>
+						<AxFormDataSourceField>
+							<DataField>TableId</DataField>
+						</AxFormDataSourceField>
+					</Fields>
+					<ReferencedDataSources />
+					<DerivedDataSources />
+				</AxFormDataSourceDerived>
+			</DerivedDataSources>
+		</AxFormDataSource>
+	</DataSources>
+	<Design>
+		<Pattern xmlns="">FormPartSectionList</Pattern>
+		<PatternVersion xmlns="">1.1</PatternVersion>
+		<SetCompany xmlns="">No</SetCompany>
+		<Style xmlns="">FormPart</Style>
+		<Controls xmlns="">
+			<AxFormControl xmlns=""
+				i:type="AxFormGroupControl">
+				<Name>Filterpane</Name>
+				<ExtendedStyle>hubPartGrid_header</ExtendedStyle>
+				<Pattern>FiltersAndToolbarInline</Pattern>
+				<PatternVersion>1.0</PatternVersion>
+				<Type>Group</Type>
+				<WidthMode>SizeToAvailable</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormGroupControl">
+						<Name>FilterGroup</Name>
+						<Type>Group</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl>
+								<Name>QuickFilter</Name>
+								<FormControlExtension>
+									<Name>QuickFilterControl</Name>
+									<ExtensionComponents />
+									<ExtensionProperties>
+										<AxFormControlExtensionProperty>
+											<Name>targetControlName</Name>
+											<Type>String</Type>
+											<Value>AgingGrid</Value>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>placeholderText</Name>
+											<Type>String</Type>
+										</AxFormControlExtensionProperty>
+										<AxFormControlExtensionProperty>
+											<Name>defaultColumnName</Name>
+											<Type>String</Type>
+											<Value>Customer_AccountNum</Value>
+										</AxFormControlExtensionProperty>
+									</ExtensionProperties>
+								</FormControlExtension>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>PoolFilter</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Label>@SYS10507</Label>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormStringControl">
+								<Name>AgingPeriodFilter</Name>
+								<AutoDeclaration>Yes</AutoDeclaration>
+								<Type>String</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<ExtendedDataType>CustVendReportName</ExtendedDataType>
+								<LookupOnly>Yes</LookupOnly>
+							</AxFormControl>
+						</Controls>
+						<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+						<FrameType>None</FrameType>
+						<ViewEditMode>Edit</ViewEditMode>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormActionPaneControl">
+						<Name>ToolActions</Name>
+						<Type>ActionPane</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<Controls>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>Actions</Name>
+								<Type>ButtonGroup</Type>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormDropDialogButtonControl">
+										<Name>CustCollectionsNewActivityDropDialog</Name>
+										<Type>DropDialogButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>CustTable</DataSource>
+										<MenuItemName>CustCollectionsNewActivityDropDialog</MenuItemName>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@AccountsReceivable:CustCollectionsNewActivityDropDialog</Text>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>CustAgingSnapshotCustTable</Name>
+										<Type>MenuFunctionButton</Type>
+										<FormControlExtension
+											i:nil="true" />
+										<DataSource>CustTable</DataSource>
+										<MenuItemName>CustAgingSnapshotCustTable</MenuItemName>
+										<MenuItemType>Action</MenuItemType>
+										<NeedsRecord>Yes</NeedsRecord>
+									</AxFormControl>
+									<AxFormControl xmlns=""
+										i:type="AxFormDropDialogButtonControl">
+										<Name>EMailStatementAction</Name>
+										<AutoDeclaration>Yes</AutoDeclaration>
+										<ElementPosition>1288490187</ElementPosition>
+										<Enabled>No</Enabled>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>DropDialogButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ButtonDisplay>TextOnly</ButtonDisplay>
+										<MenuItemName>CustCollectionsEmailStatement</MenuItemName>
+										<MultiSelect>Yes</MultiSelect>
+										<NeedsRecord>Yes</NeedsRecord>
+										<Text>@AccountsReceivable:CustCollectionsEmailStatementAction</Text>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+							<AxFormControl xmlns=""
+								i:type="AxFormButtonGroupControl">
+								<Name>HiddenBtnGroup</Name>
+								<Type>ButtonGroup</Type>
+								<Visible>No</Visible>
+								<FormControlExtension
+									i:nil="true" />
+								<Controls>
+									<AxFormControl xmlns=""
+										i:type="AxFormMenuFunctionButtonControl">
+										<Name>Collections</Name>
+										<ElementPosition>1073741823</ElementPosition>
+										<FilterExpression>%1</FilterExpression>
+										<HeightMode>Auto</HeightMode>
+										<Type>MenuFunctionButton</Type>
+										<VerticalSpacing>-1</VerticalSpacing>
+										<Visible>No</Visible>
+										<WidthMode>Auto</WidthMode>
+										<FormControlExtension
+											i:nil="true" />
+										<ButtonDisplay>TextOnly</ButtonDisplay>
+										<DataSource>CustTable</DataSource>
+										<MenuItemName>CustCollections</MenuItemName>
+									</AxFormControl>
+								</Controls>
+							</AxFormControl>
+						</Controls>
+						<Style>Strip</Style>
+					</AxFormControl>
+				</Controls>
+				<ArrangeMethod>HorizontalLeft</ArrangeMethod>
+				<Breakable>No</Breakable>
+				<FrameType>None</FrameType>
+			</AxFormControl>
+			<AxFormControl xmlns=""
+				i:type="AxFormGridControl">
+				<Name>AgingGrid</Name>
+				<AllowEdit>No</AllowEdit>
+				<AutoDeclaration>Yes</AutoDeclaration>
+				<Type>Grid</Type>
+				<WidthMode>SizeToContent</WidthMode>
+				<FormControlExtension
+					i:nil="true" />
+				<Controls>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>Customer_AccountNum</Name>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AccountNum</DataField>
+						<DataSource>CustTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormStringControl">
+						<Name>CustomerName_DirParty</Name>
+						<PreviewPartRef>CollectionsWorkspaceCustEnhancedPreview</PreviewPartRef>
+						<Type>String</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>Name</DataField>
+						<DataSource>DirPartyTable</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging_AmountDueMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SumOfAmountDueMst</DataField>
+						<DataSource>mzkCustAgingLegalEntity1</DataSource>
+						<Label>@AccountsReceivable:CustAgingListGridFormPartBalanceDueGridColumn</Label>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging_AmountDueMstSecondary</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>SumOfAmountDueMstSecondary</DataField>
+						<DataSource>mzkCustAgingLegalEntity1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormImageControl">
+						<Name>CustTable_AgingIndicatot</Name>
+						<Type>Image</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataMethod>showAgingIndicator</DataMethod>
+						<DataSource>CustTable</DataSource>
+						<Label>@SYS153518</Label>
+						<ShowLabel>No</ShowLabel>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAgingLine1_OpenBalanceMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod1</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAgingLine2_OpenBalanceMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod2</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAgingLine3_OpenBalanceMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod3</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAgingLine4_OpenBalanceMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod4</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAgingLine5_OpenBalanceMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod5</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAgingLine6_OpenBalanceMst</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod6</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging1_OpenBalanceMSTSecondary</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod1ReportingCurrency</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging2_OpenBalanceMSTSecondary</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod2ReportingCurrency</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging3_OpenBalanceMSTSecondary</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod3ReportingCurrency</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging4_OpenBalanceMSTSecondary</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod4ReportingCurrency</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging5_OpenBalanceMSTSecondary</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod5ReportingCurrency</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+					<AxFormControl xmlns=""
+						i:type="AxFormRealControl">
+						<Name>CustAging6_OpenBalanceMSTSecondary</Name>
+						<AutoDeclaration>Yes</AutoDeclaration>
+						<Type>Real</Type>
+						<FormControlExtension
+							i:nil="true" />
+						<DataField>AgingPeriod6ReportingCurrency</DataField>
+						<DataSource>mzkCustAging1</DataSource>
+					</AxFormControl>
+				</Controls>
+				<DataSource>CustTable</DataSource>
+				<DefaultAction>Collections</DefaultAction>
+			</AxFormControl>
+		</Controls>
+	</Design>
+	<Parts />
+</AxForm>
