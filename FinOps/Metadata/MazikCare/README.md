@@ -35,6 +35,8 @@ MazikCare/
 │   ├── AxForm/            # User interface forms
 │   ├── AxLabelFile/       # Localization labels
 │   ├── AxResource/        # Resources (HTML, CSS, JS)
+│   │   └── ResourceContent/Data/
+│   │       └── Newtonsoft.Json.dll  # JSON library (see THIRD-PARTY-LICENSES.md)
 │   ├── AxSecurityRole/    # Security roles and permissions
 │   ├── AxTable/           # Data tables
 │   └── ...                # Other model elements
@@ -67,6 +69,11 @@ MazikCare depends on the following standard D365FO modules:
   - Version: 5.x (check THIRD-PARTY-LICENSES.md for details)
   - License: AGPL/Commercial (see THIRD-PARTY-LICENSES.md)
   - Used for: Generating PDF reports and documents
+
+- **Newtonsoft.Json** (Newtonsoft.Json.dll) - JSON library
+  - Version: 10.x-13.x (check THIRD-PARTY-LICENSES.md for details)
+  - License: MIT (see THIRD-PARTY-LICENSES.md)
+  - Used for: JSON serialization and deserialization in web resources
 
 ## Setup and Installation
 

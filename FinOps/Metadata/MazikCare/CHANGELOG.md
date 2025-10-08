@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dependencies
 - D365FO ApplicationSuite and related modules
 - iTextSharp library (Bin/itextsharp.dll) for PDF generation
+- Newtonsoft.Json library (MazikCare/AxResource/ResourceContent/Data/Newtonsoft.Json.dll) for JSON handling
 
 ### Technical Details
 - Model ID: 895972557

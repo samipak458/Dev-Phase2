@@ -101,6 +101,73 @@ Authors: Bruno Lowagie, Paulo Soares, et al.
 
 ---
 
+## Newtonsoft.Json (Json.NET)
+
+**Location:** `MazikCare/AxResource/ResourceContent/Data/Newtonsoft.Json.dll`  
+**Purpose:** JSON serialization and deserialization library  
+**Website:** https://www.newtonsoft.com/json
+
+### License Information
+
+Newtonsoft.Json (also known as Json.NET) is distributed under the MIT License, which is a permissive open-source license.
+
+- **License:** MIT License
+- **Terms:** https://licenses.nuget.org/MIT
+- **Copyright:** Copyright (c) 2007 James Newton-King
+
+### MIT License Summary
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.
+
+**Key Points:**
+- Free to use in commercial and non-commercial projects
+- Can be modified and distributed
+- No requirement to share source code
+- Must include copyright notice and license text
+
+### Version Information
+
+- **File:** Newtonsoft.Json.dll
+- **Size:** ~514 KB
+- **Estimated Version:** 10.x-13.x (exact version should be verified)
+- **Last Updated:** Check file properties or assembly version
+
+### Important Notes
+
+⚠️ **Action Required:**
+1. Verify the exact version: Use ILSpy or check assembly properties
+2. Ensure the MIT license notice is retained if distributing
+3. Consider using NuGet package for better version tracking
+4. Check for security updates and CVEs for the specific version
+
+### Copyright Notice
+
+Newtonsoft.Json:
+```
+The MIT License (MIT)
+Copyright (c) 2007 James Newton-King
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
 ## D365FO Module Dependencies
 
 The MazikCare model depends on standard Microsoft Dynamics 365 Finance and Operations modules. These are part of the D365FO platform and are licensed separately under Microsoft's commercial terms.
@@ -127,7 +194,9 @@ The MazikCare model depends on standard Microsoft Dynamics 365 Finance and Opera
 - [ ] Confirmed appropriate license (AGPL or commercial) for iTextSharp
 - [ ] Documented source of iTextSharp binary
 - [ ] Maintained proof of commercial license (if applicable)
-- [ ] Considered migration to NuGet package management
+- [ ] Verified Newtonsoft.Json version in `MazikCare/AxResource/ResourceContent/Data/Newtonsoft.Json.dll`
+- [ ] Confirmed MIT license compliance for Newtonsoft.Json
+- [ ] Considered migration to NuGet package management for both libraries
 - [ ] Scheduled regular dependency audits
 - [ ] Verified no other unlicensed third-party dependencies exist
 
