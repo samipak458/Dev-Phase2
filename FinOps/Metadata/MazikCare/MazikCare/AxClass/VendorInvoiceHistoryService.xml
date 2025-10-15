@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>VendorInvoiceHistoryService</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+/// <summary>
+/// Service class for managing vendor invoice history data
+/// </summary>
+public class VendorInvoiceHistoryService
+{
+}
+		]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>populateInvoiceHistory</Name>
+				<Source><![CDATA[
+/// <summary>
+/// Populate the vendor invoice history table with data from vendor invoice journal
+/// </summary>
+public static void populateInvoiceHistory()
+{
+    VendInvoiceJour vendInvoiceJour;
+    VendTable vendTable;
+    VendorInvoiceHistory vendorInvoiceHistory;
+    LogisticsPostalAddress postalAddress;
+    
+    ttsbegin;
+    
+    // Clear existing data
+    delete_from vendorInvoiceHistory;
+    
+    while select vendInvoiceJour
+        join vendTable
+        where vendTable.AccountNum == vendInvoiceJour.OrderAccount
+        outer join postalAddress
+        where postalAddress.Location == vendTable.PrimaryAddressLocation
+    {
+        vendorInvoiceHistory.clear();
+        vendorInvoiceHistory.VendorAccount = vendInvoiceJour.OrderAccount;
+        vendorInvoiceHistory.VendorName = vendTable.name();
+        vendorInvoiceHistory.InvoiceNumber = vendInvoiceJour.InvoiceId;
+        vendorInvoiceHistory.InvoiceAmount = vendInvoiceJour.InvoiceAmountMST;
+        vendorInvoiceHistory.InvoiceDate = vendInvoiceJour.InvoiceDate;
+        vendorInvoiceHistory.CurrencyCode = vendInvoiceJour.CurrencyCode;
+        vendorInvoiceHistory.InvoiceStatus = (vendInvoiceJour.InvoiceAmountMST > 0) ? NoYes::Yes : NoYes::No;
+        
+        // Format address
+        if (postalAddress)
+        {
+            vendorInvoiceHistory.InvoiceAddress = strFmt("%1, %2, %3", 
+                postalAddress.Street, 
+                postalAddress.City, 
+                postalAddress.State);
+        }
+        else
+        {
+            vendorInvoiceHistory.InvoiceAddress = vendTable.address();
+        }
+        
+        vendorInvoiceHistory.insert();
+    }
+    
+    ttscommit;
+    
+    info("Vendor invoice history data populated successfully.");
+}
+				]]></Source>
+			</Method>
+			<Method>
+				<Name>refreshInvoiceHistory</Name>
+				<Source><![CDATA[
+/// <summary>
+/// Refresh invoice history for a specific vendor
+/// </summary>
+/// <param name="_vendorAccount">Vendor account to refresh</param>
+public static void refreshInvoiceHistory(VendAccount _vendorAccount = '')
+{
+    VendInvoiceJour vendInvoiceJour;
+    VendTable vendTable;
+    VendorInvoiceHistory vendorInvoiceHistory;
+    LogisticsPostalAddress postalAddress;
+    
+    ttsbegin;
+    
+    // Delete existing records for the vendor if specified
+    if (_vendorAccount)
+    {
+        delete_from vendorInvoiceHistory
+            where vendorInvoiceHistory.VendorAccount == _vendorAccount;
+    }
+    
+    while select vendInvoiceJour
+        where (!_vendorAccount || vendInvoiceJour.OrderAccount == _vendorAccount)
+        join vendTable
+        where vendTable.AccountNum == vendInvoiceJour.OrderAccount
+        outer join postalAddress
+        where postalAddress.Location == vendTable.PrimaryAddressLocation
+    {
+        vendorInvoiceHistory.clear();
+        vendorInvoiceHistory.VendorAccount = vendInvoiceJour.OrderAccount;
+        vendorInvoiceHistory.VendorName = vendTable.name();
+        vendorInvoiceHistory.InvoiceNumber = vendInvoiceJour.InvoiceId;
+        vendorInvoiceHistory.InvoiceAmount = vendInvoiceJour.InvoiceAmountMST;
+        vendorInvoiceHistory.InvoiceDate = vendInvoiceJour.InvoiceDate;
+        vendorInvoiceHistory.CurrencyCode = vendInvoiceJour.CurrencyCode;
+        vendorInvoiceHistory.InvoiceStatus = (vendInvoiceJour.InvoiceAmountMST > 0) ? NoYes::Yes : NoYes::No;
+        
+        // Format address
+        if (postalAddress)
+        {
+            vendorInvoiceHistory.InvoiceAddress = strFmt("%1, %2, %3", 
+                postalAddress.Street, 
+                postalAddress.City, 
+                postalAddress.State);
+        }
+        else
+        {
+            vendorInvoiceHistory.InvoiceAddress = vendTable.address();
+        }
+        
+        vendorInvoiceHistory.insert();
+    }
+    
+    ttscommit;
+    
+    if (_vendorAccount)
+    {
+        info(strFmt("Invoice history refreshed for vendor %1", _vendorAccount));
+    }
+    else
+    {
+        info("All vendor invoice history data refreshed successfully.");
+    }
+}
+				]]></Source>
+			</Method>
+			<Method>
+				<Name>getInvoiceHistoryForVendor</Name>
+				<Source><![CDATA[
+/// <summary>
+/// Get invoice history for a specific vendor
+/// </summary>
+/// <param name="_vendorAccount">Vendor account</param>
+/// <returns>Query for vendor invoice history</returns>
+public static Query getInvoiceHistoryForVendor(VendAccount _vendorAccount)
+{
+    Query query;
+    QueryBuildDataSource qbds;
+    QueryBuildRange qbr;
+    
+    query = new Query();
+    qbds = query.addDataSource(tableNum(VendorInvoiceHistory));
+    
+    if (_vendorAccount)
+    {
+        qbr = qbds.addRange(fieldNum(VendorInvoiceHistory, VendorAccount));
+        qbr.value(_vendorAccount);
+    }
+    
+    return query;
+}
+				]]></Source>
+			</Method>
+			<Method>
+				<Name>validateInvoiceHistory</Name>
+				<Source><![CDATA[
+/// <summary>
+/// Validate invoice history data
+/// </summary>
+/// <param name="_vendorInvoiceHistory">Record to validate</param>
+/// <returns>True if valid</returns>
+public static boolean validateInvoiceHistory(VendorInvoiceHistory _vendorInvoiceHistory)
+{
+    boolean isValid = true;
+    
+    if (!_vendorInvoiceHistory.VendorAccount)
+    {
+        error("Vendor account is required");
+        isValid = false;
+    }
+    
+    if (!_vendorInvoiceHistory.InvoiceNumber)
+    {
+        error("Invoice number is required");
+        isValid = false;
+    }
+    
+    if (_vendorInvoiceHistory.InvoiceDate > today())
+    {
+        warning("Invoice date is in the future");
+    }
+    
+    return isValid;
+}
+				]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>
