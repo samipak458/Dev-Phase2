@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMP2PAgentMainMultiThreadBatchJob</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMP2PAgentMainMultiThreadBatchJob extends RunBaseBatch implements BatchRetryable
+{
+    QueryRun                qQueryRun;
+    BatchHeader             batchHeader;
+    HMNumberOfThreads       numberOfThreads;
+    VendAccount             vendorAccount;
+    PurchaseType            purchaseType;
+    FromDate                fromDate;
+    ToDate                  toDate;
+    boolean                 autoApprove;
+    AmountMST               approvalThreshold;
+    DialogField             dlgNumberOfThreads, dlgVendorAccount, dlgFromDate, dlgToDate;
+    DialogRunbase           dlg;
+
+    #OCCRetryCount
+    #define.CurrentVersion(1)
+    #localmacro.CurrentList
+        numberOfThreads,
+        vendorAccount,
+        purchaseType,
+        fromDate,
+        toDate,
+        autoApprove,
+        approvalThreshold
+    #endmacro
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>construct</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Construct the P2P Agent class
+    /// </summary>
+    /// <returns>Return the class object</returns>
+    public server static HMP2PAgentMainMultiThreadBatchJob construct()
+    {
+        return new HMP2PAgentMainMultiThreadBatchJob();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>description</Name>
+				<Source><![CDATA[
+    static ClassDescription description()
+    {
+        return "P2P Agent - Procure to Pay Automated Processing";
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>run</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Main processing method for P2P Agent
+    /// </summary>
+    public void run()
+    {
+        HMP2PDataPrepMultiThreadBatchJob        dataPrep;
+        HMP2PProcessingMultiThreadBatchJob      processor;
+        RecId                                   batchJobId;
+        int                                     recordsToProcess, perThreadRecordsRound;
+        real                                    perThreadRecords;
+        
+        try
+        {
+            ttsbegin;
+            
+            // Step 1: Data Preparation Phase
+            info("P2P Agent: Starting data preparation phase...");
+            dataPrep = new HMP2PDataPrepMultiThreadBatchJob();
+            dataPrep.parmFromDate(fromDate);
+            dataPrep.parmToDate(toDate);
+            dataPrep.parmVendorAccount(vendorAccount);
+            dataPrep.parmPurchaseType(purchaseType);
+            dataPrep.run();
+            
+            // Step 2: Get count of records to process
+            recordsToProcess = this.getRecordsToProcessCount();
+            
+            if (recordsToProcess > 0)
+            {
+                info(strFmt("P2P Agent: Found %1 records to process", recordsToProcess));
+                
+                // Step 3: Calculate records per thread
+                perThreadRecords = recordsToProcess / numberOfThreads;
+                perThreadRecordsRound = real2int(perThreadRecords);
+                
+                // Step 4: Start processing threads
+                this.startProcessingThreads(perThreadRecordsRound, recordsToProcess);
+                
+                info("P2P Agent: Processing completed successfully");
+            }
+            else
+            {
+                info("P2P Agent: No records found to process");
+            }
+            
+            ttscommit;
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error("P2P Agent: Processing failed");
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>getRecordsToProcessCount</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Get count of records that need P2P processing
+    /// </summary>
+    /// <returns>Number of records to process</returns>
+    private int getRecordsToProcessCount()
+    {
+        // This would query your custom staging table or use existing purchase tables
+        // Example implementation:
+        
+        PurchTable      purchTable;
+        int             count = 0;
+        
+        select count(RecId) from purchTable
+            where purchTable.DocumentState == VersioningDocumentState::Approved
+            && purchTable.PurchStatus == PurchStatus::Received
+            && (!vendorAccount || purchTable.OrderAccount == vendorAccount)
+            && purchTable.CreatedDateTime >= DateTimeUtil::newDateTime(fromDate, 0)
+            && purchTable.CreatedDateTime <= DateTimeUtil::newDateTime(toDate, timeMax());
+            
+        count = purchTable.RecId;
+        
+        return count;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>startProcessingThreads</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Start multiple threads for P2P processing
+    /// </summary>
+    /// <param name="_perThreadRecords">Records per thread</param>
+    /// <param name="_totalRecords">Total records to process</param>
+    private void startProcessingThreads(int _perThreadRecords, int _totalRecords)
+    {
+        HMP2PProcessingMultiThreadBatchJob  processor;
+        BatchHeader                         batchHeader;
+        int                                 i, startRecord, endRecord;
+        
+        batchHeader = BatchHeader::construct(BatchRunType::Multithread);
+        batchHeader.parmCaption("P2P Agent Processing");
+        
+        for (i = 1; i <= numberOfThreads; i++)
+        {
+            startRecord = (i - 1) * _perThreadRecords + 1;
+            
+            if (i == numberOfThreads)
+            {
+                endRecord = _totalRecords; // Last thread handles remaining records
+            }
+            else
+            {
+                endRecord = i * _perThreadRecords;
+            }
+            
+            processor = new HMP2PProcessingMultiThreadBatchJob();
+            processor.parmFromDate(fromDate);
+            processor.parmToDate(toDate);
+            processor.parmVendorAccount(vendorAccount);
+            processor.parmAutoApprove(autoApprove);
+            processor.parmApprovalThreshold(approvalThreshold);
+            processor.parmStartRecord(startRecord);
+            processor.parmEndRecord(endRecord);
+            processor.parmThreadNumber(i);
+            
+            batchHeader.addRuntimeTask(processor, i);
+        }
+        
+        batchHeader.run();
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>pack</Name>
+				<Source><![CDATA[
+    public container pack()
+    {
+        return [#CurrentVersion, #CurrentList];
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>unpack</Name>
+				<Source><![CDATA[
+    public boolean unpack(container _packedClass)
+    {
+        Version version = RunBase::getVersion(_packedClass);
+        
+        switch (version)
+        {
+            case #CurrentVersion:
+                [version, #CurrentList] = _packedClass;
+                break;
+            default:
+                return false;
+        }
+        
+        return true;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmNumberOfThreads</Name>
+				<Source><![CDATA[
+    public HMNumberOfThreads parmNumberOfThreads(HMNumberOfThreads _numberOfThreads = numberOfThreads)
+    {
+        numberOfThreads = _numberOfThreads;
+        return numberOfThreads;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmFromDate</Name>
+				<Source><![CDATA[
+    public FromDate parmFromDate(FromDate _fromDate = fromDate)
+    {
+        fromDate = _fromDate;
+        return fromDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmToDate</Name>
+				<Source><![CDATA[
+    public ToDate parmToDate(ToDate _toDate = toDate)
+    {
+        toDate = _toDate;
+        return toDate;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>parmVendorAccount</Name>
+				<Source><![CDATA[
+    public VendAccount parmVendorAccount(VendAccount _vendorAccount = vendorAccount)
+    {
+        vendorAccount = _vendorAccount;
+        return vendorAccount;
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>

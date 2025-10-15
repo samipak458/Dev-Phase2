@@ -1,0 +1,393 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+	<Name>HMP2PProcessingBusinessLogic</Name>
+	<SourceCode>
+		<Declaration><![CDATA[
+class HMP2PProcessingBusinessLogic
+{
+    VendAccount     vendorAccount;
+    boolean         autoApprove;
+    AmountMST       approvalThreshold;
+    int             threadNumber;
+    RecId           batchJobLogHeader;
+}
+]]></Declaration>
+		<Methods>
+			<Method>
+				<Name>processInit</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Initialize processing parameters
+    /// </summary>
+    /// <param name="_threadNumber">Thread number</param>
+    /// <param name="_vendorAccount">Vendor account filter</param>
+    /// <param name="_autoApprove">Auto approval flag</param>
+    /// <param name="_approvalThreshold">Approval threshold amount</param>
+    public void processInit(int _threadNumber = 0, VendAccount _vendorAccount = '', boolean _autoApprove = false, AmountMST _approvalThreshold = 0)
+    {
+        threadNumber = _threadNumber;
+        vendorAccount = _vendorAccount;
+        autoApprove = _autoApprove;
+        approvalThreshold = _approvalThreshold;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processP2PRecords</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Process P2P records within the specified range
+    /// </summary>
+    /// <param name="_startRecord">Start record number</param>
+    /// <param name="_endRecord">End record number</param>
+    public void processP2PRecords(int _startRecord, int _endRecord)
+    {
+        PurchTable          purchTable;
+        VendInvoiceInfoTable vendInvoiceInfoTable;
+        PurchReqTable       purchReqTable;
+        int                 currentRecord = 0;
+        int                 processedCount = 0;
+        int                 errorCount = 0;
+        
+        try
+        {
+            // Process Purchase Orders
+            while select purchTable
+                where purchTable.DocumentState == VersioningDocumentState::Approved
+                && purchTable.PurchStatus == PurchStatus::Received
+                && (!vendorAccount || purchTable.OrderAccount == vendorAccount)
+            {
+                currentRecord++;
+                
+                if (currentRecord >= _startRecord && currentRecord <= _endRecord)
+                {
+                    if (this.processPurchaseOrder(purchTable))
+                    {
+                        processedCount++;
+                    }
+                    else
+                    {
+                        errorCount++;
+                    }
+                }
+                
+                if (currentRecord > _endRecord)
+                {
+                    break;
+                }
+            }
+            
+            info(strFmt("Thread %1: Processed %2 records, %3 errors", threadNumber, processedCount, errorCount));
+        }
+        catch (Exception::Error)
+        {
+            error(strFmt("Thread %1: Processing failed", threadNumber));
+        }
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>processPurchaseOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Process individual purchase order through P2P workflow
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <returns>True if successful</returns>
+    private boolean processPurchaseOrder(PurchTable _purchTable)
+    {
+        boolean result = false;
+        
+        try
+        {
+            ttsbegin;
+            
+            // Step 1: Validate purchase order
+            if (!this.validatePurchaseOrder(_purchTable))
+            {
+                ttsabort;
+                return false;
+            }
+            
+            // Step 2: Check if auto-approval criteria met
+            if (autoApprove && this.meetsAutoApprovalCriteria(_purchTable))
+            {
+                result = this.autoApprovePurchaseOrder(_purchTable);
+            }
+            else
+            {
+                // Step 3: Route for manual approval
+                result = this.routeForApproval(_purchTable);
+            }
+            
+            // Step 4: Update processing status
+            if (result)
+            {
+                this.updateProcessingStatus(_purchTable, 'Processed');
+            }
+            
+            ttscommit;
+        }
+        catch (Exception::Error)
+        {
+            ttsabort;
+            error(strFmt("Failed to process purchase order %1", _purchTable.PurchId));
+            result = false;
+        }
+        
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>validatePurchaseOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Validate purchase order for P2P processing
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <returns>True if valid</returns>
+    private boolean validatePurchaseOrder(PurchTable _purchTable)
+    {
+        boolean isValid = true;
+        
+        // Validation 1: Check if vendor exists and is active
+        VendTable vendTable = VendTable::find(_purchTable.OrderAccount);
+        if (!vendTable || vendTable.Blocked != CustVendorBlocked::No)
+        {
+            warning(strFmt("Vendor %1 is blocked or does not exist", _purchTable.OrderAccount));
+            isValid = false;
+        }
+        
+        // Validation 2: Check if purchase order has lines
+        PurchLine purchLine;
+        select firstOnly purchLine where purchLine.PurchId == _purchTable.PurchId;
+        if (!purchLine)
+        {
+            warning(strFmt("Purchase order %1 has no lines", _purchTable.PurchId));
+            isValid = false;
+        }
+        
+        // Validation 3: Check amount limits
+        if (_purchTable.TotalAmount <= 0)
+        {
+            warning(strFmt("Purchase order %1 has invalid amount", _purchTable.PurchId));
+            isValid = false;
+        }
+        
+        // Add more business-specific validations here
+        
+        return isValid;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>meetsAutoApprovalCriteria</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Check if purchase order meets auto-approval criteria
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <returns>True if meets criteria</returns>
+    private boolean meetsAutoApprovalCriteria(PurchTable _purchTable)
+    {
+        boolean meetsThreshold = false;
+        boolean meetsBusinessRules = false;
+        
+        // Check 1: Amount threshold
+        if (_purchTable.TotalAmount <= approvalThreshold)
+        {
+            meetsThreshold = true;
+        }
+        
+        // Check 2: Business rules (vendor rating, payment terms, etc.)
+        VendTable vendTable = VendTable::find(_purchTable.OrderAccount);
+        if (vendTable && vendTable.CreditRating >= 5) // Example criteria
+        {
+            meetsBusinessRules = true;
+        }
+        
+        // Check 3: Department/Category specific rules
+        // Add your business-specific logic here
+        
+        return (meetsThreshold && meetsBusinessRules);
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>autoApprovePurchaseOrder</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Auto-approve purchase order
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <returns>True if successful</returns>
+    private boolean autoApprovePurchaseOrder(PurchTable _purchTable)
+    {
+        boolean result = false;
+        
+        try
+        {
+            // Update purchase order status to approved
+            _purchTable.selectForUpdate(true);
+            _purchTable.DocumentState = VersioningDocumentState::Approved;
+            _purchTable.PurchStatus = PurchStatus::Received;
+            _purchTable.update();
+            
+            // Log the auto-approval
+            this.logApprovalAction(_purchTable, 'Auto-Approved', curUserId());
+            
+            // Trigger next step in P2P process (e.g., create vendor invoice)
+            this.triggerNextP2PStep(_purchTable);
+            
+            result = true;
+            info(strFmt("Purchase order %1 auto-approved", _purchTable.PurchId));
+        }
+        catch (Exception::Error)
+        {
+            error(strFmt("Failed to auto-approve purchase order %1", _purchTable.PurchId));
+        }
+        
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>routeForApproval</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Route purchase order for manual approval
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <returns>True if successful</returns>
+    private boolean routeForApproval(PurchTable _purchTable)
+    {
+        boolean result = false;
+        
+        try
+        {
+            // Determine approver based on amount and business rules
+            HcmWorkerRecId approver = this.determineApprover(_purchTable);
+            
+            if (approver)
+            {
+                // Create workflow approval task
+                this.createApprovalWorkflow(_purchTable, approver);
+                
+                // Update status to pending approval
+                _purchTable.selectForUpdate(true);
+                _purchTable.DocumentState = VersioningDocumentState::Draft;
+                _purchTable.update();
+                
+                result = true;
+                info(strFmt("Purchase order %1 routed for approval", _purchTable.PurchId));
+            }
+        }
+        catch (Exception::Error)
+        {
+            error(strFmt("Failed to route purchase order %1 for approval", _purchTable.PurchId));
+        }
+        
+        return result;
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>determineApprover</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Determine appropriate approver based on business rules
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <returns>Worker RecId of approver</returns>
+    private HcmWorkerRecId determineApprover(PurchTable _purchTable)
+    {
+        // Implement your approval matrix logic here
+        // This could be based on:
+        // - Amount thresholds
+        // - Department
+        // - Vendor category
+        // - Purchase category
+        
+        return 0; // Return actual approver RecId
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>createApprovalWorkflow</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Create workflow approval task
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <param name="_approver">Approver worker RecId</param>
+    private void createApprovalWorkflow(PurchTable _purchTable, HcmWorkerRecId _approver)
+    {
+        // Implement workflow creation logic
+        // This would integrate with D365 workflow framework
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>triggerNextP2PStep</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Trigger next step in P2P process
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    private void triggerNextP2PStep(PurchTable _purchTable)
+    {
+        // Implement logic to trigger next steps like:
+        // - Goods receipt
+        // - Vendor invoice creation
+        // - Three-way matching
+        // - Payment processing
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>updateProcessingStatus</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Update processing status
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <param name="_status">Processing status</param>
+    private void updateProcessingStatus(PurchTable _purchTable, str _status)
+    {
+        // Update custom field or log table with processing status
+        // You might need to extend PurchTable or create a custom log table
+    }
+
+]]></Source>
+			</Method>
+			<Method>
+				<Name>logApprovalAction</Name>
+				<Source><![CDATA[
+    /// <summary>
+    /// Log approval action
+    /// </summary>
+    /// <param name="_purchTable">Purchase table record</param>
+    /// <param name="_action">Action taken</param>
+    /// <param name="_userId">User who performed action</param>
+    private void logApprovalAction(PurchTable _purchTable, str _action, UserId _userId)
+    {
+        // Log approval actions for audit trail
+        // Create custom log table for P2P audit trail
+    }
+
+]]></Source>
+			</Method>
+		</Methods>
+	</SourceCode>
+</AxClass>
